@@ -16,7 +16,8 @@ def _clean(obj):
         return obj.isoformat()
     return obj
 
-_client = MongoClient(MONGODB_URI)
+import certifi
+_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
 _db = _client[DB_NAME]
 
 members_col = _db.members
