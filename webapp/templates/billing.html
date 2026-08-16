@@ -84,11 +84,11 @@
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for p in payments %}
-        {% set sl = status_labels.get(p.estado, ('—','gray')) %}
-        {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&page=" ~ page %}
-        <tr class="hover:bg-slate-50 transition-colors" x-data="{ editing: false }">
+      {% for p in payments %}
+      {% set sl = status_labels.get(p.estado, ('—','gray')) %}
+      {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&page=" ~ page %}
+      <tbody x-data="{ editing: false }" class="border-b border-slate-100">
+        <tr class="hover:bg-slate-50 transition-colors">
           <td class="px-4 py-3">
             <div class="font-medium text-slate-800 text-xs">{{ p.get('nombre_completo','') }}</div>
             <div class="text-slate-400 text-xs font-mono">{{ p.get('member_id','') }}</div>
@@ -319,15 +319,17 @@
 
           </td>
         </tr>
-        {% else %}
+      </tbody>
+      {% else %}
+      <tbody>
         <tr>
           <td colspan="8" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-money-bill-wave text-2xl mb-2 block text-slate-300"></i>
             No se encontraron registros con estos filtros.
           </td>
         </tr>
-        {% endfor %}
       </tbody>
+      {% endfor %}
     </table>
 
     <!-- Pagination -->
