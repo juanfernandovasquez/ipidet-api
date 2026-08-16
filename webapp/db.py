@@ -190,6 +190,10 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
         cuotas = d.get("cuotas", [])
         d["cuotas_total"]   = len(cuotas)
         d["cuotas_pagadas"] = sum(1 for c in cuotas if c.get("estado") == "pagado")
+        parciales = d.get("pagos_parciales", [])
+        d["monto_pagado"] = sum(p.get("monto", 0) for p in parciales)
+        monto_total = d.get("monto_total") or 0
+        d["monto_pendiente"] = round(max(0.0, monto_total - d["monto_pagado"]), 2) if monto_total else None
 
     return [_clean(d) for d in docs], total
 
@@ -309,6 +313,60 @@ def delete_cuota(payment_id: str, numero: int):
         {"$pull": {"cuotas": {"numero": numero}}},
     )
     _sync_estado_from_cuotas(payment_id)
+
+
+# ── Pagos parciales ───────────────────────────────────────────────────────────
+
+def set_monto_total(payment_id: str, monto_total: float):
+    payments_col.update_one(
+        {"_id": ObjectId(payment_id)},
+        {"$set": {"monto_total": monto_total}},
+    )
+    _sync_estado_from_parciales(payment_id)
+
+
+def add_pago_parcial(payment_id: str, monto: float, fecha_pago: str = None, medio: str = None):
+    doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"pagos_parciales": 1})
+    parciales = doc.get("pagos_parciales", []) if doc else []
+    numero = max((p.get("numero", 0) for p in parciales), default=0) + 1
+    payments_col.update_one(
+        {"_id": ObjectId(payment_id)},
+        {"$push": {"pagos_parciales": {
+            "numero": numero,
+            "monto": monto,
+            "fecha_pago": fecha_pago,
+            "medio_pago": medio,
+        }}},
+    )
+    _sync_estado_from_parciales(payment_id)
+
+
+def delete_pago_parcial(payment_id: str, numero: int):
+    payments_col.update_one(
+        {"_id": ObjectId(payment_id)},
+        {"$pull": {"pagos_parciales": {"numero": numero}}},
+    )
+    _sync_estado_from_parciales(payment_id)
+
+
+def _sync_estado_from_parciales(payment_id: str):
+    doc = payments_col.find_one(
+        {"_id": ObjectId(payment_id)},
+        {"pagos_parciales": 1, "monto_total": 1, "estado": 1},
+    )
+    if not doc:
+        return
+    parciales = doc.get("pagos_parciales", [])
+    monto_total = doc.get("monto_total") or 0
+    monto_pagado = sum(p.get("monto", 0) for p in parciales)
+    if not parciales:
+        new_estado = "debe"
+    elif monto_total and monto_pagado >= monto_total:
+        new_estado = "pagado"
+    else:
+        new_estado = "parcial"
+    if doc.get("estado") != new_estado:
+        payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": {"estado": new_estado}})
 
 
 # ── FAQs ──────────────────────────────────────────────────────────────────────

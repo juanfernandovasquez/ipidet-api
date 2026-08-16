@@ -45,6 +45,7 @@ STATUS_LABELS = {
     "retirar":       ("Retirar",       "slate"),
     "en_revision":   ("En revisión",   "purple"),
     "revisar":       ("Revisar",       "orange"),
+    "parcial":       ("Parcial",       "blue"),
 }
 
 def _ctx(**kwargs):
@@ -242,6 +243,38 @@ async def delete_cuota(
     redirect_to: str = Form("/billing"),
 ):
     pdb.delete_cuota(payment_id, numero)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/billing/{payment_id}/parciales/init")
+async def init_parcial(
+    payment_id: str,
+    monto_total: float = Form(...),
+    redirect_to: str = Form("/billing"),
+):
+    pdb.set_monto_total(payment_id, monto_total)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/billing/{payment_id}/parciales/add")
+async def add_pago_parcial(
+    payment_id: str,
+    monto: float = Form(...),
+    fecha_pago: str = Form(""),
+    medio: str = Form(""),
+    redirect_to: str = Form("/billing"),
+):
+    pdb.add_pago_parcial(payment_id, monto, fecha_pago or None, medio or None)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/billing/{payment_id}/parciales/{numero}/delete")
+async def delete_pago_parcial(
+    payment_id: str,
+    numero: int,
+    redirect_to: str = Form("/billing"),
+):
+    pdb.delete_pago_parcial(payment_id, numero)
     return RedirectResponse(redirect_to, status_code=303)
 
 
