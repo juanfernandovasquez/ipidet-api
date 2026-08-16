@@ -7,20 +7,19 @@
 {% endblock %}
 
 {% block content %}
-<div x-data="{ showFilters: false }">
+<div x-data="{ showFilters: false, t: null }">
 
   <!-- Filters bar -->
   <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
-    <form method="get" action="/members"
-          x-data="{ t: null, submit() { clearTimeout(this.t); this.t = setTimeout(() => this.$el.submit(), 450) }, now() { this.$el.submit() } }"
-          class="flex flex-wrap gap-3 items-end">
+    <form x-ref="filterForm" method="get" action="/members" class="flex flex-wrap gap-3 items-end">
       <div class="flex-1 min-w-48">
         <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
-        <input name="search" value="{{ search }}" placeholder="Nombre, apellido, email, ID…" class="input w-full" @input="submit()">
+        <input name="search" value="{{ search }}" placeholder="Nombre, apellido, email, ID…" class="input w-full"
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)">
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
-        <select name="estado" class="input" @change="now()">
+        <select name="estado" class="input" @change="$refs.filterForm.submit()">
           <option value="">Todos</option>
           {% for val, lbl in [("activo","Activo"),("inactivo","Inactivo"),("retirar","Retirar"),("en_revision","En revisión")] %}
           <option value="{{ val }}" {% if estado == val %}selected{% endif %}>{{ lbl }}</option>
@@ -29,7 +28,7 @@
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Pago 2026</label>
-        <select name="pago" class="input" @change="now()">
+        <select name="pago" class="input" @change="$refs.filterForm.submit()">
           <option value="">Todos</option>
           {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("exonerado","Exonerado"),("retirar","Retirar")] %}
           <option value="{{ val }}" {% if pago == val %}selected{% endif %}>{{ lbl }}</option>
@@ -38,7 +37,8 @@
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Ubicación</label>
-        <input name="ubicacion" value="{{ ubicacion }}" placeholder="Lima, Arequipa…" class="input w-32" @input="submit()">
+        <input name="ubicacion" value="{{ ubicacion }}" placeholder="Lima, Arequipa…" class="input w-32"
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)">
       </div>
       <button type="submit" class="sr-only">Filtrar</button>
       {% if search or estado or pago or ubicacion %}

@@ -7,20 +7,19 @@
 {% endblock %}
 
 {% block content %}
-<div>
+<div x-data="{ t: null }">
 
   <!-- Filters -->
   <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
-    <form method="get" action="/billing"
-          x-data="{ t: null, submit() { clearTimeout(this.t); this.t = setTimeout(() => this.$el.submit(), 450) }, now() { this.$el.submit() } }"
-          class="flex flex-wrap gap-3 items-end">
+    <form x-ref="filterForm" method="get" action="/billing" class="flex flex-wrap gap-3 items-end">
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Buscar socio</label>
-        <input name="search" value="{{ search }}" placeholder="Nombre, ID, empresa, email…" class="input w-56" @input="submit()">
+        <input name="search" value="{{ search }}" placeholder="Nombre, ID, empresa, email…" class="input w-56"
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)">
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
-        <select name="periodo" class="input" @change="now()">
+        <select name="periodo" class="input" @change="$refs.filterForm.submit()">
           <option value="" {% if not periodo %}selected{% endif %}>Todos los años</option>
           {% for yr in ["2026","2025","2024"] %}
           <option value="{{ yr }}" {% if periodo == yr %}selected{% endif %}>{{ yr }}</option>
@@ -29,7 +28,7 @@
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
-        <select name="estado" class="input" @change="now()">
+        <select name="estado" class="input" @change="$refs.filterForm.submit()">
           <option value="">Todos</option>
           {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("exonerado","Exonerado"),("retirar","Retirar"),("en_revision","En revisión"),("revisar","Revisar"),("pendiente","Pendiente"),("no_aplica","N/A")] %}
           <option value="{{ val }}" {% if estado == val %}selected{% endif %}>{{ lbl }}</option>
@@ -38,7 +37,8 @@
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
-        <input name="empresa" value="{{ empresa }}" placeholder="EY, BDO, PWC…" class="input w-28" @input="submit()">
+        <input name="empresa" value="{{ empresa }}" placeholder="EY, BDO, PWC…" class="input w-28"
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)">
       </div>
       <button type="submit" class="sr-only">Filtrar</button>
       {% if search or estado or empresa or periodo != "2026" %}
