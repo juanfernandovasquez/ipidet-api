@@ -15,7 +15,8 @@
       <div class="flex-1 min-w-48">
         <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
         <input name="search" value="{{ search }}" placeholder="Nombre, apellido, email, ID…" class="input w-full"
-               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)">
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)"
+               x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>

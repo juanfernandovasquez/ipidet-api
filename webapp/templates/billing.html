@@ -15,7 +15,8 @@
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Buscar socio</label>
         <input name="search" value="{{ search }}" placeholder="Nombre, ID, empresa, email…" class="input w-56"
-               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)">
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)"
+               x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
