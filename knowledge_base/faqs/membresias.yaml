@@ -1,0 +1,33 @@
+# FAQs sobre membresías, socios y beneficios de pertenecer a IPIDET
+
+faqs:
+  - id: membresias_001
+    question: "¿Cómo me hago miembro de IPIDET?"
+    answer: |
+      Para asociarte a IPIDET, completa el formulario de membresía disponible
+      en nuestra página web. Una vez revisada tu solicitud, te contactaremos
+      con los pasos a seguir y la información de pago correspondiente.
+    active: true
+    auto_approve: false
+    notes: "Actualizar con el link directo al formulario de membresía cuando esté disponible."
+
+  - id: membresias_002
+    question: "¿Cuáles son los beneficios de ser miembro?"
+    answer: |
+      Como miembro de IPIDET accedes a descuentos en nuestros eventos y talleres,
+      participación en foros y grupos de trabajo, acceso a nuestra biblioteca
+      de recursos, y a la red de profesionales de nuestra comunidad.
+      Los beneficios específicos varían según el tipo de membresía.
+    active: true
+    auto_approve: false
+    notes: "Revisar y actualizar cuando cambien los planes de membresía."
+
+  - id: membresias_003
+    question: "¿Cuánto cuesta la membresía?"
+    answer: |
+      Contamos con diferentes planes de membresía. Para conocer los valores
+      actualizados y cuál se adapta mejor a tu perfil, escríbenos indicando
+      si eres persona natural o institución y te enviamos la información detallada.
+    active: true
+    auto_approve: false
+    notes: "No poner precios fijos acá para no desactualizarse. Que administración responda con detalle."

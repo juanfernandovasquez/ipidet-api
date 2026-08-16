@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — IPIDET{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+  <!-- Stat cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+    {% set cards = [
+      ("fa-users",          "Total socios",     stats.total_miembros, "blue",  "/members"),
+      ("fa-user-check",     "Activos",          stats.activos,        "green", "/members?estado=activo"),
+      ("fa-circle-check",   "Pagados 2026",     stats.pagados_2026,   "green", "/billing?estado=pagado"),
+      ("fa-circle-xmark",   "Deben 2026",       stats.deben_2026,     "red",   "/billing?estado=debe"),
+      ("fa-hourglass-half", "Fraccionamiento",  stats.fraccionamiento_2026, "amber", "/billing?estado=fraccionamiento"),
+    ] %}
+    {% for icon, label, value, color, link in cards %}
+    <a href="{{ link }}" class="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow flex items-center gap-4">
+      <div class="w-10 h-10 rounded-lg bg-{{ color }}-100 flex items-center justify-center flex-shrink-0">
+        <i class="fa-solid {{ icon }} text-{{ color }}-600"></i>
+      </div>
+      <div>
+        <div class="text-2xl font-bold text-slate-800">{{ value }}</div>
+        <div class="text-xs text-slate-500 mt-0.5">{{ label }}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- Quick links grid -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <i class="fa-solid fa-users text-blue-600 text-lg"></i>
+        <h2 class="font-semibold text-slate-800">Padrón de Socios</h2>
+      </div>
+      <p class="text-sm text-slate-500 mb-4">Gestión de miembros, correos habilitados/inhabilitados y estado de membresía.</p>
+      <div class="flex flex-col gap-2">
+        <a href="/members" class="btn-primary text-center">Ver todos los socios</a>
+        <a href="/members?estado=activo" class="btn-ghost text-center">Solo activos</a>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <i class="fa-solid fa-money-bill-wave text-green-600 text-lg"></i>
+        <h2 class="font-semibold text-slate-800">Cobranzas 2026</h2>
+      </div>
+      <p class="text-sm text-slate-500 mb-4">Seguimiento de pagos, morosos y fraccionamientos del período actual.</p>
+      <div class="flex flex-col gap-2">
+        <a href="/billing?estado=debe" class="btn-primary text-center">Ver morosos</a>
+        <a href="/billing" class="btn-ghost text-center">Vista completa</a>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="flex items-center gap-3 mb-4">
+        <i class="fa-solid fa-circle-question text-purple-600 text-lg"></i>
+        <h2 class="font-semibold text-slate-800">FAQs del Agente</h2>
+      </div>
+      <p class="text-sm text-slate-500 mb-4">Preguntas frecuentes que el agente responde automáticamente por email.</p>
+      <div class="flex flex-col gap-2">
+        <a href="/faqs" class="btn-primary text-center">Gestionar FAQs</a>
+        <div class="text-center text-sm text-slate-400">{{ stats.total_faqs }} FAQs activas</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

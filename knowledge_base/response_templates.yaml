@@ -1,0 +1,58 @@
+# Plantillas de respuesta reutilizables
+# El bot las usa como punto de partida. Se pueden editar libremente.
+
+# Formato de cada plantilla:
+#   nombre: identificador interno
+#   uso: cuándo aplicar esta plantilla
+#   texto: el cuerpo de la plantilla ({variable} = campo a rellenar)
+
+plantillas:
+  - nombre: evento_info
+    uso: "Responder consultas sobre un evento específico"
+    texto: |
+      Hola {nombre},
+
+      Gracias por tu interés en {nombre_evento}.
+
+      Te compartimos los detalles:
+      - Fecha: {fecha}
+      - Lugar: {lugar}
+      - Precio: {precio}
+      - Cupos disponibles: {cupos}
+      - Inscripciones hasta: {fecha_limite}
+
+      Para inscribirte, ingresa al siguiente formulario: {url_formulario}
+
+      Si tienes alguna duda adicional, con gusto te ayudamos.
+
+      Saludos,
+      IPIDET
+
+  - nombre: confirmacion_inscripcion
+    uso: "Confirmar que se recibió una inscripción"
+    texto: |
+      Hola {nombre},
+
+      Hemos recibido correctamente tu inscripción para {nombre_evento}.
+
+      Te recordamos que el evento es el {fecha} en {lugar}.
+      Recibirás más detalles próximamente.
+
+      ¡Gracias por tu participación!
+
+      Saludos,
+      IPIDET
+
+  - nombre: solicitud_aclaracion
+    uso: "Pedir más información al remitente cuando el mensaje es ambiguo"
+    texto: |
+      Hola {nombre},
+
+      Gracias por contactarte con nosotros.
+
+      Para poder ayudarte mejor, ¿podrías indicarnos {pregunta_aclaracion}?
+
+      Quedamos atentos a tu respuesta.
+
+      Saludos,
+      IPIDET

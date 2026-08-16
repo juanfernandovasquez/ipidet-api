@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}IPIDET Admin{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    [x-cloak] { display: none !important; }
+    .sidebar-link { @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-sm font-medium; }
+    .sidebar-link.active { @apply bg-blue-600 text-white; }
+    .badge { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold; }
+    .badge-green  { @apply bg-green-100 text-green-800; }
+    .badge-red    { @apply bg-red-100 text-red-800; }
+    .badge-amber  { @apply bg-amber-100 text-amber-800; }
+    .badge-yellow { @apply bg-yellow-100 text-yellow-800; }
+    .badge-gray   { @apply bg-gray-100 text-gray-700; }
+    .badge-slate  { @apply bg-slate-200 text-slate-700; }
+    .badge-purple { @apply bg-purple-100 text-purple-800; }
+    .badge-orange { @apply bg-orange-100 text-orange-800; }
+    .btn-primary  { @apply bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors; }
+    .btn-ghost    { @apply text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-sm font-medium px-3 py-2 rounded-lg transition-colors; }
+    .input        { @apply border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex">
+
+  <!-- Sidebar -->
+  <aside class="w-60 bg-slate-800 min-h-screen flex flex-col fixed top-0 left-0 z-10">
+    <div class="px-5 py-5 border-b border-slate-700">
+      <div class="text-white font-bold text-lg tracking-tight">IPIDET</div>
+      <div class="text-slate-400 text-xs mt-0.5">Panel de Administración</div>
+    </div>
+
+    <nav class="flex-1 px-3 py-4 space-y-1">
+      <a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}">
+        <i class="fa-solid fa-chart-pie w-4"></i> Dashboard
+      </a>
+      <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Padrón</div>
+      <a href="/members" class="sidebar-link {% if '/members' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-users w-4"></i> Socios
+      </a>
+      <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Finanzas</div>
+      <a href="/billing" class="sidebar-link {% if '/billing' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-money-bill-wave w-4"></i> Cobranzas
+      </a>
+      <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Comunicación</div>
+      <a href="/faqs" class="sidebar-link {% if '/faqs' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-circle-question w-4"></i> FAQs
+      </a>
+    </nav>
+
+    <div class="px-4 py-4 border-t border-slate-700">
+      <div class="text-slate-500 text-xs">administracion@ipidet.org</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="ml-60 flex-1 flex flex-col min-h-screen">
+    <!-- Top bar -->
+    <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
+      <h1 class="text-lg font-semibold text-slate-800">{% block heading %}{% endblock %}</h1>
+      <div class="flex items-center gap-3">
+        {% block header_actions %}{% endblock %}
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="flex-1 px-8 py-6">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+</body>
+</html>

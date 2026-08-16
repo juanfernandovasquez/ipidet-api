@@ -1,0 +1,20 @@
+<!--
+  BLOQUE ELEMENTOR — Widget de estado de membresía IPIDET
+  =========================================================
+  Instrucciones:
+  1. En WordPress, edita la página /asociados/ con Elementor.
+  2. Agrega un widget "HTML" donde quieras que aparezca el panel.
+  3. Pega TODO este contenido en el campo HTML del widget.
+  4. Guarda y publica.
+
+  El widget solo muestra datos si el socio está logueado en WordPress
+  Y si su email está registrado en el padrón IPIDET (MongoDB).
+  Si no está en el padrón, muestra un mensaje de contacto.
+-->
+
+<div id="ipidet-portal-widget">
+  <p style="color:#94a3b8;font-size:.85rem;">Cargando tu información…</p>
+</div>
+
+<!-- El script real lo inyecta el snippet de Code Snippets (snippet_code_snippets.php).
+     Este div es solo el contenedor que el JS busca por id="ipidet-portal-widget". -->

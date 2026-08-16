@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}FAQs — IPIDET{% endblock %}
+{% block heading %}Preguntas Frecuentes{% endblock %}
+
+{% block header_actions %}
+<span class="text-sm text-slate-500">{{ faqs | length }} FAQ{% if faqs | length != 1 %}s{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5" x-data="{ showForm: false }">
+
+  <!-- Left: FAQ list -->
+  <div class="xl:col-span-2 space-y-4">
+
+    <!-- Filter bar -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <form method="get" action="/faqs" class="flex flex-wrap gap-3 items-end">
+        <div class="flex-1 min-w-48">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
+          <input name="search" value="{{ search }}" placeholder="Pregunta o respuesta…" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Categoría</label>
+          <select name="category" class="input">
+            <option value="">Todas</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if category == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn-primary">Filtrar</button>
+        {% if search or category %}
+        <a href="/faqs" class="btn-ghost">Limpiar</a>
+        {% endif %}
+        <button type="button" @click="showForm = !showForm" class="btn-ghost ml-auto">
+          <i class="fa-solid fa-plus mr-1"></i> Nueva FAQ
+        </button>
+      </form>
+    </div>
+
+    <!-- FAQ list -->
+    {% if faqs %}
+    <div class="space-y-3">
+      {% for faq in faqs %}
+      <div class="bg-white rounded-xl border border-slate-200 p-5" x-data="{ open: false, editing: false }">
+        <div class="flex items-start justify-between gap-4">
+          <button @click="open = !open" class="text-left flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              {% if faq.get('category') %}
+              <span class="badge badge-purple text-xs">{{ faq.category }}</span>
+              {% endif %}
+              <i class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform" :class="open ? 'rotate-180' : ''"></i>
+            </div>
+            <div class="font-semibold text-slate-800 text-sm">{{ faq.question }}</div>
+          </button>
+          <form method="post" action="/faqs/{{ faq._id }}/delete" onsubmit="return confirm('¿Eliminar esta FAQ?')">
+            <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0">
+              <i class="fa-solid fa-trash text-sm"></i>
+            </button>
+          </form>
+        </div>
+
+        <div x-show="open" x-cloak class="mt-3 pt-3 border-t border-slate-100">
+          <p class="text-sm text-slate-600 whitespace-pre-wrap">{{ faq.answer }}</p>
+          {% if faq.get('updated_at') %}
+          <div class="text-xs text-slate-400 mt-3">Actualizado: {{ faq.updated_at.strftime('%d/%m/%Y %H:%M') if faq.updated_at else '—' }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
+      <i class="fa-solid fa-circle-question text-4xl text-slate-200 mb-3 block"></i>
+      <p class="text-slate-400 text-sm">
+        {% if search or category %}
+          No hay FAQs con estos filtros.
+        {% else %}
+          Aún no hay FAQs. Agrega la primera con el botón "Nueva FAQ".
+        {% endif %}
+      </p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Right: Add FAQ form -->
+  <div>
+    <div class="bg-white rounded-xl border border-slate-200 p-6 sticky top-20">
+      <h2 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-plus-circle text-blue-500"></i>
+        Nueva FAQ
+      </h2>
+      <form method="post" action="/faqs/add" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Pregunta <span class="text-red-400">*</span></label>
+          <input name="question" type="text" required placeholder="¿Cómo puedo pagar mi cuota?" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Respuesta <span class="text-red-400">*</span></label>
+          <textarea name="answer" rows="5" required placeholder="Puedes realizar tu pago mediante transferencia bancaria a la cuenta…" class="input w-full resize-none"></textarea>
+          <p class="text-xs text-slate-400 mt-1">El agente usará este texto exacto en sus respuestas automáticas.</p>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Categoría <span class="text-red-400">*</span></label>
+          <input name="category" type="text" required placeholder="Pagos, Membresía, Eventos…" class="input w-full"
+            list="cat-list">
+          <datalist id="cat-list">
+            {% for cat in categories %}
+            <option value="{{ cat }}">
+            {% endfor %}
+          </datalist>
+        </div>
+        <button type="submit" class="btn-primary w-full">
+          <i class="fa-solid fa-plus mr-2"></i> Agregar FAQ
+        </button>
+      </form>
+
+      {% if categories %}
+      <div class="mt-6 pt-5 border-t border-slate-100">
+        <div class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Categorías existentes</div>
+        <div class="flex flex-wrap gap-1.5">
+          {% for cat in categories %}
+          <a href="/faqs?category={{ cat }}" class="badge badge-purple hover:bg-purple-200 transition-colors cursor-pointer">{{ cat }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

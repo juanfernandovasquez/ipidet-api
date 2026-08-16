@@ -1,0 +1,40 @@
+# FAQs sobre eventos, talleres, cursos y actividades de IPIDET
+# Cada FAQ tiene:
+#   id: identificador único (no cambiar una vez creado)
+#   question: pregunta tipo que haría un miembro o interesado
+#   answer: respuesta base que usa el bot (puede expandirla con contexto del evento)
+#   active: true/false — si está en false, el bot no la usa
+#   auto_approve: true — responde directo sin pedir aprobación (solo si confianza >= 88%)
+#   notes: contexto interno, por qué existe esta FAQ, cuándo actualizarla
+
+faqs:
+  - id: eventos_001
+    question: "¿Cuándo es el próximo evento de IPIDET?"
+    answer: |
+      Actualmente tenemos los siguientes eventos programados. Para inscribirte,
+      ingresa al formulario correspondiente a cada uno. Si tienes dudas sobre
+      algún evento en particular, con gusto te damos más detalles.
+    active: true
+    auto_approve: false
+    notes: "Respuesta genérica cuando preguntan por eventos sin especificar cuál."
+
+  - id: eventos_002
+    question: "¿Puedo inscribirme a un evento si no soy miembro de IPIDET?"
+    answer: |
+      Sí, nuestros eventos están abiertos tanto para miembros como para el
+      público en general. En algunos casos los miembros cuentan con descuentos
+      o acceso prioritario. Te invitamos a revisar las condiciones específicas
+      de cada evento en el formulario de inscripción.
+    active: true
+    auto_approve: false
+    notes: "Pregunta frecuente de personas externas a la organización."
+
+  - id: eventos_003
+    question: "¿Tienen certificado de participación?"
+    answer: |
+      Sí, todos nuestros talleres y cursos incluyen certificado de participación
+      para quienes completen el programa. El certificado se entrega en formato
+      digital al finalizar el evento.
+    active: true
+    auto_approve: false
+    notes: "Confirmar con el equipo si aplica a todos los formatos de evento."

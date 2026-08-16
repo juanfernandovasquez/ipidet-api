@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}{{ member.apellidos }}, {{ member.nombres }} — IPIDET{% endblock %}
+{% block heading %}
+  <a href="/members" class="text-slate-400 hover:text-slate-600 mr-2">Socios</a>
+  <span class="text-slate-300 mr-2">/</span>
+  {{ member.apellidos }}, {{ member.nombres }}
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5" x-data="{ editNotes: false, addEmail: false }">
+
+  <!-- Left: Info + Emails -->
+  <div class="xl:col-span-2 space-y-5">
+
+    <!-- Datos personales -->
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="flex items-start justify-between mb-5">
+        <div>
+          <div class="text-xl font-bold text-slate-800">{{ member.apellidos }}, {{ member.nombres }}</div>
+          <div class="text-slate-500 text-sm mt-0.5">{{ member.member_id }} · {{ member.titulo or 'Sin título' }}</div>
+        </div>
+        <form method="post" action="/members/{{ member.member_id }}/estado" class="flex items-center gap-2">
+          <select name="estado" class="input text-xs py-1">
+            {% for val, lbl in [("activo","Activo"),("inactivo","Inactivo"),("retirar","Retirar"),("en_revision","En revisión")] %}
+            <option value="{{ val }}" {% if member.estado == val %}selected{% endif %}>{{ lbl }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn-primary text-xs py-1 px-3">Guardar</button>
+        </form>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+        {% for label, value in [
+          ("Centro de trabajo", member.centro_trabajo),
+          ("Celular", member.celular),
+          ("Ubicación", member.ubicacion),
+          ("Fecha de ingreso", member.fecha_ingreso.strftime('%d/%m/%Y') if member.fecha_ingreso else '—'),
+          ("Fecha de nacimiento", member.fecha_nacimiento.strftime('%d/%m/%Y') if member.fecha_nacimiento else '—'),
+        ] %}
+        <div>
+          <div class="text-xs text-slate-400 uppercase tracking-wide mb-0.5">{{ label }}</div>
+          <div class="text-slate-700 font-medium">{{ value or '—' }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Emails -->
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-envelope text-blue-500"></i> Correos electrónicos
+        </h2>
+        <button @click="addEmail = !addEmail" class="btn-ghost text-xs">
+          <i class="fa-solid fa-plus mr-1"></i> Agregar
+        </button>
+      </div>
+
+      <!-- Add email form -->
+      <div x-show="addEmail" x-cloak class="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+        <form method="post" action="/members/{{ member.member_id }}/emails/add" class="flex gap-2">
+          <input name="new_email" type="email" placeholder="nuevo@email.com" class="input flex-1 text-sm" required>
+          <button type="submit" class="btn-primary text-xs">Agregar</button>
+          <button type="button" @click="addEmail = false" class="btn-ghost text-xs">Cancelar</button>
+        </form>
+      </div>
+
+      {% if member.emails %}
+      <div class="space-y-2">
+        {% for em in member.emails %}
+        <div class="flex items-center justify-between p-3 rounded-lg border {% if em.estado == 'habilitado' %}border-green-200 bg-green-50{% else %}border-slate-200 bg-slate-50{% endif %}">
+          <div class="flex items-center gap-3">
+            <i class="fa-solid {% if em.estado == 'habilitado' %}fa-circle-check text-green-500{% else %}fa-circle-xmark text-slate-400{% endif %}"></i>
+            <div>
+              <div class="text-sm font-medium {% if em.estado == 'inhabilitado' %}line-through text-slate-400{% else %}text-slate-800{% endif %}">
+                {{ em.email }}
+              </div>
+              <div class="text-xs text-slate-400">
+                {{ "Principal" if em.get('principal') else "Secundario" }} ·
+                {% if em.estado == 'habilitado' %}<span class="text-green-600">Habilitado</span>{% else %}<span class="text-red-500">Inhabilitado</span>{% endif %}
+              </div>
+            </div>
+          </div>
+          <form method="post" action="/members/{{ member.member_id }}/emails/toggle">
+            <input type="hidden" name="email" value="{{ em.email }}">
+            {% if em.estado == 'habilitado' %}
+            <input type="hidden" name="estado" value="inhabilitado">
+            <button type="submit" class="text-xs text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+              Inhabilitar
+            </button>
+            {% else %}
+            <input type="hidden" name="estado" value="habilitado">
+            <button type="submit" class="text-xs text-slate-500 hover:text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-50 transition-colors">
+              Habilitar
+            </button>
+            {% endif %}
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-slate-400 text-sm text-center py-4">Sin correos registrados.</p>
+      {% endif %}
+    </div>
+
+    <!-- Notas -->
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-note-sticky text-yellow-500"></i> Notas
+        </h2>
+        <button @click="editNotes = !editNotes" class="btn-ghost text-xs">
+          <i class="fa-solid fa-pen mr-1"></i> Editar
+        </button>
+      </div>
+      <div x-show="!editNotes">
+        <p class="text-sm text-slate-600 whitespace-pre-wrap">{{ member.notas | autolink or 'Sin notas.' }}</p>
+      </div>
+      <div x-show="editNotes" x-cloak>
+        <form method="post" action="/members/{{ member.member_id }}/notes" class="space-y-3">
+          <textarea name="notas" rows="4" class="input w-full text-sm resize-none">{{ member.notas or '' }}</textarea>
+          <div class="flex gap-2">
+            <button type="submit" class="btn-primary text-xs">Guardar</button>
+            <button type="button" @click="editNotes = false" class="btn-ghost text-xs">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Right: Payments -->
+  <div class="space-y-5">
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <h2 class="font-semibold text-slate-800 flex items-center gap-2 mb-4">
+        <i class="fa-solid fa-money-bill-wave text-green-500"></i> Historial de pagos
+      </h2>
+
+      {% if member.payments %}
+      <div class="space-y-3">
+        {% for p in member.payments %}
+        {% set sl = status_labels.get(p.estado, ('—','gray')) %}
+        <div class="p-3 rounded-lg border border-slate-200" x-data="{ editing: false }">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-semibold text-slate-700">{{ p.periodo }}</span>
+            <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
+          </div>
+          {% if p.get('empresa_pagadora') %}
+          <div class="text-xs text-slate-500 mb-1">Pagado por: <strong>{{ p.empresa_pagadora }}</strong></div>
+          {% endif %}
+          {% if p.get('fecha_pago') %}
+          <div class="text-xs text-slate-500 mb-1">Fecha: {{ p.fecha_pago }}</div>
+          {% endif %}
+          {% if p.get('raw_original') %}
+          <div class="text-xs text-slate-400 italic mb-2">Original: {{ p.raw_original }}</div>
+          {% endif %}
+
+          <button @click="editing = !editing" class="text-xs text-blue-600 hover:underline">
+            Editar estado
+          </button>
+
+          <div x-show="editing" x-cloak class="mt-3 pt-3 border-t border-slate-100">
+            <form method="post" action="/billing/{{ p._id }}/update" class="space-y-2">
+              <input type="hidden" name="redirect_to" value="/members/{{ member.member_id }}">
+              <select name="estado" class="input w-full text-xs py-1">
+                {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("exonerado","Exonerado"),("no_aplica","N/A"),("retirar","Retirar"),("en_revision","En revisión")] %}
+                <option value="{{ val }}" {% if p.estado == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" name="empresa" value="{{ p.get('empresa_pagadora','') }}" placeholder="Empresa (EY, BDO…)" class="input w-full text-xs py-1">
+              <input type="text" name="fecha_pago" value="{{ p.get('fecha_pago','') }}" placeholder="Fecha pago DD/MM/YYYY" class="input w-full text-xs py-1">
+              <button type="submit" class="btn-primary w-full text-xs py-1.5">Guardar</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-slate-400 text-sm text-center py-4">Sin registros de pago.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

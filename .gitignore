@@ -1,0 +1,36 @@
+# Secretos — NUNCA subir
+.env
+credentials.json
+token.json
+google_credentials.json
+
+# Datos exportados y temporales
+mongo_export/
+*.xlsx
+export_mongo.py
+import_to_atlas.py
+import_padron.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Logs y OS
+*.log
+.DS_Store
+Thumbs.db
+
+# Archivos grandes / temporales del proyecto
+CORREOS/
+flyers/
+*.zip
+*.bat
+Takeout*/
+IPIDET_backup*/

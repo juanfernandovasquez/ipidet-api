@@ -1,0 +1,34 @@
+# FAQs sobre inscripciones, formularios y proceso de registro
+
+faqs:
+  - id: inscripciones_001
+    question: "¿Cómo me inscribo a un evento o taller?"
+    answer: |
+      Para inscribirte, completa el formulario que encontrarás en el link
+      del evento que te interesa. Una vez enviado el formulario, recibirás
+      una confirmación por correo con los detalles de tu inscripción.
+    active: true
+    auto_approve: false
+    notes: "Respuesta base. El bot agrega el link específico del evento cuando lo tiene."
+
+  - id: inscripciones_002
+    question: "¿Puedo cancelar o cambiar mi inscripción?"
+    answer: |
+      Para cancelar o modificar tu inscripción, escríbenos con al menos
+      48 horas de anticipación al inicio del evento indicando tu nombre
+      completo y el evento al que te inscribiste. Evaluaremos tu caso
+      y te responderemos a la brevedad.
+    active: true
+    auto_approve: false
+    notes: "Verificar política de devoluciones con administración antes de activar auto_approve."
+
+  - id: inscripciones_003
+    question: "No recibí confirmación de mi inscripción"
+    answer: |
+      Si no recibiste el correo de confirmación, te pedimos que revises
+      tu carpeta de spam o correo no deseado. Si tampoco está ahí,
+      escríbenos con tu nombre completo y el evento al que te inscribiste
+      para verificar el estado de tu registro.
+    active: true
+    auto_approve: false
+    notes: "Común cuando el correo de confirmación cae en spam."

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Socios — IPIDET{% endblock %}
+{% block heading %}Padrón de Socios{% endblock %}
+
+{% block header_actions %}
+<span class="text-sm text-slate-500">{{ total }} socio{% if total != 1 %}s{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<div x-data="{ showFilters: false }">
+
+  <!-- Filters bar -->
+  <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+    <form method="get" action="/members" class="flex flex-wrap gap-3 items-end">
+      <div class="flex-1 min-w-48">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
+        <input name="search" value="{{ search }}" placeholder="Nombre, apellido, email, ID…" class="input w-full">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+        <select name="estado" class="input">
+          <option value="">Todos</option>
+          {% for val, lbl in [("activo","Activo"),("inactivo","Inactivo"),("retirar","Retirar"),("en_revision","En revisión")] %}
+          <option value="{{ val }}" {% if estado == val %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Pago 2026</label>
+        <select name="pago" class="input">
+          <option value="">Todos</option>
+          {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("exonerado","Exonerado"),("retirar","Retirar")] %}
+          <option value="{{ val }}" {% if pago == val %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Ubicación</label>
+        <input name="ubicacion" value="{{ ubicacion }}" placeholder="Lima, Arequipa…" class="input w-32">
+      </div>
+      <button type="submit" class="btn-primary">Filtrar</button>
+      {% if search or estado or pago or ubicacion %}
+      <a href="/members" class="btn-ghost">Limpiar</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-200 text-left">
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">ID</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Nombre</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email principal</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Ubicación</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Pago 2026</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for m in members %}
+        {% set p2026 = m.pago_2026 %}
+        {% set sl = status_labels.get(p2026.get('estado',''), ('—','gray')) %}
+        <tr class="hover:bg-slate-50 transition-colors">
+          <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ m.member_id }}</td>
+          <td class="px-4 py-3">
+            <div class="font-medium text-slate-800">{{ m.apellidos }}</div>
+            <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
+          </td>
+          <td class="px-4 py-3 text-slate-600 text-xs">
+            {% set habilitados = m.emails | selectattr("estado","eq","habilitado") | list %}
+            {% if habilitados %}
+              {{ habilitados[0].email }}
+              {% if habilitados | length > 1 %}
+              <span class="text-slate-400">+{{ habilitados|length - 1 }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-red-400 italic">sin email</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-slate-500 text-xs">{{ m.ubicacion or '—' }}</td>
+          <td class="px-4 py-3">
+            {% if m.estado == 'activo' %}
+            <span class="badge badge-green">Activo</span>
+            {% elif m.estado == 'retirar' %}
+            <span class="badge badge-slate">Retirar</span>
+            {% else %}
+            <span class="badge badge-gray">{{ m.estado }}</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3">
+            {% if p2026 %}
+            <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
+            {% if p2026.get('empresa_pagadora') %}
+            <span class="text-xs text-slate-400 ml-1">{{ p2026.empresa_pagadora }}</span>
+            {% endif %}
+            {% else %}
+            <span class="text-slate-300 text-xs">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right">
+            <a href="/members/{{ m.member_id }}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Ver →</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="px-4 py-12 text-center text-slate-400">
+            <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
+            No se encontraron socios con estos filtros.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="border-t border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50">
+      <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }}</span>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
+        {% endif %}
+        {% if page < total_pages %}
+        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
