@@ -141,6 +141,19 @@
                 <input name="num_comprobante" value="{{ p.get('num_comprobante','') }}" placeholder="F001-000123" class="input text-xs py-1 w-32">
               </div>
               <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Tipo doc.</label>
+                <select name="tipo_comprobante" class="input text-xs py-1">
+                  <option value="">— Sin tipo —</option>
+                  <option value="boleta" {% if p.get('tipo_comprobante') == 'boleta' %}selected{% endif %}>Boleta</option>
+                  <option value="factura" {% if p.get('tipo_comprobante') == 'factura' %}selected{% endif %}>Factura</option>
+                  <option value="recibo" {% if p.get('tipo_comprobante') == 'recibo' %}selected{% endif %}>Recibo</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Link constancia</label>
+                <input name="link_constancia" value="{{ p.get('link_constancia','') }}" placeholder="https://…" class="input text-xs py-1 w-48">
+              </div>
+              <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
                 <input name="medio" value="{{ p.get('medio_pago','') }}" placeholder="Transferencia, efectivo…" class="input text-xs py-1 w-32">
               </div>
@@ -184,6 +197,10 @@
                     <th class="text-left py-1 pr-3 font-medium">Vencimiento</th>
                     <th class="text-left py-1 pr-3 font-medium">Estado</th>
                     <th class="text-left py-1 pr-3 font-medium">Fecha pago</th>
+                    <th class="text-left py-1 pr-3 font-medium">Tipo doc.</th>
+                    <th class="text-left py-1 pr-3 font-medium">N° comp.</th>
+                    <th class="text-left py-1 pr-3 font-medium">Medio</th>
+                    <th class="text-left py-1 pr-3 font-medium">Link</th>
                     <th class="text-left py-1 font-medium">Acciones</th>
                   </tr>
                 </thead>
@@ -199,26 +216,45 @@
                       </span>
                     </td>
                     <td class="py-1.5 pr-3 text-slate-500">{{ cuota.get('fecha_pago') or '—' }}</td>
+                    <td class="py-1.5 pr-3 text-slate-500 text-xs">
+                      {{ {'boleta':'Boleta','factura':'Factura','recibo':'Recibo'}.get(cuota.get('tipo_comprobante',''), '—') }}
+                    </td>
+                    <td class="py-1.5 pr-3 text-slate-500 font-mono text-xs">{{ cuota.get('num_comprobante') or '—' }}</td>
+                    <td class="py-1.5 pr-3 text-slate-500 text-xs">{{ cuota.get('medio_pago') or '—' }}</td>
+                    <td class="py-1.5 pr-3 text-xs">
+                      {% if cuota.get('link_constancia') %}
+                      <a href="{{ cuota.link_constancia }}" target="_blank" rel="noopener" class="text-blue-500 hover:underline">🔗 Ver</a>
+                      {% else %}—{% endif %}
+                    </td>
                     <td class="py-1.5">
-                      <div class="flex items-center gap-2">
+                      <div class="flex flex-col gap-1.5">
                         {% if cuota.estado != 'pagado' %}
-                        <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex items-center gap-1">
+                        <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
                           <input type="hidden" name="redirect_to" value="{{ cur_url }}">
                           <input type="hidden" name="estado" value="pagado">
-                          <input name="fecha_pago" placeholder="DD/MM/YYYY" class="input text-xs py-0.5 w-24">
-                          <button type="submit" class="text-green-600 hover:text-green-800 font-semibold" title="Marcar pagado">✓ Pagar</button>
+                          <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28">
+                          <select name="tipo_comprobante" class="input text-xs py-0.5">
+                            <option value="">Tipo</option>
+                            <option value="boleta">Boleta</option>
+                            <option value="factura">Factura</option>
+                            <option value="recibo">Recibo</option>
+                          </select>
+                          <input name="num_comprobante" placeholder="N° doc." class="input text-xs py-0.5 w-20">
+                          <input name="medio" placeholder="Medio pago" class="input text-xs py-0.5 w-24">
+                          <input name="link_constancia" placeholder="Link constancia" class="input text-xs py-0.5 w-32">
+                          <button type="submit" class="text-green-600 hover:text-green-800 font-semibold text-xs">✓ Pagar</button>
                         </form>
                         {% else %}
                         <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="inline">
                           <input type="hidden" name="redirect_to" value="{{ cur_url }}">
                           <input type="hidden" name="estado" value="pendiente">
                           <input type="hidden" name="fecha_pago" value="">
-                          <button type="submit" class="text-amber-500 hover:text-amber-700 text-xs" title="Deshacer pago">↩ Deshacer</button>
+                          <button type="submit" class="text-amber-500 hover:text-amber-700 text-xs">↩ Deshacer</button>
                         </form>
                         {% endif %}
                         <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/delete" class="inline">
                           <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                          <button type="submit" class="text-red-400 hover:text-red-600 text-xs" title="Eliminar cuota">× Eliminar</button>
+                          <button type="submit" class="text-red-400 hover:text-red-600 text-xs">× Eliminar</button>
                         </form>
                       </div>
                     </td>
@@ -270,6 +306,9 @@
                     <th class="text-left py-1 pr-3 font-medium">Monto</th>
                     <th class="text-left py-1 pr-3 font-medium">Fecha</th>
                     <th class="text-left py-1 pr-3 font-medium">Medio</th>
+                    <th class="text-left py-1 pr-3 font-medium">Tipo doc.</th>
+                    <th class="text-left py-1 pr-3 font-medium">N° comp.</th>
+                    <th class="text-left py-1 pr-3 font-medium">Link</th>
                     <th class="text-left py-1 font-medium">Acciones</th>
                   </tr>
                 </thead>
@@ -280,6 +319,15 @@
                     <td class="py-1.5 pr-3 font-medium text-blue-700">S/ {{ pp.monto }}</td>
                     <td class="py-1.5 pr-3 text-slate-500">{{ pp.get('fecha_pago') or '—' }}</td>
                     <td class="py-1.5 pr-3 text-slate-500">{{ pp.get('medio_pago') or '—' }}</td>
+                    <td class="py-1.5 pr-3 text-slate-500 text-xs">
+                      {{ {'boleta':'Boleta','factura':'Factura','recibo':'Recibo'}.get(pp.get('tipo_comprobante',''), '—') }}
+                    </td>
+                    <td class="py-1.5 pr-3 text-slate-500 font-mono text-xs">{{ pp.get('num_comprobante') or '—' }}</td>
+                    <td class="py-1.5 pr-3 text-xs">
+                      {% if pp.get('link_constancia') %}
+                      <a href="{{ pp.link_constancia }}" target="_blank" rel="noopener" class="text-blue-500 hover:underline">🔗 Ver</a>
+                      {% else %}—{% endif %}
+                    </td>
                     <td class="py-1.5">
                       <form method="post" action="/billing/{{ p._id }}/parciales/{{ pp.numero }}/delete" class="inline">
                         <input type="hidden" name="redirect_to" value="{{ cur_url }}">
@@ -306,7 +354,7 @@
                   </button>
                 </form>
 
-                <form method="post" action="/billing/{{ p._id }}/parciales/add" class="flex items-end gap-2">
+                <form method="post" action="/billing/{{ p._id }}/parciales/add" class="flex flex-wrap items-end gap-2">
                   <input type="hidden" name="redirect_to" value="{{ cur_url }}">
                   <div>
                     <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
@@ -315,11 +363,28 @@
                   </div>
                   <div>
                     <label class="block text-xs text-slate-500 mb-0.5">Fecha</label>
-                    <input name="fecha_pago" placeholder="YYYY-MM-DD" class="input text-xs py-1 w-28">
+                    <input name="fecha_pago" type="date" class="input text-xs py-1 w-32">
                   </div>
                   <div>
                     <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
                     <input name="medio" placeholder="Transferencia…" class="input text-xs py-1 w-28">
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
+                    <select name="tipo_comprobante" class="input text-xs py-1">
+                      <option value="">— Sin tipo —</option>
+                      <option value="boleta">Boleta</option>
+                      <option value="factura">Factura</option>
+                      <option value="recibo">Recibo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">N° comp.</label>
+                    <input name="num_comprobante" placeholder="F001-000123" class="input text-xs py-1 w-28">
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
+                    <input name="link_constancia" placeholder="https://…" class="input text-xs py-1 w-40">
                   </div>
                   <button type="submit" class="btn-ghost text-xs py-1.5 border border-blue-300 text-blue-600">+ Registrar pago</button>
                 </form>
