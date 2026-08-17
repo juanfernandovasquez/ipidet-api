@@ -250,7 +250,8 @@ def get_payments_export(periodo: str = "2026", estado: str = "", empresa: str = 
 
 
 def update_payment(payment_id: str, estado: str, empresa: str = None,
-                   fecha_pago: str = None, medio: str = None, pagado_por: str = None):
+                   fecha_pago: str = None, medio: str = None, pagado_por: str = None,
+                   num_comprobante: str = None):
     fields = {"estado": estado}
     if empresa is not None:
         fields["empresa_pagadora"] = empresa or None
@@ -260,6 +261,8 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
         fields["medio_pago"] = medio or None
     if pagado_por is not None:
         fields["pagado_por"] = pagado_por or None
+    if num_comprobante is not None:
+        fields["num_comprobante"] = num_comprobante or None
     payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": fields})
 
 

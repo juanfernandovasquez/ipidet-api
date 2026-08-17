@@ -87,7 +87,7 @@
       {% for p in payments %}
       {% set sl = status_labels.get(p.estado, ('—','gray')) %}
       {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&page=" ~ page %}
-      <tbody x-data="{ editing: false }" class="border-b border-slate-100">
+      <tbody x-data="{ editing: false, tipoPagador: '{{ 'empresa' if p.get('empresa_pagadora') else 'socio' }}' }" class="border-b border-slate-100">
         <tr class="hover:bg-slate-50 transition-colors">
           <td class="px-4 py-3">
             <div class="font-medium text-slate-800 text-xs">{{ p.get('nombre_completo','') }}</div>
@@ -133,21 +133,30 @@
                 </select>
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Pagado por</label>
-                <input name="pagado_por" value="{{ p.get('pagado_por','') }}" placeholder="Nombre o empresa…" class="input text-xs py-1 w-36">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de pago</label>
+                <input name="fecha_pago" type="date" value="{{ p.get('fecha_pago','') }}" class="input text-xs py-1">
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Empresa pagadora</label>
-                <input name="empresa" value="{{ p.get('empresa_pagadora','') }}" placeholder="EY, BDO…" class="input text-xs py-1 w-24">
+                <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante</label>
+                <input name="num_comprobante" value="{{ p.get('num_comprobante','') }}" placeholder="F001-000123" class="input text-xs py-1 w-32">
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Fecha pago</label>
-                <input name="fecha_pago" value="{{ p.get('fecha_pago','') }}" placeholder="DD/MM/YYYY" class="input text-xs py-1 w-28">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
+                <input name="medio" value="{{ p.get('medio_pago','') }}" placeholder="Transferencia, efectivo…" class="input text-xs py-1 w-32">
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Medio</label>
-                <input name="medio" value="{{ p.get('medio_pago','') }}" placeholder="Transferencia…" class="input text-xs py-1 w-28">
+                <label class="block text-xs font-medium text-slate-600 mb-1">¿Quién pagó?</label>
+                <select class="input text-xs py-1"
+                        @change="tipoPagador = $el.value; if ($el.value === 'socio') $el.closest('form').querySelector('[name=empresa]').value = ''">
+                  <option value="socio" :selected="tipoPagador === 'socio'">El mismo socio</option>
+                  <option value="empresa" :selected="tipoPagador === 'empresa'">Empresa empleadora</option>
+                </select>
               </div>
+              <div x-show="tipoPagador === 'empresa'" x-cloak>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
+                <input name="empresa" value="{{ p.get('empresa_pagadora','') }}" placeholder="EY, BDO, PWC…" class="input text-xs py-1 w-28">
+              </div>
+              <input x-show="tipoPagador !== 'empresa'" type="hidden" name="empresa" value="">
               <div class="flex gap-2 pb-0.5">
                 <button type="submit" class="btn-primary text-xs py-1.5 px-3">Guardar</button>
                 <button type="button" @click="editing = false" class="btn-ghost text-xs py-1.5">Cancelar</button>
