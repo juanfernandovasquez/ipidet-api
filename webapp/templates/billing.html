@@ -87,7 +87,7 @@
       {% for p in payments %}
       {% set sl = status_labels.get(p.estado, ('—','gray')) %}
       {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&page=" ~ page %}
-      <tbody x-data="{ editing: false, tipoPagador: '{{ 'empresa' if p.get('empresa_pagadora') else 'socio' }}' }" class="border-b border-slate-100">
+      <tbody x-data="{ editing: false, tipoPagador: '{{ 'empresa' if p.get('empresa_pagadora') else 'socio' }}', empresaVal: '{{ p.get('empresa_pagadora', '') }}' }" class="border-b border-slate-100">
         <tr class="hover:bg-slate-50 transition-colors">
           <td class="px-4 py-3">
             <div class="font-medium text-slate-800 text-xs">{{ p.get('nombre_completo','') }}</div>
@@ -112,9 +112,9 @@
           </td>
           <td class="px-4 py-3 text-slate-500 text-xs">{{ p.get('fecha_pago') or '—' }}</td>
           <td class="px-4 py-3 text-right">
-            <button @click="editing = !editing" class="text-blue-600 hover:text-blue-800 text-xs font-medium">
-              Editar
-            </button>
+            <button @click="editing = !editing" class="text-xs font-medium"
+                    :class="editing ? 'text-slate-500 hover:text-slate-700' : 'text-blue-600 hover:text-blue-800'"
+                    x-text="editing ? 'Cerrar ✕' : 'Editar'"></button>
           </td>
         </tr>
         <!-- Inline edit row -->
@@ -159,17 +159,17 @@
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">¿Quién pagó?</label>
-                <select class="input text-xs py-1"
-                        @change="tipoPagador = $el.value; if ($el.value === 'socio') $el.closest('form').querySelector('[name=empresa]').value = ''">
+                <select class="input text-xs py-1" @change="tipoPagador = $el.value">
                   <option value="socio" :selected="tipoPagador === 'socio'">El mismo socio</option>
                   <option value="empresa" :selected="tipoPagador === 'empresa'">Empresa empleadora</option>
                 </select>
               </div>
               <div x-show="tipoPagador === 'empresa'" x-cloak>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
-                <input name="empresa" value="{{ p.get('empresa_pagadora','') }}" placeholder="EY, BDO, PWC…" class="input text-xs py-1 w-28">
+                <input x-model="empresaVal" placeholder="EY, BDO, PWC…" class="input text-xs py-1 w-28">
               </div>
-              <input x-show="tipoPagador !== 'empresa'" type="hidden" name="empresa" value="">
+              <!-- Un solo campo empresa; envía el nombre si pagó la empresa, o vacío para limpiar -->
+              <input type="hidden" name="empresa" :value="tipoPagador === 'empresa' ? empresaVal : ''">
               <div class="flex gap-2 pb-0.5">
                 <button type="submit" class="btn-primary text-xs py-1.5 px-3">Guardar</button>
                 <button type="button" @click="editing = false" class="btn-ghost text-xs py-1.5">Cancelar</button>

@@ -35,6 +35,19 @@ def _autolink(text: str) -> Markup:
 
 templates.env.filters["autolink"] = _autolink
 
+def _format_fecha(value) -> str:
+    """Formatea fecha ISO string o datetime a DD/MM/YYYY."""
+    if not value:
+        return '—'
+    try:
+        s = str(value)[:10]  # "YYYY-MM-DD"
+        y, m, d = s.split('-')
+        return f"{d}/{m}/{y}"
+    except Exception:
+        return str(value)
+
+templates.env.filters["format_fecha"] = _format_fecha
+
 STATUS_LABELS = {
     "pagado":        ("Pagado",        "green"),
     "debe":          ("Debe",          "red"),

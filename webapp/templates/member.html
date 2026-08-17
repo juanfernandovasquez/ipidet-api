@@ -34,8 +34,8 @@
           ("Centro de trabajo", member.centro_trabajo),
           ("Celular", member.celular),
           ("Ubicación", member.ubicacion),
-          ("Fecha de ingreso", member.fecha_ingreso.strftime('%d/%m/%Y') if member.fecha_ingreso else '—'),
-          ("Fecha de nacimiento", member.fecha_nacimiento.strftime('%d/%m/%Y') if member.fecha_nacimiento else '—'),
+          ("Fecha de ingreso", member.fecha_ingreso | format_fecha),
+          ("Fecha de nacimiento", member.fecha_nacimiento | format_fecha),
         ] %}
         <div>
           <div class="text-xs text-slate-400 uppercase tracking-wide mb-0.5">{{ label }}</div>
@@ -169,7 +169,10 @@
               </select>
               <input type="text" name="empresa" value="{{ p.get('empresa_pagadora','') }}" placeholder="Empresa (EY, BDO…)" class="input w-full text-xs py-1">
               <input type="text" name="fecha_pago" value="{{ p.get('fecha_pago','') }}" placeholder="Fecha pago DD/MM/YYYY" class="input w-full text-xs py-1">
-              <button type="submit" class="btn-primary w-full text-xs py-1.5">Guardar</button>
+              <div class="flex gap-2">
+                <button type="submit" class="btn-primary flex-1 text-xs py-1.5">Guardar</button>
+                <button type="button" @click="editing = false" class="btn-ghost text-xs py-1.5">Cancelar</button>
+              </div>
             </form>
           </div>
         </div>
