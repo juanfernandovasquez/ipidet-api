@@ -117,6 +117,12 @@ async def toggle_email(member_id: str, email: str = Form(...), estado: str = For
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
 
+@app.post("/members/{member_id}/emails/set-principal")
+async def set_email_principal(member_id: str, email: str = Form(...)):
+    pdb.set_email_principal(member_id, email)
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
 @app.post("/members/{member_id}/emails/add")
 async def add_email(member_id: str, new_email: str = Form(...)):
     if new_email.strip():

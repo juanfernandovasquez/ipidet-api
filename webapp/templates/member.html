@@ -81,20 +81,30 @@
               </div>
             </div>
           </div>
-          <form method="post" action="/members/{{ member.member_id }}/emails/toggle">
-            <input type="hidden" name="email" value="{{ em.email }}">
-            {% if em.estado == 'habilitado' %}
-            <input type="hidden" name="estado" value="inhabilitado">
-            <button type="submit" class="text-xs text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
-              Inhabilitar
-            </button>
-            {% else %}
-            <input type="hidden" name="estado" value="habilitado">
-            <button type="submit" class="text-xs text-slate-500 hover:text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-50 transition-colors">
-              Habilitar
-            </button>
+          <div class="flex items-center gap-1">
+            {% if not em.get('principal') %}
+            <form method="post" action="/members/{{ member.member_id }}/emails/set-principal">
+              <input type="hidden" name="email" value="{{ em.email }}">
+              <button type="submit" class="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors">
+                Hacer principal
+              </button>
+            </form>
             {% endif %}
-          </form>
+            <form method="post" action="/members/{{ member.member_id }}/emails/toggle">
+              <input type="hidden" name="email" value="{{ em.email }}">
+              {% if em.estado == 'habilitado' %}
+              <input type="hidden" name="estado" value="inhabilitado">
+              <button type="submit" class="text-xs text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                Inhabilitar
+              </button>
+              {% else %}
+              <input type="hidden" name="estado" value="habilitado">
+              <button type="submit" class="text-xs text-slate-500 hover:text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-50 transition-colors">
+                Habilitar
+              </button>
+              {% endif %}
+            </form>
+          </div>
         </div>
         {% endfor %}
       </div>

@@ -131,6 +131,18 @@ def update_email_status(member_id: str, email: str, nuevo_estado: str):
     )
 
 
+def set_email_principal(member_id: str, email: str):
+    # Quita principal de todos, luego lo pone solo en el indicado
+    members_col.update_one(
+        {"member_id": member_id},
+        {"$set": {"emails.$[].principal": False}},
+    )
+    members_col.update_one(
+        {"member_id": member_id, "emails.email": email},
+        {"$set": {"emails.$.principal": True}},
+    )
+
+
 def add_email(member_id: str, email: str):
     email = email.strip().lower()
     members_col.update_one(
