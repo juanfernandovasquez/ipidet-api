@@ -148,7 +148,7 @@ async def billing(
     comprobante_emitido: str = "",
     page: int = 1,
 ):
-    docs, total = pdb.get_payments(periodo, estado, empresa, search, page, comprobante_emitido)
+    docs, total = pdb.get_payments(periodo, estado, empresa, search, page, comprobante_emitido=comprobante_emitido)
     return templates.TemplateResponse(request, "billing.html", _ctx(
         payments=docs, total=total,
         periodo=periodo, estado=estado, empresa=empresa, search=search,
