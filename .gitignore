@@ -6,6 +6,7 @@ google_credentials.json
 
 # Datos exportados y temporales
 mongo_export/
+backups/
 *.xlsx
 export_mongo.py
 import_to_atlas.py
