@@ -136,6 +136,19 @@ async def update_notes(member_id: str, notas: str = Form(...)):
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
 
+@app.post("/members/{member_id}/comentarios/add")
+async def add_comentario(member_id: str, texto: str = Form(...)):
+    if texto.strip():
+        pdb.add_comentario(member_id, texto)
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
+@app.post("/members/{member_id}/comentarios/{comentario_id}/delete")
+async def delete_comentario(member_id: str, comentario_id: str):
+    pdb.delete_comentario(member_id, comentario_id)
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
 @app.post("/members/{member_id}/estado")
 async def update_member_estado(member_id: str, estado: str = Form(...)):
     pdb.update_member_estado(member_id, estado)

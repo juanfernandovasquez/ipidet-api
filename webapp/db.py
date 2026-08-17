@@ -158,6 +158,25 @@ def update_member_notes(member_id: str, notas: str):
     )
 
 
+def add_comentario(member_id: str, texto: str):
+    comentario = {
+        "id": str(ObjectId()),
+        "texto": texto.strip(),
+        "fecha": datetime.now(timezone.utc),
+    }
+    members_col.update_one(
+        {"member_id": member_id},
+        {"$push": {"comentarios": comentario}},
+    )
+
+
+def delete_comentario(member_id: str, comentario_id: str):
+    members_col.update_one(
+        {"member_id": member_id},
+        {"$pull": {"comentarios": {"id": comentario_id}}},
+    )
+
+
 def update_member_estado(member_id: str, estado: str):
     members_col.update_one(
         {"member_id": member_id},
