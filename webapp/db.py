@@ -134,7 +134,8 @@ def update_member_estado(member_id: str, estado: str):
 # ── Payments ──────────────────────────────────────────────────────────────────
 
 def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
-                 search: str = "", page: int = 1, per_page: int = 50):
+                 search: str = "", page: int = 1, per_page: int = 50,
+                 comprobante_emitido: str = ""):
     query: dict = {}
     if periodo:
         query["periodo"] = periodo
@@ -142,6 +143,10 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
         query["estado"] = estado
     if empresa:
         query["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
+    if comprobante_emitido == "emitido":
+        query["comprobante_emitido"] = True
+    elif comprobante_emitido == "pendiente":
+        query["$or"] = [{"comprobante_emitido": False}, {"comprobante_emitido": {"$exists": False}}]
 
     if search:
         rx = {"$regex": search, "$options": "i"}
@@ -252,7 +257,8 @@ def get_payments_export(periodo: str = "2026", estado: str = "", empresa: str = 
 def update_payment(payment_id: str, estado: str, empresa: str = None,
                    fecha_pago: str = None, medio: str = None, pagado_por: str = None,
                    num_comprobante: str = None, tipo_comprobante: str = None,
-                   link_constancia: str = None):
+                   link_constancia: str = None, banco_origen: str = None,
+                   comprobante_emitido: bool = None):
     fields = {"estado": estado}
     if empresa is not None:
         fields["empresa_pagadora"] = empresa or None
@@ -268,6 +274,10 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
         fields["tipo_comprobante"] = tipo_comprobante or None
     if link_constancia is not None:
         fields["link_constancia"] = link_constancia or None
+    if banco_origen is not None:
+        fields["banco_origen"] = banco_origen or None
+    if comprobante_emitido is not None:
+        fields["comprobante_emitido"] = comprobante_emitido
     payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": fields})
 
 
@@ -305,7 +315,8 @@ def add_cuota(payment_id: str, monto: float, fecha_venc: str = None):
 
 def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = None,
                  medio_pago: str = None, num_comprobante: str = None,
-                 tipo_comprobante: str = None, link_constancia: str = None):
+                 tipo_comprobante: str = None, link_constancia: str = None,
+                 banco_origen: str = None):
     set_fields = {
         "cuotas.$[el].estado":    estado,
         "cuotas.$[el].fecha_pago": fecha_pago or None,
@@ -318,6 +329,8 @@ def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = No
         set_fields["cuotas.$[el].tipo_comprobante"] = tipo_comprobante or None
     if link_constancia is not None:
         set_fields["cuotas.$[el].link_constancia"] = link_constancia or None
+    if banco_origen is not None:
+        set_fields["cuotas.$[el].banco_origen"] = banco_origen or None
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
         {"$set": set_fields},
@@ -346,7 +359,8 @@ def set_monto_total(payment_id: str, monto_total: float):
 
 def add_pago_parcial(payment_id: str, monto: float, fecha_pago: str = None,
                      medio: str = None, num_comprobante: str = None,
-                     tipo_comprobante: str = None, link_constancia: str = None):
+                     tipo_comprobante: str = None, link_constancia: str = None,
+                     banco_origen: str = None):
     doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"pagos_parciales": 1})
     parciales = doc.get("pagos_parciales", []) if doc else []
     numero = max((p.get("numero", 0) for p in parciales), default=0) + 1
@@ -360,8 +374,37 @@ def add_pago_parcial(payment_id: str, monto: float, fecha_pago: str = None,
             "num_comprobante":  num_comprobante,
             "tipo_comprobante": tipo_comprobante,
             "link_constancia":  link_constancia,
+            "banco_origen":     banco_origen,
         }}},
     )
+    _sync_estado_from_parciales(payment_id)
+
+
+def update_pago_parcial(payment_id: str, numero: int, monto: float = None,
+                        fecha_pago: str = None, medio: str = None,
+                        num_comprobante: str = None, tipo_comprobante: str = None,
+                        link_constancia: str = None, banco_origen: str = None):
+    set_fields = {}
+    if monto is not None:
+        set_fields["pagos_parciales.$[el].monto"] = monto
+    if fecha_pago is not None:
+        set_fields["pagos_parciales.$[el].fecha_pago"] = fecha_pago or None
+    if medio is not None:
+        set_fields["pagos_parciales.$[el].medio_pago"] = medio or None
+    if num_comprobante is not None:
+        set_fields["pagos_parciales.$[el].num_comprobante"] = num_comprobante or None
+    if tipo_comprobante is not None:
+        set_fields["pagos_parciales.$[el].tipo_comprobante"] = tipo_comprobante or None
+    if link_constancia is not None:
+        set_fields["pagos_parciales.$[el].link_constancia"] = link_constancia or None
+    if banco_origen is not None:
+        set_fields["pagos_parciales.$[el].banco_origen"] = banco_origen or None
+    if set_fields:
+        payments_col.update_one(
+            {"_id": ObjectId(payment_id)},
+            {"$set": set_fields},
+            array_filters=[{"el.numero": numero}],
+        )
     _sync_estado_from_parciales(payment_id)
 
 

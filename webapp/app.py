@@ -135,12 +135,14 @@ async def billing(
     estado: str = "",
     empresa: str = "",
     search: str = "",
+    comprobante_emitido: str = "",
     page: int = 1,
 ):
-    docs, total = pdb.get_payments(periodo, estado, empresa, search, page)
+    docs, total = pdb.get_payments(periodo, estado, empresa, search, page, comprobante_emitido)
     return templates.TemplateResponse(request, "billing.html", _ctx(
         payments=docs, total=total,
         periodo=periodo, estado=estado, empresa=empresa, search=search,
+        comprobante_emitido=comprobante_emitido,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
     ))
@@ -222,11 +224,15 @@ async def update_payment(
     num_comprobante: str = Form(""),
     tipo_comprobante: str = Form(""),
     link_constancia: str = Form(""),
+    banco_origen: str = Form(""),
+    comprobante_emitido: str = Form(""),
     redirect_to: str = Form("/billing"),
 ):
+    comp_emit = True if comprobante_emitido == "true" else (False if comprobante_emitido == "false" else None)
     pdb.update_payment(payment_id, estado, empresa or None, fecha_pago or None,
                        medio or None, pagado_por or None, num_comprobante or None,
-                       tipo_comprobante or None, link_constancia or None)
+                       tipo_comprobante or None, link_constancia or None,
+                       banco_origen or None, comp_emit)
     return RedirectResponse(redirect_to, status_code=303)
 
 
@@ -251,11 +257,13 @@ async def update_cuota(
     num_comprobante: str = Form(""),
     tipo_comprobante: str = Form(""),
     link_constancia: str = Form(""),
+    banco_origen: str = Form(""),
     redirect_to: str = Form("/billing"),
 ):
     pdb.update_cuota(payment_id, numero, estado, fecha_pago or None,
                      medio or None, num_comprobante or None,
-                     tipo_comprobante or None, link_constancia or None)
+                     tipo_comprobante or None, link_constancia or None,
+                     banco_origen or None)
     return RedirectResponse(redirect_to, status_code=303)
 
 
@@ -288,11 +296,32 @@ async def add_pago_parcial(
     num_comprobante: str = Form(""),
     tipo_comprobante: str = Form(""),
     link_constancia: str = Form(""),
+    banco_origen: str = Form(""),
     redirect_to: str = Form("/billing"),
 ):
     pdb.add_pago_parcial(payment_id, monto, fecha_pago or None, medio or None,
                          num_comprobante or None, tipo_comprobante or None,
-                         link_constancia or None)
+                         link_constancia or None, banco_origen or None)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/billing/{payment_id}/parciales/{numero}/update")
+async def update_pago_parcial(
+    payment_id: str,
+    numero: int,
+    monto: float = Form(...),
+    fecha_pago: str = Form(""),
+    medio: str = Form(""),
+    num_comprobante: str = Form(""),
+    tipo_comprobante: str = Form(""),
+    link_constancia: str = Form(""),
+    banco_origen: str = Form(""),
+    redirect_to: str = Form("/billing"),
+):
+    pdb.update_pago_parcial(payment_id, numero, monto, fecha_pago or None,
+                            medio or None, num_comprobante or None,
+                            tipo_comprobante or None, link_constancia or None,
+                            banco_origen or None)
     return RedirectResponse(redirect_to, status_code=303)
 
 
