@@ -62,7 +62,17 @@ STATUS_LABELS = {
 }
 
 def _ctx(**kwargs):
-    return {"status_labels": STATUS_LABELS, **kwargs}
+    return {
+        "status_labels": STATUS_LABELS,
+        "medios_pago": pdb.MEDIOS_PAGO,
+        "bancos": pdb.BANCOS,
+        **kwargs,
+    }
+
+
+@app.on_event("startup")
+async def _startup():
+    pdb.seed_companies()
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -387,6 +397,25 @@ async def add_faq(
 async def delete_faq(faq_id: str):
     pdb.delete_faq(faq_id)
     return RedirectResponse("/faqs", status_code=303)
+
+
+# ── API empresas ─────────────────────────────────────────────────────────────
+
+@app.get("/api/companies")
+async def api_companies(q: str = ""):
+    return pdb.get_companies(q)
+
+
+@app.post("/api/companies")
+async def api_add_company(nombre: str = Form(...), ruc: str = Form(""), tipo: str = Form("empresa")):
+    pdb.add_company(nombre, ruc, tipo)
+    return {"ok": True}
+
+
+@app.delete("/api/companies/{company_id}")
+async def api_delete_company(company_id: str):
+    pdb.delete_company(company_id)
+    return {"ok": True}
 
 
 # ── API (para uso del bot) ────────────────────────────────────────────────────

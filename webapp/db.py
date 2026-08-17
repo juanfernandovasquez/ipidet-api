@@ -25,6 +25,27 @@ members_col = _db.members
 payments_col = _db.payments
 faqs_col = _db.faqs
 events_col = _db.events
+companies_col = _db.companies
+
+MEDIOS_PAGO = [
+    "Transferencia bancaria",
+    "Depósito bancario",
+    "Efectivo",
+    "Yape / Plin",
+    "WooCommerce",
+    "Cheque",
+    "Otro",
+]
+
+BANCOS = [
+    "BCP",
+    "Interbank",
+    "BBVA",
+    "Scotiabank",
+    "BanBif",
+    "Banco de la Nación",
+    "Otro",
+]
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -590,3 +611,32 @@ def delete_faq(faq_id: str):
 
 def get_faq_categories() -> list[str]:
     return faqs_col.distinct("category", {"active": True})
+
+
+# ── Empresas ──────────────────────────────────────────────────────────────────
+
+_SEED_COMPANIES = [
+    {"nombre": "EY",           "ruc": "", "tipo": "auditora"},
+    {"nombre": "BDO",          "ruc": "", "tipo": "auditora"},
+    {"nombre": "PwC",          "ruc": "", "tipo": "auditora"},
+    {"nombre": "KPMG",         "ruc": "", "tipo": "auditora"},
+    {"nombre": "PPU",          "ruc": "", "tipo": "firma_legal"},
+    {"nombre": "SABHA S.A.C.", "ruc": "", "tipo": "empresa"},
+]
+
+def seed_companies():
+    if companies_col.count_documents({}) == 0:
+        companies_col.insert_many(_SEED_COMPANIES)
+
+def get_companies(search: str = "") -> list:
+    query = {}
+    if search.strip():
+        query = {"nombre": {"$regex": _re.escape(search.strip()), "$options": "i"}}
+    docs = list(companies_col.find(query, {"_id": 1, "nombre": 1, "ruc": 1, "tipo": 1}).limit(10))
+    return _clean(docs)
+
+def add_company(nombre: str, ruc: str = "", tipo: str = "empresa"):
+    companies_col.insert_one({"nombre": nombre.strip(), "ruc": ruc.strip(), "tipo": tipo})
+
+def delete_company(company_id: str):
+    companies_col.delete_one({"_id": ObjectId(company_id)})

@@ -96,7 +96,7 @@
       {% for p in payments %}
       {% set sl = status_labels.get(p.estado, ('—','gray')) %}
       {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&comprobante_emitido=" ~ comprobante_emitido ~ "&page=" ~ page %}
-      <tbody x-data="{ editing: false, tipoPagador: '{{ 'empresa' if p.get('empresa_pagadora') else 'socio' }}', empresaVal: '{{ p.get('empresa_pagadora', '') }}', copied: false }" class="border-b border-slate-100">
+      <tbody x-data="billingRow({{ p.get('empresa_pagadora') | tojson }})" class="border-b border-slate-100">
         <tr class="hover:bg-slate-50 transition-colors">
           <td class="px-4 py-3">
             <div class="font-medium text-slate-800 text-xs">{{ p.get('nombre_completo','') }}</div>
@@ -183,11 +183,21 @@
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
-                <input name="medio" value="{{ p.get('medio_pago','') }}" placeholder="Transferencia, efectivo…" class="input text-xs py-1 w-32">
+                <select name="medio" class="input text-xs py-1">
+                  <option value="">— Medio —</option>
+                  {% for m in medios_pago %}
+                  <option value="{{ m }}" {% if p.get('medio_pago') == m %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Banco origen</label>
-                <input name="banco_origen" value="{{ p.get('banco_origen','') }}" placeholder="BCP, Interbank…" class="input text-xs py-1 w-28">
+                <select name="banco_origen" class="input text-xs py-1">
+                  <option value="">— Banco —</option>
+                  {% for b in bancos %}
+                  <option value="{{ b }}" {% if p.get('banco_origen') == b %}selected{% endif %}>{{ b }}</option>
+                  {% endfor %}
+                </select>
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">¿Quién pagó?</label>
@@ -196,9 +206,27 @@
                   <option value="empresa" :selected="tipoPagador === 'empresa'">Empresa empleadora</option>
                 </select>
               </div>
-              <div x-show="tipoPagador === 'empresa'" x-cloak>
+              <div x-show="tipoPagador === 'empresa'" x-cloak class="relative">
                 <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
-                <input x-model="empresaVal" placeholder="EY, BDO, PWC…" class="input text-xs py-1 w-28">
+                <input x-model="empresaVal"
+                       @input.debounce.300ms="fetchCompanies()"
+                       @focus="if (empresaVal && empresaVal.length > 0) fetchCompanies()"
+                       @keydown.escape="showSuggestions = false"
+                       placeholder="Buscar empresa…"
+                       class="input text-xs py-1 w-40"
+                       autocomplete="off">
+                <div x-show="showSuggestions && companySuggestions.length > 0"
+                     @click.outside="showSuggestions = false"
+                     class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-48">
+                  <template x-for="c in companySuggestions" :key="c._id">
+                    <button type="button"
+                            @click="empresaVal = c.nombre; showSuggestions = false"
+                            class="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                      <div class="font-medium" x-text="c.nombre"></div>
+                      <div class="text-slate-400" x-show="c.ruc" x-text="'RUC: ' + c.ruc"></div>
+                    </button>
+                  </template>
+                </div>
               </div>
               <input type="hidden" name="empresa" :value="tipoPagador === 'empresa' ? empresaVal : ''">
               <div>
@@ -288,8 +316,14 @@
                             <option value="recibo">Recibo</option>
                           </select>
                           <input name="num_comprobante" placeholder="N° doc." class="input text-xs py-0.5 w-20">
-                          <input name="medio" placeholder="Medio" class="input text-xs py-0.5 w-24">
-                          <input name="banco_origen" placeholder="Banco" class="input text-xs py-0.5 w-20">
+                          <select name="medio" class="input text-xs py-0.5">
+                            <option value="">Medio</option>
+                            {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                          </select>
+                          <select name="banco_origen" class="input text-xs py-0.5">
+                            <option value="">Banco</option>
+                            {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+                          </select>
                           <input name="link_constancia" placeholder="Link constancia" class="input text-xs py-0.5 w-32">
                           <button type="submit" class="text-green-600 hover:text-green-800 font-semibold text-xs">✓ Pagar</button>
                         </form>
@@ -412,11 +446,21 @@
                           </div>
                           <div>
                             <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
-                            <input name="medio" value="{{ pp.get('medio_pago','') }}" placeholder="Transferencia…" class="input text-xs py-0.5 w-24">
+                            <select name="medio" class="input text-xs py-0.5">
+                              <option value="">— Medio —</option>
+                              {% for m in medios_pago %}
+                              <option value="{{ m }}" {% if pp.get('medio_pago') == m %}selected{% endif %}>{{ m }}</option>
+                              {% endfor %}
+                            </select>
                           </div>
                           <div>
                             <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
-                            <input name="banco_origen" value="{{ pp.get('banco_origen','') }}" placeholder="BCP…" class="input text-xs py-0.5 w-20">
+                            <select name="banco_origen" class="input text-xs py-0.5">
+                              <option value="">— Banco —</option>
+                              {% for b in bancos %}
+                              <option value="{{ b }}" {% if pp.get('banco_origen') == b %}selected{% endif %}>{{ b }}</option>
+                              {% endfor %}
+                            </select>
                           </div>
                           <div>
                             <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
@@ -472,11 +516,17 @@
                   </div>
                   <div>
                     <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
-                    <input name="medio" placeholder="Transferencia…" class="input text-xs py-1 w-28">
+                    <select name="medio" class="input text-xs py-1">
+                      <option value="">— Medio —</option>
+                      {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                    </select>
                   </div>
                   <div>
                     <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
-                    <input name="banco_origen" placeholder="BCP, Interbank…" class="input text-xs py-1 w-24">
+                    <select name="banco_origen" class="input text-xs py-1">
+                      <option value="">— Banco —</option>
+                      {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+                    </select>
                   </div>
                   <div>
                     <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
@@ -532,4 +582,23 @@
   </div>
 
 </div>
+
+<script>
+function billingRow(initialEmpresa) {
+  return {
+    editing: false,
+    tipoPagador: initialEmpresa ? 'empresa' : 'socio',
+    empresaVal: initialEmpresa || '',
+    copied: false,
+    companySuggestions: [],
+    showSuggestions: false,
+    fetchCompanies() {
+      if (!this.empresaVal || this.empresaVal.length < 1) { this.showSuggestions = false; return; }
+      fetch('/api/companies?q=' + encodeURIComponent(this.empresaVal))
+        .then(r => r.json())
+        .then(d => { this.companySuggestions = d; this.showSuggestions = d.length > 0; });
+    }
+  };
+}
+</script>
 {% endblock %}
