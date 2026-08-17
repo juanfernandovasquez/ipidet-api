@@ -335,6 +335,13 @@ async def delete_pago_parcial(
     return RedirectResponse(redirect_to, status_code=303)
 
 
+# ── Finanzas (mockup) ─────────────────────────────────────────────────────────
+
+@app.get("/finanzas", response_class=HTMLResponse)
+async def finanzas_mockup(request: Request):
+    return templates.TemplateResponse(request, "finanzas_mockup.html", _ctx())
+
+
 # ── Fraccionamientos ─────────────────────────────────────────────────────────
 
 @app.get("/fraccionamientos", response_class=HTMLResponse)
