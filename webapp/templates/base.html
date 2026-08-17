@@ -44,8 +44,11 @@
         <i class="fa-solid fa-users w-4"></i> Socios
       </a>
       <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Finanzas</div>
-      <a href="/billing" class="sidebar-link {% if '/billing' in request.url.path %}active{% endif %}">
+      <a href="/billing" class="sidebar-link {% if request.url.path == '/billing' %}active{% endif %}">
         <i class="fa-solid fa-money-bill-wave w-4"></i> Cobranzas
+      </a>
+      <a href="/fraccionamientos" class="sidebar-link {% if '/fraccionamientos' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-calendar-days w-4"></i> Fraccionamientos
       </a>
       <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Comunicación</div>
       <a href="/faqs" class="sidebar-link {% if '/faqs' in request.url.path %}active{% endif %}">

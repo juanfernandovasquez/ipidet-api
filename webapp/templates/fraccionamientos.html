@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Fraccionamientos — IPIDET{% endblock %}
+{% block heading %}Fraccionamientos{% endblock %}
+
+{% block header_actions %}
+<span class="text-sm text-slate-500">{{ total }} activo{% if total != 1 %}s{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<div x-data="{ t: null }">
+
+  <!-- Stats cards -->
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Fraccionamientos activos</div>
+      <div class="text-2xl font-bold text-slate-800">{{ stats.total }}</div>
+    </div>
+    <div class="bg-white rounded-xl border {% if stats.cuotas_vencidas > 0 %}border-red-300 bg-red-50{% else %}border-slate-200{% endif %} p-4">
+      <div class="text-xs {% if stats.cuotas_vencidas > 0 %}text-red-600{% else %}text-slate-500{% endif %} uppercase tracking-wide mb-1">Cuotas vencidas</div>
+      <div class="text-2xl font-bold {% if stats.cuotas_vencidas > 0 %}text-red-700{% else %}text-slate-800{% endif %}">
+        {{ stats.cuotas_vencidas }}
+        {% if stats.cuotas_vencidas > 0 %}<i class="fa-solid fa-triangle-exclamation text-lg ml-1"></i>{% endif %}
+      </div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Total cobrado</div>
+      <div class="text-2xl font-bold text-green-700">S/ {{ stats.total_cobrado | int }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Total pendiente</div>
+      <div class="text-2xl font-bold text-blue-700">S/ {{ stats.total_pendiente | int }}</div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+    <form x-ref="filterForm" method="get" action="/fraccionamientos" class="flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Buscar socio</label>
+        <input name="search" value="{{ search }}" placeholder="Nombre, ID, email…" class="input w-56"
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)"
+               x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
+        <select name="periodo" class="input" @change="$refs.filterForm.submit()">
+          {% for yr in ["2026","2025","2024"] %}
+          <option value="{{ yr }}" {% if periodo == yr %}selected{% endif %}>{{ yr }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Estado de alerta</label>
+        <select name="alerta" class="input" @change="$refs.filterForm.submit()">
+          <option value="" {% if not alerta %}selected{% endif %}>Todos</option>
+          <option value="vencida"     {% if alerta == 'vencida'     %}selected{% endif %}>🔴 Cuota vencida</option>
+          <option value="proxima_7d"  {% if alerta == 'proxima_7d'  %}selected{% endif %}>🟡 Vence esta semana</option>
+          <option value="proxima_30d" {% if alerta == 'proxima_30d' %}selected{% endif %}>🟨 Vence este mes</option>
+          <option value="al_dia"      {% if alerta == 'al_dia'      %}selected{% endif %}>🟢 Al día</option>
+          <option value="sin_fechas"  {% if alerta == 'sin_fechas'  %}selected{% endif %}>⚪ Sin fechas</option>
+        </select>
+      </div>
+      <button type="submit" class="sr-only">Filtrar</button>
+      {% if search or alerta or periodo != "2026" %}
+      <a href="/fraccionamientos" class="btn-ghost">Limpiar</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-200 text-left">
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Socio</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Período</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Empresa</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Progreso</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Cobrado</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Pendiente</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Próxima cuota</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Alerta</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+
+      {% for f in fraccionamientos %}
+      {% set pct = ((f.cuotas_pagadas_count / f.cuotas_total * 100) | int) if f.cuotas_total > 0 else 0 %}
+      <tbody x-data="{ open: false }" class="border-b border-slate-100">
+        <tr class="hover:bg-slate-50 transition-colors
+          {% if f.alerta == 'vencida' %}bg-red-50 hover:bg-red-100{% endif %}">
+
+          <td class="px-4 py-3">
+            <div class="font-medium text-slate-800 text-xs">{{ f.get('nombre_completo','') }}</div>
+            <div class="text-slate-400 text-xs font-mono">{{ f.get('member_id','') }}</div>
+            {% if f.get('email_principal') %}
+            <div class="text-slate-400 text-xs">{{ f.email_principal }}</div>
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-3 text-slate-600 font-semibold text-xs">{{ f.periodo }}</td>
+
+          <td class="px-4 py-3 text-slate-500 text-xs">
+            {{ f.get('empresa_pagadora') or '—' }}
+          </td>
+
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium text-slate-700">{{ f.cuotas_pagadas_count }}/{{ f.cuotas_total }}</span>
+              <div class="w-20 bg-slate-200 rounded-full h-1.5">
+                <div class="h-1.5 rounded-full {% if pct == 100 %}bg-green-500{% elif f.cuotas_vencidas_count > 0 %}bg-red-500{% else %}bg-blue-500{% endif %}"
+                     style="width: {{ pct }}%"></div>
+              </div>
+            </div>
+            {% if f.cuotas_vencidas_count > 0 %}
+            <div class="text-xs text-red-600 font-medium mt-0.5">
+              {{ f.cuotas_vencidas_count }} vencida{% if f.cuotas_vencidas_count > 1 %}s{% endif %}
+            </div>
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-3 text-green-700 font-semibold text-xs">
+            S/ {{ f.total_cobrado | int }}
+          </td>
+
+          <td class="px-4 py-3 text-blue-700 font-semibold text-xs">
+            S/ {{ f.total_pendiente | int }}
+          </td>
+
+          <td class="px-4 py-3 text-xs">
+            {% if f.get('proxima_cuota') %}
+              {% set pc = f.proxima_cuota %}
+              <div class="font-medium text-slate-700">S/ {{ pc.monto }}</div>
+              {% if f.get('proxima_cuota_fecha_iso') %}
+                <div class="text-slate-400">
+                  {{ f.proxima_cuota_fecha_iso | format_fecha }}
+                  {% if f.proxima_cuota_dias is not none %}
+                    {% if f.proxima_cuota_dias == 0 %}
+                      <span class="text-red-600 font-semibold">(hoy)</span>
+                    {% elif f.proxima_cuota_dias < 0 %}
+                      <span class="text-red-600 font-semibold">({{ f.proxima_cuota_dias | abs }}d atrás)</span>
+                    {% elif f.proxima_cuota_dias <= 7 %}
+                      <span class="text-amber-600 font-semibold">({{ f.proxima_cuota_dias }}d)</span>
+                    {% else %}
+                      <span class="text-slate-400">({{ f.proxima_cuota_dias }}d)</span>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              {% else %}
+                <div class="text-slate-400 italic">Sin fecha</div>
+              {% endif %}
+            {% else %}
+              <span class="text-slate-400">—</span>
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-3">
+            {% if f.alerta == 'vencida' %}
+              <span class="badge badge-red">🔴 Vencida</span>
+            {% elif f.alerta == 'proxima_7d' %}
+              <span class="badge badge-amber">🟡 Esta semana</span>
+            {% elif f.alerta == 'proxima_30d' %}
+              <span class="badge badge-yellow">🟨 Este mes</span>
+            {% elif f.alerta == 'al_dia' %}
+              <span class="badge badge-green">🟢 Al día</span>
+            {% else %}
+              <span class="badge badge-gray">⚪ Sin fechas</span>
+            {% endif %}
+          </td>
+
+          <td class="px-4 py-3 text-right">
+            <div class="flex items-center justify-end gap-2">
+              <a href="/billing?search={{ f.member_id }}&periodo={{ f.periodo }}&estado=fraccionamiento"
+                 class="text-xs text-slate-400 hover:text-blue-600" title="Editar en cobranzas">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </a>
+              <a href="/members/{{ f.member_id }}"
+                 class="text-xs text-slate-400 hover:text-blue-600" title="Ver socio">
+                <i class="fa-solid fa-user"></i>
+              </a>
+              <button @click="open = !open"
+                      class="text-xs font-medium"
+                      :class="open ? 'text-slate-500' : 'text-blue-600 hover:text-blue-800'"
+                      x-text="open ? 'Cerrar ✕' : 'Cuotas'"></button>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Detalle expandible: cuotas -->
+        <tr x-show="open" x-cloak>
+          <td colspan="9" class="px-6 py-4 bg-slate-50 border-t border-slate-200">
+
+            {% if f.get('cuotas') %}
+            <div class="text-xs font-semibold text-slate-600 mb-2">Cronograma de cuotas</div>
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="text-slate-400 border-b border-slate-200">
+                  <th class="text-left py-1 pr-4 font-medium">N°</th>
+                  <th class="text-left py-1 pr-4 font-medium">Monto</th>
+                  <th class="text-left py-1 pr-4 font-medium">Vencimiento</th>
+                  <th class="text-left py-1 pr-4 font-medium">Estado</th>
+                  <th class="text-left py-1 pr-4 font-medium">Fecha pago</th>
+                  <th class="text-left py-1 pr-4 font-medium">Medio / Banco</th>
+                  <th class="text-left py-1 pr-4 font-medium">N° comp.</th>
+                  <th class="text-left py-1 font-medium">Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cuota in f.cuotas %}
+                {% set es_vencida = cuota.estado != 'pagado' and cuota.get('fecha_venc') and cuota.fecha_venc < periodo ~ '-99' %}
+                <tr class="border-b border-slate-100 {% if cuota.estado == 'pagado' %}{% elif es_vencida %}bg-red-50{% endif %}">
+                  <td class="py-1.5 pr-4 text-slate-600 font-medium">{{ cuota.numero }}</td>
+                  <td class="py-1.5 pr-4 font-semibold text-slate-800">S/ {{ cuota.monto }}</td>
+                  <td class="py-1.5 pr-4">
+                    <span class="{% if cuota.estado != 'pagado' and cuota.get('fecha_venc') %}{% if es_vencida %}text-red-600 font-semibold{% else %}text-slate-500{% endif %}{% else %}text-slate-400{% endif %}">
+                      {{ cuota.get('fecha_venc') or '—' }}
+                    </span>
+                  </td>
+                  <td class="py-1.5 pr-4">
+                    {% if cuota.estado == 'pagado' %}
+                      <span class="badge badge-green">✓ Pagado</span>
+                    {% else %}
+                      <span class="badge badge-{{ 'red' if es_vencida else 'yellow' }}">
+                        {{ '⚠ Vencida' if es_vencida else 'Pendiente' }}
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td class="py-1.5 pr-4 text-slate-500">{{ cuota.get('fecha_pago') or '—' }}</td>
+                  <td class="py-1.5 pr-4 text-slate-500">
+                    {{ cuota.get('medio_pago') or '' }}
+                    {% if cuota.get('banco_origen') %}
+                      {% if cuota.get('medio_pago') %} · {% endif %}{{ cuota.banco_origen }}
+                    {% endif %}
+                    {% if not cuota.get('medio_pago') and not cuota.get('banco_origen') %}—{% endif %}
+                  </td>
+                  <td class="py-1.5 pr-4 text-slate-500 font-mono">{{ cuota.get('num_comprobante') or '—' }}</td>
+                  <td class="py-1.5">
+                    {% if cuota.get('link_constancia') %}
+                    <a href="{{ cuota.link_constancia }}" target="_blank" rel="noopener"
+                       class="text-blue-500 hover:underline">🔗 Ver</a>
+                    {% else %}—{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+
+            <!-- Resumen del cronograma -->
+            <div class="mt-3 flex flex-wrap gap-4 text-xs text-slate-600">
+              <span>Total cuotas: <strong>{{ f.cuotas_total }}</strong></span>
+              <span class="text-green-700">Pagadas: <strong>{{ f.cuotas_pagadas_count }}</strong> · S/ {{ f.total_cobrado | int }}</span>
+              <span class="text-blue-700">Pendientes: <strong>{{ f.cuotas_total - f.cuotas_pagadas_count }}</strong> · S/ {{ f.total_pendiente | int }}</span>
+              {% if f.cuotas_vencidas_count > 0 %}
+              <span class="text-red-600 font-semibold">Vencidas sin pago: {{ f.cuotas_vencidas_count }}</span>
+              {% endif %}
+            </div>
+
+            {% else %}
+            <p class="text-slate-400 text-xs">Sin cuotas registradas.</p>
+            {% endif %}
+
+            <div class="mt-3 pt-3 border-t border-slate-200 flex gap-3">
+              <a href="/billing?search={{ f.member_id }}&periodo={{ f.periodo }}&estado=fraccionamiento"
+                 class="text-xs text-blue-600 hover:underline">
+                <i class="fa-solid fa-pen-to-square mr-1"></i>Editar cuotas en Cobranzas
+              </a>
+              <a href="/members/{{ f.member_id }}"
+                 class="text-xs text-slate-500 hover:text-blue-600 hover:underline">
+                <i class="fa-solid fa-user mr-1"></i>Ver ficha del socio
+              </a>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+      {% else %}
+      <tbody>
+        <tr>
+          <td colspan="9" class="px-4 py-12 text-center text-slate-400">
+            <i class="fa-solid fa-calendar-days text-2xl mb-2 block text-slate-300"></i>
+            No hay fraccionamientos activos con estos filtros.
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="border-t border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50">
+      <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }}</span>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a href="?periodo={{ periodo }}&alerta={{ alerta }}&search={{ search }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
+        {% endif %}
+        {% if page < total_pages %}
+        <a href="?periodo={{ periodo }}&alerta={{ alerta }}&search={{ search }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

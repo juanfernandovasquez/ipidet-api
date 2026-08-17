@@ -335,6 +335,25 @@ async def delete_pago_parcial(
     return RedirectResponse(redirect_to, status_code=303)
 
 
+# ── Fraccionamientos ─────────────────────────────────────────────────────────
+
+@app.get("/fraccionamientos", response_class=HTMLResponse)
+async def fraccionamientos(
+    request: Request,
+    periodo: str = "2026",
+    alerta: str = "",
+    search: str = "",
+    page: int = 1,
+):
+    docs, total, stats = pdb.get_fraccionamientos(periodo, alerta, search, page)
+    return templates.TemplateResponse(request, "fraccionamientos.html", _ctx(
+        fraccionamientos=docs, total=total, stats=stats,
+        periodo=periodo, alerta=alerta, search=search,
+        page=page, per_page=50,
+        total_pages=max(1, (total + 49) // 50),
+    ))
+
+
 # ── FAQs ──────────────────────────────────────────────────────────────────────
 
 @app.get("/faqs", response_class=HTMLResponse)

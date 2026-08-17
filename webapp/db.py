@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import re as _re
+from datetime import datetime, timezone, date as _date, timedelta as _timedelta
 from bson import ObjectId
 from pymongo import MongoClient
 from config.settings import MONGODB_URI, DB_NAME
@@ -434,6 +435,130 @@ def _sync_estado_from_parciales(payment_id: str):
         new_estado = "parcial"
     if doc.get("estado") != new_estado:
         payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": {"estado": new_estado}})
+
+
+# ── Fraccionamientos ──────────────────────────────────────────────────────────
+
+def _parse_fecha_cuota(s) -> "_date | None":
+    """Parsea fecha_venc en formato YYYY-MM-DD, DD/MM/YYYY o DD.MM.YYYY."""
+    if not s:
+        return None
+    m = _re.match(r'(\d{4})-(\d{2})-(\d{2})', str(s))
+    if m:
+        try: return _date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except: pass
+    m = _re.match(r'(\d{1,2})[./](\d{1,2})[./](\d{4})', str(s))
+    if m:
+        try: return _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except: pass
+    return None
+
+
+def get_fraccionamientos(periodo: str = "2026", alerta: str = "",
+                          search: str = "", page: int = 1, per_page: int = 50):
+    query: dict = {"estado": "fraccionamiento"}
+    if periodo:
+        query["periodo"] = periodo
+    if search:
+        rx = {"$regex": search, "$options": "i"}
+        ids = {m["member_id"] for m in members_col.find(
+            {"$or": [{"apellidos": rx}, {"nombres": rx}, {"member_id": rx},
+                     {"emails.email": rx}]}, {"member_id": 1}
+        )}
+        if not ids:
+            return [], 0, {"total": 0, "cuotas_vencidas": 0,
+                           "total_cobrado": 0.0, "total_pendiente": 0.0}
+        query["member_id"] = {"$in": list(ids)}
+
+    docs = list(payments_col.find(query))
+    member_ids = [d["member_id"] for d in docs]
+    member_map = {m["member_id"]: m for m in
+                  members_col.find({"member_id": {"$in": member_ids}})}
+
+    today = _date.today()
+
+    for d in docs:
+        m = member_map.get(d["member_id"], {})
+        d["nombre_completo"] = f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
+        d["email_principal"] = next(
+            (e["email"] for e in m.get("emails", [])
+             if e.get("principal") and e.get("estado") == "habilitado"),
+            next((e["email"] for e in m.get("emails", [])
+                  if e.get("estado") == "habilitado"), "")
+        )
+
+        cuotas = d.get("cuotas", [])
+        pagadas  = [c for c in cuotas if c.get("estado") == "pagado"]
+        pendientes = [c for c in cuotas if c.get("estado") != "pagado"]
+
+        d["cuotas_total"]        = len(cuotas)
+        d["cuotas_pagadas_count"] = len(pagadas)
+        d["total_cobrado"]       = round(sum(c.get("monto", 0) for c in pagadas), 2)
+        d["total_pendiente"]     = round(sum(c.get("monto", 0) for c in pendientes), 2)
+
+        vencidas, proximas, sin_fecha = [], [], []
+        for c in pendientes:
+            fv = _parse_fecha_cuota(c.get("fecha_venc"))
+            if fv is None:
+                sin_fecha.append(c)
+            elif fv < today:
+                vencidas.append((fv, c))
+            else:
+                proximas.append((fv, c))
+
+        proximas.sort(key=lambda x: x[0])
+        vencidas.sort(key=lambda x: x[0])
+
+        d["cuotas_vencidas_count"] = len(vencidas)
+        d["cuotas_vencidas_lista"] = [c for _, c in vencidas]
+
+        if proximas:
+            d["proxima_cuota"] = proximas[0][1]
+            d["proxima_cuota_fecha_iso"] = proximas[0][0].isoformat()
+            dias = (proximas[0][0] - today).days
+            d["proxima_cuota_dias"] = dias
+        elif sin_fecha and pendientes:
+            d["proxima_cuota"] = sin_fecha[0]
+            d["proxima_cuota_fecha_iso"] = None
+            d["proxima_cuota_dias"] = None
+        else:
+            d["proxima_cuota"] = None
+            d["proxima_cuota_fecha_iso"] = None
+            d["proxima_cuota_dias"] = None
+
+        if vencidas:
+            d["alerta"] = "vencida"
+        elif proximas and proximas[0][0] <= today + _timedelta(days=7):
+            d["alerta"] = "proxima_7d"
+        elif proximas and proximas[0][0] <= today + _timedelta(days=30):
+            d["alerta"] = "proxima_30d"
+        elif pendientes and not proximas and not vencidas:
+            d["alerta"] = "sin_fechas"
+        else:
+            d["alerta"] = "al_dia"
+
+    if alerta:
+        docs = [d for d in docs if d.get("alerta") == alerta]
+
+    stats = {
+        "total":           len(docs),
+        "cuotas_vencidas": sum(d.get("cuotas_vencidas_count", 0) for d in docs),
+        "total_cobrado":   round(sum(d.get("total_cobrado", 0) for d in docs), 2),
+        "total_pendiente": round(sum(d.get("total_pendiente", 0) for d in docs), 2),
+    }
+
+    # Ordenar: vencidas primero, luego por nombre
+    docs_sorted = sorted(docs, key=lambda d: (
+        0 if d["alerta"] == "vencida" else
+        1 if d["alerta"] == "proxima_7d" else
+        2 if d["alerta"] == "proxima_30d" else
+        3 if d["alerta"] == "sin_fechas" else 4,
+        d.get("nombre_completo", "")
+    ))
+
+    total = len(docs_sorted)
+    skip = (page - 1) * per_page
+    return [_clean(d) for d in docs_sorted[skip:skip + per_page]], total, stats
 
 
 # ── FAQs ──────────────────────────────────────────────────────────────────────
