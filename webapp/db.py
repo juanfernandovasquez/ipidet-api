@@ -32,6 +32,7 @@ MEDIOS_PAGO = [
     "Depósito bancario",
     "Efectivo",
     "Yape / Plin",
+    "Niubiz",
     "WooCommerce",
     "Cheque",
     "Otro",
