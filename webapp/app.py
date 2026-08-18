@@ -123,8 +123,21 @@ async def _startup():
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
+_SECTION_PATHS = [
+    ("members", "/members"), ("billing", "/billing"),
+    ("fraccionamientos", "/fraccionamientos"), ("finanzas", "/finanzas"),
+    ("faqs", "/faqs"), ("marketing", "/marketing"),
+]
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
+    role     = request.session.get("user_role", "viewer")
+    permisos = request.session.get("user_permisos", [])
+    if role != "admin" and "dashboard" not in permisos:
+        for sec, path in _SECTION_PATHS:
+            if sec in permisos:
+                return RedirectResponse(path, status_code=302)
+        return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>Sin acceso asignado. Contacta al administrador.</h2>")
     stats = pdb.get_stats()
     return templates.TemplateResponse(request, "dashboard.html", _ctx(request, stats=stats))
 

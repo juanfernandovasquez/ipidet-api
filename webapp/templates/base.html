@@ -66,12 +66,14 @@
     <!-- Nav -->
     <nav class="flex-1 px-2.5 py-3 overflow-y-auto">
 
+      {% set p = current_user_permisos %}
+      {% set is_admin = current_user_role == 'admin' %}
+
+      {% if is_admin or 'dashboard' in p %}
       <a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}">
         <i class="fa-solid fa-chart-pie"></i> Dashboard
       </a>
-
-      {% set p = current_user_permisos %}
-      {% set is_admin = current_user_role == 'admin' %}
+      {% endif %}
 
       {% if is_admin or 'members' in p %}
       <div class="sidebar-section">Padrón</div>

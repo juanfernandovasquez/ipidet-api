@@ -12,6 +12,7 @@ users_col = _db.users
 
 # Secciones de la plataforma (clave, etiqueta, ícono FA)
 SECCIONES = [
+    ("dashboard",        "Dashboard",        "fa-chart-pie"),
     ("members",          "Socios",           "fa-users"),
     ("billing",          "Cobranzas",        "fa-money-bill-wave"),
     ("fraccionamientos", "Fraccionamientos", "fa-calendar-days"),
