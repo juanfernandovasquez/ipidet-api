@@ -74,9 +74,9 @@
         <th class="px-4 py-3"></th>
       </tr>
     </thead>
-    <tbody>
       {% for item in pendientes %}
-      <tr class="border-t border-slate-100 hover:bg-slate-50" x-data="{ emitir: false }">
+      <tbody x-data="{ emitir: false }">
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
 
         <!-- Socio -->
         <td class="px-4 py-3">
@@ -126,7 +126,7 @@
         </td>
       </tr>
 
-      <!-- Fila inline para emitir comprobante -->
+      <!-- Fila inline para registrar comprobante -->
       <tr x-show="emitir" x-cloak class="border-t border-blue-100 bg-blue-50">
         <td colspan="7" class="px-4 py-3">
           <form method="post" action="/billing/{{ item.payment_id }}/emitir-comprobante"
@@ -137,9 +137,7 @@
             <input type="hidden" name="search"  value="{{ search }}">
 
             <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">
-                N° comprobante SUNAT
-              </label>
+              <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante SUNAT</label>
               <input type="text" name="num_comprobante" required placeholder="Ej: B001-00123"
                 class="input text-sm w-48" autofocus>
             </div>
@@ -147,9 +145,9 @@
               <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de comprobante</label>
               <select name="tipo_comprobante" class="input text-sm">
                 <option value="">— Sin especificar —</option>
-                <option value="boleta"  {% if item.tipo_comprobante == 'boleta'  %}selected{% endif %}>Boleta de venta</option>
-                <option value="factura" {% if item.tipo_comprobante == 'factura' %}selected{% endif %}>Factura</option>
-                <option value="recibo"  {% if item.tipo_comprobante == 'recibo'  %}selected{% endif %}>Recibo por honorarios</option>
+                <option value="boleta">Boleta de venta</option>
+                <option value="factura">Factura</option>
+                <option value="recibo">Recibo por honorarios</option>
               </select>
             </div>
             <div>
@@ -166,8 +164,8 @@
           </form>
         </td>
       </tr>
+      </tbody>
       {% endfor %}
-    </tbody>
   </table>
 </div>
 
