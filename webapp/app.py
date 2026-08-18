@@ -166,6 +166,26 @@ async def members_list(
     ))
 
 
+@app.post("/members/nuevo")
+async def member_nuevo(
+    apellidos:       str = Form(...),
+    nombres:         str = Form(...),
+    titulo:          str = Form(""),
+    email:           str = Form(""),
+    celular:         str = Form(""),
+    centro_trabajo:  str = Form(""),
+    ubicacion:       str = Form(""),
+    fecha_ingreso:   str = Form(""),
+    notas:           str = Form(""),
+):
+    member_id = pdb.create_member(
+        apellidos=apellidos, nombres=nombres, titulo=titulo,
+        email=email, celular=celular, centro_trabajo=centro_trabajo,
+        ubicacion=ubicacion, fecha_ingreso=fecha_ingreso, notas=notas,
+    )
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
 @app.get("/members/{member_id}", response_class=HTMLResponse)
 async def member_detail(request: Request, member_id: str):
     doc = pdb.get_member(member_id)

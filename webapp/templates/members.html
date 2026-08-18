@@ -4,6 +4,10 @@
 
 {% block header_actions %}
 <span class="text-sm text-slate-500">{{ total }} socio{% if total != 1 %}s{% endif %}</span>
+<button onclick="document.getElementById('modal-nuevo-socio').classList.remove('hidden')"
+  class="btn-primary text-sm">
+  <i class="fa-solid fa-user-plus mr-1.5"></i> Nuevo socio
+</button>
 {% endblock %}
 
 {% block content %}
@@ -135,4 +139,88 @@
   </div>
 
 </div>
+
+<!-- Modal: nuevo socio -->
+<div id="modal-nuevo-socio" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-nuevo-socio').classList.add('hidden')"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-semibold text-slate-800 text-lg">Nuevo socio</h2>
+      <button onclick="document.getElementById('modal-nuevo-socio').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <form method="post" action="/members/nuevo" class="space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Apellidos <span class="text-red-500">*</span></label>
+          <input name="apellidos" required placeholder="VASQUEZ VERGARA" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Nombres <span class="text-red-500">*</span></label>
+          <input name="nombres" required placeholder="Juan Carlos" class="input w-full">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Título</label>
+          <select name="titulo" class="input w-full">
+            <option value="">— Sin especificar —</option>
+            <option>Contador</option>
+            <option>Contadora</option>
+            <option>Abogado</option>
+            <option>Abogada</option>
+            <option>Economista</option>
+            <option>Administrador</option>
+            <option>Administradora</option>
+            <option>Ingeniero Industrial y Comercial</option>
+            <option>Bachiller en Economía</option>
+            <option>Socia Líder</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ubicación</label>
+          <select name="ubicacion" class="input w-full">
+            <option value="">— Sin especificar —</option>
+            <option>Lima</option>
+            <option>La Libertad</option>
+            <option>Lambayeque</option>
+            <option>Arequipa</option>
+            <option>Piura</option>
+            <option>Puno</option>
+            <option>España</option>
+            <option>Argentina</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Email</label>
+        <input name="email" type="email" placeholder="correo@ejemplo.com" class="input w-full">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Celular</label>
+          <input name="celular" placeholder="999 999 999" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de ingreso</label>
+          <input name="fecha_ingreso" type="date" class="input w-full">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Centro de trabajo</label>
+        <input name="centro_trabajo" placeholder="Empresa o institución" class="input w-full">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Notas</label>
+        <textarea name="notas" rows="2" placeholder="Observaciones adicionales…" class="input w-full resize-none"></textarea>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Crear socio</button>
+        <button type="button" onclick="document.getElementById('modal-nuevo-socio').classList.add('hidden')" class="btn-ghost">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}

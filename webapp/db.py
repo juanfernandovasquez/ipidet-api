@@ -118,6 +118,72 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
     return [_clean(d) for d in docs], total
 
 
+def _next_member_id() -> str:
+    """Devuelve el siguiente IPIDET-XXXX disponible."""
+    docs = members_col.find(
+        {"member_id": {"$regex": r"^IPIDET-\d+$"}},
+        {"member_id": 1},
+    )
+    nums = []
+    for d in docs:
+        try:
+            nums.append(int(d["member_id"].split("-")[1]))
+        except (IndexError, ValueError):
+            pass
+    return f"IPIDET-{(max(nums) + 1 if nums else 1):04d}"
+
+
+def create_member(
+    apellidos: str,
+    nombres: str,
+    titulo: str = "",
+    email: str = "",
+    celular: str = "",
+    centro_trabajo: str = "",
+    ubicacion: str = "",
+    fecha_ingreso: str = "",
+    notas: str = "",
+    periodo_actual: str = "2026",
+) -> str:
+    """Crea un socio nuevo y su registro de pago del período actual. Devuelve el member_id."""
+    member_id = _next_member_id()
+    emails = []
+    if email.strip():
+        emails = [{"email": email.strip().lower(), "estado": "habilitado", "principal": True}]
+
+    fecha_ing = None
+    if fecha_ingreso:
+        try:
+            fecha_ing = datetime.strptime(fecha_ingreso, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    members_col.insert_one({
+        "member_id":       member_id,
+        "apellidos":       apellidos.strip().upper(),
+        "nombres":         nombres.strip().title(),
+        "titulo":          titulo.strip(),
+        "celular":         celular.strip(),
+        "centro_trabajo":  centro_trabajo.strip(),
+        "ubicacion":       ubicacion.strip(),
+        "fecha_ingreso":   fecha_ing,
+        "fecha_nacimiento": None,
+        "estado":          "activo",
+        "emails":          emails,
+        "notas":           notas.strip(),
+        "comentarios":     [],
+        "created_at":      datetime.now(timezone.utc),
+    })
+
+    payments_col.insert_one({
+        "member_id": member_id,
+        "periodo":   periodo_actual,
+        "estado":    "pendiente",
+    })
+
+    return member_id
+
+
 def get_member(member_id: str) -> dict | None:
     doc = members_col.find_one({"member_id": member_id})
     if not doc:
