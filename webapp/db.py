@@ -727,25 +727,30 @@ def get_comprobantes_pendientes(periodo: str = "2026", search: str = "") -> list
 
 
 def emitir_comprobante(payment_id: str, tipo: str, numero: int | None,
-                       num_comprobante: str, tipo_comprobante: str):
+                       num_comprobante: str, tipo_comprobante: str,
+                       fecha_emision: str = ""):
     pid = ObjectId(payment_id)
+    fe = fecha_emision.strip() or None
     if tipo == "principal":
         payments_col.update_one({"_id": pid}, {"$set": {
             "num_comprobante": num_comprobante,
             "tipo_comprobante": tipo_comprobante or None,
+            "fecha_emision_comprobante": fe,
             "comprobante_emitido": True,
         }})
     elif tipo == "cuota":
         payments_col.update_one(
             {"_id": pid, "cuotas.numero": numero},
             {"$set": {"cuotas.$.num_comprobante": num_comprobante,
-                      "cuotas.$.tipo_comprobante": tipo_comprobante or None}},
+                      "cuotas.$.tipo_comprobante": tipo_comprobante or None,
+                      "cuotas.$.fecha_emision_comprobante": fe}},
         )
     elif tipo == "parcial":
         payments_col.update_one(
             {"_id": pid, "pagos_parciales.numero": numero},
             {"$set": {"pagos_parciales.$.num_comprobante": num_comprobante,
-                      "pagos_parciales.$.tipo_comprobante": tipo_comprobante or None}},
+                      "pagos_parciales.$.tipo_comprobante": tipo_comprobante or None,
+                      "pagos_parciales.$.fecha_emision_comprobante": fe}},
         )
 
 
