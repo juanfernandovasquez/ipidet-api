@@ -7,7 +7,26 @@
 {% endblock %}
 
 {% block content %}
-<div class="grid grid-cols-1 xl:grid-cols-3 gap-5" x-data="{ addEmail: false }">
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5" x-data="{
+  addEmail: false,
+  showEmail: false,
+  emailPlantilla: 'libre',
+  emailAsunto: '',
+  emailCuerpo: '',
+  emailEnviando: false,
+  emailOk: false,
+  emailError: '',
+  plantillas: {
+    libre:      { asunto: '', cuerpo: '' },
+    bienvenida: { asunto: 'Bienvenido/a a IPIDET', cuerpo: 'Estimado/a {{ member.nombres }},\n\nNos complace confirmar su membresía en IPIDET. A partir de ahora tiene acceso a todos los beneficios de nuestra comunidad profesional.\n\nCordialmente,\nEquipo IPIDET' },
+    recordatorio: { asunto: 'Recordatorio de cuota IPIDET', cuerpo: 'Estimado/a {{ member.nombres }},\n\nLe recordamos que tiene pendiente el pago de su cuota anual de membresía.\n\nPara realizar su pago o consultar opciones de fraccionamiento, comuníquese con nosotros.\n\nCordialmente,\nEquipo IPIDET' },
+  },
+  setPlantilla(key) {
+    this.emailPlantilla = key;
+    this.emailAsunto = this.plantillas[key].asunto;
+    this.emailCuerpo = this.plantillas[key].cuerpo;
+  },
+}">
 
   <!-- Left: Info + Emails -->
   <div class="xl:col-span-2 space-y-5">
@@ -19,14 +38,20 @@
           <div class="text-xl font-bold text-slate-800">{{ member.apellidos }}, {{ member.nombres }}</div>
           <div class="text-slate-500 text-sm mt-0.5">{{ member.member_id }} · {{ member.titulo or 'Sin título' }}</div>
         </div>
-        <form method="post" action="/members/{{ member.member_id }}/estado" class="flex items-center gap-2">
-          <select name="estado" class="input text-xs py-1">
-            {% for val, lbl in [("activo","Activo"),("inactivo","Inactivo"),("retirar","Retirar"),("en_revision","En revisión")] %}
-            <option value="{{ val }}" {% if member.estado == val %}selected{% endif %}>{{ lbl }}</option>
-            {% endfor %}
-          </select>
-          <button type="submit" class="btn-primary text-xs py-1 px-3">Guardar</button>
-        </form>
+        <div class="flex items-center gap-2">
+          <button @click="showEmail = true; if (!emailAsunto) setPlantilla('libre')"
+            class="btn-ghost text-xs py-1 px-3">
+            <i class="fa-solid fa-paper-plane mr-1"></i> Enviar correo
+          </button>
+          <form method="post" action="/members/{{ member.member_id }}/estado" class="flex items-center gap-2">
+            <select name="estado" class="input text-xs py-1">
+              {% for val, lbl in [("activo","Activo"),("inactivo","Inactivo"),("retirar","Retirar"),("en_revision","En revisión")] %}
+              <option value="{{ val }}" {% if member.estado == val %}selected{% endif %}>{{ lbl }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn-primary text-xs py-1 px-3">Guardar</button>
+          </form>
+        </div>
       </div>
 
       <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
@@ -225,4 +250,102 @@
   </div>
 
 </div>
+
+<!-- Modal: Enviar correo -->
+<div x-show="showEmail" x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     @keydown.escape.window="showEmail = false">
+  <div class="absolute inset-0 bg-black/40" @click="showEmail = false"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div>
+        <h2 class="font-semibold text-slate-800">Enviar correo</h2>
+        <p class="text-xs text-slate-400 mt-0.5">
+          Para: <span class="font-medium text-slate-600">{{ member.apellidos }}, {{ member.nombres }}</span>
+          {% set ep = member.emails | selectattr('estado','eq','habilitado') | first %}
+          {% if ep %} · <span class="font-mono">{{ ep.email }}</span>{% endif %}
+        </p>
+      </div>
+      <button @click="showEmail = false" class="text-slate-400 hover:text-slate-600 transition-colors">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="px-6 py-4 overflow-y-auto space-y-4 flex-1">
+
+      <!-- Plantilla -->
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-2">Plantilla</label>
+        <div class="flex gap-2">
+          <template x-for="[key, lbl] in [['libre','Libre'],['bienvenida','Bienvenida'],['recordatorio','Recordatorio cuota']]">
+            <button type="button"
+              @click="setPlantilla(key)"
+              :class="emailPlantilla === key
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'"
+              class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors"
+              x-text="lbl">
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Asunto -->
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Asunto <span class="text-red-500">*</span></label>
+        <input x-model="emailAsunto" type="text" placeholder="Asunto del correo…" class="input w-full">
+      </div>
+
+      <!-- Cuerpo -->
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Mensaje <span class="text-red-500">*</span></label>
+        <textarea x-model="emailCuerpo" rows="8" placeholder="Escribe tu mensaje aquí…"
+          class="input w-full font-mono text-sm resize-none"></textarea>
+        <p class="text-xs text-slate-400 mt-1">El mensaje se envía con el formato corporativo de IPIDET (encabezado y pie de página).</p>
+      </div>
+
+      <!-- Feedback -->
+      <div x-show="emailOk" x-cloak
+           class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700">
+        <i class="fa-solid fa-circle-check"></i> Correo enviado correctamente.
+      </div>
+      <div x-show="emailError" x-cloak
+           class="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700">
+        <i class="fa-solid fa-circle-exclamation"></i> <span x-text="emailError"></span>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-slate-200 flex gap-3">
+      <button type="button"
+        @click="
+          emailOk = false; emailError = '';
+          if (!emailAsunto.trim()) { emailError = 'El asunto es obligatorio.'; return; }
+          if (!emailCuerpo.trim()) { emailError = 'El mensaje no puede estar vacío.'; return; }
+          emailEnviando = true;
+          fetch('/members/{{ member.member_id }}/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ asunto: emailAsunto, cuerpo: emailCuerpo })
+          }).then(r => r.json()).then(d => {
+            emailEnviando = false;
+            if (d.ok) { emailOk = true; emailAsunto = ''; emailCuerpo = ''; emailPlantilla = 'libre'; }
+            else { emailError = d.error || 'Error al enviar.'; }
+          }).catch(() => { emailEnviando = false; emailError = 'Error de red.'; })
+        "
+        :disabled="emailEnviando"
+        class="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+        <i class="fa-solid fa-paper-plane mr-1.5" x-show="!emailEnviando"></i>
+        <i class="fa-solid fa-spinner fa-spin mr-1.5" x-show="emailEnviando" x-cloak></i>
+        <span x-text="emailEnviando ? 'Enviando…' : 'Enviar correo'"></span>
+      </button>
+      <button @click="showEmail = false" class="btn-ghost">Cancelar</button>
+    </div>
+
+  </div>
+</div>
+
 {% endblock %}

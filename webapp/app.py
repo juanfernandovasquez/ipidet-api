@@ -623,6 +623,36 @@ async def api_payments(periodo: str = "2026", estado: str = ""):
 
 # ── Email / Comunicaciones ────────────────────────────────────────────────────
 
+@app.post("/members/{member_id}/send-email")
+async def send_member_email(member_id: str, request: Request):
+    data    = await request.json()
+    asunto  = (data.get("asunto") or "").strip()
+    cuerpo  = (data.get("cuerpo") or "").strip()
+    if not asunto or not cuerpo:
+        return JSONResponse({"ok": False, "error": "Asunto y mensaje son obligatorios."}, status_code=422)
+    member = pdb.get_member(member_id)
+    if not member:
+        return JSONResponse({"ok": False, "error": "Socio no encontrado."}, status_code=404)
+    email_to = next(
+        (e["email"] for e in member.get("emails", [])
+         if e.get("estado") == "habilitado" and e.get("principal")),
+        next((e["email"] for e in member.get("emails", [])
+              if e.get("estado") == "habilitado"), None),
+    )
+    if not email_to:
+        return JSONResponse({"ok": False, "error": "El socio no tiene email habilitado."}, status_code=422)
+    cuerpo_html = cuerpo.replace("\n", "<br>")
+    nombre = f"{member.get('nombres','')} {member.get('apellidos','')}".strip()
+    html = mailer._base_html(f"""
+      <p style="color:#475569;line-height:1.7;white-space:pre-line">{cuerpo_html}</p>
+    """)
+    try:
+        await mailer.send_email(to=email_to, subject=asunto, html_body=html)
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.post("/api/email/test")
 async def email_test(to: str = Form(...)):
     """Envía un correo de prueba para verificar la conexión Brevo."""
