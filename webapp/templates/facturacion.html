@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Facturación — IPIDET{% endblock %}
+{% block heading %}Cobranzas{% endblock %}
+
+{% block header_actions %}
+<span class="text-sm text-slate-500">{{ total }} comprobante{% if total != 1 %}s{% endif %} pendiente{% if total != 1 %}s{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+
+<!-- Tabs -->
+<div class="flex gap-1 mb-5 border-b border-slate-200">
+  <a href="/billing"
+    class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+    <i class="fa-solid fa-money-bill-wave mr-1.5"></i> Cobranzas
+  </a>
+  <a href="/billing/facturacion"
+    class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-blue-600 text-blue-600 bg-white">
+    <i class="fa-solid fa-file-invoice mr-1.5"></i> Facturación
+  </a>
+</div>
+
+<!-- Filtros -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+  <form method="get" action="/billing/facturacion" class="flex flex-wrap gap-3 items-end" x-data="{ t: null }">
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Buscar socio</label>
+      <input name="search" value="{{ search }}" placeholder="Nombre, ID, email…" class="input w-64"
+             x-ref="q" @input="clearTimeout(t); t = setTimeout(() => $refs.q.form.submit(), 450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
+      <select name="periodo" class="input" @change="$el.form.submit()">
+        {% for yr in ["2026","2025","2024"] %}
+        <option value="{{ yr }}" {% if periodo == yr %}selected{% endif %}>{{ yr }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if search %}
+    <a href="/billing/facturacion?periodo={{ periodo }}" class="btn-ghost text-sm self-end">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Tabla -->
+{% if pendientes %}
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Socio</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Concepto</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha pago</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Medio</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pendientes %}
+      <tr class="border-t border-slate-100 hover:bg-slate-50" x-data="{ emitir: false }">
+
+        <!-- Socio -->
+        <td class="px-4 py-3">
+          <a href="/members/{{ item.member_id }}" class="font-medium text-slate-800 hover:text-blue-600">{{ item.nombre }}</a>
+          {% if item.email %}
+          <div class="text-xs text-slate-400 font-mono mt-0.5">{{ item.email }}</div>
+          {% endif %}
+        </td>
+
+        <!-- Concepto -->
+        <td class="px-4 py-3">
+          {% if item.tipo == 'principal' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-circle-dollar-to-slot text-[10px]"></i> Cuota anual {{ item.periodo }}
+          </span>
+          {% elif item.tipo == 'cuota' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-calendar-check text-[10px]"></i> Fraccionamiento cuota {{ item.numero }}
+          </span>
+          {% elif item.tipo == 'parcial' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-layer-group text-[10px]"></i> Pago parcial {{ item.numero }}
+          </span>
+          {% endif %}
+        </td>
+
+        <!-- Monto -->
+        <td class="px-4 py-3 font-medium text-slate-700">
+          {% if item.monto %}S/ {{ "%.2f"|format(item.monto) }}{% else %}—{% endif %}
+        </td>
+
+        <!-- Fecha -->
+        <td class="px-4 py-3 text-slate-500">{{ item.fecha_pago or '—' }}</td>
+
+        <!-- Medio -->
+        <td class="px-4 py-3 text-slate-500 text-xs">{{ item.medio_pago or '—' }}</td>
+
+        <!-- Empresa -->
+        <td class="px-4 py-3 text-slate-500 text-xs">{{ item.empresa_pagadora or '—' }}</td>
+
+        <!-- Acción -->
+        <td class="px-4 py-3 text-right">
+          <button @click="emitir = !emitir"
+            class="text-xs text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors whitespace-nowrap">
+            <i class="fa-solid fa-stamp mr-1"></i> Emitir
+          </button>
+        </td>
+      </tr>
+
+      <!-- Fila inline para emitir comprobante -->
+      <tr x-show="emitir" x-cloak class="border-t border-blue-100 bg-blue-50">
+        <td colspan="7" class="px-4 py-3">
+          <form method="post" action="/billing/{{ item.payment_id }}/emitir-comprobante"
+                class="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="tipo"    value="{{ item.tipo }}">
+            <input type="hidden" name="numero"  value="{{ item.numero or '' }}">
+            <input type="hidden" name="periodo" value="{{ periodo }}">
+            <input type="hidden" name="search"  value="{{ search }}">
+
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante</label>
+              <input type="text" name="num_comprobante" required placeholder="B001-00123"
+                class="input text-sm w-44" autofocus>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
+              <select name="tipo_comprobante" class="input text-sm">
+                <option value="">— Sin especificar —</option>
+                <option value="boleta"  {% if item.tipo_comprobante == 'boleta'  %}selected{% endif %}>Boleta</option>
+                <option value="factura" {% if item.tipo_comprobante == 'factura' %}selected{% endif %}>Factura</option>
+                <option value="recibo"  {% if item.tipo_comprobante == 'recibo'  %}selected{% endif %}>Recibo</option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <button type="submit" class="btn-primary text-xs py-2">
+                <i class="fa-solid fa-check mr-1"></i> Guardar
+              </button>
+              <button type="button" @click="emitir = false" class="btn-ghost text-xs py-2">Cancelar</button>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
+  <i class="fa-solid fa-circle-check text-4xl text-green-400 mb-3"></i>
+  <p class="text-slate-600 font-medium">Sin comprobantes pendientes</p>
+  <p class="text-slate-400 text-sm mt-1">Todos los pagos del período {{ periodo }} tienen comprobante registrado.</p>
+</div>
+{% endif %}
+
+{% endblock %}

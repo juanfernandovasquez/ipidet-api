@@ -216,6 +216,32 @@ async def update_member_estado(member_id: str, estado: str = Form(...)):
 
 # ── Cobranzas ─────────────────────────────────────────────────────────────────
 
+@app.get("/billing/facturacion", response_class=HTMLResponse)
+async def facturacion(
+    request: Request,
+    periodo: str = "2026",
+    search: str = "",
+):
+    pendientes = pdb.get_comprobantes_pendientes(periodo, search)
+    return templates.TemplateResponse(request, "facturacion.html", _ctx(request,
+        pendientes=pendientes, periodo=periodo, search=search,
+        total=len(pendientes),
+    ))
+
+
+@app.post("/billing/{payment_id}/emitir-comprobante")
+async def emitir_comprobante(
+    payment_id: str,
+    tipo: str           = Form(...),
+    numero: int | None  = Form(None),
+    num_comprobante: str = Form(...),
+    tipo_comprobante: str = Form(""),
+    periodo: str        = Form("2026"),
+    search: str         = Form(""),
+):
+    pdb.emitir_comprobante(payment_id, tipo, numero, num_comprobante.strip(), tipo_comprobante)
+    return RedirectResponse(f"/billing/facturacion?periodo={periodo}&search={search}", status_code=303)
+
 @app.get("/billing", response_class=HTMLResponse)
 async def billing(
     request: Request,

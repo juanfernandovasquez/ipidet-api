@@ -7,6 +7,18 @@
 {% endblock %}
 
 {% block content %}
+<!-- Tabs -->
+<div class="flex gap-1 mb-5 border-b border-slate-200">
+  <a href="/billing"
+    class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-blue-600 text-blue-600 bg-white">
+    <i class="fa-solid fa-money-bill-wave mr-1.5"></i> Cobranzas
+  </a>
+  <a href="/billing/facturacion"
+    class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+    <i class="fa-solid fa-file-invoice mr-1.5"></i> Facturación
+  </a>
+</div>
+
 <div x-data="{ t: null }">
 
   <!-- Filters -->

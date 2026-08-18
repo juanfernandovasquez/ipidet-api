@@ -673,6 +673,82 @@ def delete_company(company_id: str):
     companies_col.delete_one({"_id": ObjectId(company_id)})
 
 
+# ── Facturación ───────────────────────────────────────────────────────────────
+
+def get_comprobantes_pendientes(periodo: str = "2026", search: str = "") -> list:
+    """Devuelve todos los comprobantes pendientes de emitir para el período."""
+    q: dict = {"periodo": periodo}
+    payments = list(payments_col.find(q))
+
+    member_ids = [p["member_id"] for p in payments]
+    member_map = {m["member_id"]: m for m in members_col.find({"member_id": {"$in": member_ids}})}
+
+    result = []
+    srx = search.strip().lower() if search.strip() else None
+
+    for p in payments:
+        m   = member_map.get(p["member_id"], {})
+        nombre = f"{m.get('apellidos','').strip()} {m.get('nombres','').strip()}".strip()
+        email  = next(
+            (e["email"] for e in m.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
+            next((e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"), ""),
+        )
+        if srx and srx not in nombre.lower() and srx not in p["member_id"].lower() and srx not in email.lower():
+            continue
+
+        pid = str(p["_id"])
+        base = dict(payment_id=pid, member_id=p["member_id"], nombre=nombre,
+                    email=email, empresa_pagadora=p.get("empresa_pagadora"), periodo=periodo)
+
+        # 1) Pago principal pagado sin comprobante
+        if p.get("estado") == "pagado" and not p.get("num_comprobante"):
+            result.append({**base, "tipo": "principal", "numero": None,
+                           "monto": None, "fecha_pago": p.get("fecha_pago"),
+                           "tipo_comprobante": p.get("tipo_comprobante", ""),
+                           "medio_pago": p.get("medio_pago", "")})
+
+        # 2) Cuotas pagadas sin comprobante
+        for c in p.get("cuotas", []):
+            if c.get("estado") == "pagado" and not c.get("num_comprobante"):
+                result.append({**base, "tipo": "cuota", "numero": c.get("numero"),
+                               "monto": c.get("monto"), "fecha_pago": c.get("fecha_pago"),
+                               "tipo_comprobante": c.get("tipo_comprobante", ""),
+                               "medio_pago": c.get("medio_pago", "")})
+
+        # 3) Pagos parciales sin comprobante
+        for pp in p.get("pagos_parciales", []):
+            if pp.get("monto") and not pp.get("num_comprobante"):
+                result.append({**base, "tipo": "parcial", "numero": pp.get("numero"),
+                               "monto": pp.get("monto"), "fecha_pago": pp.get("fecha_pago"),
+                               "tipo_comprobante": pp.get("tipo_comprobante", ""),
+                               "medio_pago": pp.get("medio_pago", "")})
+
+    return sorted(result, key=lambda x: x["nombre"])
+
+
+def emitir_comprobante(payment_id: str, tipo: str, numero: int | None,
+                       num_comprobante: str, tipo_comprobante: str):
+    pid = ObjectId(payment_id)
+    if tipo == "principal":
+        payments_col.update_one({"_id": pid}, {"$set": {
+            "num_comprobante": num_comprobante,
+            "tipo_comprobante": tipo_comprobante or None,
+            "comprobante_emitido": True,
+        }})
+    elif tipo == "cuota":
+        payments_col.update_one(
+            {"_id": pid, "cuotas.numero": numero},
+            {"$set": {"cuotas.$.num_comprobante": num_comprobante,
+                      "cuotas.$.tipo_comprobante": tipo_comprobante or None}},
+        )
+    elif tipo == "parcial":
+        payments_col.update_one(
+            {"_id": pid, "pagos_parciales.numero": numero},
+            {"$set": {"pagos_parciales.$.num_comprobante": num_comprobante,
+                      "pagos_parciales.$.tipo_comprobante": tipo_comprobante or None}},
+        )
+
+
 # ── Marketing ─────────────────────────────────────────────────────────────────
 
 def get_marketing_stats(periodo: str = "2026") -> dict:
