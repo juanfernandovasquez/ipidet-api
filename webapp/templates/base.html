@@ -57,6 +57,9 @@
       <a href="/faqs" class="sidebar-link {% if '/faqs' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-circle-question w-4"></i> FAQs
       </a>
+      <a href="/marketing" class="sidebar-link {% if '/marketing' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-bullhorn w-4"></i> Marketing
+      </a>
     </nav>
 
     {% if current_user_role == 'admin' %}

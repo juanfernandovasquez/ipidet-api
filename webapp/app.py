@@ -397,6 +397,56 @@ async def delete_pago_parcial(
     return RedirectResponse(redirect_to, status_code=303)
 
 
+# ── Marketing ─────────────────────────────────────────────────────────────────
+
+@app.get("/marketing", response_class=HTMLResponse)
+async def marketing(
+    request: Request,
+    titulo: str = "",
+    ubicacion: str = "",
+    estado_pago: str = "",
+    empresa: str = "",
+    periodo: str = "2026",
+):
+    stats = pdb.get_marketing_stats(periodo)
+    emails = pdb.get_marketing_emails(titulo, ubicacion, estado_pago, empresa, periodo)
+    titulos = sorted(set(t for t in pdb.members_col.distinct("titulo") if t))
+    ubicaciones = sorted(set(u for u in pdb.members_col.distinct("ubicacion") if u))
+    return templates.TemplateResponse(request, "marketing.html", _ctx(request,
+        stats=stats, emails=emails,
+        titulos=titulos, ubicaciones=ubicaciones,
+        titulo=titulo, ubicacion=ubicacion,
+        estado_pago=estado_pago, empresa=empresa, periodo=periodo,
+    ))
+
+
+@app.get("/marketing/export")
+async def marketing_export(
+    titulo: str = "",
+    ubicacion: str = "",
+    estado_pago: str = "",
+    empresa: str = "",
+    periodo: str = "2026",
+):
+    emails = pdb.get_marketing_emails(titulo, ubicacion, estado_pago, empresa, periodo)
+    buf = io.StringIO()
+    buf.write("Nombre,Email,Título,Ubicación,Centro de Trabajo,Estado Pago\n")
+    for r in emails:
+        nombre   = r["nombre"].replace('"', '""')
+        email    = r["email"].replace('"', '""')
+        tit      = r["titulo"].replace('"', '""')
+        ubic     = r["ubicacion"].replace('"', '""')
+        ct       = r["centro_trabajo"].replace('"', '""')
+        ep       = r["estado_pago"].replace('"', '""')
+        buf.write(f'"{nombre}","{email}","{tit}","{ubic}","{ct}","{ep}"\n')
+    csv_bytes = buf.getvalue().encode("utf-8-sig")
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=marketing_{periodo}.csv"},
+    )
+
+
 # ── Finanzas (mockup) ─────────────────────────────────────────────────────────
 
 @app.get("/finanzas", response_class=HTMLResponse)
