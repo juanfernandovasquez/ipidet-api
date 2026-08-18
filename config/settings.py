@@ -43,6 +43,12 @@ PORTAL_SECRET = os.getenv("PORTAL_SECRET", "")          # secret para server-to-
 WC_WEBHOOK_SECRET = os.getenv("WC_WEBHOOK_SECRET", "")  # secret del webhook WooCommerce
 PORTAL_API_BASE = os.getenv("PORTAL_API_BASE", "http://localhost:8000")  # URL pública de FastAPI
 
+# Scheduler de cobranzas
+SCHEDULER_ENABLED        = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
+SCHEDULER_INTERVAL_HOURS = int(os.getenv("SCHEDULER_INTERVAL_HOURS", "24"))
+SCHEDULER_PERIODO        = os.getenv("SCHEDULER_PERIODO", "2026")
+SCHEDULER_ESTADOS        = os.getenv("SCHEDULER_ESTADOS", "debe,fraccionamiento,parcial").split(",")
+
 CRITICAL_KEYWORDS = [
     "amenaza legal", "demanda", "abogado", "tribunal",
     "prensa", "medios", "periodista", "queja formal",

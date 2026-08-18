@@ -14,6 +14,7 @@ import webapp.portal_db as portal_db
 import webapp.portal_router as portal_routes
 import webapp.auth as auth
 import webapp.mailer as mailer
+import webapp.scheduler as scheduler
 from config.settings import SECRET_KEY
 
 app = FastAPI(title="IPIDET Admin")
@@ -120,6 +121,8 @@ def _ctx(request: Request, **kwargs):
 async def _startup():
     pdb.seed_companies()
     auth.seed_admin()
+    import asyncio
+    asyncio.create_task(scheduler.run_scheduler())
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
