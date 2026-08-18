@@ -166,18 +166,30 @@
                 <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de pago</label>
                 <input name="fecha_pago" type="date" value="{{ p.get('fecha_pago','') }}" class="input text-xs py-1">
               </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante</label>
-                <input name="num_comprobante" value="{{ p.get('num_comprobante','') }}" placeholder="F001-000123" class="input text-xs py-1 w-32">
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Tipo doc.</label>
-                <select name="tipo_comprobante" class="input text-xs py-1">
-                  <option value="">— Sin tipo —</option>
-                  <option value="boleta" {% if p.get('tipo_comprobante') == 'boleta' %}selected{% endif %}>Boleta</option>
-                  <option value="factura" {% if p.get('tipo_comprobante') == 'factura' %}selected{% endif %}>Factura</option>
-                  <option value="recibo" {% if p.get('tipo_comprobante') == 'recibo' %}selected{% endif %}>Recibo</option>
-                </select>
+              <div class="contents" x-data="{ nc: '{{ p.get('num_comprobante','') }}' }">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante</label>
+                  <input name="num_comprobante" x-model="nc" placeholder="F001-000123" class="input text-xs py-1 w-32">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">
+                    Tipo doc. <span x-show="nc" x-cloak class="text-red-500">*</span>
+                  </label>
+                  <select name="tipo_comprobante" :required="!!nc" class="input text-xs py-1">
+                    <option value="">— Sin tipo —</option>
+                    <option value="boleta" {% if p.get('tipo_comprobante') == 'boleta' %}selected{% endif %}>Boleta</option>
+                    <option value="factura" {% if p.get('tipo_comprobante') == 'factura' %}selected{% endif %}>Factura</option>
+                    <option value="recibo" {% if p.get('tipo_comprobante') == 'recibo' %}selected{% endif %}>Recibo</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">
+                    Fecha emisión SUNAT <span x-show="nc" x-cloak class="text-red-500">*</span>
+                  </label>
+                  <input name="fecha_emision_comprobante" type="date"
+                    value="{{ p.get('fecha_emision_comprobante','') }}"
+                    :required="!!nc" class="input text-xs py-1 w-36">
+                </div>
               </div>
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Link constancia</label>

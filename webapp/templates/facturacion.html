@@ -142,18 +142,17 @@
                 class="input text-sm w-48" autofocus>
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de comprobante</label>
-              <select name="tipo_comprobante" class="input text-sm">
-                <option value="">— Sin especificar —</option>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de comprobante <span class="text-red-500">*</span></label>
+              <select name="tipo_comprobante" required class="input text-sm">
+                <option value="">— Seleccionar —</option>
                 <option value="boleta">Boleta de venta</option>
                 <option value="factura">Factura</option>
                 <option value="recibo">Recibo por honorarios</option>
               </select>
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión SUNAT</label>
-              <input type="date" name="fecha_emision" class="input text-sm w-40"
-                title="Fecha en que emitiste el comprobante en SUNAT (puede diferir de la fecha de pago)">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión SUNAT <span class="text-red-500">*</span></label>
+              <input type="date" name="fecha_emision" required class="input text-sm w-40">
             </div>
             <div class="flex gap-2 self-end">
               <button type="submit" class="btn-primary text-xs py-2">

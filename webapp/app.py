@@ -339,6 +339,7 @@ async def update_payment(
     pagado_por: str = Form(""),
     num_comprobante: str = Form(""),
     tipo_comprobante: str = Form(""),
+    fecha_emision_comprobante: str = Form(""),
     link_constancia: str = Form(""),
     banco_origen: str = Form(""),
     comprobante_emitido: str = Form(""),
@@ -348,7 +349,8 @@ async def update_payment(
     pdb.update_payment(payment_id, estado, empresa or None, fecha_pago or None,
                        medio or None, pagado_por or None, num_comprobante or None,
                        tipo_comprobante or None, link_constancia or None,
-                       banco_origen or None, comp_emit)
+                       banco_origen or None, comp_emit,
+                       fecha_emision_comprobante or None)
     return RedirectResponse(redirect_to, status_code=303)
 
 

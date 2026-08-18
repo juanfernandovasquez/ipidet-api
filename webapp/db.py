@@ -312,7 +312,8 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
                    fecha_pago: str = None, medio: str = None, pagado_por: str = None,
                    num_comprobante: str = None, tipo_comprobante: str = None,
                    link_constancia: str = None, banco_origen: str = None,
-                   comprobante_emitido: bool = None):
+                   comprobante_emitido: bool = None,
+                   fecha_emision_comprobante: str = None):
     fields = {"estado": estado}
     if empresa is not None:
         fields["empresa_pagadora"] = empresa or None
@@ -324,14 +325,19 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
         fields["pagado_por"] = pagado_por or None
     if num_comprobante is not None:
         fields["num_comprobante"] = num_comprobante or None
+        # auto-marcar emitido cuando se registra el número
+        if num_comprobante:
+            fields["comprobante_emitido"] = True
     if tipo_comprobante is not None:
         fields["tipo_comprobante"] = tipo_comprobante or None
     if link_constancia is not None:
         fields["link_constancia"] = link_constancia or None
     if banco_origen is not None:
         fields["banco_origen"] = banco_origen or None
-    if comprobante_emitido is not None:
+    if comprobante_emitido is not None and "comprobante_emitido" not in fields:
         fields["comprobante_emitido"] = comprobante_emitido
+    if fecha_emision_comprobante is not None:
+        fields["fecha_emision_comprobante"] = fecha_emision_comprobante or None
     payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": fields})
 
 
