@@ -57,10 +57,15 @@ def _serialize(doc: dict) -> dict:
 
 
 def get_user(email: str) -> dict | None:
+    """Devuelve el usuario incluyendo password_hash (necesario para verificar en login)."""
     doc = users_col.find_one({"email": email.lower().strip(), "active": True})
     if not doc:
         return None
-    return _serialize(dict(doc))
+    d = dict(doc)
+    d["_id"] = str(d["_id"])
+    if isinstance(d.get("created_at"), datetime):
+        d["created_at"] = d["created_at"].isoformat()
+    return d
 
 
 def list_users() -> list:
