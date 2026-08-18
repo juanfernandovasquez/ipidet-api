@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Scope, Receive, Send
 from fastapi.templating import Jinja2Templates
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -28,14 +28,25 @@ app.add_middleware(
 _PUBLIC_PATHS = {"/login", "/logout"}
 _PUBLIC_PREFIXES = ("/webhook/", "/api/portal/")
 
-class _AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+class _AuthMiddleware:
+    """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
         if path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
-            return await call_next(request)
-        if not request.session.get("user_email"):
-            return RedirectResponse(f"/login?next={path}", status_code=302)
-        return await call_next(request)
+            await self.app(scope, receive, send)
+            return
+        session = scope.get("session", {})
+        if not session.get("user_email"):
+            response = RedirectResponse(f"/login?next={path}", status_code=302)
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 app.add_middleware(_AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=False, same_site="lax")
