@@ -761,6 +761,39 @@ def emitir_comprobante(payment_id: str, tipo: str, numero: int | None,
         )
 
 
+def get_pendientes_socio(member_id: str, periodo: str) -> list:
+    """Ítems con comprobante pendiente para un socio y período concretos."""
+    p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
+    if not p:
+        return []
+    pid = str(p["_id"])
+    result = []
+    if p.get("estado") == "pagado" and not p.get("num_comprobante"):
+        result.append({"payment_id": pid, "tipo": "principal", "numero": None,
+                       "monto": None, "fecha_pago": p.get("fecha_pago"),
+                       "medio_pago": p.get("medio_pago", "")})
+    for c in p.get("cuotas", []):
+        if c.get("estado") == "pagado" and not c.get("num_comprobante"):
+            result.append({"payment_id": pid, "tipo": "cuota", "numero": c.get("numero"),
+                           "monto": c.get("monto"), "fecha_pago": c.get("fecha_pago"),
+                           "medio_pago": c.get("medio_pago", "")})
+    for pp in p.get("pagos_parciales", []):
+        if pp.get("monto") and not pp.get("num_comprobante"):
+            result.append({"payment_id": pid, "tipo": "parcial", "numero": pp.get("numero"),
+                           "monto": pp.get("monto"), "fecha_pago": pp.get("fecha_pago"),
+                           "medio_pago": pp.get("medio_pago", "")})
+    return result
+
+
+def emitir_comprobante_batch(items: list, num_comprobante: str,
+                              tipo_comprobante: str, fecha_emision: str):
+    """Aplica el mismo comprobante a múltiples ítems."""
+    for item in items:
+        emitir_comprobante(item["payment_id"], item["tipo"],
+                           item.get("numero"), num_comprobante,
+                           tipo_comprobante, fecha_emision)
+
+
 # ── Marketing ─────────────────────────────────────────────────────────────────
 
 def get_marketing_stats(periodo: str = "2026") -> dict:

@@ -229,6 +229,30 @@ async def facturacion(
     ))
 
 
+@app.get("/billing/facturacion/empresa", response_class=HTMLResponse)
+async def facturacion_empresa(request: Request, periodo: str = "2026"):
+    return templates.TemplateResponse(request, "facturacion_empresa.html",
+                                      _ctx(request, periodo=periodo))
+
+
+@app.get("/api/facturacion/pendientes")
+async def api_pendientes_socio(member_id: str, periodo: str = "2026"):
+    return pdb.get_pendientes_socio(member_id, periodo)
+
+
+@app.post("/billing/facturacion/empresa/guardar")
+async def guardar_factura_empresa(request: Request):
+    data = await request.json()
+    items            = data.get("items", [])
+    num_comprobante  = data.get("num_comprobante", "").strip()
+    tipo_comprobante = data.get("tipo_comprobante", "")
+    fecha_emision    = data.get("fecha_emision", "")
+    if not items or not num_comprobante or not tipo_comprobante or not fecha_emision:
+        return JSONResponse({"error": "Faltan datos obligatorios"}, status_code=422)
+    pdb.emitir_comprobante_batch(items, num_comprobante, tipo_comprobante, fecha_emision)
+    return {"ok": True, "registrados": len(items)}
+
+
 @app.post("/billing/{payment_id}/emitir-comprobante")
 async def emitir_comprobante(
     payment_id: str,
