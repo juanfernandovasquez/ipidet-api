@@ -109,7 +109,9 @@
 
         <!-- Monto -->
         <td class="px-4 py-3 font-medium text-slate-700">
-          {% if item.monto %}S/ {{ "%.2f"|format(item.monto) }}{% else %}—{% endif %}
+          {% if item.monto %}S/ {{ "%.2f"|format(item.monto) }}
+          {% elif item.tipo == 'principal' %}<span class="text-xs text-slate-400">Cuota fija</span>
+          {% else %}—{% endif %}
         </td>
 
         <!-- Fecha -->
@@ -119,7 +121,17 @@
         <td class="px-4 py-3 text-slate-500 text-xs">{{ item.medio_pago or '—' }}</td>
 
         <!-- Empresa -->
-        <td class="px-4 py-3 text-slate-500 text-xs">{{ item.empresa_pagadora or '—' }}</td>
+        <td class="px-4 py-3 text-xs">
+          <span class="text-slate-500">{{ item.empresa_pagadora or '—' }}</span>
+          {% if item.sin_datos_pago %}
+          <div class="mt-0.5">
+            <span class="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
+                  title="Sin fecha ni medio de pago registrados. Completa los datos en Cobranzas antes de emitir.">
+              <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Sin datos de pago
+            </span>
+          </div>
+          {% endif %}
+        </td>
 
         <!-- Acción -->
         <td class="px-4 py-3 text-right">

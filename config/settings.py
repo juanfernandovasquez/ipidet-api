@@ -30,6 +30,14 @@ SECRET_KEY  = os.getenv("SECRET_KEY", "cambia-esto-en-produccion")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
+# Brevo SMTP (correos transaccionales)
+BREVO_SMTP_HOST     = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
+BREVO_SMTP_PORT     = int(os.getenv("BREVO_SMTP_PORT", "587"))
+BREVO_SMTP_USER     = os.getenv("BREVO_SMTP_USER", "752492001@smtp-brevo.com")
+BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD", "")
+BREVO_FROM_EMAIL    = os.getenv("BREVO_FROM_EMAIL", "administracion@ipidet.org")
+BREVO_FROM_NAME     = os.getenv("BREVO_FROM_NAME", "IPIDET")
+
 # Portal de socios
 PORTAL_SECRET = os.getenv("PORTAL_SECRET", "")          # secret para server-to-server WP→FastAPI
 WC_WEBHOOK_SECRET = os.getenv("WC_WEBHOOK_SECRET", "")  # secret del webhook WooCommerce

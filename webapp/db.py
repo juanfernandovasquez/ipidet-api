@@ -709,26 +709,35 @@ def get_comprobantes_pendientes(periodo: str = "2026", search: str = "") -> list
 
         # 1) Pago principal pagado sin comprobante
         if p.get("estado") == "pagado" and not p.get("num_comprobante"):
+            # monto: no hay campo fijo en el schema para cuota anual; usar monto_total si existe
+            monto_principal = p.get("monto") or p.get("monto_total") or None
+            tiene_datos = p.get("fecha_pago") or p.get("medio_pago") or p.get("empresa_pagadora")
             result.append({**base, "tipo": "principal", "numero": None,
-                           "monto": None, "fecha_pago": p.get("fecha_pago"),
+                           "monto": monto_principal,
+                           "fecha_pago": p.get("fecha_pago"),
                            "tipo_comprobante": p.get("tipo_comprobante", ""),
-                           "medio_pago": p.get("medio_pago", "")})
+                           "medio_pago": p.get("medio_pago", ""),
+                           "sin_datos_pago": not tiene_datos})
 
         # 2) Cuotas pagadas sin comprobante
         for c in p.get("cuotas", []):
             if c.get("estado") == "pagado" and not c.get("num_comprobante"):
+                tiene_datos = c.get("fecha_pago") or c.get("medio_pago") or p.get("empresa_pagadora")
                 result.append({**base, "tipo": "cuota", "numero": c.get("numero"),
                                "monto": c.get("monto"), "fecha_pago": c.get("fecha_pago"),
                                "tipo_comprobante": c.get("tipo_comprobante", ""),
-                               "medio_pago": c.get("medio_pago", "")})
+                               "medio_pago": c.get("medio_pago", ""),
+                               "sin_datos_pago": not tiene_datos})
 
         # 3) Pagos parciales sin comprobante
         for pp in p.get("pagos_parciales", []):
             if pp.get("monto") and not pp.get("num_comprobante"):
+                tiene_datos = pp.get("fecha_pago") or pp.get("medio_pago") or p.get("empresa_pagadora")
                 result.append({**base, "tipo": "parcial", "numero": pp.get("numero"),
                                "monto": pp.get("monto"), "fecha_pago": pp.get("fecha_pago"),
                                "tipo_comprobante": pp.get("tipo_comprobante", ""),
-                               "medio_pago": pp.get("medio_pago", "")})
+                               "medio_pago": pp.get("medio_pago", ""),
+                               "sin_datos_pago": not tiene_datos})
 
     return sorted(result, key=lambda x: x["nombre"])
 

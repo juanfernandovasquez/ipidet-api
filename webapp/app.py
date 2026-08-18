@@ -13,6 +13,7 @@ import webapp.db as pdb
 import webapp.portal_db as portal_db
 import webapp.portal_router as portal_routes
 import webapp.auth as auth
+import webapp.mailer as mailer
 from config.settings import SECRET_KEY
 
 app = FastAPI(title="IPIDET Admin")
@@ -618,6 +619,22 @@ async def api_member(member_id: str):
 async def api_payments(periodo: str = "2026", estado: str = ""):
     docs, total = pdb.get_payments(periodo, estado)
     return {"total": total, "payments": docs}
+
+
+# ── Email / Comunicaciones ────────────────────────────────────────────────────
+
+@app.post("/api/email/test")
+async def email_test(to: str = Form(...)):
+    """Envía un correo de prueba para verificar la conexión Brevo."""
+    try:
+        await mailer.send_email(
+            to=to,
+            subject="Prueba de conexión IPIDET – Brevo",
+            html_body=mailer.tpl_bienvenida("Equipo IPIDET"),
+        )
+        return {"ok": True, "to": to}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
 # ── Portal de socios ──────────────────────────────────────────────────────────
