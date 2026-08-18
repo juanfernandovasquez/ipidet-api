@@ -70,31 +70,50 @@
         <i class="fa-solid fa-chart-pie"></i> Dashboard
       </a>
 
+      {% set p = current_user_permisos %}
+      {% set is_admin = current_user_role == 'admin' %}
+
+      {% if is_admin or 'members' in p %}
       <div class="sidebar-section">Padrón</div>
       <a href="/members" class="sidebar-link {% if '/members' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-users"></i> Socios
       </a>
+      {% endif %}
 
+      {% if is_admin or 'billing' in p or 'fraccionamientos' in p or 'finanzas' in p %}
       <div class="sidebar-section">Finanzas</div>
+      {% endif %}
+      {% if is_admin or 'billing' in p %}
       <a href="/billing" class="sidebar-link {% if request.url.path == '/billing' %}active{% endif %}">
         <i class="fa-solid fa-money-bill-wave"></i> Cobranzas
       </a>
+      {% endif %}
+      {% if is_admin or 'fraccionamientos' in p %}
       <a href="/fraccionamientos" class="sidebar-link {% if '/fraccionamientos' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-calendar-days"></i> Fraccionamientos
       </a>
+      {% endif %}
+      {% if is_admin or 'finanzas' in p %}
       <a href="/finanzas" class="sidebar-link {% if '/finanzas' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-chart-line"></i>
         <span class="flex-1">Finanzas</span>
         <span class="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-normal">mockup</span>
       </a>
+      {% endif %}
 
+      {% if is_admin or 'faqs' in p or 'marketing' in p %}
       <div class="sidebar-section">Comunicación</div>
+      {% endif %}
+      {% if is_admin or 'faqs' in p %}
       <a href="/faqs" class="sidebar-link {% if '/faqs' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-circle-question"></i> FAQs
       </a>
+      {% endif %}
+      {% if is_admin or 'marketing' in p %}
       <a href="/marketing" class="sidebar-link {% if '/marketing' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-bullhorn"></i> Marketing
       </a>
+      {% endif %}
 
       {% if current_user_role == 'admin' %}
       <div class="sidebar-section">Sistema</div>

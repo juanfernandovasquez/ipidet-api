@@ -3,90 +3,161 @@
 {% block heading %}Gestión de usuarios{% endblock %}
 
 {% block content %}
-<div class="max-w-2xl space-y-6">
+<div class="max-w-3xl space-y-6">
 
-  <!-- Agregar usuario -->
-  <div class="bg-white rounded-xl border border-slate-200 p-6">
-    <h2 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-      <i class="fa-solid fa-user-plus text-blue-500"></i> Agregar acceso
+  <!-- ── Agregar usuario ── -->
+  <div class="bg-white rounded-xl border border-slate-200 p-6" x-data="{ role: 'viewer' }">
+    <h2 class="font-semibold text-slate-800 mb-5 flex items-center gap-2">
+      <i class="fa-solid fa-user-plus text-blue-500"></i> Nuevo usuario
     </h2>
-    <form method="post" action="/admin/users/add" class="space-y-3">
+    <form method="post" action="/admin/users/add" class="space-y-4">
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Correo electrónico</label>
-          <input type="email" name="email" required placeholder="usuario@correo.com"
-            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="email" name="email" required placeholder="usuario@correo.com" class="input w-full">
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Contraseña inicial</label>
-          <input type="password" name="password" required placeholder="Mínimo 6 caracteres"
-            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <input type="password" name="password" required placeholder="••••••••" class="input w-full">
         </div>
       </div>
-      <div class="flex items-center gap-4">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Rol</label>
-          <select name="role" class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="viewer">Visualizador</option>
-            <option value="admin">Administrador</option>
-          </select>
+
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Rol</label>
+        <div class="flex gap-3">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="role" value="viewer" x-model="role" checked class="accent-blue-600">
+            <span class="text-sm text-slate-700">Visualizador</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="role" value="admin" x-model="role" class="accent-purple-600">
+            <span class="text-sm text-slate-700">Administrador <span class="text-slate-400 text-xs">(acceso total)</span></span>
+          </label>
         </div>
-        <button type="submit"
-          class="mt-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
-          Agregar
-        </button>
       </div>
+
+      <!-- Permisos solo para viewers -->
+      <div x-show="role === 'viewer'" x-cloak>
+        <label class="block text-xs font-medium text-slate-600 mb-2">Secciones permitidas</label>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {% for key, label, icon in secciones %}
+          <label class="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <input type="checkbox" name="permisos" value="{{ key }}" checked class="accent-blue-600">
+            <i class="fa-solid {{ icon }} text-slate-400 text-xs w-3"></i>
+            <span class="text-sm text-slate-700">{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">
+        <i class="fa-solid fa-plus mr-1.5"></i> Crear usuario
+      </button>
     </form>
   </div>
 
-  <!-- Lista de usuarios -->
-  <div class="bg-white rounded-xl border border-slate-200 p-6">
-    <h2 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-      <i class="fa-solid fa-users text-slate-500"></i> Usuarios con acceso
-      <span class="ml-auto text-xs font-normal text-slate-400">{{ users | length }} usuario(s)</span>
-    </h2>
+  <!-- ── Lista de usuarios ── -->
+  <div class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+    <div class="px-6 py-4 flex items-center justify-between">
+      <h2 class="font-semibold text-slate-800 flex items-center gap-2">
+        <i class="fa-solid fa-users text-slate-400"></i> Usuarios
+      </h2>
+      <span class="text-xs text-slate-400">{{ users | length }} usuario(s)</span>
+    </div>
 
-    {% if users %}
-    <div class="space-y-2">
-      {% for u in users %}
-      <div class="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
+    {% for u in users %}
+    <div class="px-6 py-4" x-data="{ editPermisos: false }">
+      <div class="flex items-start justify-between gap-4">
+
+        <!-- Info -->
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-sm
+            {% if u.role == 'admin' %}bg-purple-100 text-purple-700{% else %}bg-blue-100 text-blue-700{% endif %}">
             {{ u.email[0].upper() }}
           </div>
-          <div>
-            <div class="text-sm font-medium text-slate-800">{{ u.email }}</div>
-            <div class="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-              {% if u.role == 'admin' %}
-              <span class="inline-flex items-center gap-1 text-purple-600 font-medium">
-                <i class="fa-solid fa-shield-halved text-xs"></i> Administrador
-              </span>
-              {% else %}
-              <span class="text-slate-400">Visualizador</span>
-              {% endif %}
-              {% if u.get('created_at') %}
-              · desde {{ u.created_at[:10] }}
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-slate-800 truncate">
+              {{ u.email }}
+              {% if u.email == current_user_email %}
+              <span class="ml-1 text-xs text-slate-400">(tú)</span>
               {% endif %}
             </div>
+            <div class="flex items-center gap-2 mt-0.5">
+              {% if u.role == 'admin' %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-purple-600">
+                <i class="fa-solid fa-shield-halved"></i> Administrador
+              </span>
+              {% else %}
+              <span class="text-xs text-slate-500">Visualizador</span>
+              {% endif %}
+              {% if u.get('created_at') %}
+              <span class="text-xs text-slate-400">· desde {{ u.created_at[:10] }}</span>
+              {% endif %}
+            </div>
+            <!-- Permisos actuales (solo viewers) -->
+            {% if u.role != 'admin' %}
+            <div class="flex flex-wrap gap-1 mt-1.5">
+              {% set permisos_u = u.get('permisos', []) %}
+              {% for key, label, icon in secciones %}
+              <span class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded
+                {% if key in permisos_u %}bg-green-50 text-green-700 border border-green-200
+                {% else %}bg-slate-100 text-slate-400 border border-slate-200 line-through{% endif %}">
+                <i class="fa-solid {{ icon }} text-[10px]"></i> {{ label }}
+              </span>
+              {% endfor %}
+            </div>
+            {% endif %}
           </div>
         </div>
-        {% if u.email != current_user_email %}
-        <form method="post" action="/admin/users/{{ u._id }}/delete"
-              onsubmit="return confirm('¿Quitar acceso a {{ u.email }}?')">
-          <button type="submit"
-            class="text-xs text-slate-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
-            <i class="fa-solid fa-trash mr-1"></i> Quitar
+
+        <!-- Acciones -->
+        <div class="flex items-center gap-1 flex-shrink-0">
+          {% if u.role != 'admin' and u.email != current_user_email %}
+          <button @click="editPermisos = !editPermisos"
+            class="text-xs text-slate-500 hover:text-blue-600 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition-colors">
+            <i class="fa-solid fa-pen-to-square mr-1"></i> Permisos
           </button>
-        </form>
-        {% else %}
-        <span class="text-xs text-slate-300 px-3 py-1.5">Tú</span>
-        {% endif %}
+          {% endif %}
+          {% if u.email != current_user_email %}
+          <form method="post" action="/admin/users/{{ u._id }}/delete"
+                onsubmit="return confirm('¿Eliminar a {{ u.email }}?')">
+            <button type="submit"
+              class="text-xs text-slate-400 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </form>
+          {% endif %}
+        </div>
       </div>
-      {% endfor %}
+
+      <!-- Panel de edición de permisos -->
+      {% if u.role != 'admin' and u.email != current_user_email %}
+      <div x-show="editPermisos" x-cloak class="mt-4 pt-4 border-t border-slate-100">
+        <form method="post" action="/admin/users/{{ u._id }}/permisos" class="space-y-3">
+          <p class="text-xs font-medium text-slate-600">Secciones accesibles para este usuario:</p>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {% set permisos_u = u.get('permisos', []) %}
+            {% for key, label, icon in secciones %}
+            <label class="flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors
+              {% if key in permisos_u %}border-green-200 bg-green-50{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
+              <input type="checkbox" name="permisos" value="{{ key }}"
+                {% if key in permisos_u %}checked{% endif %} class="accent-blue-600">
+              <i class="fa-solid {{ icon }} text-slate-400 text-xs w-3"></i>
+              <span class="text-sm text-slate-700">{{ label }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <div class="flex gap-2">
+            <button type="submit" class="btn-primary text-xs py-1.5 px-3">Guardar permisos</button>
+            <button type="button" @click="editPermisos = false" class="btn-ghost text-xs py-1.5 px-3">Cancelar</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
     </div>
     {% else %}
-    <p class="text-slate-400 text-sm text-center py-4">No hay usuarios registrados.</p>
-    {% endif %}
+    <div class="px-6 py-8 text-center text-slate-400 text-sm">No hay usuarios registrados.</div>
+    {% endfor %}
   </div>
 
 </div>

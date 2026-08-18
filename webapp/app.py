@@ -46,6 +46,17 @@ class _AuthMiddleware:
             response = RedirectResponse(f"/login?next={path}", status_code=302)
             await response(scope, receive, send)
             return
+        role = session.get("user_role", "viewer")
+        if role != "admin":
+            section = auth.section_for_path(path)
+            if section == "__admin__":
+                response = RedirectResponse("/", status_code=302)
+                await response(scope, receive, send)
+                return
+            if section and section not in session.get("user_permisos", []):
+                response = RedirectResponse("/?sin_acceso=1", status_code=302)
+                await response(scope, receive, send)
+                return
         await self.app(scope, receive, send)
 
 app.add_middleware(_AuthMiddleware)
@@ -96,8 +107,10 @@ def _ctx(request: Request, **kwargs):
         "status_labels": STATUS_LABELS,
         "medios_pago": pdb.MEDIOS_PAGO,
         "bancos": pdb.BANCOS,
-        "current_user_email": request.session.get("user_email", ""),
-        "current_user_role": request.session.get("user_role", ""),
+        "current_user_email":   request.session.get("user_email", ""),
+        "current_user_role":    request.session.get("user_role", ""),
+        "current_user_permisos":request.session.get("user_permisos", []),
+        "secciones": auth.SECCIONES,
         **kwargs,
     }
 
@@ -582,8 +595,9 @@ async def login_post(
             "next": next,
             "error": "Correo o contraseña incorrectos.",
         })
-    request.session["user_email"] = user["email"]
-    request.session["user_role"] = user["role"]
+    request.session["user_email"]   = user["email"]
+    request.session["user_role"]    = user["role"]
+    request.session["user_permisos"]= user.get("permisos", auth.ALL_SECTIONS)
     return RedirectResponse(next if next.startswith("/") else "/", status_code=302)
 
 
@@ -604,15 +618,27 @@ async def admin_users(request: Request):
 
 
 @app.post("/admin/users/add")
-async def admin_add_user(
-    request: Request,
-    email: str = Form(...),
-    password: str = Form(...),
-    role: str = Form("viewer"),
-):
+async def admin_add_user(request: Request):
     if request.session.get("user_role") != "admin":
         return RedirectResponse("/", status_code=302)
-    auth.create_user(email, password, role)
+    form = await request.form()
+    email    = form.get("email", "")
+    password = form.get("password", "")
+    role     = form.get("role", "viewer")
+    permisos = form.getlist("permisos")
+    if not permisos and role == "viewer":
+        permisos = auth.ALL_SECTIONS
+    auth.create_user(email, password, role, permisos)
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/permisos")
+async def admin_update_permisos(request: Request, user_id: str):
+    if request.session.get("user_role") != "admin":
+        return RedirectResponse("/", status_code=302)
+    form = await request.form()
+    permisos = form.getlist("permisos")
+    auth.update_user_permisos(user_id, permisos)
     return RedirectResponse("/admin/users", status_code=303)
 
 
