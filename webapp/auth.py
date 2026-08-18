@@ -20,6 +20,7 @@ SECCIONES = [
     ("faqs",             "FAQs",             "fa-circle-question"),
     ("marketing",        "Marketing",        "fa-bullhorn"),
     ("comunicaciones",   "Comunicaciones",   "fa-paper-plane"),
+    ("eventos",          "Eventos",          "fa-calendar-star"),
 ]
 ALL_SECTIONS = [s[0] for s in SECCIONES]
 
@@ -32,6 +33,7 @@ _PATH_MAP = [
     ("/faqs",             "faqs"),
     ("/marketing",        "marketing"),
     ("/comunicaciones",   "comunicaciones"),
+    ("/eventos",          "eventos"),
     ("/admin",            "__admin__"),
 ]
 

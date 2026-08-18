@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Eventos — IPIDET{% endblock %}
+{% block heading %}Eventos{% endblock %}
+
+{% block header_actions %}
+<button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
+  class="btn-primary text-sm">
+  <i class="fa-solid fa-plus mr-1.5"></i> Nuevo evento
+</button>
+{% endblock %}
+
+{% block content %}
+
+<!-- Filtros -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+  <form method="get" action="/eventos" class="flex flex-wrap gap-3 items-end" x-data="{ t: null }">
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
+      <input name="search" value="{{ search }}" placeholder="Título, lugar…" class="input w-56"
+             x-ref="q" @input="clearTimeout(t); t = setTimeout(() => $refs.q.form.submit(), 450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+      <select name="estado" class="input" @change="$el.form.submit()">
+        <option value="">Todos</option>
+        <option value="activo"    {% if estado == 'activo'    %}selected{% endif %}>Activo</option>
+        <option value="cancelado" {% if estado == 'cancelado' %}selected{% endif %}>Cancelado</option>
+        <option value="finalizado"{% if estado == 'finalizado'%}selected{% endif %}>Finalizado</option>
+      </select>
+    </div>
+    {% if search or estado %}
+    <a href="/eventos" class="btn-ghost text-sm self-end">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if grupos %}
+  {% for grupo in grupos %}
+  <!-- Mes -->
+  <div class="mb-6">
+    <div class="flex items-center gap-3 mb-3">
+      <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wider">{{ grupo.label }}</h2>
+      <div class="flex-1 h-px bg-slate-200"></div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {% for ev in grupo.eventos %}
+      <a href="/eventos/{{ ev._id }}"
+         class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all group">
+
+        <!-- Header: fecha + estado -->
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <div class="w-10 h-10 rounded-lg flex-shrink-0 flex flex-col items-center justify-center text-center
+              {% if ev.estado == 'cancelado' %}bg-red-50 text-red-600
+              {% elif ev.estado == 'finalizado' %}bg-slate-100 text-slate-500
+              {% else %}bg-blue-50 text-blue-700{% endif %}">
+              {% if ev.fecha %}
+              <span class="text-[10px] font-medium leading-none">{{ ev.fecha[5:7] }}/{{ ev.fecha[:4] }}</span>
+              <span class="text-lg font-bold leading-tight">{{ ev.fecha[8:10] }}</span>
+              {% else %}
+              <i class="fa-solid fa-calendar text-lg"></i>
+              {% endif %}
+            </div>
+            <div>
+              <div class="text-xs text-slate-400">{{ ev.hora or 'Hora por confirmar' }}</div>
+              {% if ev.lugar %}<div class="text-xs text-slate-500 truncate max-w-[140px]">{{ ev.lugar }}</div>{% endif %}
+            </div>
+          </div>
+          {% if ev.estado == 'cancelado' %}
+          <span class="text-[10px] font-medium bg-red-50 text-red-600 border border-red-200 px-1.5 py-0.5 rounded-full">Cancelado</span>
+          {% elif ev.estado == 'finalizado' %}
+          <span class="text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded-full">Finalizado</span>
+          {% endif %}
+        </div>
+
+        <!-- Título -->
+        <h3 class="font-semibold text-slate-800 text-sm group-hover:text-blue-700 transition-colors leading-snug mb-3">
+          {{ ev.titulo }}
+        </h3>
+
+        <!-- Footer: inscritos + cupo -->
+        <div class="flex items-center justify-between text-xs text-slate-400">
+          <span><i class="fa-solid fa-users mr-1"></i>{{ ev.n_inscritos }} inscrito(s)</span>
+          {% if ev.cupo_max %}
+            {% if ev.lleno %}
+            <span class="text-red-500 font-medium"><i class="fa-solid fa-ban mr-1"></i>Lleno</span>
+            {% else %}
+            <span class="text-green-600">{{ ev.cupo_disponible }} cupo(s)</span>
+            {% endif %}
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <!-- Paginación -->
+  {% if pages > 1 %}
+  <div class="flex justify-center gap-2 mt-6">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&search={{ search }}&estado={{ estado }}" class="btn-ghost text-sm">← Anterior</a>
+    {% endif %}
+    <span class="text-sm text-slate-500 self-center">Página {{ page }} / {{ pages }}</span>
+    {% if page < pages %}
+    <a href="?page={{ page + 1 }}&search={{ search }}&estado={{ estado }}" class="btn-ghost text-sm">Siguiente →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+{% else %}
+<div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
+  <i class="fa-solid fa-calendar-star text-4xl text-slate-300 mb-3"></i>
+  <p class="text-slate-600 font-medium">Sin eventos registrados</p>
+  <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
+    class="mt-4 btn-primary text-sm">
+    <i class="fa-solid fa-plus mr-1.5"></i> Crear primer evento
+  </button>
+</div>
+{% endif %}
+
+<!-- Modal: nuevo evento -->
+<div id="modal-nuevo" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-semibold text-slate-800">Nuevo evento</h2>
+      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <form method="post" action="/eventos/nuevo" class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Título <span class="text-red-500">*</span></label>
+        <input name="titulo" required placeholder="Ej: Webinar de actualización tributaria" class="input w-full">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha <span class="text-red-500">*</span></label>
+          <input name="fecha" type="date" required class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Hora</label>
+          <input name="hora" type="time" class="input w-full">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Lugar / Plataforma</label>
+        <input name="lugar" placeholder="Ej: Auditorio Lima / Zoom" class="input w-full">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Cupo máximo</label>
+        <input name="cupo_max" type="number" min="1" placeholder="Sin límite si está vacío" class="input w-full">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+        <textarea name="descripcion" rows="3" placeholder="Detalles del evento…" class="input w-full resize-none"></textarea>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Crear evento</button>
+        <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')" class="btn-ghost">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

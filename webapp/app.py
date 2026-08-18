@@ -804,6 +804,142 @@ async def comunicaciones_enviar(request: Request):
     return {"ok": True, "enviados": enviados, "fallidos": fallidos}
 
 
+# ── Eventos ───────────────────────────────────────────────────────────────────
+
+MESES_ES = {
+    "01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril",
+    "05": "Mayo", "06": "Junio", "07": "Julio", "08": "Agosto",
+    "09": "Septiembre", "10": "Octubre", "11": "Noviembre", "12": "Diciembre",
+}
+
+
+@app.get("/eventos", response_class=HTMLResponse)
+async def eventos_list(
+    request: Request,
+    search: str = "",
+    estado: str = "",
+    page: int = 1,
+):
+    eventos, total = pdb.get_eventos(search=search, estado=estado, page=page)
+    # Agrupar por mes
+    grupos: dict[str, list] = {}
+    for ev in eventos:
+        fecha = ev.get("fecha", "")
+        clave = fecha[:7] if fecha else "Sin fecha"   # "YYYY-MM"
+        if clave not in grupos:
+            grupos[clave] = []
+        grupos[clave].append(ev)
+    # Enriquecer clave con nombre de mes
+    grupos_list = []
+    for clave, evs in grupos.items():
+        if len(clave) == 7:
+            anio, mes = clave.split("-")
+            label = f"{MESES_ES.get(mes, mes)} {anio}"
+        else:
+            label = clave
+        grupos_list.append({"clave": clave, "label": label, "eventos": evs})
+    pages = (total + 39) // 40
+    return templates.TemplateResponse(request, "eventos.html", _ctx(request,
+        grupos=grupos_list, total=total, page=page, pages=pages,
+        search=search, estado=estado,
+    ))
+
+
+@app.post("/eventos/nuevo")
+async def evento_nuevo(
+    request: Request,
+    titulo:      str = Form(...),
+    descripcion: str = Form(""),
+    fecha:       str = Form(...),
+    hora:        str = Form(""),
+    lugar:       str = Form(""),
+    cupo_max:    str = Form(""),
+):
+    cupo = int(cupo_max) if cupo_max.strip() else None
+    pdb.create_evento(titulo, descripcion, fecha, hora, lugar, cupo)
+    return RedirectResponse("/eventos", status_code=303)
+
+
+@app.get("/eventos/{evento_id}", response_class=HTMLResponse)
+async def evento_detalle(request: Request, evento_id: str):
+    evento = pdb.get_evento(evento_id)
+    if not evento:
+        return RedirectResponse("/eventos", status_code=302)
+    stats = pdb.get_evento_stats(evento_id)
+    return templates.TemplateResponse(request, "evento_detalle.html", _ctx(request,
+        evento=evento, stats=stats,
+    ))
+
+
+@app.post("/eventos/{evento_id}/update")
+async def evento_update(
+    request: Request,
+    evento_id:   str,
+    titulo:      str = Form(...),
+    descripcion: str = Form(""),
+    fecha:       str = Form(...),
+    hora:        str = Form(""),
+    lugar:       str = Form(""),
+    cupo_max:    str = Form(""),
+    estado:      str = Form("activo"),
+):
+    cupo = int(cupo_max) if cupo_max.strip() else None
+    pdb.update_evento(evento_id, titulo, descripcion, fecha, hora, lugar, cupo, estado)
+    return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
+
+
+@app.post("/eventos/{evento_id}/delete")
+async def evento_delete(request: Request, evento_id: str):
+    pdb.delete_evento(evento_id)
+    return RedirectResponse("/eventos", status_code=303)
+
+
+@app.post("/eventos/{evento_id}/inscribir")
+async def evento_inscribir(
+    request: Request,
+    evento_id: str,
+    member_id: str = Form(...),
+):
+    error = pdb.inscribir_socio(evento_id, member_id)
+    if error:
+        return JSONResponse({"error": error}, status_code=422)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/eventos/{evento_id}/desinscribir/{member_id}")
+async def evento_desinscribir(request: Request, evento_id: str, member_id: str):
+    pdb.desinscribir_socio(evento_id, member_id)
+    return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
+
+
+@app.post("/eventos/{evento_id}/asistencia/{member_id}")
+async def evento_asistencia(
+    request: Request,
+    evento_id: str,
+    member_id: str,
+    asistio: str = Form(...),
+):
+    valor: bool | None = None if asistio == "" else (asistio == "true")
+    pdb.marcar_asistencia(evento_id, member_id, valor)
+    return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
+
+
+@app.get("/api/eventos")
+async def api_eventos(limit: int = 5):
+    """API pública para bots: próximos eventos activos."""
+    eventos = pdb.get_eventos_proximos(limit=limit)
+    return {"eventos": eventos}
+
+
+@app.get("/api/eventos/{evento_id}")
+async def api_evento_detalle(evento_id: str):
+    """Detalle de evento con stats para bots."""
+    stats = pdb.get_evento_stats(evento_id)
+    if not stats:
+        return JSONResponse({"error": "No encontrado"}, status_code=404)
+    return stats
+
+
 # ── Portal de socios ──────────────────────────────────────────────────────────
 @app.get("/api/portal/member-status")
 async def portal_member_status(

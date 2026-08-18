@@ -103,7 +103,7 @@
       </a>
       {% endif %}
 
-      {% if is_admin or 'faqs' in p or 'marketing' in p or 'comunicaciones' in p %}
+      {% if is_admin or 'faqs' in p or 'marketing' in p or 'comunicaciones' in p or 'eventos' in p %}
       <div class="sidebar-section">Comunicación</div>
       {% endif %}
       {% if is_admin or 'faqs' in p %}
@@ -119,6 +119,11 @@
       {% if is_admin or 'comunicaciones' in p %}
       <a href="/comunicaciones" class="sidebar-link {% if '/comunicaciones' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-paper-plane"></i> Comunicaciones
+      </a>
+      {% endif %}
+      {% if is_admin or 'eventos' in p %}
+      <a href="/eventos" class="sidebar-link {% if '/eventos' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-calendar-star"></i> Eventos
       </a>
       {% endif %}
 

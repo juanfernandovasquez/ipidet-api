@@ -1070,3 +1070,162 @@ def get_credito_stats() -> dict:
         "n_pendientes": len(pendientes),
         "n_vencidos":   len(vencidos),
     }
+
+
+# ── Eventos ───────────────────────────────────────────────────────────────────
+
+eventos_col = _db.eventos_ipidet
+
+
+def get_eventos(search: str = "", estado: str = "", page: int = 1, per_page: int = 40):
+    q: dict = {}
+    if search:
+        q["$or"] = [
+            {"titulo": {"$regex": search, "$options": "i"}},
+            {"lugar":  {"$regex": search, "$options": "i"}},
+        ]
+    if estado:
+        q["estado"] = estado
+    total = eventos_col.count_documents(q)
+    skip = (page - 1) * per_page
+    docs = list(eventos_col.find(q).sort("fecha", 1).skip(skip).limit(per_page))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+        n_ins = len(d.get("inscritos", []))
+        cupo = d.get("cupo_max")
+        d["n_inscritos"] = n_ins
+        d["cupo_disponible"] = (cupo - n_ins) if cupo else None
+        d["lleno"] = bool(cupo and n_ins >= cupo)
+    return docs, total
+
+
+def get_evento(evento_id: str) -> dict | None:
+    try:
+        doc = eventos_col.find_one({"_id": ObjectId(evento_id)})
+    except Exception:
+        return None
+    if not doc:
+        return None
+    doc["_id"] = str(doc["_id"])
+    inscritos = doc.get("inscritos", [])
+    doc["n_inscritos"]  = len(inscritos)
+    doc["n_asistentes"] = sum(1 for i in inscritos if i.get("asistio") is True)
+    doc["n_ausentes"]   = sum(1 for i in inscritos if i.get("asistio") is False)
+    doc["n_pendientes"] = sum(1 for i in inscritos if i.get("asistio") is None)
+    cupo = doc.get("cupo_max")
+    doc["cupo_disponible"] = (cupo - doc["n_inscritos"]) if cupo else None
+    doc["lleno"] = bool(cupo and doc["n_inscritos"] >= cupo)
+    return doc
+
+
+def create_evento(titulo: str, descripcion: str, fecha: str, hora: str,
+                  lugar: str, cupo_max: int | None) -> str:
+    doc = {
+        "titulo":      titulo,
+        "descripcion": descripcion or "",
+        "fecha":       fecha,
+        "hora":        hora or "",
+        "lugar":       lugar or "",
+        "cupo_max":    cupo_max,
+        "estado":      "activo",
+        "inscritos":   [],
+        "created_at":  datetime.now(timezone.utc),
+    }
+    return str(eventos_col.insert_one(doc).inserted_id)
+
+
+def update_evento(evento_id: str, titulo: str, descripcion: str, fecha: str,
+                  hora: str, lugar: str, cupo_max: int | None, estado: str):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$set": {
+            "titulo":      titulo,
+            "descripcion": descripcion or "",
+            "fecha":       fecha,
+            "hora":        hora or "",
+            "lugar":       lugar or "",
+            "cupo_max":    cupo_max,
+            "estado":      estado,
+        }},
+    )
+
+
+def delete_evento(evento_id: str):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$set": {"estado": "cancelado"}},
+    )
+
+
+def inscribir_socio(evento_id: str, member_id: str) -> str | None:
+    """Inscribe al socio. Devuelve None si OK, mensaje de error si falla."""
+    evento = eventos_col.find_one({"_id": ObjectId(evento_id)})
+    if not evento:
+        return "Evento no encontrado"
+    inscritos = evento.get("inscritos", [])
+    if any(i["member_id"] == member_id for i in inscritos):
+        return "El socio ya está inscrito"
+    cupo = evento.get("cupo_max")
+    if cupo and len(inscritos) >= cupo:
+        return "El evento está lleno"
+    member = members_col.find_one({"member_id": member_id})
+    if not member:
+        return "Socio no encontrado"
+    email = next((e["email"] for e in member.get("emails", [])
+                  if e.get("estado") == "habilitado"), "")
+    nombre = f"{member.get('apellidos', '')} {member.get('nombres', '')}".strip()
+    entrada = {
+        "member_id": member_id,
+        "nombre":    nombre,
+        "email":     email,
+        "fecha_ins": str(_date.today()),
+        "asistio":   None,
+    }
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$push": {"inscritos": entrada}},
+    )
+    return None
+
+
+def desinscribir_socio(evento_id: str, member_id: str):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$pull": {"inscritos": {"member_id": member_id}}},
+    )
+
+
+def marcar_asistencia(evento_id: str, member_id: str, asistio: bool | None):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id), "inscritos.member_id": member_id},
+        {"$set": {"inscritos.$.asistio": asistio}},
+    )
+
+
+def get_eventos_proximos(limit: int = 5) -> list:
+    """Para API de bots: próximos eventos activos desde hoy."""
+    hoy = str(_date.today())
+    docs = list(
+        eventos_col.find({"estado": "activo", "fecha": {"$gte": hoy}})
+        .sort("fecha", 1).limit(limit)
+    )
+    return _clean(docs)
+
+
+def get_evento_stats(evento_id: str) -> dict:
+    evento = get_evento(evento_id)
+    if not evento:
+        return {}
+    return {
+        "titulo":       evento["titulo"],
+        "fecha":        evento["fecha"],
+        "lugar":        evento["lugar"],
+        "cupo_max":     evento.get("cupo_max"),
+        "n_inscritos":  evento["n_inscritos"],
+        "n_asistentes": evento["n_asistentes"],
+        "n_ausentes":   evento["n_ausentes"],
+        "n_pendientes": evento["n_pendientes"],
+        "pct_asistencia": round(
+            evento["n_asistentes"] / evento["n_inscritos"] * 100, 1
+        ) if evento["n_inscritos"] else 0,
+    }
