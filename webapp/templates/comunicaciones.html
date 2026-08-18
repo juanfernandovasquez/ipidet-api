@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+{% block title %}Comunicaciones — IPIDET{% endblock %}
+{% block heading %}Comunicaciones{% endblock %}
+
+{% block content %}
+<div x-data="comunicaciones()" x-init="init()">
+
+  <div class="grid grid-cols-1 xl:grid-cols-5 gap-5">
+
+    <!-- ── Panel izquierdo: Filtros ── -->
+    <div class="xl:col-span-2 space-y-4">
+
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 class="text-sm font-semibold text-slate-700 mb-4">
+          <i class="fa-solid fa-filter text-slate-400 mr-1.5"></i> 1. Definir destinatarios
+        </h2>
+
+        <!-- Período -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
+          <select x-model="filtros.periodo" class="input w-full text-sm">
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+
+        <!-- Estado de pago (multi) -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-2">Estado de pago</label>
+          <div class="space-y-1.5">
+            {% for val, lbl in [
+              ("debe","Debe"), ("pagado","Pagado"), ("fraccionamiento","Fraccionamiento"),
+              ("parcial","Parcial"), ("exonerado","Exonerado"), ("pendiente","Pendiente"),
+              ("en_revision","En revisión")
+            ] %}
+            <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input type="checkbox" value="{{ val }}"
+                @change="toggleEstado($event.target.value, $event.target.checked)"
+                class="rounded accent-blue-600">
+              {{ lbl }}
+            </label>
+            {% endfor %}
+          </div>
+          <p class="text-xs text-slate-400 mt-2">Sin selección = todos los estados</p>
+        </div>
+
+        <!-- Empresa -->
+        <div class="mb-4 relative">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Empresa pagadora</label>
+          <input x-model="filtros.empresa"
+                 @input.debounce.300ms="fetchEmpresas()"
+                 @focus="if (filtros.empresa.length > 0) fetchEmpresas()"
+                 @keydown.escape="showEmpresaSugg = false"
+                 placeholder="Todas las empresas…"
+                 class="input w-full text-sm" autocomplete="off">
+          <div x-show="showEmpresaSugg && empresaSugg.length > 0"
+               @click.outside="showEmpresaSugg = false"
+               class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full">
+            <button type="button" @click="filtros.empresa = ''; showEmpresaSugg = false"
+              class="block w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-slate-50 border-b border-slate-100">
+              — Todas —
+            </button>
+            <template x-for="e in empresaSugg" :key="e._id">
+              <button type="button"
+                      @click="filtros.empresa = e.nombre; showEmpresaSugg = false"
+                      class="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                <span x-text="e.nombre"></span>
+                <span class="text-xs text-slate-400 ml-1" x-show="e.ruc" x-text="'· ' + e.ruc"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Ubicación -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Ubicación</label>
+          <select x-model="filtros.ubicacion" class="input w-full text-sm">
+            <option value="">Todas las ubicaciones</option>
+            {% for u in ubicaciones %}
+            <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Título profesional -->
+        <div class="mb-5">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Título profesional</label>
+          <select x-model="filtros.titulo" class="input w-full text-sm">
+            <option value="">Todos los títulos</option>
+            {% for t in titulos %}
+            <option value="{{ t }}">{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Botón preview -->
+        <button type="button" @click="preview()"
+          :disabled="previewing"
+          class="btn-primary w-full disabled:opacity-40">
+          <i class="fa-solid fa-magnifying-glass mr-1.5" x-show="!previewing"></i>
+          <i class="fa-solid fa-spinner fa-spin mr-1.5" x-show="previewing" x-cloak></i>
+          <span x-text="previewing ? 'Buscando…' : 'Ver destinatarios'"></span>
+        </button>
+      </div>
+
+      <!-- Resultado del preview -->
+      <div x-show="showPreview" x-cloak class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-700">
+            Destinatarios
+            <span class="ml-2 inline-flex items-center justify-center bg-blue-600 text-white text-xs font-bold rounded-full w-6 h-6"
+                  x-text="seleccionados.length"></span>
+          </h3>
+          <div class="flex gap-2 text-xs">
+            <button @click="seleccionarTodos(true)" class="text-blue-600 hover:underline">Todos</button>
+            <span class="text-slate-300">|</span>
+            <button @click="seleccionarTodos(false)" class="text-slate-500 hover:underline">Ninguno</button>
+          </div>
+        </div>
+
+        <div x-show="destinatarios.length === 0" class="text-center py-6 text-slate-400 text-sm">
+          <i class="fa-solid fa-circle-info mr-1"></i> No hay socios con esos filtros.
+        </div>
+
+        <div x-show="destinatarios.length > 0" class="space-y-1 max-h-72 overflow-y-auto pr-1">
+          <template x-for="d in destinatarios" :key="d.member_id">
+            <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" x-model="d.selected" class="rounded accent-blue-600 flex-shrink-0">
+              <div class="min-w-0">
+                <div class="text-xs font-medium text-slate-800 truncate" x-text="d.nombre"></div>
+                <div class="text-xs text-slate-400 truncate" x-text="d.email"></div>
+              </div>
+              <span class="ml-auto flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium"
+                :class="{
+                  'bg-red-50 text-red-600': d.estado_pago === 'debe',
+                  'bg-green-50 text-green-600': d.estado_pago === 'pagado',
+                  'bg-amber-50 text-amber-600': d.estado_pago === 'fraccionamiento',
+                  'bg-purple-50 text-purple-600': d.estado_pago === 'parcial',
+                  'bg-slate-100 text-slate-500': !['debe','pagado','fraccionamiento','parcial'].includes(d.estado_pago),
+                }"
+                x-text="d.estado_pago || '—'"></span>
+            </label>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Panel derecho: Redactar ── -->
+    <div class="xl:col-span-3 space-y-4">
+
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 class="text-sm font-semibold text-slate-700 mb-4">
+          <i class="fa-solid fa-pen-to-square text-slate-400 mr-1.5"></i> 2. Redactar mensaje
+        </h2>
+
+        <!-- Plantillas -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-2">Plantilla de inicio</label>
+          <div class="flex flex-wrap gap-2">
+            <template x-for="[key, lbl] in Object.entries(plantillasDisp)" :key="key">
+              <button type="button"
+                @click="setPlantilla(key)"
+                :class="plantilla === key
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'"
+                class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors"
+                x-text="lbl">
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Asunto -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Asunto <span class="text-red-500">*</span></label>
+          <input x-model="asunto" type="text" placeholder="Asunto del correo…" class="input w-full">
+        </div>
+
+        <!-- Cuerpo -->
+        <div class="mb-2">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Mensaje <span class="text-red-500">*</span></label>
+          <textarea x-model="cuerpo" rows="12" placeholder="Escribe el mensaje aquí…"
+            class="input w-full font-mono text-sm resize-y"></textarea>
+        </div>
+        <p class="text-xs text-slate-400 mb-5">
+          El mensaje se envía con el formato corporativo de IPIDET. Cada email es individual (no van en copia).
+        </p>
+
+        <!-- Feedback -->
+        <div x-show="errorMsg" x-cloak
+             class="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700 mb-4">
+          <i class="fa-solid fa-circle-exclamation"></i> <span x-text="errorMsg"></span>
+        </div>
+        <div x-show="resultado" x-cloak
+             class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700 mb-4">
+          <i class="fa-solid fa-circle-check"></i>
+          <span x-text="resultado ? 'Enviado a ' + resultado.enviados + ' socios.' + (resultado.fallidos ? ' ' + resultado.fallidos + ' fallaron.' : '') : ''"></span>
+        </div>
+
+        <!-- Botón enviar / confirmar -->
+        <div x-show="!confirmando">
+          <button type="button" @click="iniciarEnvio()"
+            :disabled="seleccionados.length === 0 || !asunto.trim() || !cuerpo.trim() || enviando"
+            class="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-paper-plane mr-1.5"></i>
+            <span x-text="'Enviar a ' + seleccionados.length + ' socio(s)'"></span>
+          </button>
+        </div>
+
+        <!-- Confirmación -->
+        <div x-show="confirmando" x-cloak
+             class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p class="text-sm font-medium text-amber-800 mb-3">
+            <i class="fa-solid fa-triangle-exclamation mr-1.5"></i>
+            ¿Confirmas el envío a <strong x-text="seleccionados.length"></strong> socios?
+          </p>
+          <p class="text-xs text-amber-700 mb-4">Asunto: <em x-text="asunto"></em></p>
+          <div class="flex gap-2">
+            <button type="button" @click="enviar()"
+              :disabled="enviando"
+              class="btn-primary text-sm disabled:opacity-40">
+              <i class="fa-solid fa-spinner fa-spin mr-1" x-show="enviando" x-cloak></i>
+              <span x-text="enviando ? 'Enviando…' : 'Sí, enviar'"></span>
+            </button>
+            <button type="button" @click="confirmando = false" class="btn-ghost text-sm">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Historial de campañas -->
+      {% if history %}
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 class="text-sm font-semibold text-slate-700 mb-4">
+          <i class="fa-solid fa-clock-rotate-left text-slate-400 mr-1.5"></i> Historial de envíos
+        </h2>
+        <div class="space-y-2">
+          {% for h in history %}
+          <div class="flex items-start justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="min-w-0">
+              <div class="text-sm font-medium text-slate-800 truncate">{{ h.asunto }}</div>
+              <div class="text-xs text-slate-400 mt-0.5">
+                {{ h.fecha[:10] if h.fecha else '—' }}
+                {% if h.filtros %}
+                  · {{ h.filtros.get('periodo', '') }}
+                  {% if h.filtros.get('estados_pago') %} · {{ h.filtros.estados_pago | join(', ') }}{% endif %}
+                  {% if h.filtros.get('empresa') %} · {{ h.filtros.empresa }}{% endif %}
+                {% endif %}
+              </div>
+            </div>
+            <span class="flex-shrink-0 ml-3 inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+              <i class="fa-solid fa-paper-plane text-[10px]"></i> {{ h.total_enviados }}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+
+<script>
+function comunicaciones() {
+  return {
+    filtros: {
+      periodo:     '2026',
+      estados_pago: [],
+      empresa:     '',
+      ubicacion:   '',
+      titulo:      '',
+    },
+
+    empresaSugg:    [],
+    showEmpresaSugg: false,
+
+    previewing:     false,
+    showPreview:    false,
+    destinatarios:  [],
+
+    plantilla:  'libre',
+    asunto:     '',
+    cuerpo:     '',
+
+    plantillasDisp: {
+      libre:        'Libre',
+      recordatorio: 'Recordatorio cuota',
+      mora:         'Aviso de mora',
+      evento:       'Invitación a evento',
+    },
+    plantillasTexto: {
+      libre:        { asunto: '', cuerpo: '' },
+      recordatorio: {
+        asunto: 'Recordatorio de cuota IPIDET',
+        cuerpo: 'Estimado/a asociado/a,\n\nLe recordamos que tiene pendiente el pago de su cuota anual de membresía IPIDET.\n\nPara realizar su pago o consultar opciones de fraccionamiento, comuníquese con nosotros.\n\nCordialmente,\nEquipo IPIDET',
+      },
+      mora: {
+        asunto: 'Aviso de mora — IPIDET',
+        cuerpo: 'Estimado/a asociado/a,\n\nLe informamos que su cuota de membresía se encuentra vencida. Le pedimos regularizar su situación a la brevedad posible para mantener los beneficios de su membresía.\n\nPara coordinar el pago, comuníquese con nosotros.\n\nCordialmente,\nEquipo IPIDET',
+      },
+      evento: {
+        asunto: 'Invitación — Próximo evento IPIDET',
+        cuerpo: 'Estimado/a asociado/a,\n\nTenemos el agrado de invitarle al próximo evento organizado por IPIDET.\n\n[Detalla aquí: nombre del evento, fecha, hora, modalidad y enlace de inscripción]\n\nEsperamos contar con su presencia.\n\nCordialmente,\nEquipo IPIDET',
+      },
+    },
+
+    confirmando: false,
+    enviando:    false,
+    resultado:   null,
+    errorMsg:    '',
+
+    init() {},
+
+    get seleccionados() {
+      return this.destinatarios.filter(d => d.selected);
+    },
+
+    toggleEstado(val, checked) {
+      if (checked) {
+        if (!this.filtros.estados_pago.includes(val)) this.filtros.estados_pago.push(val);
+      } else {
+        this.filtros.estados_pago = this.filtros.estados_pago.filter(e => e !== val);
+      }
+    },
+
+    async fetchEmpresas() {
+      if (!this.filtros.empresa.trim()) { this.showEmpresaSugg = false; return; }
+      const r = await fetch('/api/companies?q=' + encodeURIComponent(this.filtros.empresa));
+      this.empresaSugg = await r.json();
+      this.showEmpresaSugg = this.empresaSugg.length > 0;
+    },
+
+    setPlantilla(key) {
+      this.plantilla = key;
+      const t = this.plantillasTexto[key];
+      this.asunto = t.asunto;
+      this.cuerpo = t.cuerpo;
+    },
+
+    async preview() {
+      this.previewing = true;
+      this.resultado  = null;
+      this.errorMsg   = '';
+      const r = await fetch('/api/comunicaciones/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.filtros),
+      });
+      const data = await r.json();
+      this.destinatarios = (data.destinatarios || []).map(d => ({ ...d, selected: true }));
+      this.previewing   = false;
+      this.showPreview  = true;
+    },
+
+    seleccionarTodos(val) {
+      this.destinatarios.forEach(d => d.selected = val);
+    },
+
+    iniciarEnvio() {
+      this.errorMsg = '';
+      this.resultado = null;
+      if (!this.asunto.trim()) { this.errorMsg = 'El asunto es obligatorio.'; return; }
+      if (!this.cuerpo.trim()) { this.errorMsg = 'El mensaje no puede estar vacío.'; return; }
+      if (!this.seleccionados.length) { this.errorMsg = 'Selecciona al menos un destinatario.'; return; }
+      this.confirmando = true;
+    },
+
+    async enviar() {
+      this.enviando = true;
+      try {
+        const r = await fetch('/api/comunicaciones/enviar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asunto:        this.asunto,
+            cuerpo:        this.cuerpo,
+            plantilla:     this.plantilla,
+            destinatarios: this.seleccionados,
+            filtros:       this.filtros,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          this.resultado   = data;
+          this.confirmando = false;
+          this.showPreview = false;
+          this.destinatarios = [];
+        } else {
+          this.errorMsg    = data.error || 'Error al enviar.';
+          this.confirmando = false;
+        }
+      } catch {
+        this.errorMsg    = 'Error de red. Intenta nuevamente.';
+        this.confirmando = false;
+      } finally {
+        this.enviando = false;
+      }
+    },
+  };
+}
+</script>
+
+{% endblock %}

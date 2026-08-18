@@ -19,6 +19,7 @@ SECCIONES = [
     ("finanzas",         "Finanzas",         "fa-chart-line"),
     ("faqs",             "FAQs",             "fa-circle-question"),
     ("marketing",        "Marketing",        "fa-bullhorn"),
+    ("comunicaciones",   "Comunicaciones",   "fa-paper-plane"),
 ]
 ALL_SECTIONS = [s[0] for s in SECCIONES]
 
@@ -30,6 +31,7 @@ _PATH_MAP = [
     ("/finanzas",         "finanzas"),
     ("/faqs",             "faqs"),
     ("/marketing",        "marketing"),
+    ("/comunicaciones",   "comunicaciones"),
     ("/admin",            "__admin__"),
 ]
 

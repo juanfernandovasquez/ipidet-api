@@ -708,6 +708,65 @@ async def email_test(to: str = Form(...)):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+# ── Comunicaciones ────────────────────────────────────────────────────────────
+
+@app.get("/comunicaciones", response_class=HTMLResponse)
+async def comunicaciones(request: Request):
+    history  = pdb.get_comunicaciones_history()
+    titulos  = pdb.get_member_titulos()
+    ubicaciones = pdb.get_member_ubicaciones()
+    empresas = pdb.get_companies()
+    return templates.TemplateResponse(request, "comunicaciones.html", _ctx(request,
+        history=history, titulos=titulos, ubicaciones=ubicaciones, empresas=empresas,
+    ))
+
+
+@app.post("/api/comunicaciones/preview")
+async def comunicaciones_preview(request: Request):
+    data        = await request.json()
+    periodo     = data.get("periodo", "2026")
+    estados     = data.get("estados_pago", [])
+    empresa     = data.get("empresa", "")
+    ubicacion   = data.get("ubicacion", "")
+    titulo      = data.get("titulo", "")
+    destinatarios = pdb.get_comunicacion_destinatarios(
+        periodo=periodo, estados_pago=estados or None,
+        empresa=empresa, ubicacion=ubicacion, titulo=titulo,
+    )
+    return {"total": len(destinatarios), "destinatarios": destinatarios}
+
+
+@app.post("/api/comunicaciones/enviar")
+async def comunicaciones_enviar(request: Request):
+    data          = await request.json()
+    asunto        = (data.get("asunto") or "").strip()
+    cuerpo        = (data.get("cuerpo") or "").strip()
+    plantilla     = data.get("plantilla", "libre")
+    destinatarios = data.get("destinatarios", [])
+    filtros       = data.get("filtros", {})
+
+    if not asunto or not cuerpo:
+        return JSONResponse({"error": "Asunto y mensaje son obligatorios."}, status_code=422)
+    if not destinatarios:
+        return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
+
+    cuerpo_html = cuerpo.replace("\n", "<br>")
+    html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
+
+    enviados, fallidos = 0, 0
+    for dest in destinatarios:
+        try:
+            await mailer.send_email(to=dest["email"], subject=asunto, html_body=html)
+            enviados += 1
+        except Exception:
+            fallidos += 1
+
+    usuario = request.session.get("user_email", "")
+    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario)
+
+    return {"ok": True, "enviados": enviados, "fallidos": fallidos}
+
+
 # ── Portal de socios ──────────────────────────────────────────────────────────
 @app.get("/api/portal/member-status")
 async def portal_member_status(

@@ -911,3 +911,95 @@ def get_marketing_emails(titulo: str = "", ubicacion: str = "",
         })
 
     return sorted(result, key=lambda x: x["nombre"])
+
+
+# ── Comunicaciones ─────────────────────────────────────────────────────────────
+
+comunicaciones_col = _db.comunicaciones
+
+
+def get_comunicacion_destinatarios(
+    periodo: str = "2026",
+    estados_pago: list[str] | None = None,
+    empresa: str = "",
+    ubicacion: str = "",
+    titulo: str = "",
+) -> list:
+    """Socios activos con email habilitado que coincidan con los filtros."""
+    q: dict = {"estado": "activo", "emails": {"$elemMatch": {"estado": "habilitado"}}}
+    if titulo:
+        q["titulo"] = titulo
+    if ubicacion:
+        q["ubicacion"] = ubicacion
+
+    members = list(members_col.find(q, {
+        "member_id": 1, "apellidos": 1, "nombres": 1,
+        "titulo": 1, "ubicacion": 1, "emails": 1,
+    }))
+
+    if estados_pago or empresa:
+        pay_q: dict = {"periodo": periodo}
+        if estados_pago:
+            pay_q["estado"] = {"$in": estados_pago}
+        if empresa:
+            pay_q["empresa_pagadora"] = {"$regex": _re.escape(empresa.strip()), "$options": "i"}
+        valid_ids = {p["member_id"] for p in payments_col.find(pay_q, {"member_id": 1})}
+        members = [m for m in members if m["member_id"] in valid_ids]
+
+    member_ids = [m["member_id"] for m in members]
+    pay_map = {
+        p["member_id"]: p.get("estado", "")
+        for p in payments_col.find(
+            {"member_id": {"$in": member_ids}, "periodo": periodo},
+            {"member_id": 1, "estado": 1},
+        )
+    }
+
+    result = []
+    for m in members:
+        email = next(
+            (e["email"] for e in m.get("emails", [])
+             if e.get("principal") and e.get("estado") == "habilitado"),
+            next((e["email"] for e in m.get("emails", [])
+                  if e.get("estado") == "habilitado"), None),
+        )
+        if not email:
+            continue
+        result.append({
+            "member_id":   m["member_id"],
+            "nombre":      f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
+            "email":       email,
+            "titulo":      m.get("titulo", ""),
+            "ubicacion":   m.get("ubicacion", ""),
+            "estado_pago": pay_map.get(m["member_id"], "sin registro"),
+        })
+
+    return sorted(result, key=lambda x: x["nombre"])
+
+
+def save_comunicacion_log(asunto: str, plantilla: str, filtros: dict,
+                           destinatarios: list, usuario: str = "") -> str:
+    from datetime import datetime, timezone
+    doc = {
+        "fecha":          datetime.now(timezone.utc),
+        "usuario":        usuario,
+        "asunto":         asunto,
+        "plantilla":      plantilla,
+        "filtros":        filtros,
+        "total_enviados": len(destinatarios),
+        "destinatarios":  destinatarios,
+    }
+    return str(comunicaciones_col.insert_one(doc).inserted_id)
+
+
+def get_comunicaciones_history(limit: int = 20) -> list:
+    docs = list(comunicaciones_col.find({}, {"destinatarios": 0}).sort("fecha", -1).limit(limit))
+    return _clean(docs)
+
+
+def get_member_titulos() -> list[str]:
+    return sorted(members_col.distinct("titulo", {"estado": "activo", "titulo": {"$nin": [None, ""]}}))
+
+
+def get_member_ubicaciones() -> list[str]:
+    return sorted(members_col.distinct("ubicacion", {"estado": "activo", "ubicacion": {"$nin": [None, ""]}}))
