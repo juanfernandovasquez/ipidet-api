@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Crédito empresas — IPIDET{% endblock %}
+{% block heading %}Cobranzas{% endblock %}
+
+{% block content %}
+
+<!-- Tabs -->
+<div class="flex gap-1 mb-5 border-b border-slate-200">
+  <a href="/billing" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+    <i class="fa-solid fa-money-bill-wave mr-1.5"></i> Cobranzas
+  </a>
+  <a href="/billing/facturacion" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+    <i class="fa-solid fa-file-invoice mr-1.5"></i> Facturación
+  </a>
+  <a href="/billing/facturacion/empresa" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+    <i class="fa-solid fa-building mr-1.5"></i> Factura empresa
+  </a>
+  <a href="/billing/credito" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-blue-600 text-blue-600 bg-white">
+    <i class="fa-solid fa-clock mr-1.5"></i> Crédito
+  </a>
+</div>
+
+<!-- Stats -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+  <div class="bg-white rounded-xl border border-slate-200 p-4">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Pendiente</div>
+    <div class="text-2xl font-bold text-slate-800">S/ {{ "%.2f"|format(stats.total_pendiente) }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">{{ stats.n_pendientes }} factura(s)</div>
+  </div>
+  <div class="bg-white rounded-xl border border-red-200 p-4">
+    <div class="text-xs text-red-500 uppercase tracking-wide mb-1">Vencido</div>
+    <div class="text-2xl font-bold text-red-600">S/ {{ "%.2f"|format(stats.total_vencido) }}</div>
+    <div class="text-xs text-red-400 mt-0.5">{{ stats.n_vencidos }} factura(s)</div>
+  </div>
+  <div class="bg-white rounded-xl border border-green-200 p-4">
+    <div class="text-xs text-green-600 uppercase tracking-wide mb-1">Cobrado</div>
+    <div class="text-2xl font-bold text-green-700">S/ {{ "%.2f"|format(stats.total_cobrado) }}</div>
+  </div>
+  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
+    <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
+      class="btn-primary text-sm w-full">
+      <i class="fa-solid fa-plus mr-1.5"></i> Nueva factura
+    </button>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+  <form method="get" action="/billing/credito" class="flex flex-wrap gap-3 items-end" x-data="{ t: null }">
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
+      <input name="empresa" value="{{ empresa }}" placeholder="Filtrar empresa…" class="input w-48"
+             x-ref="q" @input="clearTimeout(t); t = setTimeout(() => $refs.q.form.submit(), 450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+      <select name="estado" class="input" @change="$el.form.submit()">
+        <option value="">Todos</option>
+        <option value="pendiente" {% if estado == 'pendiente' %}selected{% endif %}>Pendiente</option>
+        <option value="vencido"   {% if estado == 'vencido'   %}selected{% endif %}>Vencido</option>
+        <option value="cobrado"   {% if estado == 'cobrado'   %}selected{% endif %}>Cobrado</option>
+      </select>
+    </div>
+    {% if empresa or estado %}
+    <a href="/billing/credito" class="btn-ghost text-sm self-end">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Tabla -->
+{% if facturas %}
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">N° Factura</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Concepto</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Emisión</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Vencimiento</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
+        <th class="px-4 py-3"></th>
+      </tr>
+    </thead>
+    {% for f in facturas %}
+    <tbody x-data="{ editando: false, fechaCobro: '' }">
+    <tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-4 py-3 font-medium text-slate-800">{{ f.empresa }}</td>
+      <td class="px-4 py-3 font-mono text-slate-700 text-xs">{{ f.numero_factura }}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs">{{ f.concepto or '—' }}</td>
+      <td class="px-4 py-3 font-semibold text-slate-800">S/ {{ "%.2f"|format(f.monto) }}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs">{{ f.fecha_emision or '—' }}</td>
+      <td class="px-4 py-3 text-xs">
+        {% if f.estado == 'vencido' %}
+        <span class="font-medium text-red-600">{{ f.fecha_vencimiento }}</span>
+        {% else %}
+        <span class="text-slate-500">{{ f.fecha_vencimiento or '—' }}</span>
+        {% endif %}
+      </td>
+      <td class="px-4 py-3">
+        {% if f.estado == 'cobrado' %}
+        <span class="inline-flex items-center gap-1 text-xs font-medium bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
+          <i class="fa-solid fa-check text-[10px]"></i> Cobrado
+        </span>
+        {% elif f.estado == 'vencido' %}
+        <span class="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full">
+          <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Vencido
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+          <i class="fa-solid fa-clock text-[10px]"></i> Pendiente
+        </span>
+        {% endif %}
+      </td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex items-center justify-end gap-1">
+          {% if f.estado != 'cobrado' %}
+          <button @click="editando = !editando"
+            class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors">
+            Marcar cobrado
+          </button>
+          {% endif %}
+          <form method="post" action="/billing/credito/{{ f._id }}/delete"
+                onsubmit="return confirm('¿Eliminar esta factura?')">
+            <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1">
+              <i class="fa-solid fa-trash-can text-xs"></i>
+            </button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    <!-- Fila inline: registrar cobro -->
+    <tr x-show="editando" x-cloak class="border-t border-blue-100 bg-blue-50">
+      <td colspan="8" class="px-4 py-3">
+        <form method="post" action="/billing/credito/{{ f._id }}/estado" class="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="estado" value="cobrado">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de cobro</label>
+            <input type="date" name="fecha_cobro" x-model="fechaCobro" class="input text-sm w-40" required>
+          </div>
+          <div class="flex gap-2 self-end">
+            <button type="submit" class="btn-primary text-xs py-2">
+              <i class="fa-solid fa-check mr-1"></i> Confirmar cobro
+            </button>
+            <button type="button" @click="editando = false" class="btn-ghost text-xs py-2">Cancelar</button>
+          </div>
+        </form>
+      </td>
+    </tr>
+    </tbody>
+    {% endfor %}
+  </table>
+</div>
+
+{% else %}
+<div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
+  <i class="fa-solid fa-file-invoice text-4xl text-slate-300 mb-3"></i>
+  <p class="text-slate-600 font-medium">Sin facturas a crédito registradas</p>
+  <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
+    class="mt-4 btn-primary text-sm">
+    <i class="fa-solid fa-plus mr-1.5"></i> Registrar primera factura
+  </button>
+</div>
+{% endif %}
+
+<!-- Modal: nueva factura -->
+<div id="modal-nueva" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-nueva').classList.add('hidden')"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-semibold text-slate-800">Nueva factura a crédito</h2>
+      <button onclick="document.getElementById('modal-nueva').classList.add('hidden')"
+        class="text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <form method="post" action="/billing/credito/nueva" class="space-y-4" x-data="{ emp: '' }">
+      <div class="relative">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Empresa <span class="text-red-500">*</span></label>
+        <input name="empresa" x-model="emp" required placeholder="Nombre de la empresa…" class="input w-full"
+               list="emp-list" autocomplete="off">
+        <datalist id="emp-list">
+          {% for e in empresas %}<option value="{{ e.nombre }}">{% endfor %}
+        </datalist>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">N° Factura <span class="text-red-500">*</span></label>
+          <input name="numero_factura" required placeholder="F001-00123" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Monto (S/) <span class="text-red-500">*</span></label>
+          <input name="monto" type="number" step="0.01" min="0" required placeholder="0.00" class="input w-full">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Concepto</label>
+        <input name="concepto" placeholder="Ej: Cuotas anuales socios EY 2026" class="input w-full">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión <span class="text-red-500">*</span></label>
+          <input name="fecha_emision" type="date" required class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de vencimiento <span class="text-red-500">*</span></label>
+          <input name="fecha_vencimiento" type="date" required class="input w-full">
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Registrar factura</button>
+        <button type="button" onclick="document.getElementById('modal-nueva').classList.add('hidden')"
+          class="btn-ghost">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

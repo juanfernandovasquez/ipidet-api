@@ -26,6 +26,7 @@ payments_col = _db.payments
 faqs_col = _db.faqs
 events_col = _db.events
 companies_col = _db.companies
+credito_col = _db.facturas_credito
 
 MEDIOS_PAGO = [
     "Transferencia bancaria",
@@ -1003,3 +1004,69 @@ def get_member_titulos() -> list[str]:
 
 def get_member_ubicaciones() -> list[str]:
     return sorted(members_col.distinct("ubicacion", {"estado": "activo", "ubicacion": {"$nin": [None, ""]}}))
+
+
+# ── Facturas a crédito ────────────────────────────────────────────────────────
+
+def _sync_credito_estado(doc: dict) -> str:
+    if doc.get("estado") == "cobrado":
+        return "cobrado"
+    venc = doc.get("fecha_vencimiento")
+    if venc and venc < _date.today().isoformat():
+        return "vencido"
+    return "pendiente"
+
+
+def get_facturas_credito(empresa: str = "", estado: str = "") -> list:
+    q: dict = {}
+    if empresa:
+        q["empresa"] = {"$regex": _re.escape(empresa.strip()), "$options": "i"}
+    if estado:
+        q["estado"] = estado
+    docs = list(credito_col.find(q).sort("fecha_vencimiento", 1))
+    for d in docs:
+        d["estado"] = _sync_credito_estado(d)
+    return _clean(docs)
+
+
+def create_factura_credito(empresa: str, numero_factura: str, monto: float,
+                            fecha_emision: str, fecha_vencimiento: str,
+                            concepto: str = "", socios: list | None = None) -> str:
+    doc = {
+        "empresa": empresa.strip(),
+        "numero_factura": numero_factura.strip(),
+        "monto": monto,
+        "fecha_emision": fecha_emision,
+        "fecha_vencimiento": fecha_vencimiento,
+        "concepto": concepto.strip(),
+        "socios": socios or [],
+        "estado": "pendiente",
+        "created_at": datetime.now(timezone.utc),
+    }
+    return str(credito_col.insert_one(doc).inserted_id)
+
+
+def update_factura_credito_estado(factura_id: str, estado: str,
+                                   fecha_cobro: str = "") -> None:
+    fields: dict = {"estado": estado}
+    if estado == "cobrado" and fecha_cobro:
+        fields["fecha_cobro"] = fecha_cobro
+    credito_col.update_one({"_id": ObjectId(factura_id)}, {"$set": fields})
+
+
+def delete_factura_credito(factura_id: str) -> None:
+    credito_col.delete_one({"_id": ObjectId(factura_id)})
+
+
+def get_credito_stats() -> dict:
+    docs = list(credito_col.find({}))
+    pendientes = [d for d in docs if _sync_credito_estado(d) == "pendiente"]
+    vencidos   = [d for d in docs if _sync_credito_estado(d) == "vencido"]
+    cobrados   = [d for d in docs if d.get("estado") == "cobrado"]
+    return {
+        "total_pendiente": sum(d.get("monto", 0) for d in pendientes),
+        "total_vencido":   sum(d.get("monto", 0) for d in vencidos),
+        "total_cobrado":   sum(d.get("monto", 0) for d in cobrados),
+        "n_pendientes": len(pendientes),
+        "n_vencidos":   len(vencidos),
+    }

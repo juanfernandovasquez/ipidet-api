@@ -708,6 +708,43 @@ async def email_test(to: str = Form(...)):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+# ── Facturas a crédito ────────────────────────────────────────────────────────
+
+@app.get("/billing/credito", response_class=HTMLResponse)
+async def billing_credito(request: Request, empresa: str = "", estado: str = ""):
+    facturas = pdb.get_facturas_credito(empresa, estado)
+    stats    = pdb.get_credito_stats()
+    empresas = pdb.get_companies()
+    return templates.TemplateResponse(request, "credito.html", _ctx(request,
+        facturas=facturas, stats=stats, empresas=empresas,
+        empresa=empresa, estado=estado,
+    ))
+
+@app.post("/billing/credito/nueva")
+async def credito_nueva(
+    empresa: str         = Form(...),
+    numero_factura: str  = Form(...),
+    monto: float         = Form(...),
+    fecha_emision: str   = Form(...),
+    fecha_vencimiento: str = Form(...),
+    concepto: str        = Form(""),
+):
+    pdb.create_factura_credito(empresa, numero_factura, monto,
+                                fecha_emision, fecha_vencimiento, concepto)
+    return RedirectResponse("/billing/credito", status_code=303)
+
+@app.post("/billing/credito/{factura_id}/estado")
+async def credito_estado(factura_id: str, estado: str = Form(...),
+                          fecha_cobro: str = Form("")):
+    pdb.update_factura_credito_estado(factura_id, estado, fecha_cobro)
+    return RedirectResponse("/billing/credito", status_code=303)
+
+@app.post("/billing/credito/{factura_id}/delete")
+async def credito_delete(factura_id: str):
+    pdb.delete_factura_credito(factura_id)
+    return RedirectResponse("/billing/credito", status_code=303)
+
+
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
