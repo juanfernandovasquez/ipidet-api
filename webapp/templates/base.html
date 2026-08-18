@@ -9,8 +9,25 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
     [x-cloak] { display: none !important; }
-    .sidebar-link { @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-sm font-medium; }
-    .sidebar-link.active { @apply bg-blue-600 text-white; }
+
+    /* ── Sidebar ── */
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 10px; border-radius: 7px;
+      color: #94a3b8; font-size: 13.5px; font-weight: 500;
+      transition: background 0.12s, color 0.12s;
+      white-space: nowrap;
+    }
+    .sidebar-link:hover { background: rgba(255,255,255,0.07); color: #e2e8f0; }
+    .sidebar-link.active { background: #2563eb; color: #fff; }
+    .sidebar-link i { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
+    .sidebar-section {
+      padding: 18px 10px 5px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.09em;
+      text-transform: uppercase; color: #475569;
+    }
+
+    /* ── Badges ── */
     .badge { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold; }
     .badge-green  { @apply bg-green-100 text-green-800; }
     .badge-red    { @apply bg-red-100 text-red-800; }
@@ -21,69 +38,94 @@
     .badge-purple { @apply bg-purple-100 text-purple-800; }
     .badge-orange { @apply bg-orange-100 text-orange-800; }
     .badge-blue   { @apply bg-blue-100 text-blue-800; }
-    .btn-primary  { @apply bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors; }
-    .btn-ghost    { @apply text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-sm font-medium px-3 py-2 rounded-lg transition-colors; }
-    .input        { @apply border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500; }
+
+    /* ── Buttons / Inputs ── */
+    .btn-primary { @apply bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors; }
+    .btn-ghost   { @apply text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-sm font-medium px-3 py-2 rounded-lg transition-colors; }
+    .input       { @apply border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen flex">
 
   <!-- Sidebar -->
-  <aside class="w-60 bg-slate-800 min-h-screen flex flex-col fixed top-0 left-0 z-10">
-    <div class="px-5 py-5 border-b border-slate-700">
-      <div class="text-white font-bold text-lg tracking-tight">IPIDET</div>
-      <div class="text-slate-400 text-xs mt-0.5">Panel de Administración</div>
+  <aside class="w-56 bg-slate-900 min-h-screen flex flex-col fixed top-0 left-0 z-10">
+
+    <!-- Logo -->
+    <div class="px-4 py-5 border-b border-slate-800">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center flex-shrink-0">
+          <i class="fa-solid fa-shield-halved text-white text-xs"></i>
+        </div>
+        <div>
+          <div class="text-white font-bold text-sm leading-tight">IPIDET</div>
+          <div class="text-slate-500 text-xs leading-tight">Admin</div>
+        </div>
+      </div>
     </div>
 
-    <nav class="flex-1 px-3 py-4 space-y-1">
+    <!-- Nav -->
+    <nav class="flex-1 px-2.5 py-3 overflow-y-auto">
+
       <a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}">
-        <i class="fa-solid fa-chart-pie w-4"></i> Dashboard
+        <i class="fa-solid fa-chart-pie"></i> Dashboard
       </a>
-      <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Padrón</div>
+
+      <div class="sidebar-section">Padrón</div>
       <a href="/members" class="sidebar-link {% if '/members' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-users w-4"></i> Socios
+        <i class="fa-solid fa-users"></i> Socios
       </a>
-      <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Finanzas</div>
+
+      <div class="sidebar-section">Finanzas</div>
       <a href="/billing" class="sidebar-link {% if request.url.path == '/billing' %}active{% endif %}">
-        <i class="fa-solid fa-money-bill-wave w-4"></i> Cobranzas
+        <i class="fa-solid fa-money-bill-wave"></i> Cobranzas
       </a>
       <a href="/fraccionamientos" class="sidebar-link {% if '/fraccionamientos' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-calendar-days w-4"></i> Fraccionamientos
+        <i class="fa-solid fa-calendar-days"></i> Fraccionamientos
       </a>
       <a href="/finanzas" class="sidebar-link {% if '/finanzas' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-chart-line w-4"></i> Finanzas <span class="ml-auto text-xs bg-slate-600 text-slate-300 px-1.5 py-0.5 rounded">mockup</span>
+        <i class="fa-solid fa-chart-line"></i>
+        <span class="flex-1">Finanzas</span>
+        <span class="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-normal">mockup</span>
       </a>
-      <div class="pt-3 pb-1 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Comunicación</div>
+
+      <div class="sidebar-section">Comunicación</div>
       <a href="/faqs" class="sidebar-link {% if '/faqs' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-circle-question w-4"></i> FAQs
+        <i class="fa-solid fa-circle-question"></i> FAQs
       </a>
       <a href="/marketing" class="sidebar-link {% if '/marketing' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-bullhorn w-4"></i> Marketing
+        <i class="fa-solid fa-bullhorn"></i> Marketing
       </a>
+
+      {% if current_user_role == 'admin' %}
+      <div class="sidebar-section">Sistema</div>
+      <a href="/admin/users" class="sidebar-link {% if '/admin/users' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-user-shield"></i> Usuarios
+      </a>
+      {% endif %}
+
     </nav>
 
-    {% if current_user_role == 'admin' %}
-    <div class="px-3 pb-1">
-      <a href="/admin/users" class="sidebar-link {% if '/admin/users' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-user-shield w-4"></i> Usuarios
-      </a>
-    </div>
-    {% endif %}
-
-    <div class="px-4 py-4 border-t border-slate-700 flex items-center justify-between gap-2">
-      <div class="min-w-0">
-        <div class="text-slate-300 text-xs font-medium truncate">{{ current_user_email }}</div>
-        <div class="text-slate-500 text-xs">{{ 'Admin' if current_user_role == 'admin' else 'Visualizador' }}</div>
+    <!-- Usuario / logout -->
+    <div class="px-3 py-3 border-t border-slate-800">
+      <div class="flex items-center gap-2.5 px-1">
+        <div class="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0 text-slate-300 text-xs font-bold">
+          {{ current_user_email[0].upper() if current_user_email else '?' }}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-slate-200 text-xs font-medium truncate">{{ current_user_email }}</div>
+          <div class="text-slate-500 text-[11px]">{{ 'Administrador' if current_user_role == 'admin' else 'Visualizador' }}</div>
+        </div>
+        <a href="/logout" title="Cerrar sesión"
+          class="text-slate-500 hover:text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition-colors flex-shrink-0">
+          <i class="fa-solid fa-right-from-bracket text-xs"></i>
+        </a>
       </div>
-      <a href="/logout" title="Cerrar sesión"
-        class="text-slate-400 hover:text-white hover:bg-slate-700 p-1.5 rounded-lg transition-colors flex-shrink-0">
-        <i class="fa-solid fa-right-from-bracket text-sm"></i>
-      </a>
     </div>
+
   </aside>
 
   <!-- Main -->
-  <main class="ml-60 flex-1 flex flex-col min-h-screen">
+  <main class="ml-56 flex-1 flex flex-col min-h-screen">
     <!-- Top bar -->
     <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
       <h1 class="text-lg font-semibold text-slate-800">{% block heading %}{% endblock %}</h1>
