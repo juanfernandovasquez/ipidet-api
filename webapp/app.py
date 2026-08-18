@@ -248,9 +248,31 @@ async def guardar_factura_empresa(request: Request):
     num_comprobante  = data.get("num_comprobante", "").strip()
     tipo_comprobante = data.get("tipo_comprobante", "")
     fecha_emision    = data.get("fecha_emision", "")
+    enviar_email     = data.get("enviar_email", False)
     if not items or not num_comprobante or not tipo_comprobante or not fecha_emision:
         return JSONResponse({"error": "Faltan datos obligatorios"}, status_code=422)
     pdb.emitir_comprobante_batch(items, num_comprobante, tipo_comprobante, fecha_emision)
+    if enviar_email:
+        sent = 0
+        for item in items:
+            pay = pdb.get_payment_with_member(item["payment_id"])
+            if pay and pay.get("email_principal"):
+                html = mailer.tpl_comprobante(
+                    nombre=pay["nombre_completo"],
+                    num_comprobante=num_comprobante,
+                    tipo=tipo_comprobante,
+                    periodo=pay.get("periodo", data.get("periodo", "")),
+                    fecha_emision=fecha_emision,
+                )
+                try:
+                    await mailer.send_email(
+                        to=pay["email_principal"],
+                        subject=f"Comprobante IPIDET {pay.get('periodo','')} — {num_comprobante}",
+                        html_body=html,
+                    )
+                    sent += 1
+                except Exception:
+                    pass
     return {"ok": True, "registrados": len(items)}
 
 
@@ -262,11 +284,30 @@ async def emitir_comprobante(
     num_comprobante: str  = Form(...),
     tipo_comprobante: str = Form(""),
     fecha_emision: str    = Form(""),
+    enviar_email: str     = Form(""),
     periodo: str          = Form("2026"),
     search: str           = Form(""),
 ):
-    pdb.emitir_comprobante(payment_id, tipo, numero, num_comprobante.strip(),
-                           tipo_comprobante, fecha_emision)
+    num = num_comprobante.strip()
+    pdb.emitir_comprobante(payment_id, tipo, numero, num, tipo_comprobante, fecha_emision)
+    if enviar_email == "on":
+        pay = pdb.get_payment_with_member(payment_id)
+        if pay and pay.get("email_principal"):
+            html = mailer.tpl_comprobante(
+                nombre=pay["nombre_completo"],
+                num_comprobante=num,
+                tipo=tipo_comprobante,
+                periodo=pay.get("periodo", periodo),
+                fecha_emision=fecha_emision,
+            )
+            try:
+                await mailer.send_email(
+                    to=pay["email_principal"],
+                    subject=f"Comprobante IPIDET {periodo} — {num}",
+                    html_body=html,
+                )
+            except Exception:
+                pass  # no bloquear el flujo si el email falla
     return RedirectResponse(f"/billing/facturacion?periodo={periodo}&search={search}", status_code=303)
 
 @app.get("/billing", response_class=HTMLResponse)

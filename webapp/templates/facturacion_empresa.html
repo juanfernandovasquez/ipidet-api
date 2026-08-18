@@ -194,6 +194,12 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión SUNAT <span class="text-red-500">*</span></label>
         <input x-model="fechaEmision" type="date" class="input w-40">
       </div>
+      <div class="flex items-end pb-0.5">
+        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+          <input type="checkbox" x-model="enviarEmail" class="rounded accent-blue-600">
+          Enviar comprobante por email a cada socio
+        </label>
+      </div>
     </div>
   </div>
 
@@ -239,6 +245,7 @@ function facturaEmpresa() {
     numComprobante: '',
     tipoComprobante: '',
     fechaEmision: '',
+    enviarEmail: false,
 
     saving: false,
     errorMsg: '',
@@ -331,6 +338,7 @@ function facturaEmpresa() {
             num_comprobante: this.numComprobante.trim(),
             tipo_comprobante: this.tipoComprobante,
             fecha_emision: this.fechaEmision,
+            enviar_email: this.enviarEmail,
             periodo: this.periodo,
           }),
         });

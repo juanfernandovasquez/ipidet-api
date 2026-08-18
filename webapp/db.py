@@ -257,6 +257,20 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
     return [_clean(d) for d in docs], total
 
 
+def get_payment_with_member(payment_id: str) -> dict | None:
+    """Devuelve un pago enriquecido con nombre_completo y email_principal del socio."""
+    p = payments_col.find_one({"_id": ObjectId(payment_id)})
+    if not p:
+        return None
+    m = members_col.find_one({"member_id": p["member_id"]}) or {}
+    p["nombre_completo"] = f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
+    p["email_principal"] = next(
+        (e["email"] for e in m.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
+        next((e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"), ""),
+    )
+    return _clean(p)
+
+
 def get_payments_export(periodo: str = "2026", estado: str = "", empresa: str = "", search: str = "") -> list:
     query: dict = {}
     if periodo:

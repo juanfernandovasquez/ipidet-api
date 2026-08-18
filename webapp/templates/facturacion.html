@@ -171,11 +171,17 @@
               <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión SUNAT <span class="text-red-500">*</span></label>
               <input type="date" name="fecha_emision" required class="input text-sm w-40">
             </div>
-            <div class="flex gap-2 self-end">
-              <button type="submit" class="btn-primary text-xs py-2">
-                <i class="fa-solid fa-check mr-1"></i> Guardar
-              </button>
-              <button type="button" @click="emitir = false" class="btn-ghost text-xs py-2">Cancelar</button>
+            <div class="flex flex-col gap-2 self-end">
+              <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+                <input type="checkbox" name="enviar_email" class="rounded accent-blue-600">
+                Enviar comprobante por email al socio
+              </label>
+              <div class="flex gap-2">
+                <button type="submit" class="btn-primary text-xs py-2">
+                  <i class="fa-solid fa-check mr-1"></i> Guardar
+                </button>
+                <button type="button" @click="emitir = false" class="btn-ghost text-xs py-2">Cancelar</button>
+              </div>
             </div>
           </form>
         </td>
