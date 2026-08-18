@@ -25,6 +25,11 @@ BILLING_REMINDER_DAYS = int(os.getenv("BILLING_REMINDER_DAYS", "7"))
 BILLING_OVERDUE_ALERT_HOURS = int(os.getenv("BILLING_OVERDUE_ALERT_HOURS", "24"))
 BILLING_CHECK_INTERVAL_HOURS = int(os.getenv("BILLING_CHECK_INTERVAL_HOURS", "6"))
 
+# Auth
+SECRET_KEY  = os.getenv("SECRET_KEY", "cambia-esto-en-produccion")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
 # Portal de socios
 PORTAL_SECRET = os.getenv("PORTAL_SECRET", "")          # secret para server-to-server WP→FastAPI
 WC_WEBHOOK_SECRET = os.getenv("WC_WEBHOOK_SECRET", "")  # secret del webhook WooCommerce

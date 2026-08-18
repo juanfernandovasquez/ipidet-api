@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Usuarios — IPIDET{% endblock %}
+{% block heading %}Gestión de usuarios{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl space-y-6">
+
+  <!-- Agregar usuario -->
+  <div class="bg-white rounded-xl border border-slate-200 p-6">
+    <h2 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+      <i class="fa-solid fa-user-plus text-blue-500"></i> Agregar acceso
+    </h2>
+    <form method="post" action="/admin/users/add" class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Correo electrónico</label>
+          <input type="email" name="email" required placeholder="usuario@correo.com"
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Contraseña inicial</label>
+          <input type="password" name="password" required placeholder="Mínimo 6 caracteres"
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Rol</label>
+          <select name="role" class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="viewer">Visualizador</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <button type="submit"
+          class="mt-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
+          Agregar
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Lista de usuarios -->
+  <div class="bg-white rounded-xl border border-slate-200 p-6">
+    <h2 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+      <i class="fa-solid fa-users text-slate-500"></i> Usuarios con acceso
+      <span class="ml-auto text-xs font-normal text-slate-400">{{ users | length }} usuario(s)</span>
+    </h2>
+
+    {% if users %}
+    <div class="space-y-2">
+      {% for u in users %}
+      <div class="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-sm">
+            {{ u.email[0].upper() }}
+          </div>
+          <div>
+            <div class="text-sm font-medium text-slate-800">{{ u.email }}</div>
+            <div class="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+              {% if u.role == 'admin' %}
+              <span class="inline-flex items-center gap-1 text-purple-600 font-medium">
+                <i class="fa-solid fa-shield-halved text-xs"></i> Administrador
+              </span>
+              {% else %}
+              <span class="text-slate-400">Visualizador</span>
+              {% endif %}
+              {% if u.get('created_at') %}
+              · desde {{ u.created_at[:10] }}
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% if u.email != current_user_email %}
+        <form method="post" action="/admin/users/{{ u._id }}/delete"
+              onsubmit="return confirm('¿Quitar acceso a {{ u.email }}?')">
+          <button type="submit"
+            class="text-xs text-slate-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+            <i class="fa-solid fa-trash mr-1"></i> Quitar
+          </button>
+        </form>
+        {% else %}
+        <span class="text-xs text-slate-300 px-3 py-1.5">Tú</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-slate-400 text-sm text-center py-4">No hay usuarios registrados.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

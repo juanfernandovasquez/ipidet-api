@@ -4,12 +4,16 @@ from markupsafe import Markup, escape
 from fastapi import FastAPI, Request, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.templating import Jinja2Templates
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 import webapp.db as pdb
 import webapp.portal_db as portal_db
 import webapp.portal_router as portal_routes
+import webapp.auth as auth
+from config.settings import SECRET_KEY
 
 app = FastAPI(title="IPIDET Admin")
 
@@ -20,6 +24,21 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type", "X-WC-Webhook-Signature"],
 )
+
+_PUBLIC_PATHS = {"/login", "/logout"}
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/")
+
+class _AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+            return await call_next(request)
+        if not request.session.get("user_email"):
+            return RedirectResponse(f"/login?next={path}", status_code=302)
+        return await call_next(request)
+
+app.add_middleware(_AuthMiddleware)
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=False, same_site="lax")
 templates = Jinja2Templates(directory="webapp/templates")
 
 _URL_RE = re.compile(r'(https?://[^\s\|\]>\"\']+)')
@@ -61,11 +80,13 @@ STATUS_LABELS = {
     "parcial":       ("Parcial",       "blue"),
 }
 
-def _ctx(**kwargs):
+def _ctx(request: Request, **kwargs):
     return {
         "status_labels": STATUS_LABELS,
         "medios_pago": pdb.MEDIOS_PAGO,
         "bancos": pdb.BANCOS,
+        "current_user_email": request.session.get("user_email", ""),
+        "current_user_role": request.session.get("user_role", ""),
         **kwargs,
     }
 
@@ -73,6 +94,7 @@ def _ctx(**kwargs):
 @app.on_event("startup")
 async def _startup():
     pdb.seed_companies()
+    auth.seed_admin()
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -80,7 +102,7 @@ async def _startup():
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     stats = pdb.get_stats()
-    return templates.TemplateResponse(request, "dashboard.html", _ctx(stats=stats))
+    return templates.TemplateResponse(request, "dashboard.html", _ctx(request, stats=stats))
 
 
 # ── Padrón ────────────────────────────────────────────────────────────────────
@@ -95,7 +117,7 @@ async def members_list(
     page: int = 1,
 ):
     docs, total = pdb.get_members(search, estado, pago, ubicacion, page)
-    return templates.TemplateResponse(request, "members.html", _ctx(
+    return templates.TemplateResponse(request, "members.html", _ctx(request,
         members=docs, total=total,
         search=search, estado=estado, pago=pago, ubicacion=ubicacion,
         page=page, per_page=50,
@@ -108,7 +130,7 @@ async def member_detail(request: Request, member_id: str):
     doc = pdb.get_member(member_id)
     if not doc:
         return RedirectResponse("/members")
-    return templates.TemplateResponse(request, "member.html", _ctx(member=doc))
+    return templates.TemplateResponse(request, "member.html", _ctx(request, member=doc))
 
 
 @app.post("/members/{member_id}/emails/toggle")
@@ -168,7 +190,7 @@ async def billing(
     page: int = 1,
 ):
     docs, total = pdb.get_payments(periodo, estado, empresa, search, page, comprobante_emitido=comprobante_emitido)
-    return templates.TemplateResponse(request, "billing.html", _ctx(
+    return templates.TemplateResponse(request, "billing.html", _ctx(request,
         payments=docs, total=total,
         periodo=periodo, estado=estado, empresa=empresa, search=search,
         comprobante_emitido=comprobante_emitido,
@@ -368,7 +390,7 @@ async def delete_pago_parcial(
 
 @app.get("/finanzas", response_class=HTMLResponse)
 async def finanzas_mockup(request: Request):
-    return templates.TemplateResponse(request, "finanzas_mockup.html", _ctx())
+    return templates.TemplateResponse(request, "finanzas_mockup.html", _ctx(request))
 
 
 # ── Fraccionamientos ─────────────────────────────────────────────────────────
@@ -382,7 +404,7 @@ async def fraccionamientos(
     page: int = 1,
 ):
     docs, total, stats = pdb.get_fraccionamientos(periodo, alerta, search, page)
-    return templates.TemplateResponse(request, "fraccionamientos.html", _ctx(
+    return templates.TemplateResponse(request, "fraccionamientos.html", _ctx(request,
         fraccionamientos=docs, total=total, stats=stats,
         periodo=periodo, alerta=alerta, search=search,
         page=page, per_page=50,
@@ -396,7 +418,7 @@ async def fraccionamientos(
 async def faqs_list(request: Request, search: str = "", category: str = ""):
     docs = pdb.get_faqs(search, category)
     categories = pdb.get_faq_categories()
-    return templates.TemplateResponse(request, "faqs.html", _ctx(
+    return templates.TemplateResponse(request, "faqs.html", _ctx(request,
         faqs=docs, categories=categories,
         search=search, category=category,
     ))
@@ -463,10 +485,9 @@ async def portal_member_status(
     request: Request,
     email: str = Query(...),
 ):
-    from fastapi import Header as _Header
     from config.settings import PORTAL_SECRET
-    auth = request.headers.get("authorization", "")
-    if PORTAL_SECRET and auth != f"Bearer {PORTAL_SECRET}":
+    auth_header = request.headers.get("authorization", "")
+    if PORTAL_SECRET and auth_header != f"Bearer {PORTAL_SECRET}":
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     if not email or "@" not in email:
         return JSONResponse({"error": "Email inválido"}, status_code=400)
@@ -476,3 +497,67 @@ async def portal_member_status(
 @app.post("/webhook/woocommerce/order")
 async def portal_wc_webhook(request: Request):
     return await portal_routes.handle_wc_webhook(request)
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, next: str = "/", error: str = ""):
+    if request.session.get("user_email"):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request, "login.html", {"next": next, "error": error})
+
+
+@app.post("/login")
+async def login_post(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/"),
+):
+    user = auth.get_user(email)
+    if not user or not auth.verify_password(password, user["password_hash"]):
+        return templates.TemplateResponse(request, "login.html", {
+            "next": next,
+            "error": "Correo o contraseña incorrectos.",
+        })
+    request.session["user_email"] = user["email"]
+    request.session["user_role"] = user["role"]
+    return RedirectResponse(next if next.startswith("/") else "/", status_code=302)
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=302)
+
+
+# ── Admin: gestión de usuarios ────────────────────────────────────────────────
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users(request: Request):
+    if request.session.get("user_role") != "admin":
+        return RedirectResponse("/", status_code=302)
+    users = auth.list_users()
+    return templates.TemplateResponse(request, "users.html", _ctx(request, users=users))
+
+
+@app.post("/admin/users/add")
+async def admin_add_user(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    role: str = Form("viewer"),
+):
+    if request.session.get("user_role") != "admin":
+        return RedirectResponse("/", status_code=302)
+    auth.create_user(email, password, role)
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/delete")
+async def admin_delete_user(request: Request, user_id: str):
+    if request.session.get("user_role") != "admin":
+        return RedirectResponse("/", status_code=302)
+    auth.delete_user(user_id)
+    return RedirectResponse("/admin/users", status_code=303)
