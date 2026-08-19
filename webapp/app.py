@@ -811,18 +811,12 @@ async def comunicaciones_enviar(request: Request):
         return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
 
     cuerpo_html = cuerpo.replace("\n", "<br>")
-    html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
+    html_body = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
 
-    enviados, fallidos, errores = 0, 0, []
-    for dest in destinatarios:
-        try:
-            await mailer.send_email(to=dest["email"], subject=asunto, html_body=html)
-            enviados += 1
-        except Exception as exc:
-            fallidos += 1
-            msg = str(exc)
-            if msg not in errores:
-                errores.append(msg)
+    mensajes = [{"to": d["email"], "subject": asunto, "html_body": html_body}
+                for d in destinatarios if d.get("email")]
+
+    enviados, fallidos, errores = await mailer.send_bulk(mensajes)
 
     if enviados == 0 and fallidos > 0:
         return JSONResponse(

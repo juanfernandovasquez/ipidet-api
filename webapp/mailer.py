@@ -61,11 +61,58 @@ async def send_email(
     reply_to: str | None = None,
 ):
     """Versión async de _send_sync — no bloquea el event loop."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(
         None,
         partial(_send_sync, to, subject, html_body, attachments, reply_to),
     )
+
+
+def _send_bulk_sync(
+    mensajes: list[dict],
+) -> tuple[int, int, list[str]]:
+    """
+    Envía múltiples emails en una sola sesión SMTP.
+    mensajes: [{"to": str, "subject": str, "html_body": str}]
+    Devuelve (enviados, fallidos, errores[]).
+    """
+    enviados, fallidos, errores = 0, 0, []
+    try:
+        server = smtplib.SMTP(BREVO_SMTP_HOST, BREVO_SMTP_PORT, timeout=30)
+        server.ehlo()
+        server.starttls()
+        server.login(BREVO_SMTP_USER, BREVO_SMTP_PASSWORD)
+    except Exception as exc:
+        return 0, len(mensajes), [str(exc)]
+
+    try:
+        for m in mensajes:
+            try:
+                msg = MIMEMultipart("mixed")
+                msg["From"]    = f"{BREVO_FROM_NAME} <{BREVO_FROM_EMAIL}>"
+                msg["To"]      = m["to"]
+                msg["Subject"] = m["subject"]
+                msg.attach(MIMEText(m["html_body"], "html", "utf-8"))
+                server.sendmail(BREVO_FROM_EMAIL, [m["to"]], msg.as_bytes())
+                enviados += 1
+            except Exception as exc:
+                fallidos += 1
+                msg_err = str(exc)
+                if msg_err not in errores:
+                    errores.append(msg_err)
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
+
+    return enviados, fallidos, errores
+
+
+async def send_bulk(mensajes: list[dict]) -> tuple[int, int, list[str]]:
+    """Versión async de _send_bulk_sync."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(_send_bulk_sync, mensajes))
 
 
 # ── Plantillas ────────────────────────────────────────────────────────────────
