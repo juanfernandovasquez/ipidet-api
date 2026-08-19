@@ -813,18 +813,28 @@ async def comunicaciones_enviar(request: Request):
     cuerpo_html = cuerpo.replace("\n", "<br>")
     html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
 
-    enviados, fallidos = 0, 0
+    enviados, fallidos, errores = 0, 0, []
     for dest in destinatarios:
         try:
             await mailer.send_email(to=dest["email"], subject=asunto, html_body=html)
             enviados += 1
-        except Exception:
+        except Exception as exc:
             fallidos += 1
+            msg = str(exc)
+            if msg not in errores:
+                errores.append(msg)
+
+    if enviados == 0 and fallidos > 0:
+        return JSONResponse(
+            {"error": f"No se pudo enviar ningún correo. Error: {errores[0] if errores else 'desconocido'}"},
+            status_code=500,
+        )
 
     usuario = request.session.get("user_email", "")
     pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario)
 
-    return {"ok": True, "enviados": enviados, "fallidos": fallidos}
+    return {"ok": True, "enviados": enviados, "fallidos": fallidos,
+            "errores": errores if errores else []}
 
 
 # ── Eventos ───────────────────────────────────────────────────────────────────

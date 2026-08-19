@@ -193,9 +193,14 @@
           <i class="fa-solid fa-circle-exclamation"></i> <span x-text="errorMsg"></span>
         </div>
         <div x-show="resultado" x-cloak
-             class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700 mb-4">
-          <i class="fa-solid fa-circle-check"></i>
-          <span x-text="resultado ? 'Enviado a ' + resultado.enviados + ' socios.' + (resultado.fallidos ? ' ' + resultado.fallidos + ' fallaron.' : '') : ''"></span>
+             class="flex items-start gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700 mb-4">
+          <i class="fa-solid fa-circle-check mt-0.5"></i>
+          <div>
+            <span x-text="'Enviado a ' + resultado.enviados + ' socios.'"></span>
+            <span x-show="resultado && resultado.fallidos > 0" x-cloak
+                  class="block text-xs text-amber-600 mt-0.5"
+                  x-text="resultado.fallidos + ' fallaron: ' + (resultado.errores && resultado.errores[0] ? resultado.errores[0] : '')"></span>
+          </div>
         </div>
 
         <!-- Botón enviar / confirmar -->
@@ -211,11 +216,22 @@
         <!-- Confirmación -->
         <div x-show="confirmando" x-cloak
              class="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <p class="text-sm font-medium text-amber-800 mb-3">
+          <p class="text-sm font-medium text-amber-800 mb-1">
             <i class="fa-solid fa-triangle-exclamation mr-1.5"></i>
             ¿Confirmas el envío a <strong x-text="seleccionados.length"></strong> socios?
           </p>
-          <p class="text-xs text-amber-700 mb-4">Asunto: <em x-text="asunto"></em></p>
+          <p class="text-xs text-amber-700 mb-3">Asunto: <em x-text="asunto"></em></p>
+
+          <!-- Lista de destinatarios seleccionados -->
+          <div class="bg-white border border-amber-200 rounded-lg max-h-40 overflow-y-auto mb-4">
+            <template x-for="d in seleccionados" :key="d.member_id">
+              <div class="flex items-center justify-between px-3 py-1.5 border-b border-amber-100 last:border-0">
+                <span class="text-xs font-medium text-slate-700" x-text="d.nombre"></span>
+                <span class="text-xs text-slate-400 font-mono truncate ml-2" x-text="d.email"></span>
+              </div>
+            </template>
+          </div>
+
           <div class="flex gap-2">
             <button type="button" @click="enviar()"
               :disabled="enviando"
