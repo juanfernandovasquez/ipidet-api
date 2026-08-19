@@ -679,9 +679,9 @@ async def delete_faq(faq_id: str):
 @app.get("/empresas", response_class=HTMLResponse)
 async def empresas_page(request: Request, search: str = "", tipo: str = ""):
     empresas = pdb.get_all_companies(search, tipo)
-    return templates.TemplateResponse(request, "empresas.html", {
-        "empresas": empresas, "search": search, "tipo": tipo,
-    })
+    return templates.TemplateResponse(request, "empresas.html", _ctx(request,
+        empresas=empresas, search=search, tipo=tipo,
+    ))
 
 
 @app.post("/empresas/add")
