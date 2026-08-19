@@ -1,9 +1,13 @@
 """
-Envío de correos transaccionales vía Brevo SMTP.
-Expone send_email() — blocking, llamar en un thread pool desde rutas async.
+Envío de correos transaccionales vía Brevo.
+- Si BREVO_API_KEY está configurada: usa HTTP API v3 (funciona en cualquier servidor)
+- Si no: fallback a SMTP (requiere puerto 587 abierto y IP autorizada)
 """
 import smtplib
 import asyncio
+import json as _json
+import urllib.request
+import urllib.error
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -13,6 +17,7 @@ from config.settings import (
     BREVO_SMTP_HOST, BREVO_SMTP_PORT,
     BREVO_SMTP_USER, BREVO_SMTP_PASSWORD,
     BREVO_FROM_EMAIL, BREVO_FROM_NAME,
+    BREVO_API_KEY,
 )
 
 
@@ -53,6 +58,26 @@ def _send_sync(
         server.sendmail(BREVO_FROM_EMAIL, recipients, msg.as_bytes())
 
 
+def _send_api(to: str, subject: str, html_body: str,
+              attachments: list[dict] | None = None, reply_to: str | None = None):
+    """Envía un email via Brevo HTTP API v3."""
+    payload: dict = {
+        "sender":      {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
+        "to":          [{"email": to}] if isinstance(to, str) else [{"email": e} for e in to],
+        "subject":     subject,
+        "htmlContent": html_body,
+    }
+    if reply_to:
+        payload["replyTo"] = {"email": reply_to}
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=_json.dumps(payload).encode("utf-8"),
+        headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"},
+        method="POST",
+    )
+    urllib.request.urlopen(req, timeout=30)
+
+
 async def send_email(
     to: str | list[str],
     subject: str,
@@ -60,12 +85,16 @@ async def send_email(
     attachments: list[dict] | None = None,
     reply_to: str | None = None,
 ):
-    """Versión async de _send_sync — no bloquea el event loop."""
+    """Usa HTTP API si BREVO_API_KEY está configurada; si no, SMTP."""
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(
-        None,
-        partial(_send_sync, to, subject, html_body, attachments, reply_to),
-    )
+    if BREVO_API_KEY:
+        await loop.run_in_executor(
+            None, partial(_send_api, to, subject, html_body, attachments, reply_to)
+        )
+    else:
+        await loop.run_in_executor(
+            None, partial(_send_sync, to, subject, html_body, attachments, reply_to)
+        )
 
 
 def _send_bulk_sync(
@@ -109,9 +138,48 @@ def _send_bulk_sync(
     return enviados, fallidos, errores
 
 
+def _send_bulk_api(mensajes: list[dict]) -> tuple[int, int, list[str]]:
+    """Usa Brevo HTTP API v3 — funciona en Render y cualquier servidor (puerto 443)."""
+    enviados, fallidos, errores = 0, 0, []
+    for m in mensajes:
+        payload = _json.dumps({
+            "sender":      {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
+            "to":          [{"email": m["to"]}],
+            "subject":     m["subject"],
+            "htmlContent": m["html_body"],
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.brevo.com/v3/smtp/email",
+            data=payload,
+            headers={
+                "api-key":      BREVO_API_KEY,
+                "Content-Type": "application/json",
+                "Accept":       "application/json",
+            },
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(req, timeout=30)
+            enviados += 1
+        except urllib.error.HTTPError as exc:
+            fallidos += 1
+            body = exc.read().decode("utf-8", errors="replace")
+            err = f"HTTP {exc.code}: {body[:200]}"
+            if err not in errores:
+                errores.append(err)
+        except Exception as exc:
+            fallidos += 1
+            err = str(exc)
+            if err not in errores:
+                errores.append(err)
+    return enviados, fallidos, errores
+
+
 async def send_bulk(mensajes: list[dict]) -> tuple[int, int, list[str]]:
-    """Versión async de _send_bulk_sync."""
+    """Usa HTTP API si BREVO_API_KEY está configurada; si no, SMTP."""
     loop = asyncio.get_running_loop()
+    if BREVO_API_KEY:
+        return await loop.run_in_executor(None, partial(_send_bulk_api, mensajes))
     return await loop.run_in_executor(None, partial(_send_bulk_sync, mensajes))
 
 
