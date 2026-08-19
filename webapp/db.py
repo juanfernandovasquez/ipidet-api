@@ -1213,6 +1213,29 @@ def delete_factura_credito(factura_id: str) -> None:
     credito_col.delete_one({"_id": ObjectId(factura_id)})
 
 
+def add_comentario_credito(factura_id: str, texto: str) -> dict:
+    fecha = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    comentario = {"texto": texto, "fecha": fecha}
+    credito_col.update_one(
+        {"_id": ObjectId(factura_id)},
+        {"$push": {"comentarios": comentario}},
+    )
+    return comentario
+
+
+def delete_comentario_credito(factura_id: str, idx: int) -> None:
+    doc = credito_col.find_one({"_id": ObjectId(factura_id)}, {"comentarios": 1})
+    if not doc:
+        return
+    comentarios = doc.get("comentarios", [])
+    if 0 <= idx < len(comentarios):
+        comentarios.pop(idx)
+        credito_col.update_one(
+            {"_id": ObjectId(factura_id)},
+            {"$set": {"comentarios": comentarios}},
+        )
+
+
 def get_credito_stats() -> dict:
     docs = list(credito_col.find({}))
     pendientes = [d for d in docs if _sync_credito_estado(d) == "pendiente"]

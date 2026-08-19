@@ -74,9 +74,9 @@
   <table class="w-full text-sm">
     <thead class="bg-slate-50 border-b border-slate-200">
       <tr>
+        <th class="w-8 px-3 py-3"></th>
         <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
         <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">N° Factura</th>
-        <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Concepto</th>
         <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
         <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Emisión</th>
         <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Vencimiento</th>
@@ -84,26 +84,62 @@
         <th class="px-4 py-3"></th>
       </tr>
     </thead>
+
     {% for f in facturas %}
-    <tbody x-data="{ editando: false, fechaCobro: '' }">
-    <tr class="border-t border-slate-100 hover:bg-slate-50">
+    {% set coms = f.comentarios if f.comentarios else [] %}
+    <tbody x-data="{
+      open: false,
+      editando: false,
+      fechaCobro: '',
+      comentario: '',
+      comentarios: {{ coms | tojson }},
+      enviando: false,
+      async agregarComentario() {
+        const txt = this.comentario.trim();
+        if (!txt || this.enviando) return;
+        this.enviando = true;
+        try {
+          const r = await fetch('/billing/credito/{{ f._id }}/comentarios/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texto: txt }),
+          });
+          const data = await r.json();
+          if (r.ok) {
+            this.comentarios.push(data.comentario);
+            this.comentario = '';
+          }
+        } finally { this.enviando = false; }
+      },
+      async eliminarComentario(idx) {
+        if (!confirm('¿Eliminar este comentario?')) return;
+        const r = await fetch('/billing/credito/{{ f._id }}/comentarios/' + idx + '/delete', { method: 'POST' });
+        if (r.ok) this.comentarios.splice(idx, 1);
+      },
+    }">
+
+    <!-- Fila principal -->
+    <tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" @click="open = !open">
+      <!-- Toggle icon -->
+      <td class="px-3 py-3 text-center text-slate-400">
+        <i class="fa-solid text-xs transition-transform duration-150"
+           :class="open ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+      </td>
       <td class="px-4 py-3">
         <div class="font-medium text-slate-800">{{ f.empresa }}</div>
         {% if f.socios %}
         <div class="text-xs text-slate-400 mt-0.5">{{ f.socios | length }} socio(s)</div>
         {% endif %}
+        <template x-if="comentarios.length > 0">
+          <div class="mt-1">
+            <span class="inline-flex items-center gap-1 text-[10px] text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full font-medium">
+              <i class="fa-solid fa-comment text-[9px]"></i>
+              <span x-text="comentarios.length"></span>
+            </span>
+          </div>
+        </template>
       </td>
       <td class="px-4 py-3 font-mono text-slate-700 text-xs">{{ f.numero_factura }}</td>
-      <td class="px-4 py-3 text-slate-500 text-xs">
-        {{ f.concepto or '—' }}
-        {% if f.socios %}
-        <div class="mt-1 flex flex-wrap gap-1">
-          {% for mid in f.socios %}
-          <a href="/members/{{ mid }}" class="inline-block bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] px-1.5 py-0.5 rounded font-mono transition-colors">{{ mid }}</a>
-          {% endfor %}
-        </div>
-        {% endif %}
-      </td>
       <td class="px-4 py-3 font-semibold text-slate-800">S/ {{ "%.2f"|format(f.monto) }}</td>
       <td class="px-4 py-3 text-slate-500 text-xs">{{ f.fecha_emision or '—' }}</td>
       <td class="px-4 py-3 text-xs">
@@ -128,10 +164,10 @@
         </span>
         {% endif %}
       </td>
-      <td class="px-4 py-3 text-right">
+      <td class="px-4 py-3 text-right" @click.stop>
         <div class="flex items-center justify-end gap-1">
           {% if f.estado != 'cobrado' %}
-          <button @click="editando = !editando"
+          <button @click="editando = !editando; open = editando || open"
             class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors">
             Marcar cobrado
           </button>
@@ -145,9 +181,11 @@
         </div>
       </td>
     </tr>
-    <!-- Fila inline: registrar cobro -->
+
+    <!-- Fila: marcar cobrado -->
     <tr x-show="editando" x-cloak class="border-t border-blue-100 bg-blue-50">
-      <td colspan="8" class="px-4 py-3">
+      <td></td>
+      <td colspan="7" class="px-4 py-3">
         <form method="post" action="/billing/credito/{{ f._id }}/estado" class="flex flex-wrap items-end gap-3">
           <input type="hidden" name="estado" value="cobrado">
           <div>
@@ -163,6 +201,92 @@
         </form>
       </td>
     </tr>
+
+    <!-- Fila: panel de detalle -->
+    <tr x-show="open" x-cloak class="border-t border-slate-100">
+      <td></td>
+      <td colspan="7" class="px-4 pb-5 pt-3 bg-slate-50/60">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          <!-- Columna izquierda: detalle de la factura -->
+          <div class="space-y-3">
+            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Detalle</h4>
+
+            {% if f.concepto %}
+            <div>
+              <div class="text-xs text-slate-400 mb-0.5">Concepto</div>
+              <div class="text-sm text-slate-700">{{ f.concepto }}</div>
+            </div>
+            {% endif %}
+
+            {% if f.fecha_cobro %}
+            <div>
+              <div class="text-xs text-slate-400 mb-0.5">Cobrado el</div>
+              <div class="text-sm font-medium text-green-700">{{ f.fecha_cobro }}</div>
+            </div>
+            {% endif %}
+
+            {% if f.socios %}
+            <div>
+              <div class="text-xs text-slate-400 mb-1">Socios vinculados ({{ f.socios | length }})</div>
+              <div class="flex flex-wrap gap-1.5">
+                {% for mid in f.socios %}
+                <a href="/members/{{ mid }}"
+                   class="inline-block bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-600 hover:text-blue-700 text-[11px] px-2 py-0.5 rounded font-mono transition-colors">
+                  {{ mid }}
+                </a>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            <div class="text-xs text-slate-400 pt-1">
+              Registrado: {{ f.created_at.strftime('%Y-%m-%d') if f.created_at else '—' }}
+            </div>
+          </div>
+
+          <!-- Columna derecha: comentarios -->
+          <div class="space-y-3">
+            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              Comentarios de seguimiento
+              <span class="ml-1 text-violet-600" x-text="'(' + comentarios.length + ')'"></span>
+            </h4>
+
+            <!-- Lista de comentarios -->
+            <div class="space-y-2">
+              <template x-if="comentarios.length === 0">
+                <p class="text-xs text-slate-400 italic">Sin comentarios aún.</p>
+              </template>
+              <template x-for="(c, idx) in comentarios" :key="idx">
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm group relative">
+                  <div class="text-slate-700 leading-relaxed pr-6" x-text="c.texto"></div>
+                  <div class="text-[10px] text-slate-400 mt-1" x-text="c.fecha"></div>
+                  <button @click="eliminarComentario(idx)"
+                    class="absolute top-2 right-2 text-slate-200 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                  </button>
+                </div>
+              </template>
+            </div>
+
+            <!-- Agregar comentario -->
+            <div class="flex gap-2">
+              <textarea x-model="comentario" rows="2"
+                placeholder="Añadir nota de seguimiento…"
+                class="flex-1 input text-xs resize-none leading-relaxed"
+                @keydown.ctrl.enter.prevent="agregarComentario()"></textarea>
+              <button @click="agregarComentario()" :disabled="enviando || !comentario.trim()"
+                class="btn-primary text-xs px-3 self-end disabled:opacity-40">
+                <i class="fa-solid fa-paper-plane"></i>
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-400">Ctrl+Enter para enviar</p>
+          </div>
+
+        </div>
+      </td>
+    </tr>
+
     </tbody>
     {% endfor %}
   </table>

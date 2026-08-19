@@ -858,6 +858,22 @@ async def credito_delete(factura_id: str):
     return RedirectResponse("/billing/credito", status_code=303)
 
 
+@app.post("/billing/credito/{factura_id}/comentarios/add")
+async def credito_add_comentario(factura_id: str, request: Request):
+    data = await request.json()
+    texto = (data.get("texto") or "").strip()
+    if not texto:
+        return JSONResponse({"error": "Texto vacío"}, status_code=422)
+    comentario = pdb.add_comentario_credito(factura_id, texto)
+    return {"ok": True, "comentario": comentario}
+
+
+@app.post("/billing/credito/{factura_id}/comentarios/{idx}/delete")
+async def credito_delete_comentario(factura_id: str, idx: int):
+    pdb.delete_comentario_credito(factura_id, idx)
+    return {"ok": True}
+
+
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
