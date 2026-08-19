@@ -914,6 +914,32 @@ def emitir_comprobante(payment_id: str, tipo: str, numero: int | None,
         )
 
 
+def get_or_create_payment(member_id: str, periodo: str) -> str:
+    """Devuelve el payment_id del socio para el período; lo crea si no existe."""
+    p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
+    if p:
+        return str(p["_id"])
+    result = payments_col.insert_one({"member_id": member_id, "periodo": periodo, "estado": "pendiente"})
+    return str(result.inserted_id)
+
+
+def mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
+                          tipo_comprobante: str, fecha_emision: str):
+    """Marca el pago principal como pagado por empresa y registra el comprobante."""
+    from bson import ObjectId
+    payments_col.update_one(
+        {"_id": ObjectId(payment_id)},
+        {"$set": {
+            "estado":             "pagado",
+            "empresa_pagadora":   empresa,
+            "num_comprobante":    num_comprobante or None,
+            "tipo_comprobante":   tipo_comprobante or None,
+            "fecha_emision_comprobante": fecha_emision or None,
+            "comprobante_emitido": bool(num_comprobante),
+        }},
+    )
+
+
 def get_pendientes_socio(member_id: str, periodo: str) -> list:
     """Ítems con comprobante pendiente para un socio y período concretos."""
     p = payments_col.find_one({"member_id": member_id, "periodo": periodo})

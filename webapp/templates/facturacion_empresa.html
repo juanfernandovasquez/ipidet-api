@@ -77,96 +77,75 @@
   <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
     <h2 class="text-sm font-semibold text-slate-700 mb-4">2. Socios incluidos en la factura</h2>
 
-    <!-- Buscador de socios -->
+    <!-- Buscador -->
     <div class="relative mb-4">
       <label class="block text-xs font-medium text-slate-600 mb-1">Agregar socio</label>
-      <div class="flex gap-2">
-        <div class="relative flex-1 max-w-sm">
-          <input x-model="socioSearch"
-                 @input.debounce.350ms="fetchSocios()"
-                 @focus="if (socioSearch.length > 1) fetchSocios()"
-                 @keydown.escape="showSocioSugg = false"
-                 placeholder="Buscar por nombre, apellido o ID…"
-                 class="input w-full" autocomplete="off">
-          <div x-show="showSocioSugg && socioSugg.length > 0"
-               @click.outside="showSocioSugg = false"
-               class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full">
-            <template x-for="s in socioSugg" :key="s.member_id">
-              <button type="button"
-                      @click="addSocio(s)"
-                      class="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
-                <div class="font-medium" x-text="(s.apellidos || '') + ' ' + (s.nombres || '')"></div>
-                <div class="text-xs text-slate-400" x-text="s.member_id + (s.emails && s.emails[0] ? ' · ' + s.emails[0].email : '')"></div>
-              </button>
-            </template>
-            <div x-show="socioSugg.length === 0 && socioSearch.length > 1" class="px-3 py-2 text-xs text-slate-400">Sin resultados</div>
-          </div>
+      <div class="relative max-w-sm">
+        <input x-model="socioSearch"
+               @input.debounce.350ms="fetchSocios()"
+               @focus="if (socioSearch.length > 1) fetchSocios()"
+               @keydown.escape="showSocioSugg = false"
+               placeholder="Buscar por nombre, apellido o ID…"
+               class="input w-full" autocomplete="off">
+        <div x-show="showSocioSugg && socioSugg.length > 0"
+             @click.outside="showSocioSugg = false"
+             class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full">
+          <template x-for="s in socioSugg" :key="s.member_id">
+            <button type="button" @click="addSocio(s)"
+                    class="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+              <div class="font-medium" x-text="(s.apellidos || '') + ' ' + (s.nombres || '')"></div>
+              <div class="text-xs text-slate-400" x-text="s.member_id + (s.emails && s.emails[0] ? ' · ' + s.emails[0].email : '')"></div>
+            </button>
+          </template>
         </div>
       </div>
-      <p class="text-xs text-slate-400 mt-1">Solo aparecerán socios con comprobantes pendientes en el período seleccionado.</p>
+      <p class="text-xs text-slate-400 mt-1">Puedes agregar socios en cualquier estado. Al guardar quedarán marcados como <strong>pagado</strong> por la empresa.</p>
     </div>
 
-    <!-- Tabla de socios agregados -->
+    <!-- Tabla de socios -->
     <div x-show="socios.length > 0">
       <table class="w-full text-sm">
         <thead class="bg-slate-50 border-b border-slate-200">
           <tr>
-            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide w-8">
-              <input type="checkbox" @change="toggleAll($event.target.checked)" class="rounded">
-            </th>
             <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Socio</th>
-            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Concepto</th>
-            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
-            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha pago</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado actual</th>
+            <th class="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa actual</th>
             <th class="px-3 py-2 w-8"></th>
           </tr>
         </thead>
         <tbody>
-          <template x-for="socio in socios" :key="socio.member_id">
-            <template x-for="item in socio.items" :key="socio.member_id + '-' + item.tipo + '-' + item.numero">
-              <tr class="border-t border-slate-100" :class="item.selected ? '' : 'opacity-40'">
-                <td class="px-3 py-2">
-                  <input type="checkbox" x-model="item.selected" class="rounded">
-                </td>
-                <td class="px-3 py-2">
-                  <div class="font-medium text-slate-800" x-text="socio.nombre"></div>
-                  <div class="text-xs text-slate-400" x-text="socio.member_id"></div>
-                </td>
-                <td class="px-3 py-2">
-                  <span x-show="item.tipo === 'principal'"
-                    class="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                    <i class="fa-solid fa-circle-dollar-to-slot text-[10px]"></i>
-                    <span x-text="'Cuota anual ' + periodo"></span>
-                  </span>
-                  <span x-show="item.tipo === 'cuota'"
-                    class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
-                    <i class="fa-solid fa-calendar-check text-[10px]"></i>
-                    <span x-text="'Fraccionamiento cuota ' + item.numero"></span>
-                  </span>
-                  <span x-show="item.tipo === 'parcial'"
-                    class="inline-flex items-center gap-1 text-xs font-medium bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">
-                    <i class="fa-solid fa-layer-group text-[10px]"></i>
-                    <span x-text="'Pago parcial ' + item.numero"></span>
-                  </span>
-                </td>
-                <td class="px-3 py-2 text-slate-600 text-xs" x-text="item.monto ? 'S/ ' + parseFloat(item.monto).toFixed(2) : '—'"></td>
-                <td class="px-3 py-2 text-slate-400 text-xs" x-text="item.fecha_pago || '—'"></td>
-                <td class="px-3 py-2 text-right" x-show="item === socio.items[socio.items.length - 1]" :rowspan="socio.items.length">
-                  <button type="button" @click="removeSocio(socio.member_id)"
-                    class="text-slate-300 hover:text-red-500 transition-colors" title="Quitar socio">
-                    <i class="fa-solid fa-xmark"></i>
-                  </button>
-                </td>
-              </tr>
-            </template>
+          <template x-for="s in socios" :key="s.member_id">
+            <tr class="border-t border-slate-100 hover:bg-slate-50">
+              <td class="px-3 py-2.5">
+                <div class="font-medium text-slate-800" x-text="s.nombre"></div>
+                <div class="text-xs text-slate-400 font-mono" x-text="s.member_id"></div>
+              </td>
+              <td class="px-3 py-2.5">
+                <span class="inline-block text-xs px-2 py-0.5 rounded-full font-medium"
+                  :class="{
+                    'bg-green-100 text-green-700': s.estado === 'pagado',
+                    'bg-red-100 text-red-700':     s.estado === 'debe',
+                    'bg-amber-100 text-amber-700':  s.estado === 'fraccionamiento' || s.estado === 'parcial',
+                    'bg-slate-100 text-slate-500':  s.estado === 'pendiente' || s.estado === 'sin_registro',
+                  }"
+                  x-text="s.estado || 'sin registro'">
+                </span>
+              </td>
+              <td class="px-3 py-2.5 text-slate-500 text-xs" x-text="s.empresa_pagadora || '—'"></td>
+              <td class="px-3 py-2.5 text-right">
+                <button type="button" @click="socios = socios.filter(x => x.member_id !== s.member_id)"
+                  class="text-slate-300 hover:text-red-500 transition-colors">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </td>
+            </tr>
           </template>
         </tbody>
       </table>
-      <!-- Resumen -->
       <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-        <span x-text="selectedCount + ' ítem(s) seleccionado(s) de ' + totalCount + ' total'"></span>
+        <span x-text="socios.length + ' socio(s) en esta factura'"></span>
         <button type="button" @click="socios = []" class="text-red-400 hover:text-red-600 transition-colors">
-          <i class="fa-solid fa-trash-can mr-1"></i> Limpiar todo
+          <i class="fa-solid fa-trash-can mr-1"></i> Limpiar
         </button>
       </div>
     </div>
@@ -271,13 +250,6 @@ function facturaEmpresa() {
 
     init() {},
 
-    get selectedCount() {
-      return this.socios.flatMap(s => s.items).filter(i => i.selected).length;
-    },
-    get totalCount() {
-      return this.socios.flatMap(s => s.items).length;
-    },
-
     async fetchEmpresas() {
       if (!this.empresaVal.trim()) { this.showEmpresaSugg = false; return; }
       const r = await fetch('/api/companies?q=' + encodeURIComponent(this.empresaVal));
@@ -295,7 +267,6 @@ function facturaEmpresa() {
       if (q.length < 2) { this.showSocioSugg = false; return; }
       const r = await fetch('/api/members?search=' + encodeURIComponent(q));
       const data = await r.json();
-      // exclude already-added members
       const added = new Set(this.socios.map(s => s.member_id));
       this.socioSugg = (data.members || []).filter(m => !added.has(m.member_id)).slice(0, 8);
       this.showSocioSugg = true;
@@ -307,47 +278,29 @@ function facturaEmpresa() {
       const member_id = socio.member_id;
       if (this.socios.find(s => s.member_id === member_id)) return;
 
-      const r = await fetch('/api/facturacion/pendientes?member_id=' + encodeURIComponent(member_id) + '&periodo=' + this.periodo);
-      const items = await r.json();
-      if (!items.length) {
-        this.errorMsg = (socio.apellidos || '') + ' ' + (socio.nombres || '') + ' no tiene comprobantes pendientes en ' + this.periodo;
-        setTimeout(() => this.errorMsg = '', 4000);
-        return;
-      }
+      // Consulta el estado actual del pago (cualquier estado)
+      const r = await fetch('/api/facturacion/socio-info?member_id=' + encodeURIComponent(member_id) + '&periodo=' + this.periodo);
+      const info = await r.json();
       const nombre = ((socio.apellidos || '') + ' ' + (socio.nombres || '')).trim();
       this.socios.push({
         member_id,
         nombre,
-        items: items.map(i => ({ ...i, selected: true })),
+        payment_id:      info.payment_id || null,
+        estado:          info.estado || 'sin_registro',
+        empresa_pagadora: info.empresa_pagadora || '',
       });
-    },
-
-    removeSocio(member_id) {
-      this.socios = this.socios.filter(s => s.member_id !== member_id);
-    },
-
-    toggleAll(checked) {
-      this.socios.forEach(s => s.items.forEach(i => i.selected = checked));
     },
 
     async guardar() {
       this.errorMsg = '';
       this.successMsg = '';
+      if (!this.empresaVal.trim())     { this.errorMsg = 'Selecciona una empresa.'; return; }
+      if (!this.socios.length)         { this.errorMsg = 'Agrega al menos un socio.'; return; }
       if (!this.numComprobante.trim()) { this.errorMsg = 'Ingresa el N° de comprobante.'; return; }
       if (!this.tipoComprobante)       { this.errorMsg = 'Selecciona el tipo de comprobante.'; return; }
       if (!this.fechaEmision)          { this.errorMsg = 'Ingresa la fecha de emisión.'; return; }
       if (!this.montoFactura)          { this.errorMsg = 'Ingresa el monto total de la factura.'; return; }
       if (!this.fechaVencimiento)      { this.errorMsg = 'Ingresa la fecha de vencimiento de crédito.'; return; }
-      if (!this.empresaVal.trim())     { this.errorMsg = 'Selecciona una empresa.'; return; }
-
-      const items = this.socios.flatMap(s =>
-        s.items.filter(i => i.selected).map(i => ({
-          payment_id: i.payment_id,
-          tipo: i.tipo,
-          numero: i.numero ?? null,
-        }))
-      );
-      if (!items.length) { this.errorMsg = 'No hay ítems seleccionados.'; return; }
 
       this.saving = true;
       try {
@@ -355,24 +308,26 @@ function facturaEmpresa() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            items,
+            socios:            this.socios.map(s => ({ member_id: s.member_id, payment_id: s.payment_id })),
+            empresa:           this.empresaVal.trim(),
             num_comprobante:   this.numComprobante.trim(),
             tipo_comprobante:  this.tipoComprobante,
             fecha_emision:     this.fechaEmision,
             monto:             parseFloat(this.montoFactura) || 0,
             fecha_vencimiento: this.fechaVencimiento,
-            empresa:           this.empresaVal.trim(),
             enviar_email:      this.enviarEmail,
             periodo:           this.periodo,
           }),
         });
         const data = await r.json();
         if (r.ok) {
-          this.successMsg = 'Comprobante registrado para ' + data.registrados + ' ítem(s). ';
+          this.successMsg = data.registrados + ' socio(s) marcados como pagados. Factura de crédito creada en seguimiento.';
           this.socios = [];
           this.numComprobante = '';
           this.tipoComprobante = '';
           this.fechaEmision = '';
+          this.montoFactura = '';
+          this.fechaVencimiento = '';
         } else {
           this.errorMsg = data.error || 'Error al guardar.';
         }
