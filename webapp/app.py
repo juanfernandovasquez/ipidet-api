@@ -611,15 +611,16 @@ async def marketing_export(
 ):
     emails = pdb.get_marketing_emails(titulo, ubicacion, estado_pago, empresa, periodo)
     buf = io.StringIO()
-    buf.write("Nombre,Email,Título,Ubicación,Centro de Trabajo,Estado Pago\n")
+    buf.write("Nombre,Email Principal,Email Secundario,Título,Ubicación,Centro de Trabajo,Estado Pago\n")
     for r in emails:
         nombre   = r["nombre"].replace('"', '""')
         email    = r["email"].replace('"', '""')
+        email2   = r.get("email_secundario", "").replace('"', '""')
         tit      = r["titulo"].replace('"', '""')
         ubic     = r["ubicacion"].replace('"', '""')
         ct       = r["centro_trabajo"].replace('"', '""')
         ep       = r["estado_pago"].replace('"', '""')
-        buf.write(f'"{nombre}","{email}","{tit}","{ubic}","{ct}","{ep}"\n')
+        buf.write(f'"{nombre}","{email}","{email2}","{tit}","{ubic}","{ct}","{ep}"\n')
     csv_bytes = buf.getvalue().encode("utf-8-sig")
     return StreamingResponse(
         io.BytesIO(csv_bytes),

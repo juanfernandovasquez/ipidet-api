@@ -1050,20 +1050,23 @@ def get_marketing_emails(titulo: str = "", ubicacion: str = "",
 
     result = []
     for m in members:
-        email = next(
+        habilitados = [e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"]
+        principal   = next(
             (e["email"] for e in m.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
-            next((e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"), None),
+            habilitados[0] if habilitados else None,
         )
-        if not email:
+        if not principal:
             continue
+        secundarios = [e for e in habilitados if e != principal]
         result.append({
-            "member_id":     m["member_id"],
-            "nombre":        f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
-            "email":         email,
-            "titulo":        m.get("titulo", ""),
-            "ubicacion":     m.get("ubicacion", ""),
-            "centro_trabajo":m.get("centro_trabajo", ""),
-            "estado_pago":   pay_map.get(m["member_id"], ""),
+            "member_id":       m["member_id"],
+            "nombre":          f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
+            "email":           principal,
+            "email_secundario": secundarios[0] if secundarios else "",
+            "titulo":          m.get("titulo", ""),
+            "ubicacion":       m.get("ubicacion", ""),
+            "centro_trabajo":  m.get("centro_trabajo", ""),
+            "estado_pago":     pay_map.get(m["member_id"], ""),
         })
 
     return sorted(result, key=lambda x: x["nombre"])
