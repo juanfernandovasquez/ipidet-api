@@ -73,8 +73,10 @@
         <tr class="hover:bg-slate-50 transition-colors">
           <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ m.member_id }}</td>
           <td class="px-4 py-3">
-            <div class="font-medium text-slate-800">{{ m.apellidos }}</div>
-            <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
+            <a href="/members/{{ m.member_id }}" class="hover:text-blue-600 transition-colors">
+              <div class="font-medium text-slate-800">{{ m.apellidos }}</div>
+              <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
+            </a>
           </td>
           <td class="px-4 py-3 text-slate-600 text-xs">
             {% set habilitados = m.emails | selectattr("estado","eq","habilitado") | list %}
