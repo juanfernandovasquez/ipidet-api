@@ -263,7 +263,11 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
     if estado:
         query["estado"] = estado
     if empresa:
-        query["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
+        nombres = _resolve_empresa_nombres(empresa)
+        if nombres:
+            query["empresa_pagadora"] = {"$in": nombres}
+        else:
+            query["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
     if comprobante_emitido == "emitido":
         query["comprobante_emitido"] = True
     elif comprobante_emitido == "pendiente":
@@ -345,7 +349,11 @@ def get_payments_export(periodo: str = "2026", estado: str = "", empresa: str = 
     if estado:
         query["estado"] = estado
     if empresa:
-        query["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
+        nombres = _resolve_empresa_nombres(empresa)
+        if nombres:
+            query["empresa_pagadora"] = {"$in": nombres}
+        else:
+            query["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
     if search:
         rx = {"$regex": search, "$options": "i"}
         ids_members = {
@@ -735,27 +743,82 @@ def get_faq_categories() -> list[str]:
 # ── Empresas ──────────────────────────────────────────────────────────────────
 
 _SEED_COMPANIES = [
-    {"nombre": "EY",           "ruc": "", "tipo": "auditora"},
-    {"nombre": "BDO",          "ruc": "", "tipo": "auditora"},
-    {"nombre": "PwC",          "ruc": "", "tipo": "auditora"},
-    {"nombre": "KPMG",         "ruc": "", "tipo": "auditora"},
-    {"nombre": "PPU",          "ruc": "", "tipo": "firma_legal"},
-    {"nombre": "SABHA S.A.C.", "ruc": "", "tipo": "empresa"},
+    {"nombre": "EY",           "razon_social": "Ernst & Young",          "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
+    {"nombre": "BDO",          "razon_social": "BDO Perú",               "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
+    {"nombre": "PwC",          "razon_social": "PricewaterhouseCoopers",  "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
+    {"nombre": "KPMG",         "razon_social": "KPMG Perú",              "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
+    {"nombre": "PPU",          "razon_social": "Payet, Rey, Cauvi, Pérez","ruc": "", "tipo": "firma_legal", "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
+    {"nombre": "SABHA S.A.C.", "razon_social": "SABHA S.A.C.",           "ruc": "", "tipo": "empresa",     "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
 ]
 
 def seed_companies():
     if companies_col.count_documents({}) == 0:
         companies_col.insert_many(_SEED_COMPANIES)
 
-def get_companies(search: str = "") -> list:
-    query = {}
+def get_all_companies(search: str = "", tipo: str = "") -> list:
+    """Lista completa de empresas para la página de gestión."""
+    query: dict = {}
     if search.strip():
-        query = {"nombre": {"$regex": _re.escape(search.strip()), "$options": "i"}}
-    docs = list(companies_col.find(query, {"_id": 1, "nombre": 1, "ruc": 1, "tipo": 1}).limit(10))
+        rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+        query["$or"] = [{"nombre": rx}, {"ruc": rx}, {"razon_social": rx},
+                        {"contacto_nombre": rx}, {"contacto_email": rx}]
+    if tipo:
+        query["tipo"] = tipo
+    docs = list(companies_col.find(query).sort("nombre", 1))
     return _clean(docs)
 
-def add_company(nombre: str, ruc: str = "", tipo: str = "empresa"):
-    companies_col.insert_one({"nombre": nombre.strip(), "ruc": ruc.strip(), "tipo": tipo})
+def get_companies(search: str = "") -> list:
+    """Autocomplete: busca por nombre, razón social o RUC (máx. 15 resultados)."""
+    query: dict = {}
+    if search.strip():
+        rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+        query["$or"] = [{"nombre": rx}, {"ruc": rx}, {"razon_social": rx}]
+    docs = list(companies_col.find(query, {"_id": 1, "nombre": 1, "ruc": 1, "tipo": 1, "razon_social": 1}).sort("nombre", 1).limit(15))
+    return _clean(docs)
+
+def _resolve_empresa_nombres(search: str) -> list[str] | None:
+    """Dado un texto de búsqueda (nombre o RUC), devuelve los nombres de empresa
+    que coinciden en la colección companies. Devuelve None si no hay match."""
+    if not search.strip():
+        return None
+    rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+    matches = list(companies_col.find(
+        {"$or": [{"nombre": rx}, {"ruc": rx}, {"razon_social": rx}]},
+        {"nombre": 1},
+    ))
+    return [m["nombre"] for m in matches] if matches else None
+
+def add_company(nombre: str, ruc: str = "", razon_social: str = "",
+                tipo: str = "empresa", contacto_nombre: str = "",
+                contacto_email: str = "", contacto_telefono: str = ""):
+    companies_col.insert_one({
+        "nombre":            nombre.strip(),
+        "razon_social":      razon_social.strip(),
+        "ruc":               ruc.strip(),
+        "tipo":              tipo,
+        "contacto_nombre":   contacto_nombre.strip(),
+        "contacto_email":    contacto_email.strip(),
+        "contacto_telefono": contacto_telefono.strip(),
+        "activo":            True,
+        "created_at":        datetime.now(timezone.utc),
+    })
+
+def update_company(company_id: str, nombre: str, ruc: str = "",
+                   razon_social: str = "", tipo: str = "empresa",
+                   contacto_nombre: str = "", contacto_email: str = "",
+                   contacto_telefono: str = ""):
+    companies_col.update_one(
+        {"_id": ObjectId(company_id)},
+        {"$set": {
+            "nombre":            nombre.strip(),
+            "razon_social":      razon_social.strip(),
+            "ruc":               ruc.strip(),
+            "tipo":              tipo,
+            "contacto_nombre":   contacto_nombre.strip(),
+            "contacto_email":    contacto_email.strip(),
+            "contacto_telefono": contacto_telefono.strip(),
+        }},
+    )
 
 def delete_company(company_id: str):
     companies_col.delete_one({"_id": ObjectId(company_id)})

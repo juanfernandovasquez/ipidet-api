@@ -198,12 +198,24 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión SUNAT <span class="text-red-500">*</span></label>
         <input x-model="fechaEmision" type="date" class="input w-40">
       </div>
-      <div class="flex items-end pb-0.5">
-        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-          <input type="checkbox" x-model="enviarEmail" class="rounded accent-blue-600">
-          Enviar comprobante por email a cada socio
-        </label>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Monto total factura S/ <span class="text-red-500">*</span></label>
+        <input x-model="montoFactura" type="number" step="0.01" min="0" placeholder="0.00" class="input w-32">
       </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de vencimiento crédito <span class="text-red-500">*</span></label>
+        <input x-model="fechaVencimiento" type="date" class="input w-40">
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-4 mt-3">
+      <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+        <input type="checkbox" x-model="enviarEmail" class="rounded accent-blue-600">
+        Enviar comprobante por email a cada socio
+      </label>
+    </div>
+    <div class="mt-3 flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+      <i class="fa-solid fa-circle-info mt-0.5 flex-shrink-0"></i>
+      Al guardar se registrará automáticamente en <strong>Seguimiento de crédito</strong> con estado "Pendiente" hasta que la empresa pague.
     </div>
   </div>
 
@@ -220,7 +232,7 @@
   <!-- Botón guardar -->
   <div class="flex items-center gap-4">
     <button type="button" @click="guardar()"
-      :disabled="selectedCount === 0 || !numComprobante || !tipoComprobante || !fechaEmision || saving"
+      :disabled="selectedCount === 0 || !numComprobante || !tipoComprobante || !fechaEmision || !montoFactura || !fechaVencimiento || saving"
       class="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
       <i class="fa-solid fa-check mr-1.5" x-show="!saving"></i>
       <i class="fa-solid fa-spinner fa-spin mr-1.5" x-show="saving" x-cloak></i>
@@ -249,6 +261,8 @@ function facturaEmpresa() {
     numComprobante: '',
     tipoComprobante: '',
     fechaEmision: '',
+    montoFactura: '',
+    fechaVencimiento: '',
     enviarEmail: false,
 
     saving: false,
@@ -322,6 +336,9 @@ function facturaEmpresa() {
       if (!this.numComprobante.trim()) { this.errorMsg = 'Ingresa el N° de comprobante.'; return; }
       if (!this.tipoComprobante)       { this.errorMsg = 'Selecciona el tipo de comprobante.'; return; }
       if (!this.fechaEmision)          { this.errorMsg = 'Ingresa la fecha de emisión.'; return; }
+      if (!this.montoFactura)          { this.errorMsg = 'Ingresa el monto total de la factura.'; return; }
+      if (!this.fechaVencimiento)      { this.errorMsg = 'Ingresa la fecha de vencimiento de crédito.'; return; }
+      if (!this.empresaVal.trim())     { this.errorMsg = 'Selecciona una empresa.'; return; }
 
       const items = this.socios.flatMap(s =>
         s.items.filter(i => i.selected).map(i => ({
@@ -339,11 +356,14 @@ function facturaEmpresa() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             items,
-            num_comprobante: this.numComprobante.trim(),
-            tipo_comprobante: this.tipoComprobante,
-            fecha_emision: this.fechaEmision,
-            enviar_email: this.enviarEmail,
-            periodo: this.periodo,
+            num_comprobante:   this.numComprobante.trim(),
+            tipo_comprobante:  this.tipoComprobante,
+            fecha_emision:     this.fechaEmision,
+            monto:             parseFloat(this.montoFactura) || 0,
+            fecha_vencimiento: this.fechaVencimiento,
+            empresa:           this.empresaVal.trim(),
+            enviar_email:      this.enviarEmail,
+            periodo:           this.periodo,
           }),
         });
         const data = await r.json();

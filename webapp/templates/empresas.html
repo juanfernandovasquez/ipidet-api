@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Empresas — IPIDET{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-slate-800">Empresas pagadoras</h1>
+    <p class="text-sm text-slate-500 mt-1">Empresas que financian membresías de asociados</p>
+  </div>
+  <button onclick="document.getElementById('modal-add').classList.remove('hidden')"
+    class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2">
+    <i class="fa-solid fa-plus"></i> Nueva empresa
+  </button>
+</div>
+
+<!-- Filtros -->
+<form method="get" class="flex gap-3 mb-6 flex-wrap">
+  <input name="search" value="{{ search }}" placeholder="Buscar por nombre, razón social o RUC…"
+    class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-500">
+  <select name="tipo" onchange="this.form.submit()"
+    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <option value="">Todos los tipos</option>
+    <option value="auditora"    {% if tipo == 'auditora'    %}selected{% endif %}>Auditora</option>
+    <option value="firma_legal" {% if tipo == 'firma_legal' %}selected{% endif %}>Firma legal</option>
+    <option value="empresa"     {% if tipo == 'empresa'     %}selected{% endif %}>Empresa</option>
+    <option value="otro"        {% if tipo == 'otro'        %}selected{% endif %}>Otro</option>
+  </select>
+  <button type="submit" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm px-4 py-2 rounded-lg">
+    <i class="fa-solid fa-magnifying-glass"></i>
+  </button>
+  {% if search or tipo %}
+  <a href="/empresas" class="text-sm text-slate-500 hover:text-slate-700 self-center">Limpiar</a>
+  {% endif %}
+</form>
+
+<!-- Tabla -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left font-semibold text-slate-600">Nombre</th>
+        <th class="px-4 py-3 text-left font-semibold text-slate-600">Razón social</th>
+        <th class="px-4 py-3 text-left font-semibold text-slate-600">RUC</th>
+        <th class="px-4 py-3 text-left font-semibold text-slate-600">Tipo</th>
+        <th class="px-4 py-3 text-left font-semibold text-slate-600">Contacto</th>
+        <th class="px-4 py-3 text-right font-semibold text-slate-600">Acciones</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for e in empresas %}
+      <tr class="hover:bg-slate-50 transition-colors" x-data="{ editing: false }">
+        <!-- Vista normal -->
+        <td class="px-4 py-3 font-semibold text-slate-800" x-show="!editing">{{ e.nombre }}</td>
+        <td class="px-4 py-3 text-slate-600" x-show="!editing">{{ e.razon_social or '—' }}</td>
+        <td class="px-4 py-3 font-mono text-slate-600" x-show="!editing">{{ e.ruc or '—' }}</td>
+        <td class="px-4 py-3" x-show="!editing">
+          <span class="inline-block text-xs px-2 py-0.5 rounded-full font-medium
+            {% if e.tipo == 'auditora' %}bg-purple-100 text-purple-700
+            {% elif e.tipo == 'firma_legal' %}bg-blue-100 text-blue-700
+            {% else %}bg-slate-100 text-slate-600{% endif %}">
+            {{ e.tipo | replace('_', ' ') | title }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-slate-500 text-xs" x-show="!editing">
+          {% if e.contacto_nombre %}
+            <div class="font-medium text-slate-700">{{ e.contacto_nombre }}</div>
+          {% endif %}
+          {% if e.contacto_email %}
+            <a href="mailto:{{ e.contacto_email }}" class="text-blue-600 hover:underline">{{ e.contacto_email }}</a>
+          {% endif %}
+          {% if e.contacto_telefono %}
+            <div>{{ e.contacto_telefono }}</div>
+          {% endif %}
+          {% if not e.contacto_nombre and not e.contacto_email and not e.contacto_telefono %}—{% endif %}
+        </td>
+        <td class="px-4 py-3 text-right" x-show="!editing">
+          <button @click="editing = true" class="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded hover:bg-blue-50">
+            <i class="fa-solid fa-pen"></i> Editar
+          </button>
+          <form method="post" action="/empresas/{{ e._id }}/delete" class="inline"
+            onsubmit="return confirm('¿Eliminar {{ e.nombre }}?')">
+            <button type="submit" class="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50 ml-1">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </form>
+        </td>
+
+        <!-- Formulario de edición inline -->
+        <td colspan="6" class="px-4 py-3" x-show="editing" x-cloak>
+          <form method="post" action="/empresas/{{ e._id }}/update" class="flex flex-wrap gap-2 items-end">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Nombre corto *</label>
+              <input name="nombre" value="{{ e.nombre }}" required
+                class="border border-slate-300 rounded px-2 py-1.5 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Razón social</label>
+              <input name="razon_social" value="{{ e.razon_social or '' }}"
+                class="border border-slate-300 rounded px-2 py-1.5 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">RUC</label>
+              <input name="ruc" value="{{ e.ruc or '' }}" maxlength="11" placeholder="20XXXXXXXXX"
+                class="border border-slate-300 rounded px-2 py-1.5 text-sm w-32 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+              <select name="tipo" class="border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="auditora"    {% if e.tipo == 'auditora'    %}selected{% endif %}>Auditora</option>
+                <option value="firma_legal" {% if e.tipo == 'firma_legal' %}selected{% endif %}>Firma legal</option>
+                <option value="empresa"     {% if e.tipo == 'empresa'     %}selected{% endif %}>Empresa</option>
+                <option value="otro"        {% if e.tipo == 'otro'        %}selected{% endif %}>Otro</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Contacto</label>
+              <input name="contacto_nombre" value="{{ e.contacto_nombre or '' }}" placeholder="Nombre"
+                class="border border-slate-300 rounded px-2 py-1.5 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Email contacto</label>
+              <input name="contacto_email" type="email" value="{{ e.contacto_email or '' }}" placeholder="correo@empresa.com"
+                class="border border-slate-300 rounded px-2 py-1.5 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Teléfono</label>
+              <input name="contacto_telefono" value="{{ e.contacto_telefono or '' }}" placeholder="+51 9XXXXXXXX"
+                class="border border-slate-300 rounded px-2 py-1.5 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex gap-2 mt-0.5">
+              <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded">
+                Guardar
+              </button>
+              <button type="button" @click="editing = false" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm px-3 py-1.5 rounded">
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="6" class="px-4 py-10 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-building text-2xl mb-2 block opacity-30"></i>
+          No hay empresas registradas
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="text-xs text-slate-400 mt-3">{{ empresas | length }} empresa(s) encontrada(s)</p>
+
+<!-- Modal: Nueva empresa -->
+<div id="modal-add" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <h3 class="font-semibold text-slate-800">Nueva empresa</h3>
+      <button onclick="document.getElementById('modal-add').classList.add('hidden')"
+        class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form method="post" action="/empresas/add" class="px-6 py-4 space-y-4">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Nombre corto *</label>
+          <input name="nombre" required placeholder="EY, BDO, KPMG…"
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
+          <select name="tipo" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="auditora">Auditora</option>
+            <option value="firma_legal">Firma legal</option>
+            <option value="empresa" selected>Empresa</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Razón social</label>
+        <input name="razon_social" placeholder="Nombre legal completo"
+          class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">RUC</label>
+        <input name="ruc" maxlength="11" placeholder="20XXXXXXXXX" class="font-mono
+          w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div class="border-t border-slate-100 pt-3">
+        <p class="text-xs font-medium text-slate-500 mb-3">Contacto (opcional)</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-600 mb-1">Nombre</label>
+            <input name="contacto_nombre" placeholder="Responsable de pagos"
+              class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-600 mb-1">Teléfono</label>
+            <input name="contacto_telefono" placeholder="+51 9XXXXXXXX"
+              class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-600 mb-1">Email</label>
+            <input name="contacto_email" type="email" placeholder="pagos@empresa.com"
+              class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="button" onclick="document.getElementById('modal-add').classList.add('hidden')"
+          class="text-sm text-slate-600 hover:text-slate-800 px-4 py-2 rounded-lg hover:bg-slate-100">Cancelar</button>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2 rounded-lg">
+          Guardar empresa
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

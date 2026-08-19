@@ -267,14 +267,42 @@ async def api_pendientes_socio(member_id: str, periodo: str = "2026"):
 @app.post("/billing/facturacion/empresa/guardar")
 async def guardar_factura_empresa(request: Request):
     data = await request.json()
-    items            = data.get("items", [])
-    num_comprobante  = data.get("num_comprobante", "").strip()
-    tipo_comprobante = data.get("tipo_comprobante", "")
-    fecha_emision    = data.get("fecha_emision", "")
-    enviar_email     = data.get("enviar_email", False)
+    items             = data.get("items", [])
+    num_comprobante   = data.get("num_comprobante", "").strip()
+    tipo_comprobante  = data.get("tipo_comprobante", "")
+    fecha_emision     = data.get("fecha_emision", "")
+    monto             = float(data.get("monto") or 0)
+    fecha_vencimiento = data.get("fecha_vencimiento", "")
+    empresa           = data.get("empresa", "").strip()
+    enviar_email      = data.get("enviar_email", False)
+    periodo           = data.get("periodo", "2026")
+
     if not items or not num_comprobante or not tipo_comprobante or not fecha_emision:
         return JSONResponse({"error": "Faltan datos obligatorios"}, status_code=422)
+
     pdb.emitir_comprobante_batch(items, num_comprobante, tipo_comprobante, fecha_emision)
+
+    # Crear factura de crédito automáticamente si se indicó empresa y vencimiento
+    if empresa and fecha_vencimiento and monto > 0:
+        member_ids = list({i["payment_id"] for i in items})  # como referencia; guardamos los IDs de pago
+        socios_ids = []
+        for item in items:
+            pay = pdb.get_payment_with_member(item["payment_id"])
+            if pay:
+                socios_ids.append(pay["member_id"])
+        socios_ids = list(dict.fromkeys(socios_ids))  # deduplicar preservando orden
+        n = len(socios_ids)
+        concepto = f"Membresías {periodo} — {n} socio{'s' if n != 1 else ''}"
+        pdb.create_factura_credito(
+            empresa=empresa,
+            numero_factura=num_comprobante,
+            monto=monto,
+            fecha_emision=fecha_emision,
+            fecha_vencimiento=fecha_vencimiento,
+            concepto=concepto,
+            socios=socios_ids,
+        )
+
     if enviar_email:
         sent = 0
         for item in items:
@@ -646,7 +674,55 @@ async def delete_faq(faq_id: str):
     return RedirectResponse("/faqs", status_code=303)
 
 
-# ── API empresas ─────────────────────────────────────────────────────────────
+# ── Empresas (página de gestión) ─────────────────────────────────────────────
+
+@app.get("/empresas", response_class=HTMLResponse)
+async def empresas_page(request: Request, search: str = "", tipo: str = ""):
+    empresas = pdb.get_all_companies(search, tipo)
+    return templates.TemplateResponse(request, "empresas.html", {
+        "empresas": empresas, "search": search, "tipo": tipo,
+    })
+
+
+@app.post("/empresas/add")
+async def empresas_add(
+    request: Request,
+    nombre:            str = Form(...),
+    ruc:               str = Form(""),
+    razon_social:      str = Form(""),
+    tipo:              str = Form("empresa"),
+    contacto_nombre:   str = Form(""),
+    contacto_email:    str = Form(""),
+    contacto_telefono: str = Form(""),
+):
+    pdb.add_company(nombre, ruc, razon_social, tipo,
+                    contacto_nombre, contacto_email, contacto_telefono)
+    return RedirectResponse("/empresas", status_code=303)
+
+
+@app.post("/empresas/{company_id}/update")
+async def empresas_update(
+    company_id: str,
+    nombre:            str = Form(...),
+    ruc:               str = Form(""),
+    razon_social:      str = Form(""),
+    tipo:              str = Form("empresa"),
+    contacto_nombre:   str = Form(""),
+    contacto_email:    str = Form(""),
+    contacto_telefono: str = Form(""),
+):
+    pdb.update_company(company_id, nombre, ruc, razon_social, tipo,
+                       contacto_nombre, contacto_email, contacto_telefono)
+    return RedirectResponse("/empresas", status_code=303)
+
+
+@app.post("/empresas/{company_id}/delete")
+async def empresas_delete(company_id: str):
+    pdb.delete_company(company_id)
+    return RedirectResponse("/empresas", status_code=303)
+
+
+# ── API empresas (autocomplete) ───────────────────────────────────────────────
 
 @app.get("/api/companies")
 async def api_companies(q: str = ""):
@@ -655,7 +731,7 @@ async def api_companies(q: str = ""):
 
 @app.post("/api/companies")
 async def api_add_company(nombre: str = Form(...), ruc: str = Form(""), tipo: str = Form("empresa")):
-    pdb.add_company(nombre, ruc, tipo)
+    pdb.add_company(nombre, ruc, tipo=tipo)
     return {"ok": True}
 
 
@@ -735,9 +811,15 @@ async def email_test(to: str = Form(...)):
 
 @app.get("/billing/credito", response_class=HTMLResponse)
 async def billing_credito(request: Request, empresa: str = "", estado: str = ""):
-    facturas = pdb.get_facturas_credito(empresa, estado)
+    # Resolver RUC → nombre de empresa si el filtro parece un RUC
+    empresa_filtro = empresa
+    if empresa.strip():
+        nombres = pdb._resolve_empresa_nombres(empresa)
+        if nombres:
+            empresa_filtro = nombres[0]
+    facturas = pdb.get_facturas_credito(empresa_filtro, estado)
     stats    = pdb.get_credito_stats()
-    empresas = pdb.get_companies()
+    empresas = pdb.get_all_companies()
     return templates.TemplateResponse(request, "credito.html", _ctx(request,
         facturas=facturas, stats=stats, empresas=empresas,
         empresa=empresa, estado=estado,

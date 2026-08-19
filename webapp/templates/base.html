@@ -95,6 +95,11 @@
         <i class="fa-solid fa-calendar-days"></i> Fraccionamientos
       </a>
       {% endif %}
+      {% if is_admin or 'empresas' in p %}
+      <a href="/empresas" class="sidebar-link {% if '/empresas' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-building"></i> Empresas
+      </a>
+      {% endif %}
       {% if is_admin or 'finanzas' in p %}
       <a href="/finanzas" class="sidebar-link {% if '/finanzas' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-chart-line"></i>
