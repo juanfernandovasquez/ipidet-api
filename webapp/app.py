@@ -662,12 +662,14 @@ async def fraccionamientos(
     search: str = "",
     page: int = 1,
 ):
+    from datetime import date as _date_cls
     docs, total, stats = pdb.get_fraccionamientos(periodo, alerta, search, page)
     return templates.TemplateResponse(request, "fraccionamientos.html", _ctx(request,
         fraccionamientos=docs, total=total, stats=stats,
         periodo=periodo, alerta=alerta, search=search,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
+        today=_date_cls.today().isoformat(),
     ))
 
 

@@ -213,7 +213,7 @@
               </thead>
               <tbody>
                 {% for cuota in f.cuotas %}
-                {% set es_vencida = cuota.estado != 'pagado' and cuota.get('fecha_venc') and cuota.fecha_venc < f.periodo ~ '-99' %}
+                {% set es_vencida = cuota.estado != 'pagado' and cuota.get('fecha_venc') and cuota.fecha_venc < today %}
                 <tr class="border-b border-slate-100 {% if es_vencida %}bg-red-50{% endif %}">
                   <td class="py-1.5 pr-3 text-slate-600 font-medium">{{ cuota.numero }}</td>
                   <td class="py-1.5 pr-3 font-semibold text-slate-800">S/ {{ cuota.monto }}</td>
