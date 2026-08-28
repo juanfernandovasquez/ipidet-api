@@ -183,7 +183,8 @@
 
       <!-- Panel de edición -->
       <div x-show="editing" x-cloak class="border-t border-slate-100 px-4 py-3 bg-slate-50">
-        <form method="post" action="/pendientes/{{ item._id }}/update" class="space-y-3">
+        <form method="post" action="/pendientes/{{ item._id }}/update" class="space-y-3"
+              x-data="socioSearch('{{ item.get('member_id') or '' }}', '{{ item.get('nombre_completo') or item.get('nombre_miembro') or '' }}')">
           <input type="hidden" name="redirect_to" value="{{ cur_url }}">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div class="md:col-span-2">
@@ -211,15 +212,33 @@
                 <option value="resuelto"   {% if item.estado == 'resuelto'   %}selected{% endif %}>Resuelto</option>
               </select>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">ID Socio vinculado</label>
-              <input name="member_id" value="{{ item.get('member_id') or '' }}"
-                     placeholder="IPIDET-0001" class="input w-full text-sm font-mono">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Nombre del socio</label>
-              <input name="nombre_miembro" value="{{ item.get('nombre_miembro') or '' }}"
-                     placeholder="Se rellena automáticamente" class="input w-full text-sm">
+            <div class="relative md:col-span-2">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Socio vinculado</label>
+              <input x-model="query" @input.debounce.300ms="buscar()"
+                     @focus="if (query.length > 1) buscar()"
+                     @keydown.escape="sugerencias = []"
+                     placeholder="Buscar por nombre…"
+                     class="input w-full text-sm" autocomplete="off">
+              <div x-show="sugerencias.length > 0" @click.outside="sugerencias = []"
+                   class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full max-h-48 overflow-y-auto">
+                <template x-for="s in sugerencias" :key="s.member_id">
+                  <button type="button" @click="seleccionar(s)"
+                          class="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                    <div class="font-medium text-slate-800" x-text="s.nombre_completo"></div>
+                    <div class="text-slate-400 font-mono" x-text="s.member_id"></div>
+                  </button>
+                </template>
+              </div>
+              <template x-if="seleccionado">
+                <div class="mt-1 flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                  <i class="fa-solid fa-user text-[10px]"></i>
+                  <span x-text="seleccionado.nombre_completo"></span>
+                  <span class="text-blue-400 font-mono" x-text="'(' + seleccionado.member_id + ')'"></span>
+                  <button type="button" @click="limpiar()" class="ml-auto text-blue-400 hover:text-red-500">×</button>
+                </div>
+              </template>
+              <input type="hidden" name="member_id" :value="seleccionado ? seleccionado.member_id : ''">
+              <input type="hidden" name="nombre_miembro" :value="seleccionado ? seleccionado.nombre_completo : ''">
             </div>
           </div>
           <div class="flex gap-2">
@@ -250,7 +269,6 @@
 <div id="modal-nuevo" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
   <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"></div>
   <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6"
-       x-data="{ memberIdVal: '', nombreVal: '' }"
        @keydown.escape.window="document.getElementById('modal-nuevo').classList.add('hidden')">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-semibold text-slate-800">Nuevo pendiente</h2>
@@ -259,7 +277,8 @@
         <i class="fa-solid fa-xmark text-lg"></i>
       </button>
     </div>
-    <form method="post" action="/pendientes/add" class="space-y-4">
+    <form method="post" action="/pendientes/add" class="space-y-4"
+          x-data="socioSearch()">
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Título <span class="text-red-500">*</span></label>
         <input name="titulo" required placeholder="Ej: Verificar pago pendiente de socio López" class="input w-full" autofocus>
@@ -279,18 +298,35 @@
             <option value="baja">🟢 Baja</option>
           </select>
         </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">ID Socio (opcional)</label>
-          <input name="member_id" x-model="memberIdVal"
-                 placeholder="IPIDET-0001"
-                 class="input w-full font-mono text-sm">
+        <div class="relative">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Socio vinculado (opcional)</label>
+          <input x-model="query" @input.debounce.300ms="buscar()"
+                 @focus="if (query.length > 1) buscar()"
+                 @keydown.escape="sugerencias = []"
+                 placeholder="Buscar por nombre…"
+                 class="input w-full text-sm" autocomplete="off">
+          <div x-show="sugerencias.length > 0" @click.outside="sugerencias = []"
+               class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full max-h-48 overflow-y-auto">
+            <template x-for="s in sugerencias" :key="s.member_id">
+              <button type="button" @click="seleccionar(s)"
+                      class="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                <div class="font-medium text-slate-800" x-text="s.nombre_completo"></div>
+                <div class="text-slate-400 font-mono" x-text="s.member_id"></div>
+              </button>
+            </template>
+          </div>
+          <!-- Socio seleccionado -->
+          <template x-if="seleccionado">
+            <div class="mt-1 flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+              <i class="fa-solid fa-user text-[10px]"></i>
+              <span x-text="seleccionado.nombre_completo"></span>
+              <span class="text-blue-400 font-mono" x-text="'(' + seleccionado.member_id + ')'"></span>
+              <button type="button" @click="limpiar()" class="ml-auto text-blue-400 hover:text-red-500">×</button>
+            </div>
+          </template>
+          <input type="hidden" name="member_id" :value="seleccionado ? seleccionado.member_id : ''">
+          <input type="hidden" name="nombre_miembro" :value="seleccionado ? seleccionado.nombre_completo : ''">
         </div>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Nombre del socio (opcional)</label>
-        <input name="nombre_miembro" x-model="nombreVal"
-               placeholder="Se rellena automáticamente si pones el ID"
-               class="input w-full text-sm">
       </div>
       <div class="flex gap-3 pt-2">
         <button type="submit" class="btn-primary flex-1">Crear pendiente</button>
@@ -300,4 +336,32 @@
     </form>
   </div>
 </div>
+
+<script>
+function socioSearch(initId = '', initNombre = '') {
+  return {
+    query: initNombre || '',
+    sugerencias: [],
+    seleccionado: initId ? { member_id: initId, nombre_completo: initNombre } : null,
+    async buscar() {
+      if (this.query.length < 2) { this.sugerencias = []; return; }
+      const r = await fetch('/api/members?search=' + encodeURIComponent(this.query));
+      const d = await r.json();
+      this.sugerencias = (d.members || []).slice(0, 8).map(m => ({
+        member_id: m.member_id,
+        nombre_completo: ((m.apellidos || '') + ' ' + (m.nombres || '')).trim(),
+      }));
+    },
+    seleccionar(s) {
+      this.seleccionado = s;
+      this.query = s.nombre_completo;
+      this.sugerencias = [];
+    },
+    limpiar() {
+      this.seleccionado = null;
+      this.query = '';
+    },
+  };
+}
+</script>
 {% endblock %}
