@@ -494,7 +494,12 @@ def delete_cuota(payment_id: str, numero: int):
         {"_id": ObjectId(payment_id)},
         {"$pull": {"cuotas": {"numero": numero}}},
     )
-    _sync_estado_from_cuotas(payment_id)
+    # Al eliminar una cuota, forzar "fraccionamiento" para que el pago siga visible.
+    # El auto-upgrade a "pagado" solo ocurre cuando se marca una cuota como pagada.
+    payments_col.update_one(
+        {"_id": ObjectId(payment_id)},
+        {"$set": {"estado": "fraccionamiento"}},
+    )
 
 
 # ── Pagos parciales ───────────────────────────────────────────────────────────
