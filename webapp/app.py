@@ -501,12 +501,15 @@ async def update_cuota(
     tipo_comprobante: str = Form(""),
     link_constancia: str = Form(""),
     banco_origen: str = Form(""),
+    monto: str = Form(""),
+    fecha_venc: str = Form(""),
     redirect_to: str = Form("/billing"),
 ):
+    monto_f = float(monto) if monto.strip() else None
     pdb.update_cuota(payment_id, numero, estado, fecha_pago or None,
                      medio or None, num_comprobante or None,
                      tipo_comprobante or None, link_constancia or None,
-                     banco_origen or None)
+                     banco_origen or None, monto_f, fecha_venc or None)
     return RedirectResponse(redirect_to, status_code=303)
 
 

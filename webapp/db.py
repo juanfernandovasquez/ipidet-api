@@ -466,11 +466,16 @@ def add_cuota(payment_id: str, monto: float, fecha_venc: str = None):
 def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = None,
                  medio_pago: str = None, num_comprobante: str = None,
                  tipo_comprobante: str = None, link_constancia: str = None,
-                 banco_origen: str = None):
+                 banco_origen: str = None, monto: float = None,
+                 fecha_venc: str = None):
     set_fields = {
         "cuotas.$[el].estado":    estado,
         "cuotas.$[el].fecha_pago": fecha_pago or None,
     }
+    if monto is not None:
+        set_fields["cuotas.$[el].monto"] = monto
+    if fecha_venc is not None:
+        set_fields["cuotas.$[el].fecha_venc"] = fecha_venc or None
     if medio_pago is not None:
         set_fields["cuotas.$[el].medio_pago"] = medio_pago or None
     if num_comprobante is not None:

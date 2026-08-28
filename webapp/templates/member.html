@@ -325,6 +325,27 @@
 
                 <div class="flex flex-wrap gap-1.5 mt-1.5">
                   {% if cuota.estado != 'pagado' %}
+                  <div class="w-full" x-data="{ editandoDatos: false }">
+                    <button type="button" @click="editandoDatos = !editandoDatos"
+                            class="text-xs font-medium mb-1"
+                            :class="editandoDatos ? 'text-slate-400' : 'text-violet-600 hover:text-violet-800'"
+                            x-text="editandoDatos ? 'Cancelar' : '✎ Editar cuota'"></button>
+                    <div x-show="editandoDatos" x-cloak class="mb-2 p-2 bg-violet-50 rounded border border-violet-200">
+                      <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
+                        <input type="hidden" name="redirect_to" value="{{ rm }}">
+                        <input type="hidden" name="estado" value="pendiente">
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                          <input name="monto" type="number" step="0.01" min="0" value="{{ cuota.monto }}" class="input text-xs py-0.5 w-24" required>
+                        </div>
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-0.5">Vencimiento</label>
+                          <input name="fecha_venc" type="date" value="{{ cuota.get('fecha_venc','') }}" class="input text-xs py-0.5 w-32">
+                        </div>
+                        <button type="submit" class="text-violet-600 hover:text-violet-800 font-semibold text-xs">✓ Guardar</button>
+                      </form>
+                    </div>
+                  </div>
                   <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex gap-1 items-center">
                     <input type="hidden" name="redirect_to" value="{{ rm }}">
                     <input type="hidden" name="estado" value="pagado">

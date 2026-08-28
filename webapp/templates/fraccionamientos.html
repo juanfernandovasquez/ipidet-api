@@ -231,8 +231,29 @@
                   </td>
                   <td class="py-1.5 pr-3 text-slate-500">{{ cuota.get('fecha_pago') or '—' }}</td>
                   <td class="py-1.5 pr-3 text-slate-500 font-mono">{{ cuota.get('num_comprobante') or '—' }}</td>
-                  <td class="py-1.5" x-data="{ editingCuota: false }">
+                  <td class="py-1.5" x-data="{ editingCuota: false, editandoDatos: false }">
                     {% if cuota.estado != 'pagado' %}
+                    <div class="mb-1">
+                      <button type="button" @click="editandoDatos = !editandoDatos"
+                              class="text-xs font-medium"
+                              :class="editandoDatos ? 'text-slate-400' : 'text-violet-600 hover:text-violet-800'"
+                              x-text="editandoDatos ? 'Cancelar' : '✎ Editar cuota'"></button>
+                    </div>
+                    <div x-show="editandoDatos" x-cloak class="mb-2 p-2 bg-violet-50 rounded border border-violet-200">
+                      <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
+                        <input type="hidden" name="redirect_to" value="{{ rf }}">
+                        <input type="hidden" name="estado" value="pendiente">
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                          <input name="monto" type="number" step="0.01" min="0" value="{{ cuota.monto }}" class="input text-xs py-0.5 w-24" required>
+                        </div>
+                        <div>
+                          <label class="block text-xs text-slate-500 mb-0.5">Vencimiento</label>
+                          <input name="fecha_venc" type="date" value="{{ cuota.get('fecha_venc','') }}" class="input text-xs py-0.5 w-32">
+                        </div>
+                        <button type="submit" class="text-violet-600 hover:text-violet-800 font-semibold text-xs">✓ Guardar</button>
+                      </form>
+                    </div>
                     <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
                       <input type="hidden" name="redirect_to" value="{{ rf }}">
                       <input type="hidden" name="estado" value="pagado">
