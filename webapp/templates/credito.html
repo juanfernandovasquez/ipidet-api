@@ -241,7 +241,7 @@
             {% endif %}
 
             <div class="text-xs text-slate-400 pt-1">
-              Registrado: {{ f.created_at.strftime('%Y-%m-%d') if f.created_at else '—' }}
+              Registrado: {{ f.created_at[:10] if f.created_at else '—' }}
             </div>
           </div>
 
