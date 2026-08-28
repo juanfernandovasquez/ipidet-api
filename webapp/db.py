@@ -254,6 +254,22 @@ def update_member_estado(member_id: str, estado: str):
 
 # ── Payments ──────────────────────────────────────────────────────────────────
 
+def generar_cobros_periodo(periodo: str) -> dict:
+    """Crea registros 'debe' para todos los socios activos sin registro en ese período."""
+    activos = list(members_col.find({"estado": "activo"}, {"member_id": 1}))
+    existentes = {
+        p["member_id"]
+        for p in payments_col.find({"periodo": periodo}, {"member_id": 1})
+    }
+    faltantes = [m["member_id"] for m in activos if m["member_id"] not in existentes]
+    if faltantes:
+        payments_col.insert_many([
+            {"member_id": mid, "periodo": periodo, "estado": "debe"}
+            for mid in faltantes
+        ])
+    return {"creados": len(faltantes), "ya_existian": len(existentes), "total_activos": len(activos)}
+
+
 def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
                  search: str = "", page: int = 1, per_page: int = 50,
                  comprobante_emitido: str = ""):
@@ -331,6 +347,19 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
         d["monto_pagado"] = sum(p.get("monto", 0) for p in parciales)
         monto_total = d.get("monto_total") or 0
         d["monto_pendiente"] = round(max(0.0, monto_total - d["monto_pagado"]), 2) if monto_total else None
+
+    # Deudas en otros períodos para los mismos socios (una sola query)
+    _ESTADOS_DEUDA = ["debe", "fraccionamiento", "parcial"]
+    deuda_map: dict[str, list[str]] = {}
+    for p in payments_col.find(
+        {"member_id": {"$in": member_ids},
+         "estado": {"$in": _ESTADOS_DEUDA},
+         "periodo": {"$ne": periodo or ""}},
+        {"member_id": 1, "periodo": 1},
+    ):
+        deuda_map.setdefault(p["member_id"], []).append(p["periodo"])
+    for d in docs:
+        d["deudas_otros_periodos"] = sorted(deuda_map.get(d["member_id"], []))
 
     return [_clean(d) for d in docs], total
 

@@ -454,6 +454,18 @@ async def billing_export(
     )
 
 
+@app.post("/billing/generar-periodo")
+async def billing_generar_periodo(
+    periodo: str = Form(...),
+    redirect_to: str = Form("/billing"),
+):
+    result = pdb.generar_cobros_periodo(periodo)
+    return RedirectResponse(
+        f"{redirect_to}&_gen={result['creados']}",
+        status_code=303,
+    )
+
+
 @app.post("/billing/{payment_id}/update")
 async def update_payment(
     payment_id: str,

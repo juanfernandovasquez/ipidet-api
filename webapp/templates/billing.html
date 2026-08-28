@@ -78,6 +78,21 @@
         <i class="fa-solid fa-file-excel"></i> Exportar Excel
       </a>
     </form>
+    {% if periodo %}
+    <div class="mt-3 pt-3 border-t border-slate-100 flex items-center gap-3">
+      <form method="post" action="/billing/generar-periodo"
+            onsubmit="return confirm('¿Generar registros de cobranza {{ periodo }} para todos los socios activos sin registro ese año? Esto es seguro: no modifica registros existentes.')">
+        <input type="hidden" name="periodo" value="{{ periodo }}">
+        <input type="hidden" name="redirect_to" value="/billing?periodo={{ periodo }}&estado={{ estado }}&empresa={{ empresa }}&search={{ search }}">
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700 bg-violet-50 border border-violet-200 hover:bg-violet-100 px-3 py-1.5 rounded-lg transition-colors">
+          <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
+          Generar cobros {{ periodo }} para socios sin registro
+        </button>
+      </form>
+      <span class="text-xs text-slate-400">Solo crea registros faltantes — no modifica los existentes.</span>
+    </div>
+    {% endif %}
   </div>
 
   <!-- Summary badges -->
@@ -133,6 +148,17 @@
               <span class="badge badge-blue">Parcial{% if mt %} S/{{ p.monto_pagado|int }}/{{ mt|int }}{% endif %}</span>
             {% else %}
               <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
+            {% endif %}
+            {% if p.get('deudas_otros_periodos') %}
+            <div class="mt-1 flex flex-wrap gap-1">
+              {% for yr in p.deudas_otros_periodos %}
+              <a href="/billing?periodo={{ yr }}&search={{ p.get('member_id','') }}"
+                 class="inline-block text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 px-1.5 py-0.5 rounded transition-colors"
+                 title="Ver deuda {{ yr }}">
+                ⚠ Debe {{ yr }}
+              </a>
+              {% endfor %}
+            </div>
             {% endif %}
           </td>
           <td class="px-4 py-3 text-slate-500 text-xs">
