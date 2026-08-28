@@ -1437,3 +1437,74 @@ def get_evento_stats(evento_id: str) -> dict:
             evento["n_asistentes"] / evento["n_inscritos"] * 100, 1
         ) if evento["n_inscritos"] else 0,
     }
+
+
+# ── Pendientes y Atención ─────────────────────────────────────────────────────
+
+pendientes_col = _db.pendientes
+
+
+def get_pendientes(estado: str = "", prioridad: str = "", search: str = "") -> list:
+    q: dict = {}
+    if estado:
+        q["estado"] = estado
+    else:
+        q["estado"] = {"$ne": "resuelto"}  # por defecto ocultar resueltos
+    if prioridad:
+        q["prioridad"] = prioridad
+    if search:
+        rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+        q["$or"] = [{"titulo": rx}, {"descripcion": rx}, {"nombre_miembro": rx}]
+    orden = {"alta": 0, "media": 1, "baja": 2}
+    docs = list(pendientes_col.find(q).sort("created_at", -1))
+    docs.sort(key=lambda d: (orden.get(d.get("prioridad", "media"), 1), d.get("created_at", datetime.min)))
+    return _clean(docs)
+
+
+def create_pendiente(titulo: str, descripcion: str = "", prioridad: str = "media",
+                     member_id: str = "", nombre_miembro: str = "") -> str:
+    doc = {
+        "titulo": titulo.strip(),
+        "descripcion": descripcion.strip(),
+        "prioridad": prioridad,
+        "estado": "pendiente",
+        "member_id": member_id.strip() or None,
+        "nombre_miembro": nombre_miembro.strip() or None,
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+        "resuelto_at": None,
+    }
+    return str(pendientes_col.insert_one(doc).inserted_id)
+
+
+def update_pendiente(pendiente_id: str, titulo: str, descripcion: str,
+                     prioridad: str, estado: str,
+                     member_id: str = "", nombre_miembro: str = "") -> None:
+    fields: dict = {
+        "titulo": titulo.strip(),
+        "descripcion": descripcion.strip(),
+        "prioridad": prioridad,
+        "estado": estado,
+        "member_id": member_id.strip() or None,
+        "nombre_miembro": nombre_miembro.strip() or None,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if estado == "resuelto":
+        fields["resuelto_at"] = datetime.now(timezone.utc)
+    else:
+        fields["resuelto_at"] = None
+    pendientes_col.update_one({"_id": ObjectId(pendiente_id)}, {"$set": fields})
+
+
+def delete_pendiente(pendiente_id: str) -> None:
+    pendientes_col.delete_one({"_id": ObjectId(pendiente_id)})
+
+
+def get_pendientes_stats() -> dict:
+    docs = list(pendientes_col.find({}))
+    return {
+        "total":     sum(1 for d in docs if d.get("estado") != "resuelto"),
+        "alta":      sum(1 for d in docs if d.get("prioridad") == "alta" and d.get("estado") != "resuelto"),
+        "en_proceso": sum(1 for d in docs if d.get("estado") == "en_proceso"),
+        "resueltos": sum(1 for d in docs if d.get("estado") == "resuelto"),
+    }

@@ -1092,6 +1092,86 @@ async def api_evento_detalle(evento_id: str):
     return stats
 
 
+# ── Pendientes y Atención ─────────────────────────────────────────────────────
+
+@app.get("/pendientes", response_class=HTMLResponse)
+async def pendientes_list(
+    request: Request,
+    estado: str = "",
+    prioridad: str = "",
+    search: str = "",
+):
+    items = pdb.get_pendientes(estado, prioridad, search)
+    stats = pdb.get_pendientes_stats()
+    return templates.TemplateResponse(request, "pendientes.html", _ctx(request,
+        items=items, stats=stats,
+        estado=estado, prioridad=prioridad, search=search,
+    ))
+
+
+@app.post("/pendientes/add")
+async def pendiente_add(
+    titulo: str = Form(...),
+    descripcion: str = Form(""),
+    prioridad: str = Form("media"),
+    member_id: str = Form(""),
+    nombre_miembro: str = Form(""),
+):
+    if member_id.strip() and not nombre_miembro.strip():
+        m = pdb.get_member(member_id.strip())
+        if m:
+            nombre_miembro = f"{m.get('apellidos','')} {m.get('nombres','')}".strip()
+    pdb.create_pendiente(titulo, descripcion, prioridad, member_id, nombre_miembro)
+    return RedirectResponse("/pendientes", status_code=303)
+
+
+@app.post("/pendientes/{pendiente_id}/update")
+async def pendiente_update(
+    pendiente_id: str,
+    titulo: str = Form(...),
+    descripcion: str = Form(""),
+    prioridad: str = Form("media"),
+    estado: str = Form("pendiente"),
+    member_id: str = Form(""),
+    nombre_miembro: str = Form(""),
+    redirect_to: str = Form("/pendientes"),
+):
+    if member_id.strip() and not nombre_miembro.strip():
+        m = pdb.get_member(member_id.strip())
+        if m:
+            nombre_miembro = f"{m.get('apellidos','')} {m.get('nombres','')}".strip()
+    pdb.update_pendiente(pendiente_id, titulo, descripcion, prioridad, estado,
+                         member_id, nombre_miembro)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/pendientes/{pendiente_id}/estado")
+async def pendiente_estado(
+    pendiente_id: str,
+    estado: str = Form(...),
+    redirect_to: str = Form("/pendientes"),
+):
+    from bson import ObjectId
+    p = pdb.pendientes_col.find_one({"_id": ObjectId(pendiente_id)})
+    if p:
+        pdb.update_pendiente(
+            pendiente_id,
+            p.get("titulo", ""), p.get("descripcion", ""),
+            p.get("prioridad", "media"), estado,
+            p.get("member_id") or "", p.get("nombre_miembro") or "",
+        )
+    return RedirectResponse(redirect_to, status_code=303)
+
+
+@app.post("/pendientes/{pendiente_id}/delete")
+async def pendiente_delete(
+    pendiente_id: str,
+    redirect_to: str = Form("/pendientes"),
+):
+    pdb.delete_pendiente(pendiente_id)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
 # ── Portal de socios ──────────────────────────────────────────────────────────
 @app.get("/api/portal/member-status")
 async def portal_member_status(

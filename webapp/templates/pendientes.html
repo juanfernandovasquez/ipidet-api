@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}Pendientes — IPIDET{% endblock %}
+{% block heading %}Pendientes y Atención{% endblock %}
+
+{% block header_actions %}
+<button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
+        class="btn-primary text-sm flex items-center gap-1.5">
+  <i class="fa-solid fa-plus"></i> Nuevo pendiente
+</button>
+{% endblock %}
+
+{% block content %}
+<div x-data="{ t: null }">
+
+  <!-- Stats -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Pendientes activos</div>
+      <div class="text-2xl font-bold text-slate-800">{{ stats.total }}</div>
+    </div>
+    <div class="bg-white rounded-xl border {% if stats.alta > 0 %}border-red-300{% else %}border-slate-200{% endif %} p-4">
+      <div class="text-xs {% if stats.alta > 0 %}text-red-500{% else %}text-slate-500{% endif %} uppercase tracking-wide mb-1">Prioridad alta</div>
+      <div class="text-2xl font-bold {% if stats.alta > 0 %}text-red-600{% else %}text-slate-800{% endif %}">
+        {{ stats.alta }}{% if stats.alta > 0 %} <i class="fa-solid fa-triangle-exclamation text-lg"></i>{% endif %}
+      </div>
+    </div>
+    <div class="bg-white rounded-xl border border-amber-200 p-4">
+      <div class="text-xs text-amber-600 uppercase tracking-wide mb-1">En proceso</div>
+      <div class="text-2xl font-bold text-amber-700">{{ stats.en_proceso }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-green-200 p-4">
+      <div class="text-xs text-green-600 uppercase tracking-wide mb-1">Resueltos (total)</div>
+      <div class="text-2xl font-bold text-green-700">{{ stats.resueltos }}</div>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+    <form x-ref="filterForm" method="get" action="/pendientes" class="flex flex-wrap gap-3 items-end">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
+        <input name="search" value="{{ search }}" placeholder="Título, descripción, socio…" class="input w-56"
+               @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)"
+               x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+        <select name="estado" class="input" @change="$refs.filterForm.submit()">
+          <option value="" {% if not estado %}selected{% endif %}>Activos (sin resueltos)</option>
+          <option value="pendiente"  {% if estado == 'pendiente'  %}selected{% endif %}>Pendiente</option>
+          <option value="en_proceso" {% if estado == 'en_proceso' %}selected{% endif %}>En proceso</option>
+          <option value="resuelto"   {% if estado == 'resuelto'   %}selected{% endif %}>Resuelto</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Prioridad</label>
+        <select name="prioridad" class="input" @change="$refs.filterForm.submit()">
+          <option value="" {% if not prioridad %}selected{% endif %}>Todas</option>
+          <option value="alta"  {% if prioridad == 'alta'  %}selected{% endif %}>🔴 Alta</option>
+          <option value="media" {% if prioridad == 'media' %}selected{% endif %}>🟡 Media</option>
+          <option value="baja"  {% if prioridad == 'baja'  %}selected{% endif %}>🟢 Baja</option>
+        </select>
+      </div>
+      {% if search or estado or prioridad %}
+      <a href="/pendientes" class="btn-ghost self-end">Limpiar</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <!-- Lista -->
+  {% if items %}
+  <div class="space-y-3">
+    {% for item in items %}
+    {% set cur_url = "/pendientes?estado=" ~ estado ~ "&prioridad=" ~ prioridad ~ "&search=" ~ search %}
+    <div class="bg-white rounded-xl border {% if item.prioridad == 'alta' %}border-red-200{% elif item.prioridad == 'media' %}border-amber-200{% else %}border-slate-200{% endif %} overflow-hidden"
+         x-data="{ editing: false }">
+
+      <!-- Fila principal -->
+      <div class="flex items-start gap-3 px-4 py-3">
+
+        <!-- Indicador de prioridad -->
+        <div class="flex-shrink-0 mt-0.5">
+          {% if item.prioridad == 'alta' %}
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mt-1"></span>
+          {% elif item.prioridad == 'media' %}
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mt-1"></span>
+          {% else %}
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-green-400 mt-1"></span>
+          {% endif %}
+        </div>
+
+        <!-- Contenido -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1">
+              <span class="font-semibold text-slate-800 text-sm
+                {% if item.estado == 'resuelto' %}line-through text-slate-400{% endif %}">
+                {{ item.titulo }}
+              </span>
+              {% if item.get('member_id') %}
+              <a href="/members/{{ item.member_id }}"
+                 class="ml-2 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
+                <i class="fa-solid fa-user text-[9px]"></i>
+                {{ item.nombre_miembro or item.member_id }}
+              </a>
+              {% endif %}
+            </div>
+
+            <!-- Estado + acciones rápidas -->
+            <div class="flex items-center gap-2 flex-shrink-0">
+              {% if item.estado == 'pendiente' %}
+                <span class="badge badge-yellow">Pendiente</span>
+              {% elif item.estado == 'en_proceso' %}
+                <span class="badge badge-amber">En proceso</span>
+              {% else %}
+                <span class="badge badge-green">Resuelto</span>
+              {% endif %}
+
+              <!-- Cambio rápido de estado -->
+              {% if item.estado != 'resuelto' %}
+              <form method="post" action="/pendientes/{{ item._id }}/estado" class="inline">
+                <input type="hidden" name="redirect_to" value="{{ cur_url }}">
+                {% if item.estado == 'pendiente' %}
+                  <input type="hidden" name="estado" value="en_proceso">
+                  <button type="submit" title="Marcar en proceso"
+                          class="text-amber-500 hover:text-amber-700 text-xs px-1.5 py-0.5 rounded hover:bg-amber-50 transition-colors">
+                    <i class="fa-solid fa-play"></i>
+                  </button>
+                {% else %}
+                  <input type="hidden" name="estado" value="pendiente">
+                  <button type="submit" title="Volver a pendiente"
+                          class="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 transition-colors">
+                    <i class="fa-solid fa-pause"></i>
+                  </button>
+                {% endif %}
+              </form>
+              <form method="post" action="/pendientes/{{ item._id }}/estado" class="inline">
+                <input type="hidden" name="redirect_to" value="{{ cur_url }}">
+                <input type="hidden" name="estado" value="resuelto">
+                <button type="submit" title="Marcar como resuelto"
+                        class="text-green-500 hover:text-green-700 text-xs px-1.5 py-0.5 rounded hover:bg-green-50 transition-colors">
+                  <i class="fa-solid fa-check"></i>
+                </button>
+              </form>
+              {% else %}
+              <form method="post" action="/pendientes/{{ item._id }}/estado" class="inline">
+                <input type="hidden" name="redirect_to" value="{{ cur_url }}">
+                <input type="hidden" name="estado" value="pendiente">
+                <button type="submit" title="Reabrir"
+                        class="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 transition-colors">
+                  <i class="fa-solid fa-rotate-left"></i>
+                </button>
+              </form>
+              {% endif %}
+
+              <button @click="editing = !editing"
+                      class="text-xs font-medium"
+                      :class="editing ? 'text-slate-400' : 'text-blue-500 hover:text-blue-700'"
+                      x-text="editing ? 'Cancelar' : 'Editar'"></button>
+
+              <form method="post" action="/pendientes/{{ item._id }}/delete"
+                    onsubmit="return confirm('¿Eliminar este pendiente?')" class="inline">
+                <input type="hidden" name="redirect_to" value="{{ cur_url }}">
+                <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors px-1">
+                  <i class="fa-solid fa-trash-can text-xs"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {% if item.get('descripcion') %}
+          <p class="text-xs text-slate-500 mt-1 leading-relaxed">{{ item.descripcion }}</p>
+          {% endif %}
+
+          <div class="flex items-center gap-3 mt-1.5 text-[11px] text-slate-400">
+            <span>Creado: {{ item.created_at[:10] if item.created_at else '—' }}</span>
+            {% if item.estado == 'resuelto' and item.get('resuelto_at') %}
+            <span class="text-green-500">Resuelto: {{ item.resuelto_at[:10] }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel de edición -->
+      <div x-show="editing" x-cloak class="border-t border-slate-100 px-4 py-3 bg-slate-50">
+        <form method="post" action="/pendientes/{{ item._id }}/update" class="space-y-3">
+          <input type="hidden" name="redirect_to" value="{{ cur_url }}">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="md:col-span-2">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Título</label>
+              <input name="titulo" value="{{ item.titulo }}" required class="input w-full text-sm">
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+              <textarea name="descripcion" rows="2"
+                        class="input w-full text-sm resize-none leading-relaxed">{{ item.descripcion or '' }}</textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Prioridad</label>
+              <select name="prioridad" class="input w-full text-sm">
+                <option value="alta"  {% if item.prioridad == 'alta'  %}selected{% endif %}>🔴 Alta</option>
+                <option value="media" {% if item.prioridad == 'media' %}selected{% endif %}>🟡 Media</option>
+                <option value="baja"  {% if item.prioridad == 'baja'  %}selected{% endif %}>🟢 Baja</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+              <select name="estado" class="input w-full text-sm">
+                <option value="pendiente"  {% if item.estado == 'pendiente'  %}selected{% endif %}>Pendiente</option>
+                <option value="en_proceso" {% if item.estado == 'en_proceso' %}selected{% endif %}>En proceso</option>
+                <option value="resuelto"   {% if item.estado == 'resuelto'   %}selected{% endif %}>Resuelto</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">ID Socio vinculado</label>
+              <input name="member_id" value="{{ item.get('member_id') or '' }}"
+                     placeholder="IPIDET-0001" class="input w-full text-sm font-mono">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Nombre del socio</label>
+              <input name="nombre_miembro" value="{{ item.get('nombre_miembro') or '' }}"
+                     placeholder="Se rellena automáticamente" class="input w-full text-sm">
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button type="submit" class="btn-primary text-xs py-1.5">Guardar cambios</button>
+            <button type="button" @click="editing = false" class="btn-ghost text-xs py-1.5">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
+    <i class="fa-solid fa-clipboard-list text-4xl text-slate-300 mb-3 block"></i>
+    <p class="text-slate-600 font-medium">Sin pendientes con estos filtros</p>
+    <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
+            class="mt-4 btn-primary text-sm">
+      <i class="fa-solid fa-plus mr-1.5"></i> Crear primer pendiente
+    </button>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Modal: nuevo pendiente -->
+<div id="modal-nuevo" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6"
+       x-data="{ memberIdVal: '', nombreVal: '' }"
+       @keydown.escape.window="document.getElementById('modal-nuevo').classList.add('hidden')">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="font-semibold text-slate-800">Nuevo pendiente</h2>
+      <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
+              class="text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <form method="post" action="/pendientes/add" class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Título <span class="text-red-500">*</span></label>
+        <input name="titulo" required placeholder="Ej: Verificar pago pendiente de socio López" class="input w-full" autofocus>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+        <textarea name="descripcion" rows="3"
+                  placeholder="Detalle del caso, acciones a tomar, contexto…"
+                  class="input w-full resize-none leading-relaxed"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Prioridad</label>
+          <select name="prioridad" class="input w-full">
+            <option value="alta">🔴 Alta</option>
+            <option value="media" selected>🟡 Media</option>
+            <option value="baja">🟢 Baja</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">ID Socio (opcional)</label>
+          <input name="member_id" x-model="memberIdVal"
+                 placeholder="IPIDET-0001"
+                 class="input w-full font-mono text-sm">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Nombre del socio (opcional)</label>
+        <input name="nombre_miembro" x-model="nombreVal"
+               placeholder="Se rellena automáticamente si pones el ID"
+               class="input w-full text-sm">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Crear pendiente</button>
+        <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
+                class="btn-ghost">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

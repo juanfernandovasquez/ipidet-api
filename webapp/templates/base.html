@@ -132,6 +132,17 @@
       </a>
       {% endif %}
 
+      {% if is_admin or 'pendientes' in p %}
+      <div class="sidebar-section">Gestión</div>
+      <a href="/pendientes" class="sidebar-link {% if '/pendientes' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-clipboard-list"></i>
+        <span class="flex-1">Pendientes</span>
+        {% if stats is defined and stats.get('pendientes_alta', 0) > 0 %}
+        <span class="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-bold">!</span>
+        {% endif %}
+      </a>
+      {% endif %}
+
       {% if current_user_role == 'admin' %}
       <div class="sidebar-section">Sistema</div>
       <a href="/admin/users" class="sidebar-link {% if '/admin/users' in request.url.path %}active{% endif %}">

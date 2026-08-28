@@ -21,6 +21,7 @@ SECCIONES = [
     ("marketing",        "Marketing",        "fa-bullhorn"),
     ("comunicaciones",   "Comunicaciones",   "fa-paper-plane"),
     ("eventos",          "Eventos",          "fa-calendar-star"),
+    ("pendientes",       "Pendientes",       "fa-clipboard-list"),
 ]
 ALL_SECTIONS = [s[0] for s in SECCIONES]
 
@@ -34,6 +35,7 @@ _PATH_MAP = [
     ("/marketing",        "marketing"),
     ("/comunicaciones",   "comunicaciones"),
     ("/eventos",          "eventos"),
+    ("/pendientes",       "pendientes"),
     ("/admin",            "__admin__"),
 ]
 
