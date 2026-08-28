@@ -303,12 +303,36 @@
 
             <!-- Cuotas de fraccionamiento -->
             <div class="border-t border-slate-200 pt-3">
-              <div class="text-xs font-semibold text-slate-600 mb-2">
-                Cuotas de fraccionamiento
-                {% if cuotas_total_count > 0 %}
-                  <span class="ml-1 font-normal text-slate-400">{{ cuotas_pagadas_count }}/{{ cuotas_total_count }} pagadas</span>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+                <span class="text-xs font-semibold text-slate-600">
+                  Cuotas de fraccionamiento
+                  {% if cuotas_total_count > 0 %}
+                    <span class="ml-1 font-normal text-slate-400">{{ cuotas_pagadas_count }}/{{ cuotas_total_count }} pagadas</span>
+                  {% endif %}
+                </span>
+                {% if p.get('monto_objetivo') %}
+                  <span class="text-xs text-slate-500">S/ {{ p.suma_cuotas }} / S/ {{ p.monto_objetivo }}</span>
+                  {% if p.gap_cuotas and p.gap_cuotas > 0 %}
+                  <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">
+                    <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Faltan S/ {{ p.gap_cuotas }}
+                  </span>
+                  {% endif %}
                 {% endif %}
               </div>
+
+              <!-- Fijar total esperado -->
+              <form method="post" action="/billing/{{ p._id }}/cuotas/objetivo" class="flex items-end gap-2 mb-3">
+                <input type="hidden" name="redirect_to" value="{{ rm }}">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Total anual esperado (S/)</label>
+                  <input name="monto_objetivo" type="number" step="0.01" min="0"
+                         value="{{ p.get('monto_objetivo','') }}" placeholder="780.00"
+                         class="input text-xs py-1 w-28">
+                </div>
+                <button type="submit" class="btn-ghost text-xs py-1.5 border border-slate-300">
+                  {{ 'Actualizar total' if p.get('monto_objetivo') else 'Fijar total esperado' }}
+                </button>
+              </form>
 
               {% for cuota in p.get('cuotas', []) %}
               <div class="border border-slate-200 rounded-lg p-2 mb-2 text-xs" x-data="{ editingCuota: false }">

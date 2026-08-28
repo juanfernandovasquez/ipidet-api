@@ -479,6 +479,16 @@ async def update_payment(
     return RedirectResponse(redirect_to, status_code=303)
 
 
+@app.post("/billing/{payment_id}/cuotas/objetivo")
+async def set_cuota_objetivo(
+    payment_id: str,
+    monto_objetivo: float = Form(...),
+    redirect_to: str = Form("/billing"),
+):
+    pdb.set_monto_objetivo(payment_id, monto_objetivo)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
 @app.post("/billing/{payment_id}/cuotas/add")
 async def add_cuota(
     payment_id: str,

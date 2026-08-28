@@ -321,6 +321,9 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
         cuotas = d.get("cuotas", [])
         d["cuotas_total"]   = len(cuotas)
         d["cuotas_pagadas"] = sum(1 for c in cuotas if c.get("estado") == "pagado")
+        d["suma_cuotas"]    = round(sum(c.get("monto", 0) for c in cuotas), 2)
+        monto_obj = d.get("monto_objetivo") or 0
+        d["gap_cuotas"] = round(max(0.0, monto_obj - d["suma_cuotas"]), 2) if monto_obj else None
         parciales = d.get("pagos_parciales", [])
         d["monto_pagado"] = sum(p.get("monto", 0) for p in parciales)
         monto_total = d.get("monto_total") or 0
@@ -432,18 +435,35 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
 
 
 def _sync_estado_from_cuotas(payment_id: str):
-    doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"cuotas": 1, "estado": 1})
+    doc = payments_col.find_one(
+        {"_id": ObjectId(payment_id)},
+        {"cuotas": 1, "estado": 1, "monto_objetivo": 1},
+    )
     if not doc:
         return
     cuotas = doc.get("cuotas", [])
     if not cuotas:
         return
-    if all(c.get("estado") == "pagado" for c in cuotas):
-        new_estado = "pagado"
+    todas_pagadas = all(c.get("estado") == "pagado" for c in cuotas)
+    if todas_pagadas:
+        monto_obj = doc.get("monto_objetivo") or 0
+        suma = round(sum(c.get("monto", 0) for c in cuotas), 2)
+        # Solo "pagado" si no hay monto objetivo o la suma lo cubre completamente
+        if monto_obj and suma < monto_obj - 0.01:
+            new_estado = "fraccionamiento"  # gap: cuotas cubiertas pero monto insuficiente
+        else:
+            new_estado = "pagado"
     else:
         new_estado = "fraccionamiento"
     if doc.get("estado") != new_estado:
         payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": {"estado": new_estado}})
+
+
+def set_monto_objetivo(payment_id: str, monto_objetivo: float) -> None:
+    payments_col.update_one(
+        {"_id": ObjectId(payment_id)},
+        {"$set": {"monto_objetivo": monto_objetivo}},
+    )
 
 
 def add_cuota(payment_id: str, monto: float, fecha_venc: str = None):
@@ -654,6 +674,10 @@ def get_fraccionamientos(periodo: str = "2026", alerta: str = "",
         d["cuotas_pagadas_count"] = len(pagadas)
         d["total_cobrado"]       = round(sum(c.get("monto", 0) for c in pagadas), 2)
         d["total_pendiente"]     = round(sum(c.get("monto", 0) for c in pendientes), 2)
+        d["suma_cuotas"]         = round(sum(c.get("monto", 0) for c in cuotas), 2)
+        monto_obj = d.get("monto_objetivo") or 0
+        d["monto_objetivo"]      = monto_obj
+        d["gap_cuotas"]          = round(max(0.0, monto_obj - d["suma_cuotas"]), 2) if monto_obj else None
 
         vencidas, proximas, sin_fecha = [], [], []
         for c in pendientes:
