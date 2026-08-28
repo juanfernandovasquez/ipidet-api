@@ -44,7 +44,7 @@
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
         <select name="periodo" class="input" @change="$refs.filterForm.submit()">
-          {% for yr in ["2026","2025","2024"] %}
+          {% for yr in ["2027","2026","2025","2024"] %}
           <option value="{{ yr }}" {% if periodo == yr %}selected{% endif %}>{{ yr }}</option>
           {% endfor %}
         </select>
