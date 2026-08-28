@@ -205,40 +205,273 @@
       <div class="space-y-3">
         {% for p in member.payments %}
         {% set sl = status_labels.get(p.estado, ('—','gray')) %}
-        <div class="p-3 rounded-lg border border-slate-200" x-data="{ editing: false }">
-          <div class="flex items-center justify-between mb-2">
-            <span class="font-semibold text-slate-700">{{ p.periodo }}</span>
-            <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
+        {% set rm = "/members/" ~ member.member_id %}
+        {% set cuotas_pagadas_count = p.get('cuotas', []) | selectattr('estado', 'eq', 'pagado') | list | length %}
+        {% set cuotas_total_count = p.get('cuotas', []) | length %}
+        {% set monto_pagado_sum = p.get('pagos_parciales', []) | sum(attribute='monto') %}
+        <div class="rounded-lg border border-slate-200 overflow-hidden" x-data="{ editing: false }">
+
+          <!-- Header -->
+          <div class="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-slate-700 text-sm">{{ p.periodo }}</span>
+              {% if p.estado == 'fraccionamiento' and cuotas_total_count > 0 %}
+                <span class="badge badge-amber">Fracc. {{ cuotas_pagadas_count }}/{{ cuotas_total_count }}</span>
+              {% elif p.estado == 'parcial' and p.get('monto_total') %}
+                <span class="badge badge-blue">Parcial S/{{ monto_pagado_sum | int }}/{{ p.monto_total | int }}</span>
+              {% else %}
+                <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
+              {% endif %}
+            </div>
+            <button @click="editing = !editing"
+                    class="text-xs font-medium"
+                    :class="editing ? 'text-slate-400 hover:text-slate-600' : 'text-blue-600 hover:text-blue-800'"
+                    x-text="editing ? 'Cerrar ✕' : 'Editar'"></button>
           </div>
-          {% if p.get('empresa_pagadora') %}
-          <div class="text-xs text-slate-500 mb-1">Pagado por: <strong>{{ p.empresa_pagadora }}</strong></div>
-          {% endif %}
-          {% if p.get('fecha_pago') %}
-          <div class="text-xs text-slate-500 mb-1">Fecha: {{ p.fecha_pago }}</div>
-          {% endif %}
-          {% if p.get('raw_original') %}
-          <div class="text-xs text-slate-400 italic mb-2">Original: {{ p.raw_original }}</div>
-          {% endif %}
 
-          <button @click="editing = !editing" class="text-xs text-blue-600 hover:underline">
-            Editar estado
-          </button>
+          <!-- Resumen (cerrado) -->
+          <div x-show="!editing" class="px-3 py-2 text-xs text-slate-500 space-y-0.5">
+            {% if p.get('empresa_pagadora') %}<div>Empresa: <strong>{{ p.empresa_pagadora }}</strong></div>{% endif %}
+            {% if p.get('fecha_pago') %}<div>Fecha pago: {{ p.fecha_pago }}</div>{% endif %}
+            {% if p.get('num_comprobante') %}<div>Comp.: {{ p.num_comprobante }}</div>{% endif %}
+            {% if cuotas_total_count > 0 %}<div>{{ cuotas_total_count }} cuota(s) — {{ cuotas_pagadas_count }} pagadas</div>{% endif %}
+            {% if p.get('pagos_parciales') %}<div>{{ p.pagos_parciales | length }} pago(s) parcial(es)</div>{% endif %}
+            {% if p.get('raw_original') %}<div class="text-slate-400 italic">{{ p.raw_original }}</div>{% endif %}
+          </div>
 
-          <div x-show="editing" x-cloak class="mt-3 pt-3 border-t border-slate-100">
+          <!-- Panel completo (abierto) -->
+          <div x-show="editing" x-cloak class="px-3 py-3 space-y-4">
+
+            <!-- Formulario principal del pago -->
             <form method="post" action="/billing/{{ p._id }}/update" class="space-y-2">
-              <input type="hidden" name="redirect_to" value="/members/{{ member.member_id }}">
-              <select name="estado" class="input w-full text-xs py-1">
-                {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("exonerado","Exonerado"),("no_aplica","N/A"),("retirar","Retirar"),("en_revision","En revisión")] %}
-                <option value="{{ val }}" {% if p.estado == val %}selected{% endif %}>{{ lbl }}</option>
-                {% endfor %}
-              </select>
-              <input type="text" name="empresa" value="{{ p.get('empresa_pagadora','') }}" placeholder="Empresa (EY, BDO…)" class="input w-full text-xs py-1">
-              <input type="text" name="fecha_pago" value="{{ p.get('fecha_pago','') }}" placeholder="Fecha pago DD/MM/YYYY" class="input w-full text-xs py-1">
-              <div class="flex gap-2">
-                <button type="submit" class="btn-primary flex-1 text-xs py-1.5">Guardar</button>
-                <button type="button" @click="editing = false" class="btn-ghost text-xs py-1.5">Cancelar</button>
+              <input type="hidden" name="redirect_to" value="{{ rm }}">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Estado del pago</label>
+                  <select name="estado" class="input w-full text-xs py-1">
+                    {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("exonerado","Exonerado"),("no_aplica","N/A"),("pendiente","Pendiente"),("retirar","Retirar"),("en_revision","En revisión"),("revisar","Revisar")] %}
+                    <option value="{{ val }}" {% if p.estado == val %}selected{% endif %}>{{ lbl }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Fecha de pago</label>
+                  <input name="fecha_pago" type="date" value="{{ p.get('fecha_pago','') }}" class="input w-full text-xs py-1">
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">N° comprobante</label>
+                  <input name="num_comprobante" value="{{ p.get('num_comprobante','') }}" placeholder="F001-000123" class="input w-full text-xs py-1">
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
+                  <select name="tipo_comprobante" class="input w-full text-xs py-1">
+                    <option value="">— Sin tipo —</option>
+                    {% for v, l in [("boleta","Boleta"),("factura","Factura"),("recibo","Recibo")] %}
+                    <option value="{{ v }}" {% if p.get('tipo_comprobante') == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Medio de pago</label>
+                  <select name="medio" class="input w-full text-xs py-1">
+                    <option value="">— Medio —</option>
+                    {% for mp in medios_pago %}
+                    <option value="{{ mp }}" {% if p.get('medio_pago') == mp %}selected{% endif %}>{{ mp }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
+                  <select name="banco_origen" class="input w-full text-xs py-1">
+                    <option value="">— Banco —</option>
+                    {% for b in bancos %}
+                    <option value="{{ b }}" {% if p.get('banco_origen') == b %}selected{% endif %}>{{ b }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
               </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-0.5">Empresa pagadora</label>
+                <input name="empresa" value="{{ p.get('empresa_pagadora','') }}" placeholder="EY, BDO, PWC…" class="input w-full text-xs py-1">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
+                <input name="link_constancia" value="{{ p.get('link_constancia','') }}" placeholder="https://…" class="input w-full text-xs py-1">
+              </div>
+              <button type="submit" class="btn-primary w-full text-xs py-1.5">Guardar pago</button>
             </form>
+
+            <!-- Cuotas de fraccionamiento -->
+            <div class="border-t border-slate-200 pt-3">
+              <div class="text-xs font-semibold text-slate-600 mb-2">
+                Cuotas de fraccionamiento
+                {% if cuotas_total_count > 0 %}
+                  <span class="ml-1 font-normal text-slate-400">{{ cuotas_pagadas_count }}/{{ cuotas_total_count }} pagadas</span>
+                {% endif %}
+              </div>
+
+              {% for cuota in p.get('cuotas', []) %}
+              <div class="border border-slate-200 rounded-lg p-2 mb-2 text-xs" x-data="{ editingCuota: false }">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-medium text-slate-700">Cuota {{ cuota.numero }} — S/ {{ cuota.monto }}</span>
+                  <span class="badge badge-{{ 'green' if cuota.estado == 'pagado' else 'yellow' }}">
+                    {{ 'Pagado' if cuota.estado == 'pagado' else 'Pendiente' }}
+                  </span>
+                </div>
+                {% if cuota.get('fecha_venc') %}<div class="text-slate-400">Vence: {{ cuota.fecha_venc }}</div>{% endif %}
+                {% if cuota.get('fecha_pago') %}
+                <div class="text-slate-500">Pagado: {{ cuota.fecha_pago }}{% if cuota.get('num_comprobante') %} · {{ cuota.num_comprobante }}{% endif %}</div>
+                {% endif %}
+
+                <div class="flex flex-wrap gap-1.5 mt-1.5">
+                  {% if cuota.estado != 'pagado' %}
+                  <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex gap-1 items-center">
+                    <input type="hidden" name="redirect_to" value="{{ rm }}">
+                    <input type="hidden" name="estado" value="pagado">
+                    <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28">
+                    <input name="num_comprobante" placeholder="N° comp." class="input text-xs py-0.5 w-20">
+                    <button type="submit" class="text-green-600 hover:text-green-800 font-semibold">✓ Pagar</button>
+                  </form>
+                  {% else %}
+                  <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="inline">
+                    <input type="hidden" name="redirect_to" value="{{ rm }}">
+                    <input type="hidden" name="estado" value="pendiente">
+                    <input type="hidden" name="fecha_pago" value="">
+                    <button type="submit" class="text-amber-500 hover:text-amber-700">↩ Deshacer</button>
+                  </form>
+                  <button type="button" @click="editingCuota = !editingCuota"
+                          class="text-xs" :class="editingCuota ? 'text-slate-400' : 'text-blue-500 hover:text-blue-700'"
+                          x-text="editingCuota ? 'Cancelar' : 'Editar comp.'"></button>
+                  {% endif %}
+                  <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/delete" class="inline">
+                    <input type="hidden" name="redirect_to" value="{{ rm }}">
+                    <button type="submit" class="text-red-400 hover:text-red-600">× Eliminar</button>
+                  </form>
+                </div>
+
+                {% if cuota.estado == 'pagado' %}
+                <div x-show="editingCuota" x-cloak class="mt-2 pt-2 border-t border-slate-100">
+                  <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="space-y-1">
+                    <input type="hidden" name="redirect_to" value="{{ rm }}">
+                    <input type="hidden" name="estado" value="pagado">
+                    <div class="grid grid-cols-2 gap-1">
+                      <input name="fecha_pago" type="date" value="{{ cuota.get('fecha_pago','') }}" class="input text-xs py-0.5">
+                      <select name="tipo_comprobante" class="input text-xs py-0.5">
+                        <option value="">Tipo</option>
+                        <option value="boleta" {% if cuota.get('tipo_comprobante')=='boleta' %}selected{% endif %}>Boleta</option>
+                        <option value="factura" {% if cuota.get('tipo_comprobante')=='factura' %}selected{% endif %}>Factura</option>
+                        <option value="recibo" {% if cuota.get('tipo_comprobante')=='recibo' %}selected{% endif %}>Recibo</option>
+                      </select>
+                      <input name="num_comprobante" value="{{ cuota.get('num_comprobante','') }}" placeholder="N° comprobante" class="input text-xs py-0.5">
+                      <select name="medio" class="input text-xs py-0.5">
+                        <option value="">Medio</option>
+                        {% for mp in medios_pago %}<option value="{{ mp }}" {% if cuota.get('medio_pago')==mp %}selected{% endif %}>{{ mp }}</option>{% endfor %}
+                      </select>
+                      <input name="link_constancia" value="{{ cuota.get('link_constancia','') }}" placeholder="Link constancia" class="input text-xs py-0.5 col-span-2">
+                    </div>
+                    <button type="submit" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">✓ Guardar comprobante</button>
+                  </form>
+                </div>
+                {% endif %}
+              </div>
+              {% endfor %}
+
+              <p class="text-xs text-slate-400 mb-1">Agrega cuotas pendientes para programar el calendario.</p>
+              <form method="post" action="/billing/{{ p._id }}/cuotas/add" class="flex gap-2 items-end">
+                <input type="hidden" name="redirect_to" value="{{ rm }}">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                  <input name="monto" type="number" step="0.01" min="0" placeholder="150.00" class="input text-xs py-1 w-24" required>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Vencimiento</label>
+                  <input name="fecha_venc" type="date" class="input text-xs py-1 w-32">
+                </div>
+                <button type="submit" class="btn-ghost text-xs py-1 border border-slate-300 whitespace-nowrap">+ Agregar cuota</button>
+              </form>
+            </div>
+
+            <!-- Pagos parciales -->
+            <div class="border-t border-slate-200 pt-3">
+              <div class="text-xs font-semibold text-slate-600 mb-2">
+                Pagos parciales
+                {% if p.get('monto_total') %}
+                  <span class="ml-1 font-normal text-slate-400">S/ {{ monto_pagado_sum | int }} / S/ {{ p.monto_total | int }}</span>
+                {% endif %}
+              </div>
+
+              {% if p.get('monto_total') %}
+              <div class="w-full bg-slate-200 rounded-full h-1.5 mb-2">
+                {% set raw_pct = ((monto_pagado_sum / p.monto_total) * 100) | int if p.monto_total else 0 %}
+                <div class="bg-blue-500 h-1.5 rounded-full" style="width: {{ [raw_pct, 100] | min }}%"></div>
+              </div>
+              {% endif %}
+
+              {% for pp in p.get('pagos_parciales', []) %}
+              <div class="flex items-center justify-between text-xs border-b border-slate-100 py-1 gap-2">
+                <span class="font-medium text-blue-700">S/ {{ pp.monto }}</span>
+                <span class="text-slate-400">{{ pp.get('fecha_pago') or '—' }}</span>
+                <span class="text-slate-400 font-mono">{{ pp.get('num_comprobante') or '—' }}</span>
+                <form method="post" action="/billing/{{ p._id }}/parciales/{{ pp.numero }}/delete" class="inline">
+                  <input type="hidden" name="redirect_to" value="{{ rm }}">
+                  <button type="submit" class="text-red-400 hover:text-red-600">× Elim.</button>
+                </form>
+              </div>
+              {% endfor %}
+
+              <form method="post" action="/billing/{{ p._id }}/parciales/init" class="flex items-end gap-2 mt-2 mb-2">
+                <input type="hidden" name="redirect_to" value="{{ rm }}">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Total a pagar (S/)</label>
+                  <input name="monto_total" type="number" step="0.01" min="0"
+                         value="{{ p.get('monto_total','') }}" placeholder="780.00"
+                         class="input text-xs py-1 w-28" required>
+                </div>
+                <button type="submit" class="btn-ghost text-xs py-1 border border-slate-300 whitespace-nowrap">
+                  {{ 'Actualizar total' if p.get('monto_total') else 'Configurar total' }}
+                </button>
+              </form>
+
+              <form method="post" action="/billing/{{ p._id }}/parciales/add" class="space-y-1">
+                <input type="hidden" name="redirect_to" value="{{ rm }}">
+                <div class="grid grid-cols-2 gap-1">
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                    <input name="monto" type="number" step="0.01" min="0.01" placeholder="220.00" class="input text-xs py-1" required>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">Fecha</label>
+                    <input name="fecha_pago" type="date" class="input text-xs py-1">
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
+                    <select name="tipo_comprobante" class="input text-xs py-1">
+                      <option value="">— Sin tipo —</option>
+                      <option value="boleta">Boleta</option>
+                      <option value="factura">Factura</option>
+                      <option value="recibo">Recibo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">N° comp.</label>
+                    <input name="num_comprobante" placeholder="F001-000123" class="input text-xs py-1">
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
+                    <select name="medio" class="input text-xs py-1">
+                      <option value="">— Medio —</option>
+                      {% for mp in medios_pago %}<option value="{{ mp }}">{{ mp }}</option>{% endfor %}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
+                    <input name="link_constancia" placeholder="https://…" class="input text-xs py-1">
+                  </div>
+                </div>
+                <button type="submit" class="btn-ghost text-xs py-1 border border-blue-300 text-blue-600 w-full">+ Registrar pago parcial</button>
+              </form>
+            </div>
+
           </div>
         </div>
         {% endfor %}
