@@ -40,7 +40,13 @@
 
       <!-- Empresa autocomplete -->
       <div class="relative flex-1 min-w-52">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Empresa <span class="text-red-500">*</span></label>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-medium text-slate-600">Empresa <span class="text-red-500">*</span></label>
+          <a href="/empresas" target="_blank"
+             class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1">
+            <i class="fa-solid fa-plus text-[9px]"></i> Agregar empresa
+          </a>
+        </div>
         <input x-model="empresaVal"
                @input.debounce.300ms="fetchEmpresas()"
                @focus="if (empresaVal.length > 0) fetchEmpresas()"
