@@ -230,10 +230,11 @@
             <div>
               <div class="text-xs text-slate-400 mb-1">Socios vinculados ({{ f.socios | length }})</div>
               <div class="flex flex-wrap gap-1.5">
-                {% for mid in f.socios %}
-                <a href="/members/{{ mid }}"
-                   class="inline-block bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-600 hover:text-blue-700 text-[11px] px-2 py-0.5 rounded font-mono transition-colors">
-                  {{ mid }}
+                {% for s in f.socios %}
+                <a href="/members/{{ s.member_id }}"
+                   class="inline-flex flex-col bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-600 hover:text-blue-700 text-[11px] px-2 py-1 rounded transition-colors">
+                  <span class="font-medium text-slate-800">{{ s.nombre }}</span>
+                  <span class="font-mono text-slate-400">{{ s.member_id }}</span>
                 </a>
                 {% endfor %}
               </div>

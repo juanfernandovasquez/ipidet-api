@@ -1195,7 +1195,23 @@ def get_facturas_credito(empresa: str = "", estado: str = "") -> list:
     docs = list(credito_col.find(q).sort("fecha_vencimiento", 1))
     for d in docs:
         d["estado"] = _sync_credito_estado(d)
-    return _clean(docs)
+    docs = _clean(docs)
+    # Enriquecer socios: lista de IDs → lista de {member_id, nombre_completo}
+    all_ids = {mid for d in docs for mid in (d.get("socios") or [])}
+    if all_ids:
+        members_map = {
+            m["member_id"]: f"{m.get('apellidos','')} {m.get('nombres','')}".strip()
+            for m in members_col.find(
+                {"member_id": {"$in": list(all_ids)}},
+                {"member_id": 1, "apellidos": 1, "nombres": 1},
+            )
+        }
+        for d in docs:
+            d["socios"] = [
+                {"member_id": mid, "nombre": members_map.get(mid, mid)}
+                for mid in (d.get("socios") or [])
+            ]
+    return docs
 
 
 def create_factura_credito(empresa: str, numero_factura: str, monto: float,
