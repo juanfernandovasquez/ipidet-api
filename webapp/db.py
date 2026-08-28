@@ -1261,6 +1261,12 @@ def get_facturas_credito(empresa: str = "", estado: str = "") -> list:
                 {"member_id": mid, "nombre": members_map.get(mid, mid)}
                 for mid in (d.get("socios") or [])
             ]
+    # Añadir campos calculados de cuotas
+    for d in docs:
+        cuotas = d.get("cuotas") or []
+        d["cuotas_total"]   = len(cuotas)
+        d["cuotas_pagadas"] = sum(1 for c in cuotas if c.get("estado") == "pagado")
+        d["cuotas_completo"] = d["cuotas_total"] > 0 and d["cuotas_pagadas"] == d["cuotas_total"]
     return docs
 
 
@@ -1314,6 +1320,40 @@ def delete_comentario_credito(factura_id: str, idx: int) -> None:
             {"_id": ObjectId(factura_id)},
             {"$set": {"comentarios": comentarios}},
         )
+
+
+def add_cuota_credito(factura_id: str, monto: float, fecha_venc: str) -> dict:
+    doc = credito_col.find_one({"_id": ObjectId(factura_id)}, {"cuotas": 1})
+    cuotas = (doc.get("cuotas") or []) if doc else []
+    numero = max((c["numero"] for c in cuotas), default=0) + 1
+    cuota = {
+        "numero": numero,
+        "monto": monto,
+        "fecha_venc": fecha_venc or None,
+        "fecha_pago": None,
+        "estado": "pendiente",
+    }
+    credito_col.update_one({"_id": ObjectId(factura_id)}, {"$push": {"cuotas": cuota}})
+    return cuota
+
+
+def update_cuota_credito(factura_id: str, numero: int, estado: str, fecha_pago: str = "") -> None:
+    update: dict = {"cuotas.$.estado": estado}
+    if estado == "pagado" and fecha_pago:
+        update["cuotas.$.fecha_pago"] = fecha_pago
+    elif estado == "pendiente":
+        update["cuotas.$.fecha_pago"] = None
+    credito_col.update_one(
+        {"_id": ObjectId(factura_id), "cuotas.numero": numero},
+        {"$set": update},
+    )
+
+
+def delete_cuota_credito(factura_id: str, numero: int) -> None:
+    credito_col.update_one(
+        {"_id": ObjectId(factura_id)},
+        {"$pull": {"cuotas": {"numero": numero}}},
+    )
 
 
 def get_credito_stats() -> dict:

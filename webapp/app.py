@@ -915,6 +915,31 @@ async def credito_delete_comentario(factura_id: str, idx: int):
     return {"ok": True}
 
 
+@app.post("/billing/credito/{factura_id}/cuotas/add")
+async def credito_add_cuota(factura_id: str, request: Request):
+    data = await request.json()
+    monto = float(data.get("monto") or 0)
+    if monto <= 0:
+        return JSONResponse({"error": "Monto inválido"}, status_code=422)
+    cuota = pdb.add_cuota_credito(factura_id, monto, data.get("fecha_venc", "") or "")
+    return {"ok": True, "cuota": cuota}
+
+
+@app.post("/billing/credito/{factura_id}/cuotas/{numero}/update")
+async def credito_update_cuota(factura_id: str, numero: int, request: Request):
+    data = await request.json()
+    estado = data.get("estado", "pendiente")
+    fecha_pago = data.get("fecha_pago") or ""
+    pdb.update_cuota_credito(factura_id, numero, estado, fecha_pago)
+    return {"ok": True}
+
+
+@app.post("/billing/credito/{factura_id}/cuotas/{numero}/delete")
+async def credito_delete_cuota(factura_id: str, numero: int):
+    pdb.delete_cuota_credito(factura_id, numero)
+    return {"ok": True}
+
+
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
