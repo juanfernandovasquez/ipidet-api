@@ -578,6 +578,19 @@ async def delete_pago_parcial(
     return RedirectResponse(redirect_to, status_code=303)
 
 
+@app.post("/billing/{payment_id}/socio/estado")
+async def update_socio_estado_from_billing(
+    payment_id: str,
+    estado_socio: str = Form(...),
+    redirect_to: str = Form("/billing"),
+):
+    from bson import ObjectId
+    p = pdb.payments_col.find_one({"_id": ObjectId(payment_id)}, {"member_id": 1})
+    if p and p.get("member_id"):
+        pdb.update_member_estado(p["member_id"], estado_socio)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
 # ── Marketing ─────────────────────────────────────────────────────────────────
 
 @app.get("/marketing", response_class=HTMLResponse)

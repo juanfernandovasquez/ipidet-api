@@ -313,6 +313,7 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
         m = member_map.get(d["member_id"], {})
         d["nombre_completo"] = f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
         d["centro_trabajo"] = m.get("centro_trabajo", "")
+        d["estado_socio"] = m.get("estado", "activo")
         d["email_principal"] = next(
             (e["email"] for e in m.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
             next((e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"), "")
