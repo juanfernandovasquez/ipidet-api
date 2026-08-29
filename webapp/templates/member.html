@@ -236,7 +236,6 @@
             {% if p.get('num_comprobante') %}<div>Comp.: {{ p.num_comprobante }}</div>{% endif %}
             {% if cuotas_total_count > 0 %}<div>{{ cuotas_total_count }} cuota(s) — {{ cuotas_pagadas_count }} pagadas</div>{% endif %}
             {% if p.get('pagos_parciales') %}<div>{{ p.pagos_parciales | length }} pago(s) parcial(es)</div>{% endif %}
-            {% if p.get('raw_original') %}<div class="text-slate-400 italic">{{ p.raw_original }}</div>{% endif %}
           </div>
 
           <!-- Panel completo (abierto) -->
