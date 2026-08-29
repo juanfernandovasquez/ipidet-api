@@ -28,7 +28,7 @@ app.add_middleware(
 )
 
 _PUBLIC_PATHS = {"/login", "/logout"}
-_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/api/sync/")
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/")
 
 class _AuthMiddleware:
     """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
@@ -1237,21 +1237,6 @@ async def portal_member_status(
 @app.post("/webhook/woocommerce/order")
 async def portal_wc_webhook(request: Request):
     return await portal_routes.handle_wc_webhook(request)
-
-
-# ── Sync temporal WP ↔ MongoDB (ELIMINAR después de sincronización) ───────────
-@app.get("/api/sync/email-map")
-async def sync_email_map(key: str = ""):
-    if key != "sync_ipidet_2026_tmp":
-        return JSONResponse({"error": "No autorizado"}, status_code=403)
-    import webapp.db as _db_mod
-    members_col = _db_mod._db["members"]
-    email_map = {}
-    for doc in members_col.find({"emails": {"$exists": True}}, {"member_id": 1, "emails": 1}):
-        for e in (doc.get("emails") or []):
-            if e.get("estado") == "habilitado" and e.get("email"):
-                email_map[e["email"].strip().lower()] = doc["member_id"]
-    return JSONResponse(email_map)
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
