@@ -197,7 +197,7 @@ def _base_html(contenido: str) -> str:
         <!-- Header -->
         <tr><td style="background:#1e3a5f;padding:24px 32px">
           <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff">IPIDET</p>
-          <p style="margin:4px 0 0;font-size:12px;color:#94a3b8">Instituto Profesional e Integración de Estudios Tributarios</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#94a3b8">Instituto Peruano de Investigación y Desarrollo Tributario</p>
         </td></tr>
         <!-- Body -->
         <tr><td style="padding:32px">

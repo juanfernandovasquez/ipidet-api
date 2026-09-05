@@ -830,8 +830,10 @@ async def send_member_email(member_id: str, request: Request):
     )
     if not email_to:
         return JSONResponse({"ok": False, "error": "El socio no tiene email habilitado."}, status_code=422)
-    cuerpo_html = cuerpo.replace("\n", "<br>")
     nombre = f"{member.get('nombres','')} {member.get('apellidos','')}".strip()
+    asunto  = asunto.replace("{{nombre}}", nombre)
+    cuerpo  = cuerpo.replace("{{nombre}}", nombre)
+    cuerpo_html = cuerpo.replace("\n", "<br>")
     html = mailer._base_html(f"""
       <p style="color:#475569;line-height:1.7;white-space:pre-line">{cuerpo_html}</p>
     """)
@@ -943,13 +945,31 @@ async def credito_delete_cuota(factura_id: str, numero: int):
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
-async def comunicaciones(request: Request):
-    history  = pdb.get_comunicaciones_history()
-    titulos  = pdb.get_member_titulos()
+async def comunicaciones(request: Request, pre_member_id: str = ""):
+    history     = pdb.get_comunicaciones_history()
+    titulos     = pdb.get_member_titulos()
     ubicaciones = pdb.get_member_ubicaciones()
-    empresas = pdb.get_companies()
+    empresas    = pdb.get_companies()
+    pre_member  = None
+    if pre_member_id:
+        m = pdb.get_member(pre_member_id)
+        if m:
+            ep = next(
+                (e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"),
+                None,
+            )
+            if ep:
+                pre_member = {
+                    "member_id":  m["member_id"],
+                    "nombre":     f"{m.get('nombres','')} {m.get('apellidos','')}".strip(),
+                    "email":      ep,
+                    "titulo":     m.get("titulo", ""),
+                    "ubicacion":  m.get("ubicacion", ""),
+                    "estado_pago": "",
+                }
     return templates.TemplateResponse(request, "comunicaciones.html", _ctx(request,
         history=history, titulos=titulos, ubicaciones=ubicaciones, empresas=empresas,
+        pre_member=pre_member,
     ))
 
 
@@ -982,11 +1002,16 @@ async def comunicaciones_enviar(request: Request):
     if not destinatarios:
         return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
 
-    cuerpo_html = cuerpo.replace("\n", "<br>")
-    html_body = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
-
-    mensajes = [{"to": d["email"], "subject": asunto, "html_body": html_body}
-                for d in destinatarios if d.get("email")]
+    mensajes = []
+    for d in destinatarios:
+        if not d.get("email"):
+            continue
+        nombre     = d.get("nombre", "asociado/a")
+        asunto_p   = asunto.replace("{{nombre}}", nombre)
+        cuerpo_p   = cuerpo.replace("{{nombre}}", nombre)
+        cuerpo_html = cuerpo_p.replace("\n", "<br>")
+        html_body  = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
+        mensajes.append({"to": d["email"], "subject": asunto_p, "html_body": html_body})
 
     enviados, fallidos, errores = await mailer.send_bulk(mensajes)
 
@@ -1001,6 +1026,63 @@ async def comunicaciones_enviar(request: Request):
 
     return {"ok": True, "enviados": enviados, "fallidos": fallidos,
             "errores": errores if errores else []}
+
+
+@app.get("/api/comunicaciones/buscar-miembro")
+async def comunicaciones_buscar_miembro(q: str = ""):
+    """Busca socios activos con email habilitado para el selector manual de comunicaciones."""
+    if len(q.strip()) < 2:
+        return []
+    docs, _ = pdb.get_members(search=q.strip(), estado="activo", page=1)
+    results = []
+    for m in docs[:10]:
+        ep = next(
+            (e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"),
+            None,
+        )
+        if ep:
+            results.append({
+                "member_id":  m["member_id"],
+                "nombre":     f"{m.get('nombres','')} {m.get('apellidos','')}".strip(),
+                "email":      ep,
+                "titulo":     m.get("titulo", ""),
+                "ubicacion":  m.get("ubicacion", ""),
+                "estado_pago": "",
+            })
+    return results
+
+
+@app.post("/api/comunicaciones/preview-html")
+async def comunicaciones_preview_html(request: Request):
+    """Devuelve el HTML renderizado del email para vista previa."""
+    data   = await request.json()
+    cuerpo = (data.get("cuerpo") or "").strip()
+    nombre_muestra = "Juan Pérez"
+    cuerpo_p    = cuerpo.replace("{{nombre}}", nombre_muestra)
+    cuerpo_html = cuerpo_p.replace("\n", "<br>")
+    html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
+    return {"html": html}
+
+
+# ── Bounce tracking (Brevo webhook) ──────────────────────────────────────────
+
+@app.post("/webhook/brevo/bounce")
+async def brevo_bounce(request: Request):
+    """Recibe eventos de rebote de Brevo y marca el email en MongoDB."""
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": "payload inválido"}, status_code=400)
+
+    email   = payload.get("email", "")
+    event   = payload.get("event", "")
+    if not email or event not in ("hard_bounce", "soft_bounce", "invalid_email",
+                                   "blocked", "unsubscribed"):
+        return {"ok": True, "skipped": True}
+
+    bounce_type = "hard" if event in ("hard_bounce", "invalid_email", "blocked") else "soft"
+    pdb.mark_email_bounce(email, bounce_type)
+    return {"ok": True, "email": email, "bounce_type": bounce_type}
 
 
 # ── Eventos ───────────────────────────────────────────────────────────────────
@@ -1217,6 +1299,70 @@ async def pendiente_delete(
 ):
     pdb.delete_pendiente(pendiente_id)
     return RedirectResponse(redirect_to, status_code=303)
+
+
+# ── Productos facturables ────────────────────────────────────────────────────
+
+@app.get("/productos", response_class=HTMLResponse)
+async def productos_list(request: Request, tipo: str = ""):
+    productos = pdb.get_productos(tipo=tipo)
+    return templates.TemplateResponse(request, "productos.html", _ctx(request,
+        productos=productos, tipo=tipo, tipos=pdb.TIPOS_PRODUCTO,
+    ))
+
+
+@app.post("/productos/add")
+async def producto_add(
+    nombre:      str   = Form(...),
+    tipo:        str   = Form(...),
+    precio:      str   = Form(""),
+    periodo:     str   = Form(""),
+    descripcion: str   = Form(""),
+):
+    precio_val = float(precio) if precio.strip() else None
+    pdb.create_producto(nombre, tipo, precio_val, periodo, descripcion)
+    return RedirectResponse("/productos", status_code=303)
+
+
+@app.post("/productos/{producto_id}/update")
+async def producto_update(
+    producto_id: str,
+    nombre:      str  = Form(...),
+    tipo:        str  = Form(...),
+    precio:      str  = Form(""),
+    periodo:     str  = Form(""),
+    descripcion: str  = Form(""),
+    activo:      str  = Form("on"),
+):
+    precio_val = float(precio) if precio.strip() else None
+    pdb.update_producto(producto_id, nombre, tipo, precio_val, periodo, descripcion, activo == "on")
+    return RedirectResponse("/productos", status_code=303)
+
+
+@app.post("/productos/{producto_id}/toggle")
+async def producto_toggle(producto_id: str):
+    from bson import ObjectId
+    doc = pdb.productos_col.find_one({"_id": ObjectId(producto_id)})
+    if doc:
+        pdb.productos_col.update_one(
+            {"_id": ObjectId(producto_id)},
+            {"$set": {"activo": not doc.get("activo", True)}},
+        )
+    return RedirectResponse("/productos", status_code=303)
+
+
+@app.post("/productos/{producto_id}/delete")
+async def producto_delete(producto_id: str):
+    pdb.delete_producto(producto_id)
+    return RedirectResponse("/productos", status_code=303)
+
+
+# ── Rebotes (bounces) ─────────────────────────────────────────────────────────
+
+@app.get("/comunicaciones/rebotes", response_class=HTMLResponse)
+async def comunicaciones_rebotes(request: Request):
+    rebotes = pdb.get_bounced_emails()
+    return templates.TemplateResponse(request, "rebotes.html", _ctx(request, rebotes=rebotes))
 
 
 # ── Portal de socios ──────────────────────────────────────────────────────────

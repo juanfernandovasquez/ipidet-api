@@ -27,6 +27,7 @@ faqs_col = _db.faqs
 events_col = _db.events
 companies_col = _db.companies
 credito_col = _db.facturas_credito
+productos_col = _db.productos
 
 MEDIOS_PAGO = [
     "Transferencia bancaria",
@@ -217,6 +218,35 @@ def add_email(member_id: str, email: str):
         {"member_id": member_id},
         {"$addToSet": {"emails": {"email": email, "estado": "habilitado", "principal": False}}},
     )
+
+
+def mark_email_bounce(email: str, bounce_type: str = "hard"):
+    """Registra un rebote en el email del socio. hard → inhabilita, soft → solo marca."""
+    email = email.strip().lower()
+    update = {"$set": {
+        "emails.$.bounce_type":  bounce_type,
+        "emails.$.bounce_at":    datetime.now(timezone.utc).isoformat(),
+    }}
+    if bounce_type == "hard":
+        update["$set"]["emails.$.estado"] = "inhabilitado"
+    members_col.update_one({"emails.email": {"$regex": f"^{email}$", "$options": "i"}}, update)
+
+
+def get_bounced_emails():
+    """Devuelve todos los emails con rebote registrado."""
+    pipeline = [
+        {"$unwind": "$emails"},
+        {"$match": {"emails.bounce_type": {"$exists": True}}},
+        {"$project": {
+            "member_id": 1, "nombres": 1, "apellidos": 1,
+            "email":       "$emails.email",
+            "bounce_type": "$emails.bounce_type",
+            "bounce_at":   "$emails.bounce_at",
+            "estado":      "$emails.estado",
+        }},
+        {"$sort": {"bounce_at": -1}},
+    ]
+    return _clean(list(members_col.aggregate(pipeline)))
 
 
 def update_member_notes(member_id: str, notas: str):
@@ -1588,6 +1618,76 @@ def update_pendiente(pendiente_id: str, titulo: str, descripcion: str,
 
 def delete_pendiente(pendiente_id: str) -> None:
     pendientes_col.delete_one({"_id": ObjectId(pendiente_id)})
+
+
+# ── Productos facturables ──────────────────────────────────────────────────────
+
+TIPOS_PRODUCTO = ["cuota_anual", "cuota_provincia", "evento", "fraccionamiento", "otro"]
+
+
+def _seed_productos():
+    """Inserta productos por defecto si la colección está vacía."""
+    if productos_col.count_documents({}) > 0:
+        return
+    defaults = [
+        {"nombre": "Cuota anual Lima 2026",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2026", "descripcion": "Membresía ordinaria Lima — período 2026", "activo": True},
+        {"nombre": "Cuota anual Lima 2025",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2025", "descripcion": "Membresía ordinaria Lima — período 2025", "activo": True},
+        {"nombre": "Cuota anual Lima 2024",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2024", "descripcion": "Membresía ordinaria Lima — período 2024", "activo": False},
+        {"nombre": "Cuota anual provincia 2026",  "tipo": "cuota_provincia","precio": 390.0, "periodo": "2026", "descripcion": "Membresía socios en provincia — período 2026", "activo": True},
+        {"nombre": "Cuota anual provincia 2025",  "tipo": "cuota_provincia","precio": 390.0, "periodo": "2025", "descripcion": "Membresía socios en provincia — período 2025", "activo": True},
+        {"nombre": "Cuota de fraccionamiento",    "tipo": "fraccionamiento", "precio": None,  "periodo": "",    "descripcion": "Cuota parcial de pago fraccionado", "activo": True},
+        {"nombre": "Entrada a evento",            "tipo": "evento",          "precio": None,  "periodo": "",    "descripcion": "Acceso a evento o capacitación IPIDET", "activo": True},
+    ]
+    now = datetime.now(timezone.utc)
+    for d in defaults:
+        d["created_at"] = now
+    productos_col.insert_many(defaults)
+
+
+_seed_productos()
+
+
+def get_productos(tipo: str = "", solo_activos: bool = False) -> list:
+    q: dict = {}
+    if tipo:
+        q["tipo"] = tipo
+    if solo_activos:
+        q["activo"] = True
+    docs = list(productos_col.find(q).sort([("activo", -1), ("tipo", 1), ("nombre", 1)]))
+    return _clean(docs)
+
+
+def create_producto(nombre: str, tipo: str, precio: float | None,
+                    periodo: str, descripcion: str) -> str:
+    doc = {
+        "nombre":      nombre.strip(),
+        "tipo":        tipo,
+        "precio":      precio,
+        "periodo":     periodo.strip(),
+        "descripcion": descripcion.strip(),
+        "activo":      True,
+        "created_at":  datetime.now(timezone.utc),
+    }
+    return str(productos_col.insert_one(doc).inserted_id)
+
+
+def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | None,
+                    periodo: str, descripcion: str, activo: bool) -> None:
+    productos_col.update_one(
+        {"_id": ObjectId(producto_id)},
+        {"$set": {
+            "nombre":      nombre.strip(),
+            "tipo":        tipo,
+            "precio":      precio,
+            "periodo":     periodo.strip(),
+            "descripcion": descripcion.strip(),
+            "activo":      activo,
+        }},
+    )
+
+
+def delete_producto(producto_id: str) -> None:
+    productos_col.delete_one({"_id": ObjectId(producto_id)})
 
 
 def get_pendientes_stats() -> dict:

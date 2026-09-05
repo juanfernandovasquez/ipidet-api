@@ -89,6 +89,9 @@
       <a href="/billing" class="sidebar-link {% if request.url.path == '/billing' %}active{% endif %}">
         <i class="fa-solid fa-money-bill-wave"></i> Cobranzas
       </a>
+      <a href="/productos" class="sidebar-link {% if '/productos' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-tags"></i> Productos
+      </a>
       {% endif %}
       {% if is_admin or 'fraccionamientos' in p %}
       <a href="/fraccionamientos" class="sidebar-link {% if '/fraccionamientos' in request.url.path %}active{% endif %}">
@@ -122,8 +125,11 @@
       </a>
       {% endif %}
       {% if is_admin or 'comunicaciones' in p %}
-      <a href="/comunicaciones" class="sidebar-link {% if '/comunicaciones' in request.url.path %}active{% endif %}">
+      <a href="/comunicaciones" class="sidebar-link {% if request.url.path == '/comunicaciones' %}active{% endif %}">
         <i class="fa-solid fa-paper-plane"></i> Comunicaciones
+      </a>
+      <a href="/comunicaciones/rebotes" class="sidebar-link {% if '/comunicaciones/rebotes' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-envelope-circle-check"></i> Rebotes
       </a>
       {% endif %}
       {% if is_admin or 'eventos' in p %}

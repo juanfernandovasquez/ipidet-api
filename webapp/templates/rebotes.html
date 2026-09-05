@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Emails rebotados — IPIDET{% endblock %}
+{% block heading %}Emails rebotados{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+
+  <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm text-amber-800 flex gap-3 items-start">
+    <i class="fa-solid fa-triangle-exclamation mt-0.5 flex-shrink-0"></i>
+    <div>
+      <strong>¿Cómo funciona?</strong> Cada vez que Brevo detecta un rebote (hard o soft) en un email enviado,
+      notifica a IPIDET vía webhook. Los rebotes <em>hard</em> se inhabilitan automáticamente;
+      los <em>soft</em> quedan marcados para revisión. Para activar el webhook en Brevo:
+      <strong>Transactional → Settings → Webhooks → Add</strong>, URL:
+      <code class="bg-amber-100 px-1 rounded">https://[tu-dominio]/webhook/brevo/bounce</code>,
+      eventos: <em>hard_bounce, soft_bounce, invalid_email, blocked</em>.
+    </div>
+  </div>
+
+  {% if not rebotes %}
+  <div class="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400">
+    <i class="fa-solid fa-envelope-circle-check text-4xl mb-3 block text-slate-300"></i>
+    <p class="text-sm">No hay rebotes registrados aún.</p>
+    <p class="text-xs mt-1">Los rebotes aparecerán aquí cuando Brevo los notifique.</p>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+      <h2 class="text-sm font-semibold text-slate-700">
+        Emails con rebote
+        <span class="ml-2 text-xs font-normal text-slate-400">({{ rebotes | length }})</span>
+      </h2>
+      <span class="text-xs text-slate-400">Ordenados por fecha de rebote, más reciente primero</span>
+    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 font-semibold">
+          <th class="px-4 py-2.5 text-left">Socio</th>
+          <th class="px-4 py-2.5 text-left">Email</th>
+          <th class="px-4 py-2.5 text-center">Tipo</th>
+          <th class="px-4 py-2.5 text-center">Estado email</th>
+          <th class="px-4 py-2.5 text-left">Fecha rebote</th>
+          <th class="px-4 py-2.5"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rebotes %}
+        <tr class="border-b border-slate-100 hover:bg-slate-50 last:border-0">
+          <td class="px-4 py-3">
+            <a href="/members/{{ r.member_id }}"
+               class="text-blue-600 hover:underline font-medium">
+              {{ r.apellidos }}, {{ r.nombres }}
+            </a>
+            <div class="text-xs text-slate-400">{{ r.member_id }}</div>
+          </td>
+          <td class="px-4 py-3 font-mono text-xs text-slate-700">{{ r.email }}</td>
+          <td class="px-4 py-3 text-center">
+            {% if r.bounce_type == 'hard' %}
+            <span class="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 px-2 py-0.5 rounded-full">
+              <i class="fa-solid fa-circle-xmark text-[10px]"></i> Hard
+            </span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
+              <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Soft
+            </span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-center">
+            {% if r.estado == 'inhabilitado' %}
+            <span class="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Inhabilitado</span>
+            {% else %}
+            <span class="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Habilitado</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-xs text-slate-500">
+            {{ r.bounce_at[:10] if r.bounce_at else '—' }}
+          </td>
+          <td class="px-4 py-3 text-right">
+            <a href="/members/{{ r.member_id }}"
+               class="text-xs text-blue-600 hover:text-blue-800 hover:underline">
+              Ver socio →
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -43,6 +43,10 @@
             class="btn-ghost text-xs py-1 px-3">
             <i class="fa-solid fa-paper-plane mr-1"></i> Enviar correo
           </button>
+          <a href="/comunicaciones?pre_member_id={{ member.member_id }}"
+             class="btn-ghost text-xs py-1 px-3">
+            <i class="fa-solid fa-bullhorn mr-1"></i> Incluir en comunicación
+          </a>
           <form method="post" action="/members/{{ member.member_id }}/estado" class="flex items-center gap-2">
             <select name="estado" class="input text-xs py-1">
               {% for val, lbl in [("activo","Activo"),("inactivo","Inactivo"),("retirar","Retirar"),("en_revision","En revisión")] %}
@@ -103,6 +107,12 @@
               <div class="text-xs text-slate-400">
                 {{ "Principal" if em.get('principal') else "Secundario" }} ·
                 {% if em.estado == 'habilitado' %}<span class="text-green-600">Habilitado</span>{% else %}<span class="text-red-500">Inhabilitado</span>{% endif %}
+                {% if em.get('bounce_type') %}
+                  · <span class="{% if em.bounce_type == 'hard' %}text-red-600 font-medium{% else %}text-amber-600{% endif %}">
+                    <i class="fa-solid fa-triangle-exclamation text-[10px]"></i>
+                    Rebote {{ em.bounce_type }}{% if em.get('bounce_at') %} {{ em.bounce_at[:10] }}{% endif %}
+                  </span>
+                {% endif %}
               </div>
             </div>
           </div>
