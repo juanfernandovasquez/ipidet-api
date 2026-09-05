@@ -145,6 +145,22 @@ add_action('wp_footer', function() {
         font-size: .85rem;
         padding: 12px 0;
     }
+    .ipidet-pay-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 6px;
+        padding: 5px 14px;
+        background: #16a34a;
+        color: #fff !important;
+        border-radius: 6px;
+        font-size: .78rem;
+        font-weight: 600;
+        text-decoration: none !important;
+        transition: background .15s;
+    }
+    .ipidet-pay-btn:hover { background: #15803d; }
+    .ipidet-pay-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
     </style>
 
     <script>
@@ -169,11 +185,15 @@ add_action('wp_footer', function() {
             return '<span class="ipidet-badge ' + cls + '">' + label + '</span>';
         }
 
+        var ICON_CART = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>';
+
         function renderPayments(payments) {
             if (!payments || payments.length === 0) {
                 return '<p class="ipidet-not-found">No se encontraron registros de cuotas.</p>';
             }
+
             var rows = payments.map(function(p) {
+                // ── Detalle de cuotas de fraccionamiento ──
                 var cuotaInfo = '';
                 if (p.estado === 'fraccionamiento' && p.cuotas_total > 0) {
                     cuotaInfo = '<div class="ipidet-cuotas-detail">' +
@@ -191,7 +211,17 @@ add_action('wp_footer', function() {
                     cuotaInfo += '</div>';
                 }
 
-                var estadoCell = badge(p.estado, p.estado_label) + cuotaInfo;
+                // ── Botón de pago (solo si el socio debe ese año y hay producto WC configurado) ──
+                var payBtn = '';
+                if (p.wc_pay_url) {
+                    payBtn = '<div style="margin-top:6px">' +
+                        '<a href="' + p.wc_pay_url + '" class="ipidet-pay-btn">' +
+                        ICON_CART + ' Pagar ' + p.periodo +
+                        '</a>' +
+                        '</div>';
+                }
+
+                var estadoCell = badge(p.estado, p.estado_label) + cuotaInfo + payBtn;
                 var empresaCell = p.empresa_pagadora
                     ? '<span style="color:#475569">' + p.empresa_pagadora + '</span>'
                     : '<span style="color:#cbd5e1">—</span>';

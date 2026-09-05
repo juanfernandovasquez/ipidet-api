@@ -1630,13 +1630,13 @@ def _seed_productos():
     if productos_col.count_documents({}) > 0:
         return
     defaults = [
-        {"nombre": "Cuota anual Lima 2026",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2026", "descripcion": "Membresía ordinaria Lima — período 2026", "activo": True},
-        {"nombre": "Cuota anual Lima 2025",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2025", "descripcion": "Membresía ordinaria Lima — período 2025", "activo": True},
-        {"nombre": "Cuota anual Lima 2024",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2024", "descripcion": "Membresía ordinaria Lima — período 2024", "activo": False},
-        {"nombre": "Cuota anual provincia 2026",  "tipo": "cuota_provincia","precio": 390.0, "periodo": "2026", "descripcion": "Membresía socios en provincia — período 2026", "activo": True},
-        {"nombre": "Cuota anual provincia 2025",  "tipo": "cuota_provincia","precio": 390.0, "periodo": "2025", "descripcion": "Membresía socios en provincia — período 2025", "activo": True},
-        {"nombre": "Cuota de fraccionamiento",    "tipo": "fraccionamiento", "precio": None,  "periodo": "",    "descripcion": "Cuota parcial de pago fraccionado", "activo": True},
-        {"nombre": "Entrada a evento",            "tipo": "evento",          "precio": None,  "periodo": "",    "descripcion": "Acceso a evento o capacitación IPIDET", "activo": True},
+        {"nombre": "Cuota anual Lima 2026",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2026", "descripcion": "Membresía ordinaria Lima — período 2026",      "activo": True,  "wc_product_id": 8882},
+        {"nombre": "Cuota anual Lima 2025",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2025", "descripcion": "Membresía ordinaria Lima — período 2025",      "activo": True,  "wc_product_id": 8882},
+        {"nombre": "Cuota anual Lima 2024",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2024", "descripcion": "Membresía ordinaria Lima — período 2024",      "activo": False, "wc_product_id": 8882},
+        {"nombre": "Cuota anual provincia 2026",  "tipo": "cuota_provincia","precio": 350.0, "periodo": "2026", "descripcion": "Membresía socios en provincia — período 2026", "activo": True,  "wc_product_id": 19105},
+        {"nombre": "Cuota anual provincia 2025",  "tipo": "cuota_provincia","precio": 350.0, "periodo": "2025", "descripcion": "Membresía socios en provincia — período 2025", "activo": True,  "wc_product_id": 19105},
+        {"nombre": "Cuota de fraccionamiento",    "tipo": "fraccionamiento", "precio": 260.0, "periodo": "",    "descripcion": "Cuota parcial de pago fraccionado (3 cuotas)", "activo": True,  "wc_product_id": 8880},
+        {"nombre": "Entrada a evento",            "tipo": "evento",          "precio": None,  "periodo": "",    "descripcion": "Acceso a evento o capacitación IPIDET",        "activo": True,  "wc_product_id": None},
     ]
     now = datetime.now(timezone.utc)
     for d in defaults:
@@ -1644,7 +1644,28 @@ def _seed_productos():
     productos_col.insert_many(defaults)
 
 
+def _sync_wc_product_ids():
+    """Asigna IDs de WooCommerce reales a los productos existentes si aún no los tienen."""
+    sin_wc = {"$or": [{"wc_product_id": None}, {"wc_product_id": {"$exists": False}}]}
+    mappings = [
+        ("cuota_anual",    "2024", 8882),
+        ("cuota_anual",    "2025", 8882),
+        ("cuota_anual",    "2026", 8882),
+        ("cuota_anual",    "2027", 8882),
+        ("cuota_provincia","2025", 19105),
+        ("cuota_provincia","2026", 19105),
+        ("cuota_provincia","2027", 19105),
+        ("fraccionamiento","",     8880),
+    ]
+    for tipo, periodo, wc_id in mappings:
+        productos_col.update_many(
+            {"tipo": tipo, "periodo": periodo, **sin_wc},
+            {"$set": {"wc_product_id": wc_id}},
+        )
+
+
 _seed_productos()
+_sync_wc_product_ids()
 
 
 def get_productos(tipo: str = "", solo_activos: bool = False) -> list:
@@ -1672,18 +1693,44 @@ def create_producto(nombre: str, tipo: str, precio: float | None,
 
 
 def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | None,
-                    periodo: str, descripcion: str, activo: bool) -> None:
+                    periodo: str, descripcion: str, activo: bool,
+                    wc_product_id: int | None = None) -> None:
     productos_col.update_one(
         {"_id": ObjectId(producto_id)},
         {"$set": {
-            "nombre":      nombre.strip(),
-            "tipo":        tipo,
-            "precio":      precio,
-            "periodo":     periodo.strip(),
-            "descripcion": descripcion.strip(),
-            "activo":      activo,
+            "nombre":        nombre.strip(),
+            "tipo":          tipo,
+            "precio":        precio,
+            "periodo":       periodo.strip(),
+            "descripcion":   descripcion.strip(),
+            "activo":        activo,
+            "wc_product_id": wc_product_id,
         }},
     )
+
+
+def get_wc_portal_products() -> dict:
+    """
+    Lee los IDs de WooCommerce desde la colección productos.
+    Devuelve {ubicacion_key: {periodo: wc_product_id}} para el portal de socios.
+    """
+    lima     = {}
+    provincia = {}
+    docs = list(productos_col.find({
+        "activo": True,
+        "wc_product_id": {"$ne": None, "$exists": True},
+        "tipo": {"$in": ["cuota_anual", "cuota_provincia"]},
+    }))
+    for d in docs:
+        wc_id  = d.get("wc_product_id")
+        period = d.get("periodo", "")
+        if not wc_id or not period:
+            continue
+        if d.get("tipo") == "cuota_provincia":
+            provincia[period] = wc_id
+        else:
+            lima[period] = wc_id
+    return {"lima": lima, "provincia": provincia}
 
 
 def delete_producto(producto_id: str) -> None:

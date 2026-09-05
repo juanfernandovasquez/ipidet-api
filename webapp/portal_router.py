@@ -25,13 +25,33 @@ def build_member_status(email: str) -> dict:
     if not member:
         return {"found": False, "email": email}
 
+    # Determinar tipo de socio para los botones de pago
+    ubicacion = member.get("ubicacion", "")
+    ubicacion_key = "provincia" if ubicacion and ubicacion.lower() != "lima" else "lima"
+    # Leer IDs de productos WC desde MongoDB (configurado en /productos).
+    # Los valores de MongoDB tienen prioridad; el dict estático cubre los huecos.
+    import webapp.db as main_db
+    wc_products = main_db.get_wc_portal_products()
+    for loc in ("lima", "provincia"):
+        for per in pdb.PERIODOS_ACTIVOS:
+            if not wc_products.get(loc, {}).get(per):
+                static_id = pdb.WC_PORTAL_PRODUCTS.get(loc, {}).get(per)
+                if static_id:
+                    wc_products.setdefault(loc, {})[per] = static_id
+
     payments_out = []
+    periodos_con_registro = set()
+
     for p in member.get("payments", []):
         cuotas = p.get("cuotas", [])
-        payments_out.append({
-            "periodo":        p.get("periodo", ""),
-            "estado":         p.get("estado", ""),
-            "estado_label":   STATUS_ES.get(p.get("estado", ""), p.get("estado", "")),
+        estado = p.get("estado", "")
+        periodo = p.get("periodo", "")
+        periodos_con_registro.add(periodo)
+
+        payment_entry = {
+            "periodo":        periodo,
+            "estado":         estado,
+            "estado_label":   STATUS_ES.get(estado, estado),
             "empresa_pagadora": p.get("empresa_pagadora") or "",
             "fecha_pago":     p.get("fecha_pago") or "",
             "cuotas_total":   p.get("cuotas_total", 0),
@@ -46,17 +66,48 @@ def build_member_status(email: str) -> dict:
                 }
                 for c in cuotas
             ],
-        })
+        }
+
+        # Agregar botón de pago si el período está pendiente y hay producto WC configurado
+        if estado in pdb.ESTADOS_PENDIENTES and periodo in pdb.PERIODOS_ACTIVOS:
+            wc_id = wc_products.get(ubicacion_key, {}).get(periodo)
+            if wc_id:
+                payment_entry["wc_product_id"] = wc_id
+                payment_entry["wc_pay_url"] = f"https://ipidet.org/?add-to-cart={wc_id}"
+
+        payments_out.append(payment_entry)
+
+    # Agregar períodos activos sin registro (nunca pagaron ese año)
+    for periodo in pdb.PERIODOS_ACTIVOS:
+        if periodo not in periodos_con_registro:
+            wc_id = wc_products.get(ubicacion_key, {}).get(periodo)
+            entry = {
+                "periodo":          periodo,
+                "estado":           "sin_registro",
+                "estado_label":     "Sin pago registrado",
+                "empresa_pagadora": "",
+                "fecha_pago":       "",
+                "cuotas_total":     0,
+                "cuotas_pagadas":   0,
+                "cuotas":           [],
+            }
+            if wc_id:
+                entry["wc_product_id"] = wc_id
+                entry["wc_pay_url"] = f"https://ipidet.org/?add-to-cart={wc_id}"
+            payments_out.append(entry)
+
+    # Ordenar por período descendente
+    payments_out.sort(key=lambda p: p["periodo"], reverse=True)
 
     return {
-        "found":       True,
-        "member_id":   member.get("member_id", ""),
-        "nombre":      f"{member.get('nombres', '')} {member.get('apellidos', '')}".strip(),
-        "titulo":      member.get("titulo", ""),
-        "ubicacion":   member.get("ubicacion", ""),
-        "estado":      member.get("estado", ""),
+        "found":        True,
+        "member_id":    member.get("member_id", ""),
+        "nombre":       f"{member.get('nombres', '')} {member.get('apellidos', '')}".strip(),
+        "titulo":       member.get("titulo", ""),
+        "ubicacion":    ubicacion,
+        "estado":       member.get("estado", ""),
         "estado_label": "Activo" if member.get("estado") == "activo" else member.get("estado", "").capitalize(),
-        "payments":    payments_out,
+        "payments":     payments_out,
     }
 
 

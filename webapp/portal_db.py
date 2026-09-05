@@ -40,12 +40,64 @@ def get_member_by_email(email: str) -> dict | None:
 
 
 # ── Mapeo de productos WooCommerce → acción en MongoDB ────────────────────────
-# product_id → (estado, descripcion)
+#
+# INSTRUCCIONES PARA AGREGAR NUEVOS PRODUCTOS:
+# 1. En WooCommerce Admin → Productos → Añadir nuevo, crea un producto por cada año y tipo.
+# 2. Al guardar, anota el ID del producto (aparece en la URL: post=XXXXX).
+# 3. Agrega ese ID aquí con el periodo y action correspondientes.
+#
+# CAMPOS:
+#   action   : "pagar" | "fraccionamiento"
+#   periodo  : "2025" | "2026" | "2027" | None  (None = usar año de la fecha de pago)
+#   ubicacion: "lima" | "provincia" | None       (para filtrar botones de pago en portal)
+#
 WC_PRODUCT_MAP = {
-    8882:  {"action": "pagar",         "descripcion": "Pago Ordinario"},
-    19105: {"action": "pagar",         "descripcion": "Cuota anual provincia"},
-    8880:  {"action": "fraccionamiento","descripcion": "Fraccionamiento en 3 meses"},
+    # ── Productos existentes (sin periodo fijo → usa año del pago) ────────────
+    8882:  {"action": "pagar",          "descripcion": "Pago Ordinario Lima",      "periodo": None, "ubicacion": "lima"},
+    19105: {"action": "pagar",          "descripcion": "Cuota anual provincia",    "periodo": None, "ubicacion": "provincia"},
+    8880:  {"action": "fraccionamiento","descripcion": "Fraccionamiento 3 cuotas", "periodo": None, "ubicacion": None},
+
+    # ── NUEVOS: un producto por año — COMPLETAR con IDs reales de WooCommerce ─
+    # Lima
+    # REEMPLAZA los números de abajo con los IDs que obtengas en WC Admin
+    # EJEMPLO: 22001: {"action": "pagar", "descripcion": "Cuota Lima 2025", "periodo": "2025", "ubicacion": "lima"},
+    # 22001: {"action": "pagar", "descripcion": "Cuota Lima 2025",     "periodo": "2025", "ubicacion": "lima"},
+    # 22002: {"action": "pagar", "descripcion": "Cuota Lima 2026",     "periodo": "2026", "ubicacion": "lima"},
+    # 22003: {"action": "pagar", "descripcion": "Cuota Lima 2027",     "periodo": "2027", "ubicacion": "lima"},
+
+    # Provincia
+    # 22004: {"action": "pagar", "descripcion": "Cuota Provincia 2025","periodo": "2025", "ubicacion": "provincia"},
+    # 22005: {"action": "pagar", "descripcion": "Cuota Provincia 2026","periodo": "2026", "ubicacion": "provincia"},
+    # 22006: {"action": "pagar", "descripcion": "Cuota Provincia 2027","periodo": "2027", "ubicacion": "provincia"},
+
+    # Fraccionamiento por año (si quieres uno específico por año):
+    # 22010: {"action": "fraccionamiento", "descripcion": "Fracc. Lima 2026",     "periodo": "2026", "ubicacion": "lima"},
+    # 22011: {"action": "fraccionamiento", "descripcion": "Fracc. Provincia 2026","periodo": "2026", "ubicacion": "provincia"},
 }
+
+# ── Mapa de botones de pago para el portal de WordPress ──────────────────────
+# Aquí pones el product_id de WC para cada año y tipo de socio.
+# El widget de WordPress usará estos IDs para generar los botones "Pagar XXXX".
+# Cuando no hay ID (None) no se muestra botón para ese año.
+WC_PORTAL_PRODUCTS = {
+    # Usa los productos genéricos publicados hasta que se creen versiones por año.
+    # Si en /productos se configura un wc_product_id para un año específico,
+    # ese valor tiene prioridad (override desde MongoDB).
+    "lima": {
+        "2025": 8882,   # Pago Ordinario (genérico Lima) — ID WC real
+        "2026": 8882,
+        "2027": 8882,
+    },
+    "provincia": {
+        "2025": 19105,  # Cuota anual provincia (genérica) — ID WC real
+        "2026": 19105,
+        "2027": 19105,
+    },
+}
+
+PERIODOS_ACTIVOS = ["2025", "2026", "2027"]
+
+ESTADOS_PENDIENTES = {"debe", "pendiente", "sin_registro", "parcial"}
 
 
 def apply_woocommerce_order(email: str, order: dict) -> dict:
@@ -63,8 +115,8 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
 
     member_id = member["member_id"]
     from datetime import datetime, timezone
-    periodo = str(order.get("date_paid", "")[:4]) or str(datetime.now(timezone.utc).year)
-    fecha_pago = order.get("date_paid", "")[:10]  # YYYY-MM-DD
+    fecha_pago_default = order.get("date_paid", "")[:10]  # YYYY-MM-DD
+    anio_pago_default  = str(order.get("date_paid", "")[:4]) or str(datetime.now(timezone.utc).year)
     order_id = str(order.get("id", ""))
     results = []
 
@@ -74,6 +126,23 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
         if not cfg:
             results.append({"product_id": product_id, "skipped": True, "reason": "producto no mapeado"})
             continue
+
+        # Si el producto tiene periodo fijo, lo usamos directamente.
+        # Si no, buscamos el año pendiente más antiguo del socio en PERIODOS_ACTIVOS.
+        # Esto permite que un producto genérico (ej. "Pago Ordinario") marque
+        # el año correcto aunque el botón diga "Pagar 2025" o "Pagar 2026".
+        if cfg.get("periodo"):
+            periodo = cfg["periodo"]
+        else:
+            periodos_pendientes = sorted([
+                p["periodo"] for p in payments_col.find({
+                    "member_id": member_id,
+                    "periodo":   {"$in": PERIODOS_ACTIVOS},
+                    "estado":    {"$in": list(ESTADOS_PENDIENTES)},
+                })
+            ])
+            periodo = periodos_pendientes[0] if periodos_pendientes else anio_pago_default
+        fecha_pago = fecha_pago_default
 
         payment = payments_col.find_one({"member_id": member_id, "periodo": periodo})
 

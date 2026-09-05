@@ -1326,16 +1326,19 @@ async def producto_add(
 
 @app.post("/productos/{producto_id}/update")
 async def producto_update(
-    producto_id: str,
-    nombre:      str  = Form(...),
-    tipo:        str  = Form(...),
-    precio:      str  = Form(""),
-    periodo:     str  = Form(""),
-    descripcion: str  = Form(""),
-    activo:      str  = Form("on"),
+    producto_id:   str  = Form(...),
+    nombre:        str  = Form(...),
+    tipo:          str  = Form(...),
+    precio:        str  = Form(""),
+    periodo:       str  = Form(""),
+    descripcion:   str  = Form(""),
+    activo:        str  = Form("on"),
+    wc_product_id: str  = Form(""),
 ):
     precio_val = float(precio) if precio.strip() else None
-    pdb.update_producto(producto_id, nombre, tipo, precio_val, periodo, descripcion, activo == "on")
+    wc_id_val  = int(wc_product_id) if wc_product_id.strip().isdigit() else None
+    pdb.update_producto(producto_id, nombre, tipo, precio_val, periodo, descripcion,
+                        activo == "on", wc_id_val)
     return RedirectResponse("/productos", status_code=303)
 
 

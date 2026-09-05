@@ -105,10 +105,15 @@
           <!-- Vista compacta -->
           <div x-show="!editing" class="flex items-center justify-between gap-3">
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm font-medium text-slate-800 truncate">{{ p.nombre }}</span>
                 {% if not p.activo %}
                 <span class="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">Inactivo</span>
+                {% endif %}
+                {% if p.get('wc_product_id') %}
+                <span class="text-xs text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-mono">WC #{{ p.wc_product_id }}</span>
+                {% else %}
+                <span class="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Sin ID WC</span>
                 {% endif %}
               </div>
               {% if p.descripcion %}
@@ -176,6 +181,16 @@
                 <div class="col-span-2">
                   <label class="block text-xs text-slate-500 mb-0.5">Descripción</label>
                   <input name="descripcion" value="{{ p.descripcion or '' }}" class="input w-full text-sm">
+                </div>
+                <div class="col-span-2">
+                  <label class="block text-xs text-slate-500 mb-0.5">
+                    ID Producto WooCommerce
+                    <span class="text-slate-400 font-normal ml-1">(para botón de pago en portal de socios)</span>
+                  </label>
+                  <input name="wc_product_id" type="number" min="1"
+                         value="{{ p.get('wc_product_id') or '' }}"
+                         placeholder="ej: 8882"
+                         class="input w-full text-sm font-mono">
                 </div>
               </div>
               <div class="flex gap-2 pt-1">
