@@ -99,13 +99,21 @@ add_filter('show_admin_bar', function($show) {
     return $show;
 });
 
-// ── 4. INYECTAR EL DIV DEL WIDGET EN EL DASHBOARD DE MI CUENTA ──────────────
+// ── 4. OCULTAR BARRA SUPERIOR (elementor-element-e92d977) A NO-ADMINS ─────────
+
+add_action('wp_head', function() {
+    if (!current_user_can('manage_options')) {
+        echo '<style>.elementor-element-e92d977 { display:none !important; }</style>';
+    }
+});
+
+// ── 5. INYECTAR EL DIV DEL WIDGET EN EL DASHBOARD DE MI CUENTA ──────────────
 
 add_action('woocommerce_account_dashboard', function() {
     echo '<div id="ipidet-portal-widget"></div>';
 }, 1);
 
-// ── 4. INYECTAR JS + CSS EN PÁGINAS DE MI CUENTA ────────────────────────────
+// ── 6. JS + CSS EN PÁGINAS DE MI CUENTA ─────────────────────────────────────
 
 add_action('wp_footer', function() {
     if (!is_user_logged_in()) return;
@@ -360,3 +368,74 @@ add_action('wp_footer', function() {
     </script>
     <?php
 }, 20);
+
+// ── 7. SECCIÓN "INFORMACIÓN" — EMAIL ALTERNATIVO LABORAL ─────────────────────
+
+add_action('woocommerce_edit_account_form_end', function() {
+    $user     = wp_get_current_user();
+    $primary  = sanitize_email($user->user_email);
+    $nonce_field = wp_create_nonce('ipidet_alt_email');
+
+    $cache_key = 'ipidet_' . md5($primary);
+    $cached    = get_transient($cache_key);
+    $alt_email = '';
+    if ($cached && isset($cached['emails'])) {
+        foreach ($cached['emails'] as $em) {
+            if (empty($em['principal']) && ($em['estado'] ?? '') === 'habilitado') {
+                $alt_email = $em['email'];
+                break;
+            }
+        }
+    }
+    ?>
+    <fieldset style="margin-top:2rem;padding-top:1.5rem;border-top:1px solid #e2e8f0;">
+        <legend style="font-weight:700;font-size:.95rem;color:#1e3a5f;margin-bottom:1rem;">
+            Correos electrónicos IPIDET
+        </legend>
+        <p class="woocommerce-form-row">
+            <label>Correo principal (login)</label>
+            <input type="email" value="<?php echo esc_attr($primary); ?>"
+                   disabled style="background:#f8fafc;color:#64748b;cursor:not-allowed;width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;">
+            <span class="description" style="font-size:.8rem;color:#94a3b8;">
+                Este es el correo que usas para ingresar. Para cambiarlo usa el campo "Dirección de correo" de arriba.
+            </span>
+        </p>
+        <p class="woocommerce-form-row">
+            <label for="ipidet_alt_email">Correo alternativo (laboral)</label>
+            <input type="email" id="ipidet_alt_email" name="ipidet_alt_email"
+                   value="<?php echo esc_attr($alt_email); ?>"
+                   placeholder="correo@empresa.com"
+                   style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;">
+            <span class="description" style="font-size:.8rem;color:#94a3b8;">
+                Correo de trabajo. Solo lo usa IPIDET para comunicaciones, no sirve para iniciar sesión.
+            </span>
+        </p>
+        <input type="hidden" name="ipidet_alt_email_nonce" value="<?php echo esc_attr($nonce_field); ?>">
+    </fieldset>
+    <?php
+});
+
+add_action('woocommerce_save_account_details', function($user_id) {
+    if (empty($_POST['ipidet_alt_email_nonce'])) return;
+    if (!wp_verify_nonce($_POST['ipidet_alt_email_nonce'], 'ipidet_alt_email')) return;
+
+    $user      = get_userdata($user_id);
+    $primary   = sanitize_email($user->user_email);
+    $alt_email = sanitize_email($_POST['ipidet_alt_email'] ?? '');
+
+    if (empty($alt_email)) return;
+
+    wp_remote_post(IPIDET_PORTAL_API_BASE . '/api/portal/update-alternative-email', [
+        'timeout' => 8,
+        'headers' => [
+            'Content-Type'  => 'application/json',
+            'Authorization' => 'Bearer ' . IPIDET_PORTAL_SECRET,
+        ],
+        'body' => json_encode([
+            'primary_email'     => $primary,
+            'alternative_email' => $alt_email,
+        ]),
+    ]);
+
+    delete_transient('ipidet_' . md5($primary));
+});

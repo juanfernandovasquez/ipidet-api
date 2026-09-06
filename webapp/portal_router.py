@@ -129,6 +129,34 @@ def build_member_status(email: str) -> dict:
     return result
 
 
+def update_alternative_email(primary_email: str, alternative_email: str) -> dict:
+    member = pdb.members_col.find_one(
+        {"emails.email": {"$regex": f"^{primary_email}$", "$options": "i"}},
+        {"member_id": 1, "emails": 1},
+    )
+    if not member:
+        return {"ok": False, "error": f"Socio no encontrado con email {primary_email}"}
+
+    emails = member.get("emails", [])
+    # Buscar si ya hay un email alternativo (no principal) habilitado
+    alt_idx = next(
+        (i for i, e in enumerate(emails) if not e.get("principal") and e.get("estado") == "habilitado"),
+        None,
+    )
+    if alt_idx is not None:
+        pdb.members_col.update_one(
+            {"member_id": member["member_id"]},
+            {"$set": {f"emails.{alt_idx}.email": alternative_email}},
+        )
+    else:
+        pdb.members_col.update_one(
+            {"member_id": member["member_id"]},
+            {"$push": {"emails": {"email": alternative_email, "estado": "habilitado", "principal": False}}},
+        )
+    _cache_del(primary_email)
+    return {"ok": True, "member_id": member["member_id"], "alternative_email": alternative_email}
+
+
 async def handle_wc_webhook(request: Request):
     body = await request.body()
 

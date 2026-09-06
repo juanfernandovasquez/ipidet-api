@@ -1394,6 +1394,26 @@ async def portal_wc_webhook(request: Request):
     return await portal_routes.handle_wc_webhook(request)
 
 
+@app.post("/api/portal/update-alternative-email")
+async def portal_update_alt_email(request: Request):
+    from config.settings import PORTAL_SECRET
+    auth_header = request.headers.get("authorization", "")
+    if PORTAL_SECRET and auth_header != f"Bearer {PORTAL_SECRET}":
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON inválido"}, status_code=400)
+    primary_email     = (body.get("primary_email") or "").strip().lower()
+    alternative_email = (body.get("alternative_email") or "").strip().lower()
+    if not primary_email or "@" not in primary_email:
+        return JSONResponse({"error": "primary_email inválido"}, status_code=400)
+    if not alternative_email or "@" not in alternative_email:
+        return JSONResponse({"error": "alternative_email inválido"}, status_code=400)
+    result = portal_routes.update_alternative_email(primary_email, alternative_email)
+    return result
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 @app.get("/login", response_class=HTMLResponse)
