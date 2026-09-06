@@ -47,6 +47,13 @@
              class="btn-ghost text-xs py-1 px-3">
             <i class="fa-solid fa-bullhorn mr-1"></i> Incluir en comunicación
           </a>
+          <form method="post" action="/members/{{ member.member_id }}/tipo_socio" class="flex items-center gap-1.5">
+            <select name="tipo_socio" class="input text-xs py-1">
+              <option value="ordinario" {% if member.tipo_socio != 'filial' %}selected{% endif %}>Ordinario</option>
+              <option value="filial"    {% if member.tipo_socio == 'filial' %}selected{% endif %}>Filial</option>
+            </select>
+            <button type="submit" class="btn-ghost text-xs py-1 px-2">✓</button>
+          </form>
           <form method="post" action="/members/{{ member.member_id }}/estado" class="flex items-center gap-2">
             <select name="estado" class="input text-xs py-1">
               {% for val, lbl in [("activo","Activo"),("inactivo","Inactivo"),("retirar","Retirar"),("en_revision","En revisión")] %}

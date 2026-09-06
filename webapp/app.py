@@ -238,6 +238,12 @@ async def update_member_estado(member_id: str, estado: str = Form(...)):
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
 
+@app.post("/members/{member_id}/tipo_socio")
+async def update_member_tipo_socio(member_id: str, tipo_socio: str = Form(...)):
+    pdb.update_member_tipo_socio(member_id, tipo_socio)
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
 # ── Cobranzas ─────────────────────────────────────────────────────────────────
 
 @app.get("/billing/facturacion", response_class=HTMLResponse)

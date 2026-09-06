@@ -25,9 +25,11 @@ def build_member_status(email: str) -> dict:
     if not member:
         return {"found": False, "email": email}
 
-    # Determinar tipo de socio para los botones de pago
+    # Determinar tipo de socio para los botones de pago.
+    # tipo_socio="filial" → cuota de filial (provincia); cualquier otro → cuota ordinaria (Lima).
     ubicacion = member.get("ubicacion", "")
-    ubicacion_key = "provincia" if ubicacion and ubicacion.lower() != "lima" else "lima"
+    tipo_socio = member.get("tipo_socio", "ordinario")
+    ubicacion_key = "provincia" if tipo_socio == "filial" else "lima"
     # Leer IDs de productos WC desde MongoDB (configurado en /productos).
     # Los valores de MongoDB tienen prioridad; el dict estático cubre los huecos.
     import webapp.db as main_db

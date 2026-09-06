@@ -282,6 +282,15 @@ def update_member_estado(member_id: str, estado: str):
     )
 
 
+def update_member_tipo_socio(member_id: str, tipo_socio: str):
+    if tipo_socio not in ("ordinario", "filial"):
+        return
+    members_col.update_one(
+        {"member_id": member_id},
+        {"$set": {"tipo_socio": tipo_socio}},
+    )
+
+
 # ── Payments ──────────────────────────────────────────────────────────────────
 
 def generar_cobros_periodo(periodo: str) -> dict:
