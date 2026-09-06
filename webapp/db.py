@@ -1658,12 +1658,12 @@ def _sync_wc_product_ids():
     # Mapeo autoritativo: (tipo, periodo) → wc_product_id real
     mappings = [
         ("cuota_anual",    "2024", 8882),
-        ("cuota_anual",    "2025", 14059),   # Pronto Pago 2025
-        ("cuota_anual",    "2026", 19102),   # Pronto Pago 2026
-        ("cuota_anual",    "2027", 8882),    # genérico hasta Pronto Pago 2027
+        ("cuota_anual",    "2025", 19364),   # Pago 2025
+        ("cuota_anual",    "2026", 19361),   # Pago 2026
+        ("cuota_anual",    "2027", 19363),   # Pago 2027
         ("cuota_provincia","2025", 19359),   # Cuota Filial 2025
         ("cuota_provincia","2026", 19360),   # Cuota Filial 2026
-        ("cuota_provincia","2027", 19105),   # genérico hasta Cuota Filial 2027
+        ("cuota_provincia","2027", 19362),   # Cuota Filial 2027
         ("fraccionamiento","",     8880),
     ]
     for tipo, periodo, wc_id in mappings:

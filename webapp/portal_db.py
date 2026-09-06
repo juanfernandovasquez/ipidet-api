@@ -52,31 +52,33 @@ def get_member_by_email(email: str) -> dict | None:
 #   ubicacion: "lima" | "provincia" | None       (para filtrar botones de pago en portal)
 #
 WC_PRODUCT_MAP = {
-    # ── Genéricos (fallback si no hay producto año-específico) ────────────────
+    # ── Genéricos (fallback / fraccionamiento) ────────────────────────────────
     8882:  {"action": "pagar",          "descripcion": "Pago Ordinario",           "periodo": None, "ubicacion": "lima"},
     19105: {"action": "pagar",          "descripcion": "Cuota anual provincia",    "periodo": None, "ubicacion": "provincia"},
     8880:  {"action": "fraccionamiento","descripcion": "Fraccionamiento 3 cuotas", "periodo": None, "ubicacion": None},
 
     # ── Ordinario (Lima) por año ───────────────────────────────────────────────
-    14059: {"action": "pagar", "descripcion": "Pronto Pago 2025",  "periodo": "2025", "ubicacion": "lima"},
-    19102: {"action": "pagar", "descripcion": "Pronto Pago 2026",  "periodo": "2026", "ubicacion": "lima"},
+    19364: {"action": "pagar", "descripcion": "Pago 2025",        "periodo": "2025", "ubicacion": "lima"},
+    19361: {"action": "pagar", "descripcion": "Pago 2026",        "periodo": "2026", "ubicacion": "lima"},
+    19363: {"action": "pagar", "descripcion": "Pago 2027",        "periodo": "2027", "ubicacion": "lima"},
 
     # ── Filial (Provincia) por año ────────────────────────────────────────────
-    19359: {"action": "pagar", "descripcion": "Cuota Filial 2025", "periodo": "2025", "ubicacion": "provincia"},
-    19360: {"action": "pagar", "descripcion": "Cuota Filial 2026", "periodo": "2026", "ubicacion": "provincia"},
+    19359: {"action": "pagar", "descripcion": "Cuota Filial 2025","periodo": "2025", "ubicacion": "provincia"},
+    19360: {"action": "pagar", "descripcion": "Cuota Filial 2026","periodo": "2026", "ubicacion": "provincia"},
+    19362: {"action": "pagar", "descripcion": "Cuota Filial 2027","periodo": "2027", "ubicacion": "provincia"},
 }
 
 # ── Mapa de botones de pago para el portal de WordPress ──────────────────────
 WC_PORTAL_PRODUCTS = {
     "lima": {
-        "2025": 14059,  # Pronto Pago 2025
-        "2026": 19102,  # Pronto Pago 2026
-        "2027": 8882,   # genérico hasta que exista "Pronto Pago 2027"
+        "2025": 19364,  # Pago 2025
+        "2026": 19361,  # Pago 2026
+        "2027": 19363,  # Pago 2027
     },
     "provincia": {
         "2025": 19359,  # Cuota Filial 2025
         "2026": 19360,  # Cuota Filial 2026
-        "2027": 19105,  # genérico hasta que exista "Cuota Filial 2027"
+        "2027": 19362,  # Cuota Filial 2027
     },
 }
 
