@@ -73,7 +73,7 @@ def build_member_status(email: str) -> dict:
             wc_id = wc_products.get(ubicacion_key, {}).get(periodo)
             if wc_id:
                 payment_entry["wc_product_id"] = wc_id
-                payment_entry["wc_pay_url"] = f"https://ipidet.org/?add-to-cart={wc_id}"
+                payment_entry["wc_pay_url"] = f"https://ipidet.org/carrito/?add-to-cart={wc_id}"
 
         payments_out.append(payment_entry)
 
@@ -93,7 +93,7 @@ def build_member_status(email: str) -> dict:
             }
             if wc_id:
                 entry["wc_product_id"] = wc_id
-                entry["wc_pay_url"] = f"https://ipidet.org/?add-to-cart={wc_id}"
+                entry["wc_pay_url"] = f"https://ipidet.org/carrito/?add-to-cart={wc_id}"
             payments_out.append(entry)
 
     # Ordenar por período descendente
