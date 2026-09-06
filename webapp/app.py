@@ -1326,7 +1326,7 @@ async def producto_add(
 
 @app.post("/productos/{producto_id}/update")
 async def producto_update(
-    producto_id:   str  = Form(...),
+    producto_id:   str,
     nombre:        str  = Form(...),
     tipo:          str  = Form(...),
     precio:        str  = Form(""),
