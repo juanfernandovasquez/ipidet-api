@@ -30,16 +30,8 @@ def build_member_status(email: str) -> dict:
     ubicacion = member.get("ubicacion", "")
     tipo_socio = member.get("tipo_socio", "ordinario")
     ubicacion_key = "provincia" if tipo_socio == "filial" else "lima"
-    # Leer IDs de productos WC desde MongoDB (configurado en /productos).
-    # Los valores de MongoDB tienen prioridad; el dict estático cubre los huecos.
-    import webapp.db as main_db
-    wc_products = main_db.get_wc_portal_products()
-    for loc in ("lima", "provincia"):
-        for per in pdb.PERIODOS_ACTIVOS:
-            if not wc_products.get(loc, {}).get(per):
-                static_id = pdb.WC_PORTAL_PRODUCTS.get(loc, {}).get(per)
-                if static_id:
-                    wc_products.setdefault(loc, {})[per] = static_id
+    # Usar el dict estático directamente — siempre sincronizado con los IDs reales de WC.
+    wc_products = pdb.WC_PORTAL_PRODUCTS
 
     payments_out = []
     periodos_con_registro = set()
