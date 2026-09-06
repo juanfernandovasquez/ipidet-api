@@ -8,10 +8,12 @@
  * Este snippet hace DOS cosas:
  *   1. Expone un endpoint REST de WordPress que actúa como PROXY seguro hacia FastAPI.
  *      El secreto PORTAL_SECRET nunca llega al navegador del socio.
+ *      Las respuestas se cachean 1 hora en WP Transients; si la API cae, se sirve el
+ *      último dato conocido (backup de 7 días) con degradación elegante.
  *   2. Inyecta en /asociados/ el JS que llama a ese endpoint y pinta el widget.
  */
 
-define('IPIDET_PORTAL_API_BASE', 'http://localhost:8000'); // ← cambiar a URL pública cuando esté desplegado
+define('IPIDET_PORTAL_API_BASE', 'https://ipidet-api.onrender.com');
 define('IPIDET_PORTAL_SECRET',   'CAMBIAR_POR_VALOR_DEL_.ENV');  // ← mismo valor que PORTAL_SECRET en .env
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,7 +25,6 @@ add_action('rest_api_init', function() {
         'methods'             => 'GET',
         'callback'            => 'ipidet_member_status_handler',
         'permission_callback' => function() {
-            // Solo usuarios logueados en WordPress pueden llamar este endpoint
             return is_user_logged_in();
         },
     ]);
@@ -37,6 +38,14 @@ function ipidet_member_status_handler(WP_REST_Request $request) {
         return new WP_Error('no_email', 'Sin email de usuario', ['status' => 400]);
     }
 
+    $cache_key = 'ipidet_' . md5($email);
+
+    // Intentar caché principal (1 hora)
+    $cached = get_transient($cache_key);
+    if ($cached !== false) {
+        return rest_ensure_response($cached);
+    }
+
     $api_url  = IPIDET_PORTAL_API_BASE . '/api/portal/member-status';
     $response = wp_remote_get(add_query_arg('email', rawurlencode($email), $api_url), [
         'timeout' => 8,
@@ -46,21 +55,48 @@ function ipidet_member_status_handler(WP_REST_Request $request) {
     ]);
 
     if (is_wp_error($response)) {
+        // API caída: devolver backup (hasta 7 días) con flag _stale para el JS
+        $backup = get_transient($cache_key . '_bk');
+        if ($backup !== false) {
+            $backup['_stale'] = true;
+            return rest_ensure_response($backup);
+        }
         return new WP_Error('api_error', 'No se pudo conectar con el servidor IPIDET', ['status' => 502]);
     }
 
     $body = wp_remote_retrieve_body($response);
     $data = json_decode($body, true);
+    if (!$data) {
+        return new WP_Error('api_error', 'Respuesta inválida', ['status' => 502]);
+    }
 
-    return rest_ensure_response($data ?? ['found' => false]);
+    set_transient($cache_key,          $data, HOUR_IN_SECONDS);           // caché normal: 1 hora
+    set_transient($cache_key . '_bk',  $data, DAY_IN_SECONDS * 7);        // backup: 7 días
+
+    return rest_ensure_response($data);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. INYECTAR WIDGET JS SOLO EN /asociados/
+// 2. INVALIDAR CACHÉ CUANDO SE COMPLETA UN PEDIDO WOOCOMMERCE
+//    Esto garantiza que el socio vea el pago actualizado en cuanto vuelve al portal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ipidet_clear_portal_cache($order_id) {
+    $order = wc_get_order($order_id);
+    if (!$order) return;
+    $email = sanitize_email($order->get_billing_email());
+    if (!$email) return;
+    $cache_key = 'ipidet_' . md5($email);
+    delete_transient($cache_key);  // El backup (_bk) lo mantenemos como fallback
+}
+add_action('woocommerce_order_status_completed',  'ipidet_clear_portal_cache');
+add_action('woocommerce_order_status_processing', 'ipidet_clear_portal_cache');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. INYECTAR WIDGET JS SOLO EN /asociados/
 // ─────────────────────────────────────────────────────────────────────────────
 
 add_action('wp_footer', function() {
-    // Solo en la página /asociados/ y solo para usuarios logueados
     if (!is_user_logged_in()) return;
     if (!is_page('asociados')) return;
 
@@ -144,6 +180,15 @@ add_action('wp_footer', function() {
         color: #94a3b8;
         font-size: .85rem;
         padding: 12px 0;
+    }
+    .ipidet-stale-notice {
+        font-size: .75rem;
+        color: #92400e;
+        background: #fef3c7;
+        border-radius: 6px;
+        padding: 4px 10px;
+        margin-bottom: 12px;
+        display: inline-block;
     }
     .ipidet-pay-btn {
         display: inline-flex;
@@ -259,8 +304,13 @@ add_action('wp_footer', function() {
                 ? '<span class="ipidet-badge ipidet-badge-green">Activo</span>'
                 : '<span class="ipidet-badge ipidet-badge-gray">' + data.estado_label + '</span>';
 
+            var staleNotice = data._stale
+                ? '<div class="ipidet-stale-notice">⚠️ Información con datos en caché. Actualiza la página más tarde.</div>'
+                : '';
+
             container.innerHTML =
                 '<h3>📋 Mi estado de membresía</h3>' +
+                staleNotice +
                 '<div class="ipidet-member-meta">' +
                     '<span><strong>Socio:</strong> ' + data.nombre + '</span>' +
                     '<span><strong>N°:</strong> ' + data.member_id + '</span>' +
@@ -290,7 +340,6 @@ add_action('wp_footer', function() {
             });
         }
 
-        // Esperar a que el DOM esté listo
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', loadPortalData);
         } else {

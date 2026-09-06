@@ -2,10 +2,27 @@ import base64
 import hashlib
 import hmac
 import json
+from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from config.settings import WC_WEBHOOK_SECRET
 import webapp.portal_db as pdb
+
+# ── Caché en memoria para respuestas del portal (2 min TTL) ──────────────────
+_cache: dict[str, tuple] = {}  # email → (data, expires_at)
+_CACHE_TTL = timedelta(minutes=2)
+
+def _cache_get(email: str) -> dict | None:
+    entry = _cache.get(email)
+    if entry and datetime.now() < entry[1]:
+        return entry[0]
+    return None
+
+def _cache_set(email: str, data: dict):
+    _cache[email] = (data, datetime.now() + _CACHE_TTL)
+
+def _cache_del(email: str):
+    _cache.pop(email, None)
 
 STATUS_ES = {
     "pagado":          "Pagado",
@@ -21,6 +38,11 @@ STATUS_ES = {
 
 
 def build_member_status(email: str) -> dict:
+    email = email.strip().lower()
+    cached = _cache_get(email)
+    if cached:
+        return cached
+
     member = pdb.get_member_by_email(email)
     if not member:
         return {"found": False, "email": email}
@@ -93,7 +115,7 @@ def build_member_status(email: str) -> dict:
     # Ordenar por período descendente
     payments_out.sort(key=lambda p: p["periodo"], reverse=True)
 
-    return {
+    result = {
         "found":        True,
         "member_id":    member.get("member_id", ""),
         "nombre":       f"{member.get('nombres', '')} {member.get('apellidos', '')}".strip(),
@@ -103,6 +125,8 @@ def build_member_status(email: str) -> dict:
         "estado_label": "Activo" if member.get("estado") == "activo" else member.get("estado", "").capitalize(),
         "payments":     payments_out,
     }
+    _cache_set(email, result)
+    return result
 
 
 async def handle_wc_webhook(request: Request):
@@ -134,4 +158,6 @@ async def handle_wc_webhook(request: Request):
         return JSONResponse({"error": "orden sin email de facturación"}, status_code=400)
 
     result = pdb.apply_woocommerce_order(email, order)
+    if result.get("ok"):
+        _cache_del(email.strip().lower())
     return result
