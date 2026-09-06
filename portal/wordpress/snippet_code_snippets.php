@@ -14,7 +14,7 @@
  */
 
 define('IPIDET_PORTAL_API_BASE', 'https://ipidet-api.onrender.com');
-define('IPIDET_PORTAL_SECRET',   'CAMBIAR_POR_VALOR_DEL_.ENV');  // ← mismo valor que PORTAL_SECRET en .env
+define('IPIDET_PORTAL_SECRET',   'ipidet_portal_2026');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. ENDPOINT REST PROXY (server-to-server, el secret nunca sale al browser)
@@ -107,7 +107,17 @@ add_action('wp_head', function() {
     }
 });
 
-// ── 5. INYECTAR EL DIV DEL WIDGET EN EL DASHBOARD DE MI CUENTA ──────────────
+// ── 5. MENÚ DE "MI CUENTA" — QUITAR ÍTEMS DE TIENDA Y RENOMBRAR DASHBOARD ────
+
+add_filter('woocommerce_account_menu_items', function($items) {
+    $items['dashboard'] = 'Inicio';
+    unset($items['orders']);        // Pedidos
+    unset($items['downloads']);     // Descargas
+    unset($items['edit-address']);  // Dirección
+    return $items;
+});
+
+// ── 6. INYECTAR EL DIV DEL WIDGET EN EL DASHBOARD DE MI CUENTA ──────────────
 
 add_action('woocommerce_account_dashboard', function() {
     echo '<div id="ipidet-portal-widget"></div>';
@@ -129,13 +139,13 @@ add_action('wp_footer', function() {
         border-radius: 12px;
         padding: 24px;
         margin: 24px 0;
-        font-family: inherit;
+        font-family: "Open Sans", sans-serif;
         max-width: 680px;
     }
     #ipidet-portal-widget h3 {
         font-size: 1rem;
         font-weight: 700;
-        color: #1e3a5f;
+        color: #00913d;
         margin: 0 0 16px 0;
         display: flex;
         align-items: center;
@@ -147,9 +157,9 @@ add_action('wp_footer', function() {
         gap: 8px 24px;
         margin-bottom: 20px;
         font-size: .85rem;
-        color: #475569;
+        color: #555;
     }
-    .ipidet-member-meta strong { color: #1e293b; }
+    .ipidet-member-meta strong { color: #0a0a0a; }
     .ipidet-payments-table {
         width: 100%;
         border-collapse: collapse;
@@ -158,18 +168,18 @@ add_action('wp_footer', function() {
     .ipidet-payments-table th {
         text-align: left;
         padding: 6px 12px;
-        background: #f8fafc;
-        color: #64748b;
-        font-weight: 600;
+        background: #f6f6f6;
+        color: #555;
+        font-weight: 700;
         font-size: .75rem;
         text-transform: uppercase;
         letter-spacing: .04em;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 2px solid #e2e8f0;
     }
     .ipidet-payments-table td {
         padding: 10px 12px;
-        border-bottom: 1px solid #f1f5f9;
-        color: #334155;
+        border-bottom: 1px solid #f0f0f0;
+        color: #0a0a0a;
         vertical-align: middle;
     }
     .ipidet-badge {
@@ -179,24 +189,24 @@ add_action('wp_footer', function() {
         font-size: .75rem;
         font-weight: 600;
     }
-    .ipidet-badge-green  { background: #dcfce7; color: #166534; }
+    .ipidet-badge-green  { background: #e6f7ee; color: #00913d; }
     .ipidet-badge-red    { background: #fee2e2; color: #991b1b; }
     .ipidet-badge-amber  { background: #fef3c7; color: #92400e; }
-    .ipidet-badge-gray   { background: #f1f5f9; color: #475569; }
+    .ipidet-badge-gray   { background: #f1f5f9; color: #555; }
     .ipidet-badge-yellow { background: #fef9c3; color: #713f12; }
     .ipidet-cuotas-detail {
         margin-top: 6px;
         font-size: .78rem;
-        color: #64748b;
+        color: #555;
     }
     .ipidet-not-found {
-        color: #94a3b8;
+        color: #999;
         font-size: .9rem;
         text-align: center;
         padding: 20px 0;
     }
     .ipidet-loading {
-        color: #94a3b8;
+        color: #999;
         font-size: .85rem;
         padding: 12px 0;
     }
@@ -215,7 +225,7 @@ add_action('wp_footer', function() {
         gap: 5px;
         margin-top: 6px;
         padding: 5px 14px;
-        background: #16a34a;
+        background: #00913d;
         color: #fff !important;
         border-radius: 6px;
         font-size: .78rem;
@@ -223,8 +233,52 @@ add_action('wp_footer', function() {
         text-decoration: none !important;
         transition: background .15s;
     }
-    .ipidet-pay-btn:hover { background: #15803d; }
+    .ipidet-pay-btn:hover { background: #007a33; }
     .ipidet-pay-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+    /* ── Botón ojo dentro del input de contraseña ───────────────────────── */
+    .ipidet-pw-wrap { position: relative; }
+    .ipidet-pw-wrap .woocommerce-Input--password,
+    .ipidet-pw-wrap input[type="password"],
+    .ipidet-pw-wrap input[type="text"] { padding-right: 40px !important; }
+    .show-password-input {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        outline: none;
+        cursor: pointer;
+        color: #aaa;
+        transition: color .15s;
+        font-size: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .show-password-input:hover { color: #00913d !important; }
+    .show-password-input::before {
+        content: '';
+        display: block;
+        width: 18px;
+        height: 18px;
+        background-color: currentColor;
+        transition: background-color .15s;
+        -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+        mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+        -webkit-mask-size: contain; mask-size: contain;
+        -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+        -webkit-mask-position: center; mask-position: center;
+    }
+    .show-password-input.display-password::before {
+        -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24'/%3E%3Cline x1='1' y1='1' x2='23' y2='23'/%3E%3C/svg%3E");
+        mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24'/%3E%3Cline x1='1' y1='1' x2='23' y2='23'/%3E%3C/svg%3E");
+    }
     </style>
 
     <script>
@@ -343,6 +397,12 @@ add_action('wp_footer', function() {
             var container = document.getElementById('ipidet-portal-widget');
             if (!container) return;
 
+            // Quitar párrafos por defecto de WooCommerce (saludo + descripción de tienda)
+            var mcContent = document.querySelector('.woocommerce-MyAccount-content');
+            if (mcContent) {
+                Array.from(mcContent.querySelectorAll(':scope > p')).forEach(function(p) { p.remove(); });
+            }
+
             container.innerHTML = '<p class="ipidet-loading">⏳ Cargando tu información…</p>';
 
             fetch(REST_URL, {
@@ -364,6 +424,23 @@ add_action('wp_footer', function() {
         } else {
             loadPortalData();
         }
+
+        // Wrap password inputs with their toggle buttons so the eye icon
+        // sits inside the field. Runs on window.load because WooCommerce
+        // injects .show-password-input buttons after DOMContentLoaded.
+        function wrapPasswordFields() {
+            document.querySelectorAll('.show-password-input').forEach(function(btn) {
+                var input = btn.previousElementSibling;
+                if (!input || input.tagName !== 'INPUT') return;
+                if (input.parentNode.classList.contains('ipidet-pw-wrap')) return;
+                var wrap = document.createElement('div');
+                wrap.className = 'ipidet-pw-wrap';
+                input.parentNode.insertBefore(wrap, input);
+                wrap.appendChild(input);
+                wrap.appendChild(btn);
+            });
+        }
+        window.addEventListener('load', wrapPasswordFields);
     })();
     </script>
     <?php
