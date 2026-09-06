@@ -92,11 +92,14 @@ function ipidet_clear_portal_cache($order_id) {
 add_action('woocommerce_order_status_completed',  'ipidet_clear_portal_cache');
 add_action('woocommerce_order_status_processing', 'ipidet_clear_portal_cache');
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. INYECTAR WIDGET JS SOLO EN /asociados/
-// ─────────────────────────────────────────────────────────────────────────────
+// ── 3. OCULTAR BARRA DE ADMIN A USUARIOS NO-ADMINISTRADORES ─────────────────
 
-// ── 3. INYECTAR EL DIV DEL WIDGET EN EL DASHBOARD DE MI CUENTA ──────────────
+add_filter('show_admin_bar', function($show) {
+    if (!current_user_can('manage_options')) return false;
+    return $show;
+});
+
+// ── 4. INYECTAR EL DIV DEL WIDGET EN EL DASHBOARD DE MI CUENTA ──────────────
 
 add_action('woocommerce_account_dashboard', function() {
     echo '<div id="ipidet-portal-widget"></div>';
