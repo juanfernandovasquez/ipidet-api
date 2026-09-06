@@ -96,9 +96,17 @@ add_action('woocommerce_order_status_processing', 'ipidet_clear_portal_cache');
 // 3. INYECTAR WIDGET JS SOLO EN /asociados/
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── 3. INYECTAR EL DIV DEL WIDGET EN EL DASHBOARD DE MI CUENTA ──────────────
+
+add_action('woocommerce_account_dashboard', function() {
+    echo '<div id="ipidet-portal-widget"></div>';
+}, 1);
+
+// ── 4. INYECTAR JS + CSS EN PÁGINAS DE MI CUENTA ────────────────────────────
+
 add_action('wp_footer', function() {
     if (!is_user_logged_in()) return;
-    if (!is_page('asociados')) return;
+    if (!is_account_page()) return;
 
     $nonce    = wp_create_nonce('wp_rest');
     $rest_url = esc_url(rest_url('ipidet/v1/member-status'));
