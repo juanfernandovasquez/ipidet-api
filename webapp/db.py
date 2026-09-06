@@ -1654,21 +1654,21 @@ def _seed_productos():
 
 
 def _sync_wc_product_ids():
-    """Asigna IDs de WooCommerce reales a los productos existentes si aún no los tienen."""
-    sin_wc = {"$or": [{"wc_product_id": None}, {"wc_product_id": {"$exists": False}}]}
+    """Actualiza IDs de WooCommerce en la colección productos según los productos reales de WC."""
+    # Mapeo autoritativo: (tipo, periodo) → wc_product_id real
     mappings = [
         ("cuota_anual",    "2024", 8882),
-        ("cuota_anual",    "2025", 8882),
-        ("cuota_anual",    "2026", 8882),
-        ("cuota_anual",    "2027", 8882),
-        ("cuota_provincia","2025", 19105),
-        ("cuota_provincia","2026", 19105),
-        ("cuota_provincia","2027", 19105),
+        ("cuota_anual",    "2025", 14059),   # Pronto Pago 2025
+        ("cuota_anual",    "2026", 19102),   # Pronto Pago 2026
+        ("cuota_anual",    "2027", 8882),    # genérico hasta Pronto Pago 2027
+        ("cuota_provincia","2025", 19359),   # Cuota Filial 2025
+        ("cuota_provincia","2026", 19360),   # Cuota Filial 2026
+        ("cuota_provincia","2027", 19105),   # genérico hasta Cuota Filial 2027
         ("fraccionamiento","",     8880),
     ]
     for tipo, periodo, wc_id in mappings:
         productos_col.update_many(
-            {"tipo": tipo, "periodo": periodo, **sin_wc},
+            {"tipo": tipo, "periodo": periodo},
             {"$set": {"wc_product_id": wc_id}},
         )
 

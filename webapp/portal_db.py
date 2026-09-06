@@ -52,46 +52,31 @@ def get_member_by_email(email: str) -> dict | None:
 #   ubicacion: "lima" | "provincia" | None       (para filtrar botones de pago en portal)
 #
 WC_PRODUCT_MAP = {
-    # ── Productos existentes (sin periodo fijo → usa año del pago) ────────────
-    8882:  {"action": "pagar",          "descripcion": "Pago Ordinario Lima",      "periodo": None, "ubicacion": "lima"},
+    # ── Genéricos (fallback si no hay producto año-específico) ────────────────
+    8882:  {"action": "pagar",          "descripcion": "Pago Ordinario",           "periodo": None, "ubicacion": "lima"},
     19105: {"action": "pagar",          "descripcion": "Cuota anual provincia",    "periodo": None, "ubicacion": "provincia"},
     8880:  {"action": "fraccionamiento","descripcion": "Fraccionamiento 3 cuotas", "periodo": None, "ubicacion": None},
 
-    # ── NUEVOS: un producto por año — COMPLETAR con IDs reales de WooCommerce ─
-    # Lima
-    # REEMPLAZA los números de abajo con los IDs que obtengas en WC Admin
-    # EJEMPLO: 22001: {"action": "pagar", "descripcion": "Cuota Lima 2025", "periodo": "2025", "ubicacion": "lima"},
-    # 22001: {"action": "pagar", "descripcion": "Cuota Lima 2025",     "periodo": "2025", "ubicacion": "lima"},
-    # 22002: {"action": "pagar", "descripcion": "Cuota Lima 2026",     "periodo": "2026", "ubicacion": "lima"},
-    # 22003: {"action": "pagar", "descripcion": "Cuota Lima 2027",     "periodo": "2027", "ubicacion": "lima"},
+    # ── Ordinario (Lima) por año ───────────────────────────────────────────────
+    14059: {"action": "pagar", "descripcion": "Pronto Pago 2025",  "periodo": "2025", "ubicacion": "lima"},
+    19102: {"action": "pagar", "descripcion": "Pronto Pago 2026",  "periodo": "2026", "ubicacion": "lima"},
 
-    # Provincia
-    # 22004: {"action": "pagar", "descripcion": "Cuota Provincia 2025","periodo": "2025", "ubicacion": "provincia"},
-    # 22005: {"action": "pagar", "descripcion": "Cuota Provincia 2026","periodo": "2026", "ubicacion": "provincia"},
-    # 22006: {"action": "pagar", "descripcion": "Cuota Provincia 2027","periodo": "2027", "ubicacion": "provincia"},
-
-    # Fraccionamiento por año (si quieres uno específico por año):
-    # 22010: {"action": "fraccionamiento", "descripcion": "Fracc. Lima 2026",     "periodo": "2026", "ubicacion": "lima"},
-    # 22011: {"action": "fraccionamiento", "descripcion": "Fracc. Provincia 2026","periodo": "2026", "ubicacion": "provincia"},
+    # ── Filial (Provincia) por año ────────────────────────────────────────────
+    19359: {"action": "pagar", "descripcion": "Cuota Filial 2025", "periodo": "2025", "ubicacion": "provincia"},
+    19360: {"action": "pagar", "descripcion": "Cuota Filial 2026", "periodo": "2026", "ubicacion": "provincia"},
 }
 
 # ── Mapa de botones de pago para el portal de WordPress ──────────────────────
-# Aquí pones el product_id de WC para cada año y tipo de socio.
-# El widget de WordPress usará estos IDs para generar los botones "Pagar XXXX".
-# Cuando no hay ID (None) no se muestra botón para ese año.
 WC_PORTAL_PRODUCTS = {
-    # Usa los productos genéricos publicados hasta que se creen versiones por año.
-    # Si en /productos se configura un wc_product_id para un año específico,
-    # ese valor tiene prioridad (override desde MongoDB).
     "lima": {
-        "2025": 8882,   # Pago Ordinario (genérico Lima) — ID WC real
-        "2026": 8882,
-        "2027": 8882,
+        "2025": 14059,  # Pronto Pago 2025
+        "2026": 19102,  # Pronto Pago 2026
+        "2027": 8882,   # genérico hasta que exista "Pronto Pago 2027"
     },
     "provincia": {
-        "2025": 19105,  # Cuota anual provincia (genérica) — ID WC real
-        "2026": 19105,
-        "2027": 19105,
+        "2025": 19359,  # Cuota Filial 2025
+        "2026": 19360,  # Cuota Filial 2026
+        "2027": 19105,  # genérico hasta que exista "Cuota Filial 2027"
     },
 }
 
