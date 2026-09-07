@@ -244,6 +244,12 @@ async def update_member_tipo_socio(member_id: str, tipo_socio: str = Form(...)):
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
 
+@app.post("/members/{member_id}/dni")
+async def update_member_dni(member_id: str, dni: str = Form(...)):
+    pdb.update_member_dni(member_id, dni.strip())
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
 # ── Cobranzas ─────────────────────────────────────────────────────────────────
 
 @app.get("/billing/facturacion", response_class=HTMLResponse)
@@ -1411,6 +1417,26 @@ async def portal_update_alt_email(request: Request):
     if not alternative_email or "@" not in alternative_email:
         return JSONResponse({"error": "alternative_email inválido"}, status_code=400)
     result = portal_routes.update_alternative_email(primary_email, alternative_email)
+    return result
+
+
+@app.post("/api/portal/update-dni")
+async def portal_update_dni(request: Request):
+    from config.settings import PORTAL_SECRET
+    auth_header = request.headers.get("authorization", "")
+    if PORTAL_SECRET and auth_header != f"Bearer {PORTAL_SECRET}":
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "JSON inválido"}, status_code=400)
+    primary_email = (body.get("primary_email") or "").strip().lower()
+    dni           = (body.get("dni") or "").strip()
+    if not primary_email or "@" not in primary_email:
+        return JSONResponse({"error": "primary_email inválido"}, status_code=400)
+    if not dni:
+        return JSONResponse({"error": "dni vacío"}, status_code=400)
+    result = portal_routes.update_member_dni_by_email(primary_email, dni)
     return result
 
 

@@ -121,12 +121,28 @@ def build_member_status(email: str) -> dict:
         "nombre":       f"{member.get('nombres', '')} {member.get('apellidos', '')}".strip(),
         "titulo":       member.get("titulo", ""),
         "ubicacion":    ubicacion,
+        "dni":          member.get("dni", "") or "",
         "estado":       member.get("estado", ""),
         "estado_label": "Activo" if member.get("estado") == "activo" else member.get("estado", "").capitalize(),
         "payments":     payments_out,
     }
     _cache_set(email, result)
     return result
+
+
+def update_member_dni_by_email(primary_email: str, dni: str) -> dict:
+    member = pdb.members_col.find_one(
+        {"emails.email": {"$regex": f"^{primary_email}$", "$options": "i"}},
+        {"member_id": 1},
+    )
+    if not member:
+        return {"ok": False, "error": f"Socio no encontrado con email {primary_email}"}
+    pdb.members_col.update_one(
+        {"member_id": member["member_id"]},
+        {"$set": {"dni": dni}},
+    )
+    _cache_del(primary_email)
+    return {"ok": True, "member_id": member["member_id"], "dni": dni}
 
 
 def update_alternative_email(primary_email: str, alternative_email: str) -> dict:

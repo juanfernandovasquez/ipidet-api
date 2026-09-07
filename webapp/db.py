@@ -81,6 +81,7 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
             {"nombres":   {"$regex": search, "$options": "i"}},
             {"emails.email": {"$regex": search, "$options": "i"}},
             {"member_id": {"$regex": search, "$options": "i"}},
+            {"dni": {"$regex": search, "$options": "i"}},
         ]
     if estado:
         query["estado"] = estado
@@ -288,6 +289,13 @@ def update_member_tipo_socio(member_id: str, tipo_socio: str):
     members_col.update_one(
         {"member_id": member_id},
         {"$set": {"tipo_socio": tipo_socio}},
+    )
+
+
+def update_member_dni(member_id: str, dni: str):
+    members_col.update_one(
+        {"member_id": member_id},
+        {"$set": {"dni": dni}},
     )
 
 
