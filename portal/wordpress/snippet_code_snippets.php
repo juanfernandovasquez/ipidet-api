@@ -480,9 +480,10 @@ add_action('woocommerce_edit_account_form', function() {
         <p class="woocommerce-form-row">
             <label for="ipidet_dni">DNI</label>
             <input type="text" id="ipidet_dni" name="ipidet_dni"
+                   class="woocommerce-Input woocommerce-Input--text input-text"
                    value="<?php echo esc_attr($dni); ?>"
                    placeholder="12345678" maxlength="8"
-                   style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;">
+                   style="width:100%;">
             <span class="description" style="font-size:.8rem;color:#94a3b8;">
                 Documento Nacional de Identidad. Se usa para verificar tu identidad como socio.
             </span>
@@ -490,7 +491,8 @@ add_action('woocommerce_edit_account_form', function() {
         <p class="woocommerce-form-row">
             <label>Correo principal (login)</label>
             <input type="email" value="<?php echo esc_attr($primary); ?>"
-                   disabled style="background:#f8fafc;color:#64748b;cursor:not-allowed;width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;">
+                   class="woocommerce-Input woocommerce-Input--email input-text"
+                   disabled style="background:#f8fafc;color:#64748b;cursor:not-allowed;width:100%;">
             <span class="description" style="font-size:.8rem;color:#94a3b8;">
                 Este es el correo que usas para ingresar. Para cambiarlo usa el campo "Dirección de correo" de arriba.
             </span>
@@ -498,9 +500,10 @@ add_action('woocommerce_edit_account_form', function() {
         <p class="woocommerce-form-row">
             <label for="ipidet_alt_email">Correo alternativo (laboral)</label>
             <input type="email" id="ipidet_alt_email" name="ipidet_alt_email"
+                   class="woocommerce-Input woocommerce-Input--email input-text"
                    value="<?php echo esc_attr($alt_email); ?>"
                    placeholder="correo@empresa.com"
-                   style="width:100%;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;">
+                   style="width:100%;">
             <span class="description" style="font-size:.8rem;color:#94a3b8;">
                 Correo de trabajo. Solo lo usa IPIDET para comunicaciones, no sirve para iniciar sesión.
             </span>
