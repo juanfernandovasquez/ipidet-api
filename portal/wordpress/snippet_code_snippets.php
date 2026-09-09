@@ -442,6 +442,21 @@ add_action('wp_footer', function() {
             });
         }
         window.addEventListener('load', wrapPasswordFields);
+
+        // Move "Datos IPIDET" fieldset before the submit button (theme puts submit before _end hook).
+        function reorderAccountForm() {
+            var form = document.querySelector('form.woocommerce-EditAccountForm');
+            if (!form) return;
+            var datosFieldset = Array.from(form.querySelectorAll('fieldset')).find(function(fs) {
+                var legend = fs.querySelector('legend');
+                return legend && legend.textContent.trim() === 'Datos IPIDET';
+            });
+            if (!datosFieldset) return;
+            var submitBtn = form.querySelector('[name="save_account_details"]');
+            if (!submitBtn) return;
+            form.insertBefore(datosFieldset, submitBtn.parentNode);
+        }
+        document.addEventListener('DOMContentLoaded', reorderAccountForm);
     })();
     </script>
     <?php
