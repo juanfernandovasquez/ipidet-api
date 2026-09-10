@@ -250,6 +250,13 @@ async def update_member_dni(member_id: str, dni: str = Form(...)):
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
 
+@app.post("/members/{member_id}/wp_user_id")
+async def update_member_wp_user_id(member_id: str, wp_user_id: str = Form(...)):
+    val = wp_user_id.strip()
+    pdb.update_member_wp_user_id(member_id, int(val) if val else None)
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
 # ── Cobranzas ─────────────────────────────────────────────────────────────────
 
 @app.get("/billing/facturacion", response_class=HTMLResponse)

@@ -101,6 +101,29 @@
             </form>
           </div>
         </div>
+
+        <!-- WordPress User ID — edición inline -->
+        <div x-data="{ editing: false, val: '{{ member.wp_user_id or '' }}' }">
+          <div class="text-xs text-slate-400 uppercase tracking-wide mb-0.5">ID WordPress</div>
+          <div x-show="!editing">
+            <span @click="editing = true"
+                  class="text-slate-700 font-medium cursor-pointer hover:text-blue-600 transition-colors font-mono"
+                  title="Clic para editar">{{ member.wp_user_id or '—' }}</span>
+          </div>
+          <div x-show="editing" x-cloak>
+            <form method="post" action="/members/{{ member.member_id }}/wp_user_id" class="flex items-center gap-1 mt-0.5">
+              <input name="wp_user_id" x-model="val" type="number" min="1"
+                     class="input text-sm py-0.5 w-28" placeholder="ej. 42" autofocus>
+              <button type="submit" class="text-green-600 hover:text-green-800 px-1.5 py-0.5 rounded hover:bg-green-50 transition-colors">
+                <i class="fa-solid fa-check text-xs"></i>
+              </button>
+              <button type="button" @click="editing = false"
+                      class="text-slate-400 hover:text-slate-600 px-1.5 py-0.5 rounded hover:bg-slate-100 transition-colors">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -299,6 +299,13 @@ def update_member_dni(member_id: str, dni: str):
     )
 
 
+def update_member_wp_user_id(member_id: str, wp_user_id: int | None):
+    if wp_user_id:
+        members_col.update_one({"member_id": member_id}, {"$set": {"wp_user_id": wp_user_id}})
+    else:
+        members_col.update_one({"member_id": member_id}, {"$unset": {"wp_user_id": ""}})
+
+
 # ── Payments ──────────────────────────────────────────────────────────────────
 
 def generar_cobros_periodo(periodo: str) -> dict:
