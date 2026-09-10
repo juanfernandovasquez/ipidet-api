@@ -1474,15 +1474,14 @@ async def wc_orders_page(
     except Exception as exc:
         error = str(exc)
 
-    return templates.TemplateResponse("wc_orders.html", {
-        "request":      request,
-        "orders":       orders_out,
-        "page":         page,
-        "total_pages":  total_pages,
-        "status":       status,
-        "search":       search,
-        "year":         year,
-        "error":        error,
+    return templates.TemplateResponse(request, "wc_orders.html", _ctx(request,
+        orders=orders_out,
+        page=page,
+        total_pages=total_pages,
+        status=status,
+        search=search,
+        year=year,
+        error=error,
     })
 
 
@@ -1529,15 +1528,14 @@ async def sync_usuarios_page(
     except Exception as exc:
         error = str(exc)
 
-    return templates.TemplateResponse("sync_usuarios.html", {
-        "request":     request,
-        "customers":   customers_out,
-        "page":        page,
-        "total_pages": total_pages,
-        "filtro":      filtro,
-        "search":      search,
-        "error":       error,
-    })
+    return templates.TemplateResponse(request, "sync_usuarios.html", _ctx(request,
+        customers=customers_out,
+        page=page,
+        total_pages=total_pages,
+        filtro=filtro,
+        search=search,
+        error=error,
+    ))
 
 
 @app.post("/sync-usuarios/vincular")
