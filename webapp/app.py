@@ -1463,7 +1463,7 @@ async def wc_orders_page(
             mongo_pay = pdb.get_wc_payment(order_id)
             if not mongo_pay and customer_id:
                 mongo_pay = pdb.get_wc_payment_by_wp_user_id(customer_id, periodo_guess)
-            if not mongo_pay and periodo_guess and billing_email:
+            if not mongo_pay and billing_email:
                 mongo_pay = pdb.get_wc_payment_by_email(billing_email, periodo_guess)
 
             orders_out.append({

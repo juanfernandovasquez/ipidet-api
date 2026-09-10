@@ -1384,20 +1384,22 @@ def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str
         return {"ok": True, "payment_id": str(result.inserted_id), "action": "created"}
 
 
-def get_wc_payment_by_email(email: str, periodo: str) -> dict | None:
-    """Fallback: busca pago por email del socio y período (para órdenes sin 'pagado_por' en WC webhook)."""
+def get_wc_payment_by_email(email: str, periodo: str | None) -> dict | None:
+    """Busca socio por email. Si hay período, intenta traer también el pago; si no, devuelve solo el socio."""
     member = members_col.find_one(
         {"emails.email": {"$regex": f"^{email}$", "$options": "i"}},
         {"member_id": 1, "nombres": 1, "apellidos": 1},
     )
     if not member:
         return None
-    pay = payments_col.find_one({"member_id": member["member_id"], "periodo": periodo})
-    if not pay:
-        return None
-    result = _clean(pay)
-    result["nombre_completo"] = f"{member.get('apellidos','').strip()}, {member.get('nombres','').strip()}".strip(", ")
-    return result
+    nombre = f"{member.get('apellidos','').strip()}, {member.get('nombres','').strip()}".strip(", ")
+    if periodo:
+        pay = payments_col.find_one({"member_id": member["member_id"], "periodo": periodo})
+        if pay:
+            result = _clean(pay)
+            result["nombre_completo"] = nombre
+            return result
+    return {"member_id": member["member_id"], "nombre_completo": nombre, "solo_socio": True}
 
 
 # ── Facturas a crédito ────────────────────────────────────────────────────────
