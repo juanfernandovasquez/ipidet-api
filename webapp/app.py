@@ -1482,7 +1482,7 @@ async def wc_orders_page(
         search=search,
         year=year,
         error=error,
-    })
+    ))
 
 
 @app.get("/sync-usuarios", response_class=HTMLResponse)
