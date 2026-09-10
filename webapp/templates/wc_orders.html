@@ -3,17 +3,44 @@
 
 {% block content %}
 
-{# ── Componente Alpine para filas sin match ──────────────────────────────────── #}
 <script>
 document.addEventListener('alpine:init', () => {
   Alpine.data('vinculador', (orderId, billingEmail) => ({
-    open: false,
+    linked:     false,
+    linkedData: null,   // {member_id, nombre, payment}
+    editing:    false,
+
     q: '', results: [],
     selMember: null,
     memberPayments: [], loadingPayments: false,
     selPayment: null,
     loading: false, err: '',
-    linked: false, linkedData: null,
+
+    init() {
+      const raw = this.$el.dataset.mongo;
+      if (!raw || raw === 'null') return;
+      try {
+        const d = JSON.parse(raw);
+        this.linked = true;
+        this.linkedData = {
+          member_id: d.member_id,
+          nombre:    d.nombre_completo || '',
+          payment:   d.solo_socio ? null : d,
+        };
+      } catch(e) {}
+    },
+
+    startEdit() {
+      this.editing    = true;
+      this.q          = '';
+      this.results    = [];
+      this.selMember  = null;
+      this.memberPayments = [];
+      this.selPayment = null;
+      this.err        = '';
+    },
+
+    cancelEdit() { this.editing = false; },
 
     search() {
       if (this.q.length < 2) { this.results = []; return; }
@@ -23,10 +50,10 @@ document.addEventListener('alpine:init', () => {
     },
 
     selectMember(m) {
-      this.selMember = m;
-      this.q = m.apellidos + ', ' + m.nombres;
-      this.results = [];
-      this.selPayment = null;
+      this.selMember      = m;
+      this.q              = m.apellidos + ', ' + m.nombres;
+      this.results        = [];
+      this.selPayment     = null;
       this.memberPayments = [];
       this.loadingPayments = true;
       fetch('/api/members/' + m.member_id)
@@ -40,25 +67,24 @@ document.addEventListener('alpine:init', () => {
         .catch(() => { this.loadingPayments = false; this.err = 'Error al cargar pagos'; });
     },
 
-    badgeClass(estado) {
-      return {
-        'pagado':          'bg-green-100 text-green-700',
-        'fraccionamiento': 'bg-amber-100 text-amber-700',
-        'parcial':         'bg-yellow-100 text-yellow-700',
-        'debe':            'bg-red-100 text-red-700',
-        'exonerado':       'bg-gray-100 text-gray-600',
-        'no_aplica':       'bg-gray-100 text-gray-600',
-      }[estado] || 'bg-slate-100 text-slate-500';
+    badge(estado) {
+      return ({
+        pagado:          'bg-green-100 text-green-700',
+        fraccionamiento: 'bg-amber-100 text-amber-700',
+        parcial:         'bg-yellow-100 text-yellow-700',
+        debe:            'bg-red-100 text-red-700',
+        exonerado:       'bg-gray-100 text-gray-600',
+        no_aplica:       'bg-gray-100 text-gray-600',
+      })[estado] || 'bg-slate-100 text-slate-500';
     },
 
     hasComp() {
       return this.linked && this.linkedData && this.linkedData.payment &&
-        (this.linkedData.payment.num_comprobante || this.linkedData.payment.link_constancia);
+             (this.linkedData.payment.num_comprobante || this.linkedData.payment.link_constancia);
     },
 
     vincular() {
-      if (!this.selMember)  { this.err = 'Selecciona un socio'; return; }
-      if (!this.selPayment) { this.err = 'Selecciona el pago a vincular'; return; }
+      if (!this.selMember) { this.err = 'Selecciona un socio'; return; }
       this.loading = true; this.err = '';
       fetch('/wc-orders/' + orderId + '/vincular', {
         method: 'POST',
@@ -66,20 +92,20 @@ document.addEventListener('alpine:init', () => {
         body: JSON.stringify({
           member_id: this.selMember.member_id,
           wc_email:  billingEmail,
-          periodo:   this.selPayment.periodo,
+          periodo:   this.selPayment ? this.selPayment.periodo : null,
         })
       })
       .then(r => r.json())
       .then(d => {
         this.loading = false;
         if (d.ok) {
-          this.linked = true;
+          this.linked     = true;
+          this.editing    = false;
           this.linkedData = {
             member_id: this.selMember.member_id,
             nombre:    this.selMember.apellidos + ', ' + this.selMember.nombres,
-            payment:   this.selPayment,
+            payment:   this.selPayment || null,
           };
-          this.open = false;
         } else { this.err = d.error || 'Error al vincular'; }
       })
       .catch(() => { this.loading = false; this.err = 'Error de red'; });
@@ -90,7 +116,7 @@ document.addEventListener('alpine:init', () => {
 
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-bold text-slate-800">Pedidos WooCommerce</h1>
-  <span class="text-xs text-slate-400">Solo lectura — los datos se traen de WooCommerce</span>
+  <span class="text-xs text-slate-400">Solo lectura desde WooCommerce</span>
 </div>
 
 {# ── Filtros ─────────────────────────────────────────────────────────────── #}
@@ -117,8 +143,8 @@ document.addEventListener('alpine:init', () => {
     </select>
   </div>
   <div class="flex flex-col gap-1 flex-1 min-w-[180px]">
-    <label class="text-xs font-semibold text-slate-500">Buscar (email o nombre)</label>
-    <input type="text" name="search" value="{{ search }}" placeholder="email@ejemplo.com"
+    <label class="text-xs font-semibold text-slate-500">Buscar</label>
+    <input type="text" name="search" value="{{ search }}" placeholder="email o nombre"
            class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
   </div>
   <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">Buscar</button>
@@ -127,7 +153,6 @@ document.addEventListener('alpine:init', () => {
   {% endif %}
 </form>
 
-{# ── Error ───────────────────────────────────────────────────────────────── #}
 {% if error %}
 <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-sm text-red-700">
   <strong>Error al conectar con WooCommerce:</strong> {{ error }}
@@ -155,21 +180,28 @@ document.addEventListener('alpine:init', () => {
     <tbody class="divide-y divide-slate-100">
 
       {% for o in orders %}
+      {# Todas las filas usan el mismo componente Alpine; init() lee data-mongo #}
+      <tr x-data="vinculador({{ o.order_id }}, '{{ o.billing_email }}')"
+          data-mongo='{{ o.mongo | tojson if o.mongo else "null" }}'
+          class="hover:bg-slate-50 align-top">
 
-      {# ══ FILA CON MATCH (server-rendered, sin Alpine) ══════════════════════ #}
-      {% if o.mongo %}
-      <tr class="hover:bg-slate-50">
-
+        {# ── Orden ── #}
         <td class="px-4 py-3">
           <a href="https://ipidet.org/wp-admin/post.php?post={{ o.order_id }}&action=edit"
              target="_blank" class="text-blue-600 hover:underline font-mono font-semibold">#{{ o.order_id }}</a>
         </td>
+
+        {# ── Fecha ── #}
         <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ o.date }}</td>
+
+        {# ── Cliente WC ── #}
         <td class="px-4 py-3">
           <div class="font-semibold text-slate-800">{{ o.billing_name or "—" }}</div>
           <div class="text-xs text-slate-400">{{ o.billing_email }}</div>
           {% if o.payment_method %}<div class="text-xs text-slate-400 mt-0.5">{{ o.payment_method }}</div>{% endif %}
         </td>
+
+        {# ── Productos ── #}
         <td class="px-4 py-3">
           {% for prod in o.productos %}
           <div class="text-slate-700">{{ prod.descripcion or prod.nombre }}
@@ -177,7 +209,11 @@ document.addEventListener('alpine:init', () => {
           </div>
           {% else %}<span class="text-slate-400">—</span>{% endfor %}
         </td>
-        <td class="px-4 py-3 text-right font-semibold text-slate-800">S/ {{ o.total }}</td>
+
+        {# ── Total ── #}
+        <td class="px-4 py-3 text-right font-semibold text-slate-800 whitespace-nowrap">S/ {{ o.total }}</td>
+
+        {# ── Estado WC ── #}
         <td class="px-4 py-3">
           {% set wcs = o.wc_status %}
           {% if wcs == "completed" %}<span class="badge badge-green">Completado</span>
@@ -188,84 +224,7 @@ document.addEventListener('alpine:init', () => {
           {% else %}<span class="badge badge-slate">{{ wcs }}</span>{% endif %}
         </td>
 
-        {# IPIDET ID #}
-        <td class="px-4 py-3">
-          <a href="/members/{{ o.mongo.member_id }}"
-             class="font-mono text-xs font-semibold text-blue-600 hover:underline">{{ o.mongo.member_id }}</a>
-        </td>
-
-        {# Socio #}
-        <td class="px-4 py-3">
-          <a href="/members/{{ o.mongo.member_id }}"
-             class="font-semibold text-blue-600 hover:underline">{{ o.mongo.nombre_completo or o.mongo.member_id }}</a>
-        </td>
-
-        {# Pago #}
-        <td class="px-4 py-3">
-          {% if o.mongo.get('solo_socio') %}
-          <span class="text-xs text-slate-400">Sin pago en este período</span>
-          {% else %}
-          <div class="text-xs text-slate-500">{{ o.mongo.periodo or "—" }}</div>
-          {% set est = o.mongo.estado %}
-          {% if est == "pagado" %}<span class="badge badge-green">Pagado</span>
-          {% elif est == "fraccionamiento" %}<span class="badge badge-amber">Fraccionamiento</span>
-          {% elif est == "parcial" %}<span class="badge badge-yellow">Parcial</span>
-          {% elif est == "debe" %}<span class="badge badge-red">Debe</span>
-          {% else %}<span class="badge badge-slate">{{ est }}</span>{% endif %}
-          {% if o.mongo.pagado_por %}<div class="text-xs text-slate-400 mt-0.5 font-mono">{{ o.mongo.pagado_por }}</div>{% endif %}
-          {% endif %}
-        </td>
-
-        {# Comprobante #}
-        <td class="px-4 py-3">
-          {% if o.mongo.num_comprobante or o.mongo.tipo_comprobante %}
-          <div class="text-slate-700">
-            {% if o.mongo.tipo_comprobante %}<span class="capitalize">{{ o.mongo.tipo_comprobante }}</span>{% endif %}
-            {% if o.mongo.num_comprobante %}<span class="font-mono text-xs text-slate-500 ml-1">{{ o.mongo.num_comprobante }}</span>{% endif %}
-          </div>
-          {% endif %}
-          {% if o.mongo.link_constancia %}
-          <a href="{{ o.mongo.link_constancia }}" target="_blank" class="text-xs text-blue-500 hover:underline">Ver constancia</a>
-          {% elif not o.mongo.num_comprobante and not o.mongo.get('solo_socio') %}
-          <span class="text-xs text-slate-300">Sin comprobante</span>
-          {% endif %}
-        </td>
-
-      </tr>
-
-      {# ══ FILA SIN MATCH (Alpine.js — actualización dinámica) ═══════════════ #}
-      {% else %}
-      <tr x-data="vinculador({{ o.order_id }}, '{{ o.billing_email }}')" class="hover:bg-slate-50">
-
-        <td class="px-4 py-3">
-          <a href="https://ipidet.org/wp-admin/post.php?post={{ o.order_id }}&action=edit"
-             target="_blank" class="text-blue-600 hover:underline font-mono font-semibold">#{{ o.order_id }}</a>
-        </td>
-        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ o.date }}</td>
-        <td class="px-4 py-3">
-          <div class="font-semibold text-slate-800">{{ o.billing_name or "—" }}</div>
-          <div class="text-xs text-slate-400">{{ o.billing_email }}</div>
-          {% if o.payment_method %}<div class="text-xs text-slate-400 mt-0.5">{{ o.payment_method }}</div>{% endif %}
-        </td>
-        <td class="px-4 py-3">
-          {% for prod in o.productos %}
-          <div class="text-slate-700">{{ prod.descripcion or prod.nombre }}
-            {% if prod.periodo %}<span class="text-xs text-slate-400">({{ prod.periodo }})</span>{% endif %}
-          </div>
-          {% else %}<span class="text-slate-400">—</span>{% endfor %}
-        </td>
-        <td class="px-4 py-3 text-right font-semibold text-slate-800">S/ {{ o.total }}</td>
-        <td class="px-4 py-3">
-          {% set wcs = o.wc_status %}
-          {% if wcs == "completed" %}<span class="badge badge-green">Completado</span>
-          {% elif wcs == "processing" %}<span class="badge badge-blue">Procesando</span>
-          {% elif wcs == "pending" %}<span class="badge badge-yellow">Pendiente</span>
-          {% elif wcs == "cancelled" %}<span class="badge badge-gray">Cancelado</span>
-          {% elif wcs == "refunded" %}<span class="badge badge-orange">Reembolsado</span>
-          {% else %}<span class="badge badge-slate">{{ wcs }}</span>{% endif %}
-        </td>
-
-        {# IPIDET ID — dinámico #}
+        {# ── IPIDET ID (dinámico) ── #}
         <td class="px-4 py-3">
           <template x-if="linked">
             <a :href="'/members/' + linkedData.member_id"
@@ -277,120 +236,142 @@ document.addEventListener('alpine:init', () => {
           </template>
         </td>
 
-        {# Socio — dinámico (incluye formulario de vinculación) #}
+        {# ── Socio (dinámico + formulario de vinculación/edición) ── #}
         <td class="px-4 py-3">
 
-          {# Estado: ya vinculado #}
-          <template x-if="linked">
+          {# Estado: vinculado y no editando → info + botón Editar #}
+          <template x-if="linked && !editing">
             <div>
               <a :href="'/members/' + linkedData.member_id"
                  x-text="linkedData.nombre"
-                 class="font-semibold text-blue-600 hover:underline text-sm"></a>
-              <div class="text-xs text-slate-400" x-text="linkedData.member_id"></div>
+                 class="font-semibold text-blue-600 hover:underline text-sm block"></a>
+              <div class="text-xs text-slate-400 mb-1" x-text="linkedData.member_id"></div>
+              <button @click="startEdit()"
+                      class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-blue-600 transition-colors">
+                <i class="fa-solid fa-pen-to-square text-[10px]"></i> Editar vínculo
+              </button>
             </div>
           </template>
 
-          {# Estado: sin match — formulario de vinculación #}
-          <template x-if="!linked">
+          {# Estado: sin match y no editando → aviso + botón Vincular #}
+          <template x-if="!linked && !editing">
             <div>
               <span class="text-xs text-amber-600 font-semibold">⚠ Sin match en padrón</span>
-              <button @click="open = !open"
+              <button @click="startEdit()"
                       class="block mt-1 text-xs text-blue-600 hover:underline font-medium">
-                <span x-text="open ? '▲ Cerrar' : '▼ Vincular socio'"></span>
+                <i class="fa-solid fa-link text-[10px]"></i> Vincular socio
               </button>
+            </div>
+          </template>
 
-              <div x-show="open" x-cloak class="mt-2 space-y-2 w-72">
-
-                {# Buscador de socio #}
-                <input type="text" x-model="q" @input.debounce.350ms="search()"
-                       placeholder="Buscar por apellido o nombre..."
-                       class="w-full border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400">
-
-                <template x-if="results.length">
-                  <div class="border border-slate-200 rounded bg-white shadow text-xs max-h-36 overflow-y-auto z-20 relative">
-                    <template x-for="m in results" :key="m.member_id">
-                      <div @click="selectMember(m)"
-                           class="px-2 py-1.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0"
-                           :class="selMember && selMember.member_id === m.member_id ? 'bg-blue-50' : ''">
-                        <span x-text="m.apellidos + ', ' + m.nombres" class="font-semibold"></span>
-                        <span x-text="' — ' + m.member_id" class="text-slate-400"></span>
-                      </div>
-                    </template>
-                  </div>
-                </template>
-
-                {# Lista de pagos del socio seleccionado #}
-                <template x-if="selMember">
-                  <div class="border border-slate-200 rounded bg-slate-50 p-2">
-                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-                      Selecciona el pago a vincular
-                    </p>
-                    <template x-if="loadingPayments">
-                      <p class="text-xs text-slate-400 py-1">Cargando pagos…</p>
-                    </template>
-                    <template x-if="!loadingPayments && memberPayments.length === 0">
-                      <p class="text-xs text-slate-400 py-1">Sin pagos registrados</p>
-                    </template>
-                    <template x-for="p in memberPayments" :key="p.periodo">
-                      <div @click="selPayment = p"
-                           class="cursor-pointer rounded px-2 py-1.5 mb-1 text-xs flex flex-wrap items-center gap-x-2 gap-y-0.5 border"
-                           :class="selPayment && selPayment.periodo === p.periodo
-                             ? 'bg-blue-50 border-blue-400'
-                             : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'">
-                        <span x-text="p.periodo" class="font-bold text-slate-700 w-9 shrink-0"></span>
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                              :class="badgeClass(p.estado)"
-                              x-text="p.estado"></span>
-                        <span x-show="p.num_comprobante"
-                              class="font-mono text-slate-500"
-                              x-text="(p.tipo_comprobante || '') + ' ' + (p.num_comprobante || '')"></span>
-                        <span x-show="p.fecha_pago" class="text-slate-400" x-text="p.fecha_pago"></span>
-                        <span x-show="p.empresa_pagadora" class="text-slate-400" x-text="p.empresa_pagadora"></span>
-                      </div>
-                    </template>
-                  </div>
-                </template>
-
-                <template x-if="err">
-                  <p class="text-xs text-red-500" x-text="err"></p>
-                </template>
-
-                <button @click="vincular()"
-                        :disabled="loading || !selMember || !selPayment"
-                        class="w-full px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
-                  <span x-text="loading ? 'Guardando…' : 'Guardar vínculo'"></span>
+          {# Estado: editando → formulario #}
+          <template x-if="editing">
+            <div class="w-72">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-semibold text-slate-600"
+                      x-text="linked ? 'Cambiar vínculo' : 'Vincular socio'"></span>
+                <button @click="cancelEdit()"
+                        class="text-xs text-slate-400 hover:text-red-500 flex items-center gap-0.5">
+                  <i class="fa-solid fa-xmark"></i> Cancelar
                 </button>
-
               </div>
+
+              {# Buscador #}
+              <input type="text" x-model="q" @input.debounce.350ms="search()"
+                     placeholder="Buscar por apellido o nombre…"
+                     class="w-full border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 mb-1.5">
+
+              <template x-if="results.length">
+                <div class="border border-slate-200 rounded bg-white shadow text-xs max-h-36 overflow-y-auto mb-1.5">
+                  <template x-for="m in results" :key="m.member_id">
+                    <div @click="selectMember(m)"
+                         class="px-2 py-1.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0"
+                         :class="selMember && selMember.member_id === m.member_id ? 'bg-blue-50' : ''">
+                      <span x-text="m.apellidos + ', ' + m.nombres" class="font-semibold"></span>
+                      <span x-text="' — ' + m.member_id" class="text-slate-400"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              {# Pagos del socio seleccionado (opcional) #}
+              <template x-if="selMember">
+                <div class="border border-slate-200 rounded bg-slate-50 p-2 mb-1.5">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                      Pago a vincular <span class="font-normal normal-case text-slate-400">(opcional)</span>
+                    </p>
+                    <template x-if="selPayment">
+                      <button @click="selPayment = null"
+                              class="text-[10px] text-slate-400 hover:text-red-500">✕ Quitar</button>
+                    </template>
+                  </div>
+                  <template x-if="loadingPayments">
+                    <p class="text-xs text-slate-400 py-1">Cargando pagos…</p>
+                  </template>
+                  <template x-if="!loadingPayments && memberPayments.length === 0">
+                    <p class="text-xs text-slate-400 py-1">Sin pagos registrados</p>
+                  </template>
+                  <template x-for="p in memberPayments" :key="p.periodo">
+                    <div @click="selPayment = (selPayment && selPayment.periodo === p.periodo) ? null : p"
+                         class="cursor-pointer rounded px-2 py-1.5 mb-1 text-xs flex flex-wrap items-center gap-x-2 gap-y-0.5 border transition-colors"
+                         :class="selPayment && selPayment.periodo === p.periodo
+                           ? 'bg-blue-50 border-blue-400'
+                           : 'bg-white border-slate-200 hover:border-slate-300'">
+                      <span x-text="p.periodo" class="font-bold text-slate-700 w-9 shrink-0"></span>
+                      <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                            :class="badge(p.estado)" x-text="p.estado"></span>
+                      <span x-show="p.num_comprobante" class="font-mono text-slate-500"
+                            x-text="(p.tipo_comprobante || '') + ' ' + (p.num_comprobante || '')"></span>
+                      <span x-show="p.fecha_pago" class="text-slate-400" x-text="p.fecha_pago"></span>
+                      <span x-show="p.empresa_pagadora" class="text-slate-400" x-text="p.empresa_pagadora"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+
+              <template x-if="err">
+                <p class="text-xs text-red-500 mb-1" x-text="err"></p>
+              </template>
+
+              <button @click="vincular()"
+                      :disabled="loading || !selMember"
+                      class="w-full px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                <span x-text="loading ? 'Guardando…' : (selPayment ? (linked ? 'Actualizar vínculo' : 'Vincular con pago') : (linked ? 'Vincular solo al socio' : 'Vincular solo al socio'))"></span>
+              </button>
             </div>
           </template>
         </td>
 
-        {# Pago — dinámico #}
+        {# ── Pago en cobranzas (dinámico) ── #}
         <td class="px-4 py-3">
-          <template x-if="linked && linkedData.payment">
+          <template x-if="linked && linkedData.payment && !linkedData.payment.solo_socio">
             <div>
               <div class="text-xs text-slate-500 mb-0.5" x-text="linkedData.payment.periodo"></div>
               <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
-                    :class="badgeClass(linkedData.payment.estado)"
+                    :class="badge(linkedData.payment.estado)"
                     x-text="linkedData.payment.estado"></span>
               <template x-if="linkedData.payment.pagado_por">
                 <div class="text-xs text-slate-400 font-mono mt-0.5" x-text="linkedData.payment.pagado_por"></div>
               </template>
             </div>
           </template>
+          <template x-if="linked && (!linkedData.payment || linkedData.payment.solo_socio)">
+            <span class="text-xs text-slate-400">Solo socio identificado</span>
+          </template>
           <template x-if="!linked">
             <span class="text-slate-300">—</span>
           </template>
         </td>
 
-        {# Comprobante — dinámico #}
+        {# ── Comprobante (dinámico) ── #}
         <td class="px-4 py-3">
           <template x-if="hasComp()">
             <div>
-              <div class="text-slate-700">
+              <div class="text-slate-700 text-sm">
                 <span class="capitalize" x-text="linkedData.payment.tipo_comprobante || ''"></span>
-                <span class="font-mono text-xs text-slate-500 ml-1" x-text="linkedData.payment.num_comprobante || ''"></span>
+                <span class="font-mono text-xs text-slate-500 ml-1"
+                      x-text="linkedData.payment.num_comprobante || ''"></span>
               </div>
               <template x-if="linkedData.payment.link_constancia">
                 <a :href="linkedData.payment.link_constancia" target="_blank"
@@ -407,9 +388,8 @@ document.addEventListener('alpine:init', () => {
         </td>
 
       </tr>
-      {% endif %}
-
       {% endfor %}
+
     </tbody>
   </table>
 </div>

@@ -1339,7 +1339,8 @@ def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str
     """
     Vincula una orden WC a un socio de MongoDB:
     1. Agrega el email de WC al socio (si no lo tiene ya).
-    2. Marca el pago del período con pagado_por = 'WC#<order_id>'.
+    2. Si se indica periodo, marca el pago de ese período con pagado_por = 'WC#<order_id>'
+       (y lo crea si no existe). Sin periodo solo vincula el email.
     Devuelve {"ok": True} o {"ok": False, "error": "..."}.
     """
     member = members_col.find_one({"member_id": member_id}, {"emails": 1})
@@ -1355,7 +1356,10 @@ def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str
             {"$addToSet": {"emails": {"email": wc_email_l, "estado": "habilitado", "principal": False}}},
         )
 
-    # 2. Actualizar pago del período con pagado_por
+    # 2. Actualizar pago del período (opcional)
+    if not periodo:
+        return {"ok": True, "action": "linked_email_only"}
+
     tag = f"WC#{order_id}"
     pay = payments_col.find_one({"member_id": member_id, "periodo": periodo})
     if pay:
