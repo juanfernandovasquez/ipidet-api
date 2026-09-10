@@ -105,20 +105,23 @@ document.addEventListener('alpine:init', () => {
     },
 
     payMonto(p) {
-      // fraccionamiento: solo cuotas ya pagadas + progreso
+      // fraccionamiento (incluso si ya pasó a 'pagado'): cuotas pagadas
       if (p.cuotas && p.cuotas.length) {
         const pagadas = p.cuotas.filter(c => c.estado === 'pagado');
         const monto   = pagadas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
+        const total   = p.cuotas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
         const prog    = pagadas.length + '/' + p.cuotas.length + ' cuotas';
-        return monto ? 'S/ ' + monto.toFixed(0) + ' · ' + prog : prog;
+        return (monto ? 'S/ ' + monto.toFixed(0) : '') +
+               (total && total !== monto ? ' / S/ ' + total.toFixed(0) : '') +
+               ' · ' + prog;
       }
-      // parcial: suma de abonos realizados vs deuda total
+      // parcial (incluso si ya pasó a 'pagado'): abonos realizados
       if (p.pagos_parciales && p.pagos_parciales.length) {
         const monto = p.pagos_parciales.reduce((s, c) => s + (Number(c.monto) || 0), 0);
         const vs    = p.monto_total ? ' / S/ ' + Number(p.monto_total).toFixed(0) : '';
         return monto ? 'S/ ' + monto.toFixed(0) + vs : '';
       }
-      if (p.monto_total) return 'Deuda: S/ ' + Number(p.monto_total).toFixed(0);
+      if (p.monto_total) return 'S/ ' + Number(p.monto_total).toFixed(0);
       return '';
     },
 
@@ -419,13 +422,17 @@ document.addEventListener('alpine:init', () => {
                         <span x-show="p.empresa_pagadora" x-text="p.empresa_pagadora"
                               class="text-slate-400"></span>
                       </div>
-                      {# Fila 2: comprobante · fecha de pago #}
+                      {# Fila 2: comprobante · fechas con etiqueta #}
                       <div class="flex items-center gap-3 flex-wrap mt-0.5 text-slate-400">
                         <span x-show="p.num_comprobante" class="font-mono"
                               x-text="(p.tipo_comprobante ? p.tipo_comprobante + ' ' : '') + (p.num_comprobante || '')"></span>
-                        <span x-show="p.fecha_pago">
-                          <span class="text-slate-300">Pago:</span>
+                        <span x-show="p.fecha_pago" class="flex items-center gap-1">
+                          <span class="text-slate-300 text-[10px] uppercase tracking-wide">F. pago:</span>
                           <span x-text="p.fecha_pago"></span>
+                        </span>
+                        <span x-show="p.fecha_emision_comprobante" class="flex items-center gap-1">
+                          <span class="text-slate-300 text-[10px] uppercase tracking-wide">F. comprobante:</span>
+                          <span x-text="p.fecha_emision_comprobante"></span>
                         </span>
                       </div>
                     </div>
