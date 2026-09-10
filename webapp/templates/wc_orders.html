@@ -78,6 +78,15 @@ document.addEventListener('alpine:init', () => {
       })[estado] || 'bg-slate-100 text-slate-500';
     },
 
+    payMonto(p) {
+      if (p.monto_total) return 'S/ ' + Number(p.monto_total).toFixed(0);
+      if (p.cuotas && p.cuotas.length) {
+        const t = p.cuotas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
+        return t ? 'S/ ' + t.toFixed(0) : '';
+      }
+      return '';
+    },
+
     hasComp() {
       return this.linked && this.linkedData && this.linkedData.payment &&
              (this.linkedData.payment.num_comprobante || this.linkedData.payment.link_constancia);
@@ -264,9 +273,9 @@ document.addEventListener('alpine:init', () => {
             </div>
           </template>
 
-          {# Estado: editando → formulario #}
+          {# Estado: editando → solo el buscador de socio #}
           <template x-if="editing">
-            <div class="w-72">
+            <div class="w-56">
               <div class="flex items-center justify-between mb-2">
                 <span class="text-xs font-semibold text-slate-600"
                       x-text="linked ? 'Cambiar vínculo' : 'Vincular socio'"></span>
@@ -275,14 +284,11 @@ document.addEventListener('alpine:init', () => {
                   <i class="fa-solid fa-xmark"></i> Cancelar
                 </button>
               </div>
-
-              {# Buscador #}
               <input type="text" x-model="q" @input.debounce.350ms="search()"
                      placeholder="Buscar por apellido o nombre…"
-                     class="w-full border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 mb-1.5">
-
+                     class="w-full border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 mb-1">
               <template x-if="results.length">
-                <div class="border border-slate-200 rounded bg-white shadow text-xs max-h-36 overflow-y-auto mb-1.5">
+                <div class="border border-slate-200 rounded bg-white shadow text-xs max-h-40 overflow-y-auto">
                   <template x-for="m in results" :key="m.member_id">
                     <div @click="selectMember(m)"
                          class="px-2 py-1.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0"
@@ -293,13 +299,53 @@ document.addEventListener('alpine:init', () => {
                   </template>
                 </div>
               </template>
+              <template x-if="selMember && !results.length">
+                <div class="mt-1 text-xs text-green-700 font-semibold">
+                  <i class="fa-solid fa-circle-check text-green-500"></i>
+                  <span x-text="selMember.apellidos + ', ' + selMember.nombres"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </td>
 
-              {# Pagos del socio seleccionado (opcional) #}
+        {# ── Pago en cobranzas (dinámico) ── #}
+        <td class="px-4 py-3">
+
+          {# Modo normal: mostrar pago vinculado #}
+          <template x-if="!editing">
+            <div>
+              <template x-if="linked && linkedData.payment && !linkedData.payment.solo_socio">
+                <div>
+                  <div class="text-xs text-slate-500 mb-0.5" x-text="linkedData.payment.periodo"></div>
+                  <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                        :class="badge(linkedData.payment.estado)"
+                        x-text="linkedData.payment.estado"></span>
+                  <template x-if="linkedData.payment.pagado_por">
+                    <div class="text-xs text-slate-400 font-mono mt-0.5" x-text="linkedData.payment.pagado_por"></div>
+                  </template>
+                </div>
+              </template>
+              <template x-if="linked && (!linkedData.payment || linkedData.payment.solo_socio)">
+                <span class="text-xs text-slate-400">Solo socio identificado</span>
+              </template>
+              <template x-if="!linked">
+                <span class="text-slate-300">—</span>
+              </template>
+            </div>
+          </template>
+
+          {# Modo edición: lista de pagos del socio seleccionado + botón guardar #}
+          <template x-if="editing">
+            <div class="w-64">
+              <template x-if="!selMember">
+                <p class="text-xs text-slate-400 italic">Selecciona un socio primero</p>
+              </template>
               <template x-if="selMember">
-                <div class="border border-slate-200 rounded bg-slate-50 p-2 mb-1.5">
-                  <div class="flex items-center justify-between mb-1.5">
+                <div>
+                  <div class="flex items-center justify-between mb-1">
                     <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                      Pago a vincular <span class="font-normal normal-case text-slate-400">(opcional)</span>
+                      Pago <span class="font-normal normal-case text-slate-400">(opcional)</span>
                     </p>
                     <template x-if="selPayment">
                       <button @click="selPayment = null"
@@ -314,53 +360,36 @@ document.addEventListener('alpine:init', () => {
                   </template>
                   <template x-for="p in memberPayments" :key="p.periodo">
                     <div @click="selPayment = (selPayment && selPayment.periodo === p.periodo) ? null : p"
-                         class="cursor-pointer rounded px-2 py-1.5 mb-1 text-xs flex flex-wrap items-center gap-x-2 gap-y-0.5 border transition-colors"
+                         class="cursor-pointer rounded px-2 py-1.5 mb-1 text-xs border transition-colors"
                          :class="selPayment && selPayment.periodo === p.periodo
                            ? 'bg-blue-50 border-blue-400'
                            : 'bg-white border-slate-200 hover:border-slate-300'">
-                      <span x-text="p.periodo" class="font-bold text-slate-700 w-9 shrink-0"></span>
-                      <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                            :class="badge(p.estado)" x-text="p.estado"></span>
-                      <span x-show="p.num_comprobante" class="font-mono text-slate-500"
-                            x-text="(p.tipo_comprobante || '') + ' ' + (p.num_comprobante || '')"></span>
-                      <span x-show="p.fecha_pago" class="text-slate-400" x-text="p.fecha_pago"></span>
-                      <span x-show="p.empresa_pagadora" class="text-slate-400" x-text="p.empresa_pagadora"></span>
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span x-text="p.periodo" class="font-bold text-slate-700 w-9 shrink-0"></span>
+                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                              :class="badge(p.estado)" x-text="p.estado"></span>
+                        <span x-show="payMonto(p)" x-text="payMonto(p)"
+                              class="font-semibold text-slate-700"></span>
+                      </div>
+                      <div class="flex items-center gap-2 flex-wrap mt-0.5 text-slate-400">
+                        <span x-show="p.num_comprobante" class="font-mono"
+                              x-text="(p.tipo_comprobante || '') + ' ' + (p.num_comprobante || '')"></span>
+                        <span x-show="p.fecha_pago" x-text="p.fecha_pago"></span>
+                        <span x-show="p.empresa_pagadora" x-text="p.empresa_pagadora"></span>
+                      </div>
                     </div>
                   </template>
                 </div>
               </template>
-
               <template x-if="err">
-                <p class="text-xs text-red-500 mb-1" x-text="err"></p>
+                <p class="text-xs text-red-500 mt-1" x-text="err"></p>
               </template>
-
               <button @click="vincular()"
                       :disabled="loading || !selMember"
-                      class="w-full px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
-                <span x-text="loading ? 'Guardando…' : (selPayment ? (linked ? 'Actualizar vínculo' : 'Vincular con pago') : (linked ? 'Vincular solo al socio' : 'Vincular solo al socio'))"></span>
+                      class="mt-2 w-full px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                <span x-text="loading ? 'Guardando…' : (selPayment ? 'Vincular con pago' : 'Vincular solo al socio')"></span>
               </button>
             </div>
-          </template>
-        </td>
-
-        {# ── Pago en cobranzas (dinámico) ── #}
-        <td class="px-4 py-3">
-          <template x-if="linked && linkedData.payment && !linkedData.payment.solo_socio">
-            <div>
-              <div class="text-xs text-slate-500 mb-0.5" x-text="linkedData.payment.periodo"></div>
-              <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
-                    :class="badge(linkedData.payment.estado)"
-                    x-text="linkedData.payment.estado"></span>
-              <template x-if="linkedData.payment.pagado_por">
-                <div class="text-xs text-slate-400 font-mono mt-0.5" x-text="linkedData.payment.pagado_por"></div>
-              </template>
-            </div>
-          </template>
-          <template x-if="linked && (!linkedData.payment || linkedData.payment.solo_socio)">
-            <span class="text-xs text-slate-400">Solo socio identificado</span>
-          </template>
-          <template x-if="!linked">
-            <span class="text-slate-300">—</span>
           </template>
         </td>
 
