@@ -125,6 +125,10 @@ document.addEventListener('alpine:init', () => {
       return '';
     },
 
+    paidCuotas(p) {
+      return (p.cuotas || []).filter(c => c.estado === 'pagado');
+    },
+
     hasComp() {
       return this.linked && this.linkedData && this.linkedData.payment &&
              (this.linkedData.payment.num_comprobante || this.linkedData.payment.link_constancia);
@@ -422,19 +426,64 @@ document.addEventListener('alpine:init', () => {
                         <span x-show="p.empresa_pagadora" x-text="p.empresa_pagadora"
                               class="text-slate-400"></span>
                       </div>
-                      {# Fila 2: comprobante · fechas con etiqueta #}
-                      <div class="flex items-center gap-3 flex-wrap mt-0.5 text-slate-400">
-                        <span x-show="p.num_comprobante" class="font-mono"
-                              x-text="(p.tipo_comprobante ? p.tipo_comprobante + ' ' : '') + (p.num_comprobante || '')"></span>
-                        <span x-show="p.fecha_pago" class="flex items-center gap-1">
-                          <span class="text-slate-300 text-[10px] uppercase tracking-wide">F. pago:</span>
-                          <span x-text="p.fecha_pago"></span>
-                        </span>
-                        <span x-show="p.fecha_emision_comprobante" class="flex items-center gap-1">
-                          <span class="text-slate-300 text-[10px] uppercase tracking-wide">F. comprobante:</span>
-                          <span x-text="p.fecha_emision_comprobante"></span>
-                        </span>
-                      </div>
+                      {# Fila 2: pago simple → comprobante + fechas del pago raíz #}
+                      <template x-if="!p.cuotas?.length && !p.pagos_parciales?.length">
+                        <div class="flex items-center gap-3 flex-wrap mt-0.5 text-slate-400">
+                          <span x-show="p.tipo_comprobante || p.num_comprobante" class="font-mono"
+                                x-text="(p.tipo_comprobante || '') + (p.num_comprobante ? ' ' + p.num_comprobante : '')"></span>
+                          <span x-show="p.fecha_pago" class="flex items-center gap-1">
+                            <span class="text-slate-300 text-[10px] uppercase">F. pago:</span>
+                            <span x-text="p.fecha_pago"></span>
+                          </span>
+                          <span x-show="p.fecha_emision_comprobante" class="flex items-center gap-1">
+                            <span class="text-slate-300 text-[10px] uppercase">F. comp.:</span>
+                            <span x-text="p.fecha_emision_comprobante"></span>
+                          </span>
+                        </div>
+                      </template>
+
+                      {# Filas de cuotas pagadas (fraccionamiento) #}
+                      <template x-if="p.cuotas?.length">
+                        <div class="mt-1 space-y-0.5">
+                          <template x-for="c in paidCuotas(p)" :key="c.numero">
+                            <div class="flex items-center gap-2 flex-wrap text-[10px] text-slate-400 pl-2 border-l-2 border-slate-200">
+                              <span class="text-slate-500 font-semibold shrink-0" x-text="'C' + c.numero"></span>
+                              <span x-show="c.tipo_comprobante || c.num_comprobante" class="font-mono"
+                                    x-text="(c.tipo_comprobante || '') + (c.num_comprobante ? ' ' + c.num_comprobante : '')"></span>
+                              <span x-show="c.fecha_pago" class="flex items-center gap-1">
+                                <span class="text-slate-300 uppercase">F. pago:</span>
+                                <span x-text="c.fecha_pago"></span>
+                              </span>
+                              <span x-show="c.fecha_emision_comprobante" class="flex items-center gap-1">
+                                <span class="text-slate-300 uppercase">F. comp.:</span>
+                                <span x-text="c.fecha_emision_comprobante"></span>
+                              </span>
+                            </div>
+                          </template>
+                        </div>
+                      </template>
+
+                      {# Filas de abonos (parcial) #}
+                      <template x-if="p.pagos_parciales?.length">
+                        <div class="mt-1 space-y-0.5">
+                          <template x-for="a in p.pagos_parciales" :key="a.numero">
+                            <div class="flex items-center gap-2 flex-wrap text-[10px] text-slate-400 pl-2 border-l-2 border-slate-200">
+                              <span class="text-slate-500 font-semibold shrink-0" x-text="'A' + a.numero"></span>
+                              <span class="font-semibold text-slate-600" x-text="'S/ ' + Number(a.monto || 0).toFixed(0)"></span>
+                              <span x-show="a.tipo_comprobante || a.num_comprobante" class="font-mono"
+                                    x-text="(a.tipo_comprobante || '') + (a.num_comprobante ? ' ' + a.num_comprobante : '')"></span>
+                              <span x-show="a.fecha_pago" class="flex items-center gap-1">
+                                <span class="text-slate-300 uppercase">F. pago:</span>
+                                <span x-text="a.fecha_pago"></span>
+                              </span>
+                              <span x-show="a.fecha_emision_comprobante" class="flex items-center gap-1">
+                                <span class="text-slate-300 uppercase">F. comp.:</span>
+                                <span x-text="a.fecha_emision_comprobante"></span>
+                              </span>
+                            </div>
+                          </template>
+                        </div>
+                      </template>
                     </div>
                   </template>
                 </div>
