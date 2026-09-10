@@ -105,18 +105,20 @@ document.addEventListener('alpine:init', () => {
     },
 
     payMonto(p) {
-      // fraccionamiento: suma de cuotas
+      // fraccionamiento: solo cuotas ya pagadas + progreso
       if (p.cuotas && p.cuotas.length) {
-        const t = p.cuotas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
-        if (t) return 'S/ ' + t.toFixed(0);
+        const pagadas = p.cuotas.filter(c => c.estado === 'pagado');
+        const monto   = pagadas.reduce((s, c) => s + (Number(c.monto) || 0), 0);
+        const prog    = pagadas.length + '/' + p.cuotas.length + ' cuotas';
+        return monto ? 'S/ ' + monto.toFixed(0) + ' · ' + prog : prog;
       }
-      // parcial: monto total declarado
-      if (p.monto_total) return 'S/ ' + Number(p.monto_total).toFixed(0);
-      // parcial sin monto_total: suma de lo pagado
+      // parcial: suma de abonos realizados vs deuda total
       if (p.pagos_parciales && p.pagos_parciales.length) {
-        const t = p.pagos_parciales.reduce((s, c) => s + (Number(c.monto) || 0), 0);
-        if (t) return 'S/ ' + t.toFixed(0);
+        const monto = p.pagos_parciales.reduce((s, c) => s + (Number(c.monto) || 0), 0);
+        const vs    = p.monto_total ? ' / S/ ' + Number(p.monto_total).toFixed(0) : '';
+        return monto ? 'S/ ' + monto.toFixed(0) + vs : '';
       }
+      if (p.monto_total) return 'Deuda: S/ ' + Number(p.monto_total).toFixed(0);
       return '';
     },
 
