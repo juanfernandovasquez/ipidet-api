@@ -1486,6 +1486,18 @@ async def wc_orders_page(
     })
 
 
+@app.post("/wc-orders/{order_id}/vincular")
+async def wc_vincular(order_id: int, request: Request):
+    body = await request.json()
+    member_id = (body.get("member_id") or "").strip()
+    wc_email  = (body.get("wc_email")  or "").strip()
+    periodo   = (body.get("periodo")   or "").strip()
+    if not member_id or not periodo:
+        return JSONResponse({"ok": False, "error": "member_id y periodo son requeridos"}, status_code=400)
+    result = pdb.vincular_wc_order(order_id, member_id, wc_email, periodo)
+    return JSONResponse(result)
+
+
 @app.post("/api/portal/update-alternative-email")
 async def portal_update_alt_email(request: Request):
     from config.settings import PORTAL_SECRET

@@ -130,7 +130,84 @@
              class="text-blue-600 hover:underline font-semibold">{{ o.mongo.nombre_completo or o.mongo.member_id }}</a>
           <div class="text-xs text-slate-400">{{ o.mongo.member_id }}</div>
           {% else %}
-          <span class="text-xs text-amber-600 font-semibold">⚠ Sin match en padrón</span>
+          <div x-data="{
+            open: false,
+            q: '',
+            results: [],
+            sel: null,
+            periodo: '{{ o.productos[0].periodo if o.productos and o.productos[0].periodo else '' }}',
+            loading: false,
+            saved: false,
+            err: '',
+            search() {
+              if (this.q.length < 2) { this.results = []; return; }
+              fetch('/api/members?search=' + encodeURIComponent(this.q) + '&page=1')
+                .then(r => r.json())
+                .then(d => { this.results = d.members ? d.members.slice(0,8) : []; });
+            },
+            vincular() {
+              if (!this.sel || !this.periodo) { this.err = 'Selecciona socio y período'; return; }
+              this.loading = true; this.err = '';
+              fetch('/wc-orders/{{ o.order_id }}/vincular', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ member_id: this.sel.member_id, wc_email: '{{ o.billing_email }}', periodo: this.periodo })
+              })
+              .then(r => r.json())
+              .then(d => {
+                this.loading = false;
+                if (d.ok) { this.saved = true; this.open = false; }
+                else { this.err = d.error || 'Error'; }
+              })
+              .catch(() => { this.loading = false; this.err = 'Error de red'; });
+            }
+          }">
+            <template x-if="saved">
+              <span class="text-xs text-green-600 font-semibold">✓ Vinculado — recarga para ver</span>
+            </template>
+            <template x-if="!saved">
+              <div>
+                <span class="text-xs text-amber-600 font-semibold">⚠ Sin match en padrón</span>
+                <button @click="open = !open"
+                        class="block mt-1 text-xs text-blue-600 hover:underline">
+                  Vincular socio
+                </button>
+                <div x-show="open" x-cloak class="mt-2 space-y-1.5 min-w-[220px]">
+                  <input type="text" x-model="q" @input.debounce.350ms="search()"
+                         placeholder="Buscar apellido o nombre..."
+                         class="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400">
+                  <template x-if="results.length">
+                    <div class="border border-slate-200 rounded bg-white shadow text-xs max-h-40 overflow-y-auto">
+                      <template x-for="m in results" :key="m.member_id">
+                        <div @click="sel = m; q = m.apellidos + ', ' + m.nombres; results = []"
+                             class="px-2 py-1.5 hover:bg-blue-50 cursor-pointer"
+                             :class="sel && sel.member_id === m.member_id ? 'bg-blue-50' : ''">
+                          <span x-text="m.apellidos + ', ' + m.nombres" class="font-semibold"></span>
+                          <span x-text="' — ' + m.member_id" class="text-slate-400"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <select x-model="periodo"
+                          class="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400">
+                    <option value="">Período…</option>
+                    <option value="2027">2027</option>
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                  </select>
+                  <template x-if="err">
+                    <p class="text-xs text-red-500" x-text="err"></p>
+                  </template>
+                  <button @click="vincular()"
+                          :disabled="loading"
+                          class="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-50">
+                    <span x-text="loading ? 'Guardando...' : 'Guardar vínculo'"></span>
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
           {% endif %}
         </td>
 

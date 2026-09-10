@@ -1286,6 +1286,51 @@ def get_wc_payment(order_id: int) -> dict | None:
     return result
 
 
+def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str) -> dict:
+    """
+    Vincula una orden WC a un socio de MongoDB:
+    1. Agrega el email de WC al socio (si no lo tiene ya).
+    2. Marca el pago del período con pagado_por = 'WC#<order_id>'.
+    Devuelve {"ok": True} o {"ok": False, "error": "..."}.
+    """
+    member = members_col.find_one({"member_id": member_id}, {"emails": 1})
+    if not member:
+        return {"ok": False, "error": f"Socio {member_id} no encontrado"}
+
+    # 1. Agregar email WC si no existe
+    wc_email_l = wc_email.strip().lower()
+    existing = [e.get("email", "").lower() for e in member.get("emails", [])]
+    if wc_email_l and wc_email_l not in existing:
+        members_col.update_one(
+            {"member_id": member_id},
+            {"$addToSet": {"emails": {"email": wc_email_l, "estado": "habilitado", "principal": False}}},
+        )
+
+    # 2. Actualizar pago del período con pagado_por
+    tag = f"WC#{order_id}"
+    pay = payments_col.find_one({"member_id": member_id, "periodo": periodo})
+    if pay:
+        payments_col.update_one({"_id": pay["_id"]}, {"$set": {"pagado_por": tag}})
+        return {"ok": True, "payment_id": str(pay["_id"]), "action": "updated"}
+    else:
+        # No existe registro de pago para ese período — lo creamos en estado "pagado"
+        new_pay = {
+            "member_id": member_id,
+            "periodo": periodo,
+            "estado": "pagado",
+            "pagado_por": tag,
+            "empresa_pagadora": None,
+            "fecha_pago": None,
+            "medio_pago": "WooCommerce",
+            "num_comprobante": None,
+            "tipo_comprobante": None,
+            "link_constancia": None,
+            "raw_original": "",
+        }
+        result = payments_col.insert_one(new_pay)
+        return {"ok": True, "payment_id": str(result.inserted_id), "action": "created"}
+
+
 def get_wc_payment_by_email(email: str, periodo: str) -> dict | None:
     """Fallback: busca pago por email del socio y período (para órdenes sin 'pagado_por' en WC webhook)."""
     member = members_col.find_one(
