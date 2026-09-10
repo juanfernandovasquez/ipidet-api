@@ -1296,12 +1296,22 @@ def get_member_ubicaciones() -> list[str]:
 def get_wc_payment(order_id: int) -> dict | None:
     """Busca el pago en MongoDB que corresponde a una orden WC (pagado_por = 'WC#<id>')."""
     tag = f"WC#{order_id}"
+    cuota_numero = None
     pay = payments_col.find_one({"pagado_por": tag})
+    if not pay:
+        pay = payments_col.find_one({"cuotas.pagado_por": tag})
+        if pay:
+            for c in pay.get("cuotas", []):
+                if c.get("pagado_por") == tag:
+                    cuota_numero = c.get("numero")
+                    break
     if not pay:
         return None
     member = members_col.find_one({"member_id": pay["member_id"]}, {"nombres": 1, "apellidos": 1})
     result = _clean(pay)
     result["nombre_completo"] = f"{member.get('apellidos','').strip()}, {member.get('nombres','').strip()}".strip(", ") if member else ""
+    if cuota_numero is not None:
+        result["cuota_numero"] = cuota_numero
     return result
 
 
@@ -1354,7 +1364,7 @@ def vincular_wp_usuario(wc_email: str, member_id: str, wp_user_id: int = None) -
     return {"ok": True, "action": action, "member_id": member_id}
 
 
-def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str) -> dict:
+def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str, cuota_numero: int = None) -> dict:
     """
     Vincula una orden WC a un socio de MongoDB:
     1. Agrega el email de WC al socio (si no lo tiene ya).
@@ -1382,6 +1392,12 @@ def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str
     tag = f"WC#{order_id}"
     pay = payments_col.find_one({"member_id": member_id, "periodo": periodo})
     if pay:
+        if cuota_numero is not None:
+            payments_col.update_one(
+                {"_id": pay["_id"], "cuotas.numero": cuota_numero},
+                {"$set": {"cuotas.$.pagado_por": tag}},
+            )
+            return {"ok": True, "payment_id": str(pay["_id"]), "action": "cuota_updated", "cuota_numero": cuota_numero}
         payments_col.update_one({"_id": pay["_id"]}, {"$set": {"pagado_por": tag}})
         return {"ok": True, "payment_id": str(pay["_id"]), "action": "updated"}
     else:

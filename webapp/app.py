@@ -1577,12 +1577,15 @@ async def sync_vincular_usuario(request: Request):
 @app.post("/wc-orders/{order_id}/vincular")
 async def wc_vincular(order_id: int, request: Request):
     body = await request.json()
-    member_id = (body.get("member_id") or "").strip()
-    wc_email  = (body.get("wc_email")  or "").strip()
-    periodo   = (body.get("periodo")   or "").strip()
+    member_id    = (body.get("member_id") or "").strip()
+    wc_email     = (body.get("wc_email")  or "").strip()
+    periodo      = (body.get("periodo")   or "").strip()
+    cuota_numero = body.get("cuota_numero")
+    if cuota_numero is not None:
+        cuota_numero = int(cuota_numero)
     if not member_id:
         return JSONResponse({"ok": False, "error": "member_id es requerido"}, status_code=400)
-    result = pdb.vincular_wc_order(order_id, member_id, wc_email, periodo)
+    result = pdb.vincular_wc_order(order_id, member_id, wc_email, periodo, cuota_numero)
     return JSONResponse(result)
 
 

@@ -7,13 +7,14 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('vinculador', (orderId, billingEmail) => ({
     linked:     false,
-    linkedData: null,   // {member_id, nombre, payment}
+    linkedData: null,   // {member_id, nombre, payment, cuota_numero}
     editing:    false,
 
     q: '', results: [],
     selMember: null,
     memberPayments: [], loadingPayments: false,
     selPayment: null,
+    selCuota:  null,
     loading: false, err: '',
 
     init() {
@@ -23,11 +24,17 @@ document.addEventListener('alpine:init', () => {
         const d = JSON.parse(raw);
         this.linked = true;
         this.linkedData = {
-          member_id: d.member_id,
-          nombre:    d.nombre_completo || '',
-          payment:   d.solo_socio ? null : d,
+          member_id:    d.member_id,
+          nombre:       d.nombre_completo || '',
+          payment:      d.solo_socio ? null : d,
+          cuota_numero: d.cuota_numero || null,
         };
       } catch(e) {}
+    },
+
+    linkedCuota() {
+      if (!this.linkedData || !this.linkedData.payment || !this.linkedData.cuota_numero) return null;
+      return (this.linkedData.payment.cuotas || []).find(c => c.numero === this.linkedData.cuota_numero) || null;
     },
 
     startEdit() {
@@ -37,6 +44,7 @@ document.addEventListener('alpine:init', () => {
       this.selMember  = null;
       this.memberPayments = [];
       this.selPayment = null;
+      this.selCuota   = null;
       this.err        = '';
     },
 
@@ -44,6 +52,7 @@ document.addEventListener('alpine:init', () => {
       this.editing    = true;
       this.err        = '';
       this.selPayment = null;
+      this.selCuota   = null;
       this.results    = [];
       // Pre-poblar el socio ya vinculado para no tener que buscarlo de nuevo
       const parts = (this.linkedData.nombre || '').split(',');
@@ -62,6 +71,17 @@ document.addEventListener('alpine:init', () => {
           const pays = (d.payments || []).slice();
           pays.sort((a, b) => b.periodo.localeCompare(a.periodo));
           this.memberPayments = pays;
+          // Pre-seleccionar pago y cuota del vínculo actual
+          if (this.linkedData && this.linkedData.payment) {
+            const prev = pays.find(p => p.periodo === this.linkedData.payment.periodo);
+            if (prev) {
+              this.selPayment = prev;
+              if (this.linkedData.cuota_numero) {
+                const prevC = (prev.cuotas || []).find(c => c.numero === this.linkedData.cuota_numero);
+                if (prevC) this.selCuota = prevC;
+              }
+            }
+          }
         })
         .catch(() => { this.loadingPayments = false; this.err = 'Error al cargar pagos'; });
     },
@@ -80,6 +100,7 @@ document.addEventListener('alpine:init', () => {
       this.q              = m.apellidos + ', ' + m.nombres;
       this.results        = [];
       this.selPayment     = null;
+      this.selCuota       = null;
       this.memberPayments = [];
       this.loadingPayments = true;
       fetch('/api/members/' + m.member_id)
@@ -131,6 +152,8 @@ document.addEventListener('alpine:init', () => {
 
     hasComp() {
       if (!this.linked || !this.linkedData || !this.linkedData.payment) return false;
+      const lc = this.linkedCuota();
+      if (lc) return !!(lc.num_comprobante || lc.link_constancia);
       const p = this.linkedData.payment;
       if (p.num_comprobante || p.link_constancia) return true;
       if (p.cuotas && p.cuotas.some(c => c.num_comprobante || c.link_constancia)) return true;
@@ -145,9 +168,10 @@ document.addEventListener('alpine:init', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          member_id: this.selMember.member_id,
-          wc_email:  billingEmail,
-          periodo:   this.selPayment ? this.selPayment.periodo : null,
+          member_id:    this.selMember.member_id,
+          wc_email:     billingEmail,
+          periodo:      this.selPayment ? this.selPayment.periodo : null,
+          cuota_numero: this.selCuota ? this.selCuota.numero : null,
         })
       })
       .then(r => r.json())
@@ -157,9 +181,10 @@ document.addEventListener('alpine:init', () => {
           this.linked     = true;
           this.editing    = false;
           this.linkedData = {
-            member_id: this.selMember.member_id,
-            nombre:    this.selMember.apellidos + ', ' + this.selMember.nombres,
-            payment:   this.selPayment || null,
+            member_id:    this.selMember.member_id,
+            nombre:       this.selMember.apellidos + ', ' + this.selMember.nombres,
+            payment:      this.selPayment || null,
+            cuota_numero: this.selCuota ? this.selCuota.numero : null,
           };
         } else { this.err = d.error || 'Error al vincular'; }
       })
@@ -361,7 +386,29 @@ document.addEventListener('alpine:init', () => {
           {# Modo normal: mostrar pago vinculado + botón cambiar #}
           <template x-if="!editing">
             <div>
-              <template x-if="linked && linkedData.payment && !linkedData.payment.solo_socio">
+              {# Cuota específica seleccionada #}
+              <template x-if="linked && linkedData && linkedData.payment && !linkedData.payment.solo_socio && linkedData.cuota_numero">
+                <div>
+                  <div class="text-xs text-slate-500 mb-0.5">
+                    <span x-text="linkedData.payment.periodo"></span>
+                    <span class="font-bold text-amber-700 ml-1" x-text="'· C' + linkedData.cuota_numero"></span>
+                  </div>
+                  <template x-if="linkedCuota()">
+                    <div>
+                      <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                            :class="badge(linkedCuota().estado)" x-text="linkedCuota().estado"></span>
+                      <span x-show="linkedCuota().monto" class="text-xs text-slate-500 ml-1"
+                            x-text="'S/ ' + Number(linkedCuota().monto).toFixed(0)"></span>
+                    </div>
+                  </template>
+                  <button @click="startEditPayment()"
+                          class="block mt-1 text-xs text-slate-400 hover:text-blue-600 transition-colors">
+                    <i class="fa-solid fa-pen-to-square text-[10px]"></i> Cambiar pago
+                  </button>
+                </div>
+              </template>
+              {# Pago completo vinculado #}
+              <template x-if="linked && linkedData && linkedData.payment && !linkedData.payment.solo_socio && !linkedData.cuota_numero">
                 <div>
                   <div class="text-xs text-slate-500 mb-0.5" x-text="linkedData.payment.periodo"></div>
                   <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
@@ -376,7 +423,7 @@ document.addEventListener('alpine:init', () => {
                   </button>
                 </div>
               </template>
-              <template x-if="linked && (!linkedData.payment || linkedData.payment.solo_socio)">
+              <template x-if="linked && linkedData && (!linkedData.payment || linkedData.payment.solo_socio)">
                 <div>
                   <span class="text-xs text-slate-400 block mb-1">Solo socio identificado</span>
                   <button @click="startEditPayment()"
@@ -404,7 +451,7 @@ document.addEventListener('alpine:init', () => {
                       Pago <span class="font-normal normal-case text-slate-400">(opcional)</span>
                     </p>
                     <template x-if="selPayment">
-                      <button @click="selPayment = null"
+                      <button @click="selPayment = null; selCuota = null"
                               class="text-[10px] text-slate-400 hover:text-red-500">✕ Quitar</button>
                     </template>
                   </div>
@@ -415,76 +462,85 @@ document.addEventListener('alpine:init', () => {
                     <p class="text-xs text-slate-400 py-1">Sin pagos registrados</p>
                   </template>
                   <template x-for="p in memberPayments" :key="p.periodo">
-                    <div @click="selPayment = (selPayment && selPayment.periodo === p.periodo) ? null : p"
-                         class="cursor-pointer rounded px-2 py-1.5 mb-1 text-xs border transition-colors"
-                         :class="selPayment && selPayment.periodo === p.periodo
-                           ? 'bg-blue-50 border-blue-400'
-                           : 'bg-white border-slate-200 hover:border-slate-300'">
-                      {# Fila 1: período · estado · monto #}
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <span x-text="p.periodo" class="font-bold text-slate-700 w-9 shrink-0"></span>
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                              :class="badge(p.estado)" x-text="p.estado"></span>
-                        <span x-show="payMonto(p)" x-text="payMonto(p)"
-                              class="font-semibold text-slate-600"></span>
-                        <span x-show="p.empresa_pagadora" x-text="p.empresa_pagadora"
-                              class="text-slate-400"></span>
-                      </div>
-                      {# Pago simple: comprobante y fechas del documento raíz #}
-                      <div x-show="!(p.cuotas && p.cuotas.length) && !(p.pagos_parciales && p.pagos_parciales.length)"
-                           class="flex items-center gap-3 flex-wrap mt-0.5 text-slate-400">
-                        <span x-show="p.tipo_comprobante || p.num_comprobante" class="font-mono"
-                              x-text="(p.tipo_comprobante || '') + (p.num_comprobante ? ' ' + p.num_comprobante : '')"></span>
-                        <span x-show="p.fecha_pago" class="flex items-center gap-1">
-                          <span class="text-slate-300 text-[10px] uppercase">F. pago:</span>
-                          <span x-text="p.fecha_pago"></span>
-                        </span>
-                        <span x-show="p.fecha_emision_comprobante" class="flex items-center gap-1">
-                          <span class="text-slate-300 text-[10px] uppercase">F. comp.:</span>
-                          <span x-text="p.fecha_emision_comprobante"></span>
-                        </span>
+                    <div class="mb-1.5">
+
+                      {# Pago simple y parcial: fila única clicable #}
+                      <div x-show="!(p.cuotas && p.cuotas.length)"
+                           @click="selPayment = (selPayment && selPayment.periodo === p.periodo && !selCuota) ? null : p; selCuota = null"
+                           class="cursor-pointer rounded px-2 py-1.5 text-xs border transition-colors"
+                           :class="selPayment && selPayment.periodo === p.periodo && !selCuota
+                             ? 'bg-blue-50 border-blue-400'
+                             : 'bg-white border-slate-200 hover:border-slate-300'">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span x-text="p.periodo" class="font-bold text-slate-700 w-9 shrink-0"></span>
+                          <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                                :class="badge(p.estado)" x-text="p.estado"></span>
+                          <span x-show="payMonto(p)" x-text="payMonto(p)" class="font-semibold text-slate-600"></span>
+                          <span x-show="p.empresa_pagadora" x-text="p.empresa_pagadora" class="text-slate-400"></span>
+                        </div>
+                        {# Pago simple: comprobante y fechas #}
+                        <div x-show="!(p.pagos_parciales && p.pagos_parciales.length)"
+                             class="flex items-center gap-3 flex-wrap mt-0.5 text-slate-400">
+                          <span x-show="p.tipo_comprobante || p.num_comprobante" class="font-mono"
+                                x-text="(p.tipo_comprobante || '') + (p.num_comprobante ? ' ' + p.num_comprobante : '')"></span>
+                          <span x-show="p.fecha_pago" class="flex items-center gap-1">
+                            <span class="text-slate-300 text-[10px] uppercase">F. pago:</span>
+                            <span x-text="p.fecha_pago"></span>
+                          </span>
+                          <span x-show="p.fecha_emision_comprobante" class="flex items-center gap-1">
+                            <span class="text-slate-300 text-[10px] uppercase">F. comp.:</span>
+                            <span x-text="p.fecha_emision_comprobante"></span>
+                          </span>
+                        </div>
+                        {# Abonos (parcial) #}
+                        <div x-show="p.pagos_parciales && p.pagos_parciales.length" class="mt-1 space-y-0.5">
+                          <template x-for="a in (p.pagos_parciales || [])" :key="'abono-' + a.numero">
+                            <div class="flex items-center gap-2 flex-wrap text-[10px] text-slate-400 pl-2 border-l-2 border-slate-200">
+                              <span class="text-slate-500 font-semibold shrink-0" x-text="'A' + a.numero"></span>
+                              <span class="text-slate-600 font-semibold" x-text="a.monto ? 'S/ ' + Number(a.monto).toFixed(0) : ''"></span>
+                              <span x-show="a.tipo_comprobante || a.num_comprobante" class="font-mono"
+                                    x-text="(a.tipo_comprobante || '') + (a.num_comprobante ? ' ' + a.num_comprobante : '')"></span>
+                              <span x-show="a.fecha_pago" class="flex items-center gap-1">
+                                <span class="text-slate-300 uppercase">F. pago:</span><span x-text="a.fecha_pago"></span>
+                              </span>
+                              <span x-show="a.fecha_emision_comprobante" class="flex items-center gap-1">
+                                <span class="text-slate-300 uppercase">F. comp.:</span><span x-text="a.fecha_emision_comprobante"></span>
+                              </span>
+                            </div>
+                          </template>
+                        </div>
                       </div>
 
-                      {# Cuotas pagadas (fraccionamiento): una fila por cuota #}
-                      <div x-show="p.cuotas && p.cuotas.length" class="mt-1 space-y-0.5">
-                        <template x-for="c in (p.cuotas || [])" :key="'cuota-' + c.numero">
-                          <div x-show="c.estado === 'pagado'"
-                               class="flex items-center gap-2 flex-wrap text-[10px] text-slate-400 pl-2 border-l-2 border-slate-200">
-                            <span class="text-slate-500 font-semibold shrink-0" x-text="'C' + c.numero"></span>
-                            <span class="text-slate-600 font-semibold" x-text="c.monto ? 'S/ ' + Number(c.monto).toFixed(0) : ''"></span>
-                            <span x-show="c.tipo_comprobante || c.num_comprobante" class="font-mono"
-                                  x-text="(c.tipo_comprobante || '') + (c.num_comprobante ? ' ' + c.num_comprobante : '')"></span>
-                            <span x-show="c.fecha_pago" class="flex items-center gap-1">
-                              <span class="text-slate-300 uppercase">F. pago:</span>
-                              <span x-text="c.fecha_pago"></span>
-                            </span>
-                            <span x-show="c.fecha_emision_comprobante" class="flex items-center gap-1">
-                              <span class="text-slate-300 uppercase">F. comp.:</span>
-                              <span x-text="c.fecha_emision_comprobante"></span>
-                            </span>
-                          </div>
-                        </template>
+                      {# Fraccionamiento: cabecera + cuota individual clicable #}
+                      <div x-show="p.cuotas && p.cuotas.length">
+                        <div class="px-2 py-1 bg-slate-50 rounded-t border border-slate-200 border-b-0 flex items-center gap-2 flex-wrap">
+                          <span x-text="p.periodo" class="font-bold text-slate-700 text-xs w-9 shrink-0"></span>
+                          <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">fraccionamiento</span>
+                          <span x-show="p.empresa_pagadora" x-text="p.empresa_pagadora" class="text-xs text-slate-400"></span>
+                        </div>
+                        <div class="border border-slate-200 rounded-b overflow-hidden divide-y divide-slate-100">
+                          <template x-for="c in (p.cuotas || [])" :key="'cp-' + p.periodo + '-' + c.numero">
+                            <div @click="selPayment = p; selCuota = c"
+                                 class="cursor-pointer px-2 py-1.5 text-xs transition-colors"
+                                 :class="selCuota && selCuota.numero === c.numero && selPayment && selPayment.periodo === p.periodo
+                                   ? 'bg-blue-50'
+                                   : 'hover:bg-slate-50'">
+                              <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-bold text-slate-700 w-5 shrink-0" x-text="'C' + c.numero"></span>
+                                <span class="inline-block px-1 py-0.5 rounded text-[9px] font-semibold"
+                                      :class="c.estado === 'pagado' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'"
+                                      x-text="c.estado"></span>
+                                <span x-show="c.monto" class="font-semibold text-slate-600"
+                                      x-text="'S/ ' + Number(c.monto).toFixed(0)"></span>
+                                <span x-show="c.tipo_comprobante || c.num_comprobante" class="font-mono text-slate-400"
+                                      x-text="(c.tipo_comprobante || '') + (c.num_comprobante ? ' ' + c.num_comprobante : '')"></span>
+                                <span x-show="c.fecha_pago" class="text-slate-400" x-text="c.fecha_pago"></span>
+                              </div>
+                            </div>
+                          </template>
+                        </div>
                       </div>
 
-                      {# Abonos (parcial): uno por fila #}
-                      <div x-show="p.pagos_parciales && p.pagos_parciales.length" class="mt-1 space-y-0.5">
-                        <template x-for="a in (p.pagos_parciales || [])" :key="'abono-' + a.numero">
-                          <div class="flex items-center gap-2 flex-wrap text-[10px] text-slate-400 pl-2 border-l-2 border-slate-200">
-                            <span class="text-slate-500 font-semibold shrink-0" x-text="'A' + a.numero"></span>
-                            <span class="text-slate-600 font-semibold" x-text="a.monto ? 'S/ ' + Number(a.monto).toFixed(0) : ''"></span>
-                            <span x-show="a.tipo_comprobante || a.num_comprobante" class="font-mono"
-                                  x-text="(a.tipo_comprobante || '') + (a.num_comprobante ? ' ' + a.num_comprobante : '')"></span>
-                            <span x-show="a.fecha_pago" class="flex items-center gap-1">
-                              <span class="text-slate-300 uppercase">F. pago:</span>
-                              <span x-text="a.fecha_pago"></span>
-                            </span>
-                            <span x-show="a.fecha_emision_comprobante" class="flex items-center gap-1">
-                              <span class="text-slate-300 uppercase">F. comp.:</span>
-                              <span x-text="a.fecha_emision_comprobante"></span>
-                            </span>
-                          </div>
-                        </template>
-                      </div>
                     </div>
                   </template>
                 </div>
@@ -495,7 +551,7 @@ document.addEventListener('alpine:init', () => {
               <button @click="vincular()"
                       :disabled="loading || !selMember"
                       class="mt-2 w-full px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
-                <span x-text="loading ? 'Guardando…' : (selPayment ? 'Vincular con pago' : 'Vincular solo al socio')"></span>
+                <span x-text="loading ? 'Guardando…' : (selCuota ? 'Vincular C' + selCuota.numero + ' · ' + selPayment.periodo : (selPayment ? 'Vincular con pago' : 'Vincular solo al socio'))"></span>
               </button>
             </div>
           </template>
@@ -503,8 +559,23 @@ document.addEventListener('alpine:init', () => {
 
         {# ── Comprobante (dinámico) ── #}
         <td class="px-4 py-3 text-xs">
+          {# Cuota específica vinculada #}
+          <div x-show="linked && linkedData && linkedData.payment && linkedData.cuota_numero">
+            <template x-if="linkedCuota() && (linkedCuota().num_comprobante || linkedCuota().link_constancia)">
+              <div class="pl-2 border-l-2 border-slate-200">
+                <span class="text-slate-700 capitalize font-mono"
+                      x-text="(linkedCuota().tipo_comprobante || '') + (linkedCuota().num_comprobante ? ' ' + linkedCuota().num_comprobante : '')"></span>
+                <a x-show="linkedCuota().link_constancia" :href="linkedCuota().link_constancia || '#'"
+                   target="_blank" class="text-blue-500 hover:underline block">Ver constancia</a>
+              </div>
+            </template>
+            <template x-if="!linkedCuota() || (!linkedCuota().num_comprobante && !linkedCuota().link_constancia)">
+              <span class="text-slate-300">Sin comprobante</span>
+            </template>
+          </div>
+
           {# Pago simple #}
-          <div x-show="linked && linkedData && linkedData.payment && !(linkedData.payment.cuotas && linkedData.payment.cuotas.length) && !(linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.length)">
+          <div x-show="linked && linkedData && linkedData.payment && !linkedData.cuota_numero && !(linkedData.payment.cuotas && linkedData.payment.cuotas.length) && !(linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.length)">
             <span x-show="linkedData && linkedData.payment && (linkedData.payment.tipo_comprobante || linkedData.payment.num_comprobante)"
                   class="text-slate-700 capitalize font-mono"
                   x-text="linkedData && linkedData.payment ? ((linkedData.payment.tipo_comprobante || '') + (linkedData.payment.num_comprobante ? ' ' + linkedData.payment.num_comprobante : '')) : ''"></span>
@@ -515,8 +586,8 @@ document.addEventListener('alpine:init', () => {
                   class="text-slate-300">Sin comprobante</span>
           </div>
 
-          {# Fraccionamiento: cuotas pagadas #}
-          <div x-show="linked && linkedData && linkedData.payment && linkedData.payment.cuotas && linkedData.payment.cuotas.length"
+          {# Fraccionamiento: todas las cuotas (sin cuota específica) #}
+          <div x-show="linked && linkedData && linkedData.payment && !linkedData.cuota_numero && linkedData.payment.cuotas && linkedData.payment.cuotas.length"
                class="space-y-1">
             <template x-for="c in (linkedData && linkedData.payment && linkedData.payment.cuotas ? linkedData.payment.cuotas : [])" :key="'comp-c-' + c.numero">
               <div x-show="c.estado === 'pagado' && (c.num_comprobante || c.link_constancia)" class="pl-2 border-l-2 border-slate-200">
@@ -532,7 +603,7 @@ document.addEventListener('alpine:init', () => {
           </div>
 
           {# Parcial: abonos #}
-          <div x-show="linked && linkedData && linkedData.payment && linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.length && !(linkedData.payment.cuotas && linkedData.payment.cuotas.length)"
+          <div x-show="linked && linkedData && linkedData.payment && !linkedData.cuota_numero && linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.length && !(linkedData.payment.cuotas && linkedData.payment.cuotas.length)"
                class="space-y-1">
             <template x-for="a in (linkedData && linkedData.payment && linkedData.payment.pagos_parciales ? linkedData.payment.pagos_parciales : [])" :key="'comp-a-' + a.numero">
               <div x-show="a.num_comprobante || a.link_constancia" class="pl-2 border-l-2 border-slate-200">
