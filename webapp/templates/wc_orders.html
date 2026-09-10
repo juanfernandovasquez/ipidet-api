@@ -40,6 +40,32 @@ document.addEventListener('alpine:init', () => {
       this.err        = '';
     },
 
+    startEditPayment() {
+      this.editing    = true;
+      this.err        = '';
+      this.selPayment = null;
+      this.results    = [];
+      // Pre-poblar el socio ya vinculado para no tener que buscarlo de nuevo
+      const parts = (this.linkedData.nombre || '').split(',');
+      this.selMember = {
+        member_id: this.linkedData.member_id,
+        apellidos: parts[0]?.trim() || '',
+        nombres:   parts.slice(1).join(',').trim() || '',
+      };
+      this.q = this.linkedData.nombre;
+      this.memberPayments = [];
+      this.loadingPayments = true;
+      fetch('/api/members/' + this.linkedData.member_id)
+        .then(r => r.json())
+        .then(d => {
+          this.loadingPayments = false;
+          const pays = (d.payments || []).slice();
+          pays.sort((a, b) => b.periodo.localeCompare(a.periodo));
+          this.memberPayments = pays;
+        })
+        .catch(() => { this.loadingPayments = false; this.err = 'Error al cargar pagos'; });
+    },
+
     cancelEdit() { this.editing = false; },
 
     search() {
@@ -312,7 +338,7 @@ document.addEventListener('alpine:init', () => {
         {# ── Pago en cobranzas (dinámico) ── #}
         <td class="px-4 py-3">
 
-          {# Modo normal: mostrar pago vinculado #}
+          {# Modo normal: mostrar pago vinculado + botón cambiar #}
           <template x-if="!editing">
             <div>
               <template x-if="linked && linkedData.payment && !linkedData.payment.solo_socio">
@@ -324,10 +350,20 @@ document.addEventListener('alpine:init', () => {
                   <template x-if="linkedData.payment.pagado_por">
                     <div class="text-xs text-slate-400 font-mono mt-0.5" x-text="linkedData.payment.pagado_por"></div>
                   </template>
+                  <button @click="startEditPayment()"
+                          class="block mt-1 text-xs text-slate-400 hover:text-blue-600 transition-colors">
+                    <i class="fa-solid fa-pen-to-square text-[10px]"></i> Cambiar pago
+                  </button>
                 </div>
               </template>
               <template x-if="linked && (!linkedData.payment || linkedData.payment.solo_socio)">
-                <span class="text-xs text-slate-400">Solo socio identificado</span>
+                <div>
+                  <span class="text-xs text-slate-400 block mb-1">Solo socio identificado</span>
+                  <button @click="startEditPayment()"
+                          class="text-xs text-blue-600 hover:underline font-medium">
+                    <i class="fa-solid fa-link text-[10px]"></i> Seleccionar pago
+                  </button>
+                </div>
               </template>
               <template x-if="!linked">
                 <span class="text-slate-300">—</span>
