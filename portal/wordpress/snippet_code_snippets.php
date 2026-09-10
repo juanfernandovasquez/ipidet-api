@@ -47,7 +47,7 @@ function ipidet_member_status_handler(WP_REST_Request $request) {
     }
 
     $api_url  = IPIDET_PORTAL_API_BASE . '/api/portal/member-status';
-    $response = wp_remote_get(add_query_arg('email', rawurlencode($email), $api_url), [
+    $response = wp_remote_get(add_query_arg(['email' => $email, 'wp_user_id' => $user->ID], $api_url), [
         'timeout' => 8,
         'headers' => [
             'Authorization' => 'Bearer ' . IPIDET_PORTAL_SECRET,
@@ -520,6 +520,8 @@ add_action('woocommerce_save_account_details', function($user_id) {
     $user    = get_userdata($user_id);
     $primary = sanitize_email($user->user_email);
 
+    $wp_user_id = (int) $user_id;
+
     $alt_email = sanitize_email($_POST['ipidet_alt_email'] ?? '');
     if (!empty($alt_email)) {
         wp_remote_post(IPIDET_PORTAL_API_BASE . '/api/portal/update-alternative-email', [
@@ -531,6 +533,7 @@ add_action('woocommerce_save_account_details', function($user_id) {
             'body' => json_encode([
                 'primary_email'     => $primary,
                 'alternative_email' => $alt_email,
+                'wp_user_id'        => $wp_user_id,
             ]),
         ]);
     }
@@ -546,6 +549,7 @@ add_action('woocommerce_save_account_details', function($user_id) {
             'body' => json_encode([
                 'primary_email' => $primary,
                 'dni'           => $dni,
+                'wp_user_id'    => $wp_user_id,
             ]),
         ]);
     }

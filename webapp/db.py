@@ -1296,10 +1296,10 @@ def get_member_by_email_exact(email: str) -> dict | None:
     return _clean(member) if member else None
 
 
-def vincular_wp_usuario(wc_email: str, member_id: str) -> dict:
+def vincular_wp_usuario(wc_email: str, member_id: str, wp_user_id: int = None) -> dict:
     """
-    Vincula un usuario de WordPress (email WC) a un socio MongoDB:
-    agrega el email al array emails[] del socio si no existe ya.
+    Vincula un usuario de WordPress a un socio MongoDB:
+    agrega el email WC al array emails[] y guarda el wp_user_id permanente.
     """
     wc_email = wc_email.strip().lower()
     member = members_col.find_one({"member_id": member_id}, {"emails": 1, "nombres": 1, "apellidos": 1})
@@ -1307,14 +1307,17 @@ def vincular_wp_usuario(wc_email: str, member_id: str) -> dict:
         return {"ok": False, "error": f"Socio {member_id} no encontrado"}
 
     existing = [e.get("email", "").lower() for e in member.get("emails", [])]
-    if wc_email in existing:
-        return {"ok": True, "action": "already_exists", "member_id": member_id}
+    update: dict = {}
+    if wc_email not in existing:
+        update["$addToSet"] = {"emails": {"email": wc_email, "estado": "habilitado", "principal": False}}
+    if wp_user_id:
+        update.setdefault("$set", {})["wp_user_id"] = wp_user_id
 
-    members_col.update_one(
-        {"member_id": member_id},
-        {"$addToSet": {"emails": {"email": wc_email, "estado": "habilitado", "principal": False}}},
-    )
-    return {"ok": True, "action": "added", "member_id": member_id}
+    if update:
+        members_col.update_one({"member_id": member_id}, update)
+
+    action = "already_exists" if wc_email in existing and not wp_user_id else "linked"
+    return {"ok": True, "action": action, "member_id": member_id}
 
 
 def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str) -> dict:

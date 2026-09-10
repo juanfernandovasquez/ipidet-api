@@ -176,7 +176,7 @@
                     fetch('/sync-usuarios/vincular', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ wc_email: '{{ c.email }}', member_id: sel.member_id })
+                      body: JSON.stringify({ wc_email: '{{ c.email }}', member_id: sel.member_id, wp_user_id: {{ c.wc_id }} })
                     })
                     .then(r => r.json())
                     .then(d => {

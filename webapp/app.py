@@ -1385,6 +1385,7 @@ async def comunicaciones_rebotes(request: Request):
 async def portal_member_status(
     request: Request,
     email: str = Query(...),
+    wp_user_id: int = Query(None),
 ):
     from config.settings import PORTAL_SECRET
     auth_header = request.headers.get("authorization", "")
@@ -1392,7 +1393,7 @@ async def portal_member_status(
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     if not email or "@" not in email:
         return JSONResponse({"error": "Email inválido"}, status_code=400)
-    return portal_routes.build_member_status(email)
+    return portal_routes.build_member_status(email, wp_user_id=wp_user_id)
 
 
 @app.post("/webhook/woocommerce/order")
@@ -1541,11 +1542,14 @@ async def sync_usuarios_page(
 @app.post("/sync-usuarios/vincular")
 async def sync_vincular_usuario(request: Request):
     body = await request.json()
-    wc_email  = (body.get("wc_email")  or "").strip()
-    member_id = (body.get("member_id") or "").strip()
+    wc_email    = (body.get("wc_email")  or "").strip()
+    member_id   = (body.get("member_id") or "").strip()
+    wp_user_id  = body.get("wp_user_id") or None
+    if wp_user_id:
+        wp_user_id = int(wp_user_id)
     if not wc_email or not member_id:
         return JSONResponse({"ok": False, "error": "wc_email y member_id requeridos"}, status_code=400)
-    result = pdb.vincular_wp_usuario(wc_email, member_id)
+    result = pdb.vincular_wp_usuario(wc_email, member_id, wp_user_id=wp_user_id)
     return JSONResponse(result)
 
 
@@ -1573,11 +1577,14 @@ async def portal_update_alt_email(request: Request):
         return JSONResponse({"error": "JSON inválido"}, status_code=400)
     primary_email     = (body.get("primary_email") or "").strip().lower()
     alternative_email = (body.get("alternative_email") or "").strip().lower()
+    wp_user_id        = body.get("wp_user_id") or None
+    if wp_user_id:
+        wp_user_id = int(wp_user_id)
     if not primary_email or "@" not in primary_email:
         return JSONResponse({"error": "primary_email inválido"}, status_code=400)
     if not alternative_email or "@" not in alternative_email:
         return JSONResponse({"error": "alternative_email inválido"}, status_code=400)
-    result = portal_routes.update_alternative_email(primary_email, alternative_email)
+    result = portal_routes.update_alternative_email(primary_email, alternative_email, wp_user_id=wp_user_id)
     return result
 
 
@@ -1593,11 +1600,14 @@ async def portal_update_dni(request: Request):
         return JSONResponse({"error": "JSON inválido"}, status_code=400)
     primary_email = (body.get("primary_email") or "").strip().lower()
     dni           = (body.get("dni") or "").strip()
+    wp_user_id    = body.get("wp_user_id") or None
+    if wp_user_id:
+        wp_user_id = int(wp_user_id)
     if not primary_email or "@" not in primary_email:
         return JSONResponse({"error": "primary_email inválido"}, status_code=400)
     if not dni:
         return JSONResponse({"error": "dni vacío"}, status_code=400)
-    result = portal_routes.update_member_dni_by_email(primary_email, dni)
+    result = portal_routes.update_member_dni_by_email(primary_email, dni, wp_user_id=wp_user_id)
     return result
 
 

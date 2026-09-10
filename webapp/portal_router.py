@@ -37,13 +37,27 @@ STATUS_ES = {
 }
 
 
-def build_member_status(email: str) -> dict:
+def _find_member(email: str, wp_user_id: int = None) -> dict | None:
+    if wp_user_id:
+        m = pdb.members_col.find_one({"wp_user_id": wp_user_id})
+        if m:
+            # Cargar pagos igual que get_member_by_email
+            return pdb.get_member_by_email(
+                next((e["email"] for e in m.get("emails", []) if e.get("principal")),
+                     next((e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"),
+                          email))
+            ) or pdb.get_member_by_email(email)
+    return pdb.get_member_by_email(email)
+
+
+def build_member_status(email: str, wp_user_id: int = None) -> dict:
     email = email.strip().lower()
-    cached = _cache_get(email)
+    cache_key = f"wpid_{wp_user_id}" if wp_user_id else email
+    cached = _cache_get(cache_key)
     if cached:
         return cached
 
-    member = pdb.get_member_by_email(email)
+    member = _find_member(email, wp_user_id)
     if not member:
         return {"found": False, "email": email}
 
@@ -126,32 +140,41 @@ def build_member_status(email: str) -> dict:
         "estado_label": "Activo" if member.get("estado") == "activo" else member.get("estado", "").capitalize(),
         "payments":     payments_out,
     }
-    _cache_set(email, result)
+    _cache_set(cache_key, result)
     return result
 
 
-def update_member_dni_by_email(primary_email: str, dni: str) -> dict:
-    member = pdb.members_col.find_one(
-        {"emails.email": {"$regex": f"^{primary_email}$", "$options": "i"}},
-        {"member_id": 1},
+def _find_member_doc(primary_email: str, wp_user_id: int = None) -> dict | None:
+    if wp_user_id:
+        m = pdb.members_col.find_one({"wp_user_id": wp_user_id})
+        if m:
+            return m
+    return pdb.members_col.find_one(
+        {"emails.email": {"$regex": f"^{primary_email}$", "$options": "i"}}
     )
+
+
+def update_member_dni_by_email(primary_email: str, dni: str, wp_user_id: int = None) -> dict:
+    member = _find_member_doc(primary_email, wp_user_id)
     if not member:
-        return {"ok": False, "error": f"Socio no encontrado con email {primary_email}"}
+        return {"ok": False, "error": f"Socio no encontrado"}
+    if wp_user_id and not member.get("wp_user_id"):
+        pdb.members_col.update_one({"member_id": member["member_id"]}, {"$set": {"wp_user_id": wp_user_id}})
     pdb.members_col.update_one(
         {"member_id": member["member_id"]},
         {"$set": {"dni": dni}},
     )
     _cache_del(primary_email)
+    _cache_del(f"wpid_{wp_user_id}")
     return {"ok": True, "member_id": member["member_id"], "dni": dni}
 
 
-def update_alternative_email(primary_email: str, alternative_email: str) -> dict:
-    member = pdb.members_col.find_one(
-        {"emails.email": {"$regex": f"^{primary_email}$", "$options": "i"}},
-        {"member_id": 1, "emails": 1},
-    )
+def update_alternative_email(primary_email: str, alternative_email: str, wp_user_id: int = None) -> dict:
+    member = _find_member_doc(primary_email, wp_user_id)
     if not member:
         return {"ok": False, "error": f"Socio no encontrado con email {primary_email}"}
+    if wp_user_id and not member.get("wp_user_id"):
+        pdb.members_col.update_one({"member_id": member["member_id"]}, {"$set": {"wp_user_id": wp_user_id}})
 
     emails = member.get("emails", [])
     # Buscar si ya hay un email alternativo (no principal) habilitado
@@ -170,6 +193,7 @@ def update_alternative_email(primary_email: str, alternative_email: str) -> dict
             {"$push": {"emails": {"email": alternative_email, "estado": "habilitado", "principal": False}}},
         )
     _cache_del(primary_email)
+    _cache_del(f"wpid_{wp_user_id}")
     return {"ok": True, "member_id": member["member_id"], "alternative_email": alternative_email}
 
 
