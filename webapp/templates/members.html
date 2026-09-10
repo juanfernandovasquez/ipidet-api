@@ -45,8 +45,16 @@
         <input name="ubicacion" value="{{ ubicacion }}" placeholder="Lima, Arequipa…" class="input w-32"
                @input="clearTimeout(t); t = setTimeout(() => $refs.filterForm.submit(), 450)">
       </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">WordPress ID</label>
+        <select name="wp" class="input" @change="$refs.filterForm.submit()">
+          <option value=""    {% if not wp     %}selected{% endif %}>Todos</option>
+          <option value="con" {% if wp == "con"%}selected{% endif %}>Con ID</option>
+          <option value="sin" {% if wp == "sin"%}selected{% endif %}>Sin ID</option>
+        </select>
+      </div>
       <button type="submit" class="sr-only">Filtrar</button>
-      {% if search or estado or pago or ubicacion %}
+      {% if search or estado or pago or ubicacion or wp %}
       <a href="/members" class="btn-ghost">Limpiar</a>
       {% endif %}
     </form>
@@ -63,6 +71,7 @@
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Ubicación</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Pago 2026</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">WP ID</th>
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
@@ -109,13 +118,16 @@
             <span class="text-slate-300 text-xs">—</span>
             {% endif %}
           </td>
+          <td class="px-4 py-3 font-mono text-xs text-slate-500">
+            {% if m.wp_user_id %}{{ m.wp_user_id }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
           <td class="px-4 py-3 text-right">
             <a href="/members/{{ m.member_id }}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Ver →</a>
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="7" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="8" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
             No se encontraron socios con estos filtros.
           </td>
@@ -130,10 +142,10 @@
       <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }}</span>
       <div class="flex gap-2">
         {% if page > 1 %}
-        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
+        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&wp={{ wp }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
         {% endif %}
         {% if page < total_pages %}
-        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
+        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&wp={{ wp }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
         {% endif %}
       </div>
     </div>

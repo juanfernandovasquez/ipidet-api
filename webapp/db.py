@@ -73,7 +73,7 @@ def get_stats() -> dict:
 # ── Members ───────────────────────────────────────────────────────────────────
 
 def get_members(search: str = "", estado: str = "", pago: str = "",
-                ubicacion: str = "", page: int = 1, per_page: int = 50):
+                ubicacion: str = "", wp: str = "", page: int = 1, per_page: int = 50):
     query = {}
     if search:
         query["$or"] = [
@@ -87,6 +87,10 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
         query["estado"] = estado
     if ubicacion:
         query["ubicacion"] = {"$regex": ubicacion, "$options": "i"}
+    if wp == "con":
+        query["wp_user_id"] = {"$exists": True}
+    elif wp == "sin":
+        query["wp_user_id"] = {"$exists": False}
 
     # Filtro por pago 2026
     if pago:

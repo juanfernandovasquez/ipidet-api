@@ -155,12 +155,13 @@ async def members_list(
     estado: str = "",
     pago: str = "",
     ubicacion: str = "",
+    wp: str = "",
     page: int = 1,
 ):
-    docs, total = pdb.get_members(search, estado, pago, ubicacion, page)
+    docs, total = pdb.get_members(search, estado, pago, ubicacion, wp, page)
     return templates.TemplateResponse(request, "members.html", _ctx(request,
         members=docs, total=total,
-        search=search, estado=estado, pago=pago, ubicacion=ubicacion,
+        search=search, estado=estado, pago=pago, ubicacion=ubicacion, wp=wp,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
     ))
