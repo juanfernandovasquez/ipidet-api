@@ -570,7 +570,7 @@ document.addEventListener('alpine:init', () => {
               </div>
             </template>
             <template x-if="!linkedCuota() || (!linkedCuota().num_comprobante && !linkedCuota().link_constancia)">
-              <span class="text-slate-300">Sin comprobante</span>
+              <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Sin comprobante</span>
             </template>
           </div>
 
@@ -583,7 +583,7 @@ document.addEventListener('alpine:init', () => {
                :href="linkedData && linkedData.payment ? (linkedData.payment.link_constancia || '#') : '#'"
                target="_blank" class="text-blue-500 hover:underline block">Ver constancia</a>
             <span x-show="linked && linkedData && linkedData.payment && !linkedData.payment.num_comprobante && !linkedData.payment.link_constancia"
-                  class="text-slate-300">Sin comprobante</span>
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Sin comprobante</span>
           </div>
 
           {# Fraccionamiento: todas las cuotas (sin cuota específica) #}
@@ -599,7 +599,7 @@ document.addEventListener('alpine:init', () => {
               </div>
             </template>
             <span x-show="!(linkedData && linkedData.payment && linkedData.payment.cuotas && linkedData.payment.cuotas.some(c => c.estado === 'pagado' && (c.num_comprobante || c.link_constancia)))"
-                  class="text-slate-300">Sin comprobante</span>
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Sin comprobante</span>
           </div>
 
           {# Parcial: abonos #}
@@ -615,7 +615,7 @@ document.addEventListener('alpine:init', () => {
               </div>
             </template>
             <span x-show="!(linkedData && linkedData.payment && linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.some(a => a.num_comprobante || a.link_constancia))"
-                  class="text-slate-300">Sin comprobante</span>
+                  class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Sin comprobante</span>
           </div>
 
           {# No vinculado #}
