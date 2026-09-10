@@ -1472,6 +1472,9 @@ async def wc_orders_page(
                 mongo_pay = pdb.get_wc_payment_by_wp_user_id(customer_id, periodo_guess)
             if not mongo_pay and billing_email:
                 mongo_pay = pdb.get_wc_payment_by_email(billing_email, periodo_guess)
+                # Persistir el wp_user_id la primera vez que se cruza por email
+                if mongo_pay and customer_id:
+                    pdb.auto_set_wp_user_id(mongo_pay["member_id"], customer_id)
 
             orders_out.append({
                 "order_id":      order_id,
@@ -1525,6 +1528,10 @@ async def sync_usuarios_page(
 
             mongo = pdb.get_member_by_email_exact(email) if email else None
             status = "match" if mongo else "sin_match"
+
+            # Persistir wp_user_id automáticamente cuando hay match por email
+            if mongo and wc_id:
+                pdb.auto_set_wp_user_id(mongo["member_id"], wc_id)
 
             if filtro == "match" and status != "match":
                 continue
