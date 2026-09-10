@@ -1286,6 +1286,37 @@ def get_wc_payment(order_id: int) -> dict | None:
     return result
 
 
+def get_member_by_email_exact(email: str) -> dict | None:
+    """Busca un socio cuyo array emails[] contenga este email (case-insensitive)."""
+    email = email.strip().lower()
+    member = members_col.find_one(
+        {"emails.email": {"$regex": f"^{email}$", "$options": "i"}},
+        {"member_id": 1, "nombres": 1, "apellidos": 1, "estado": 1, "emails": 1},
+    )
+    return _clean(member) if member else None
+
+
+def vincular_wp_usuario(wc_email: str, member_id: str) -> dict:
+    """
+    Vincula un usuario de WordPress (email WC) a un socio MongoDB:
+    agrega el email al array emails[] del socio si no existe ya.
+    """
+    wc_email = wc_email.strip().lower()
+    member = members_col.find_one({"member_id": member_id}, {"emails": 1, "nombres": 1, "apellidos": 1})
+    if not member:
+        return {"ok": False, "error": f"Socio {member_id} no encontrado"}
+
+    existing = [e.get("email", "").lower() for e in member.get("emails", [])]
+    if wc_email in existing:
+        return {"ok": True, "action": "already_exists", "member_id": member_id}
+
+    members_col.update_one(
+        {"member_id": member_id},
+        {"$addToSet": {"emails": {"email": wc_email, "estado": "habilitado", "principal": False}}},
+    )
+    return {"ok": True, "action": "added", "member_id": member_id}
+
+
 def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str) -> dict:
     """
     Vincula una orden WC a un socio de MongoDB:

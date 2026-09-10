@@ -1486,6 +1486,71 @@ async def wc_orders_page(
     })
 
 
+@app.get("/sync-usuarios", response_class=HTMLResponse)
+async def sync_usuarios_page(
+    request: Request,
+    page: int = Query(1, ge=1),
+    filtro: str = Query("sin_match"),
+    search: str = Query(""),
+):
+    from webapp.wc_client import get_customers
+
+    error = None
+    customers_out = []
+    total_pages = 1
+
+    try:
+        raw, total_pages = get_customers(page=page, per_page=100)
+        for c in raw:
+            email = (c.get("email") or "").strip().lower()
+            nombre = f"{c.get('first_name','')} {c.get('last_name','')}".strip()
+            wc_id = c.get("id")
+            fecha_reg = (c.get("date_created") or "")[:10]
+
+            if search and search.lower() not in email and search.lower() not in nombre.lower():
+                continue
+
+            mongo = pdb.get_member_by_email_exact(email) if email else None
+            status = "match" if mongo else "sin_match"
+
+            if filtro == "match" and status != "match":
+                continue
+            if filtro == "sin_match" and status != "sin_match":
+                continue
+
+            customers_out.append({
+                "wc_id":    wc_id,
+                "email":    email,
+                "nombre":   nombre,
+                "fecha_reg": fecha_reg,
+                "status":   status,
+                "mongo":    mongo,
+            })
+    except Exception as exc:
+        error = str(exc)
+
+    return templates.TemplateResponse("sync_usuarios.html", {
+        "request":     request,
+        "customers":   customers_out,
+        "page":        page,
+        "total_pages": total_pages,
+        "filtro":      filtro,
+        "search":      search,
+        "error":       error,
+    })
+
+
+@app.post("/sync-usuarios/vincular")
+async def sync_vincular_usuario(request: Request):
+    body = await request.json()
+    wc_email  = (body.get("wc_email")  or "").strip()
+    member_id = (body.get("member_id") or "").strip()
+    if not wc_email or not member_id:
+        return JSONResponse({"ok": False, "error": "wc_email y member_id requeridos"}, status_code=400)
+    result = pdb.vincular_wp_usuario(wc_email, member_id)
+    return JSONResponse(result)
+
+
 @app.post("/wc-orders/{order_id}/vincular")
 async def wc_vincular(order_id: int, request: Request):
     body = await request.json()

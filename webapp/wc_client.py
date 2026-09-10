@@ -54,3 +54,13 @@ def get_orders(
 
 def get_order(order_id: int) -> dict:
     return _get(f"/orders/{order_id}")
+
+
+def get_customers(page: int = 1, per_page: int = 100) -> tuple[list[dict], int]:
+    """Devuelve (customers, total_pages). Requiere permiso read en las API keys."""
+    url = f"{_BASE}/customers"
+    params = {"page": page, "per_page": per_page, "orderby": "registered_date", "order": "desc"}
+    r = httpx.get(url, auth=_AUTH, params=params, timeout=_TIMEOUT, verify=True)
+    r.raise_for_status()
+    total_pages = int(r.headers.get("X-WP-TotalPages", 1))
+    return r.json(), total_pages

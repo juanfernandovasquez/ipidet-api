@@ -112,6 +112,9 @@
       <a href="/wc-orders" class="sidebar-link {% if '/wc-orders' in request.url.path %}active{% endif %}">
         <i class="fa-brands fa-wordpress"></i> Pedidos WC
       </a>
+      <a href="/sync-usuarios" class="sidebar-link {% if '/sync-usuarios' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-users-between-lines"></i> Sync usuarios
+      </a>
       {% endif %}
 
       {% if is_admin or 'faqs' in p or 'marketing' in p or 'comunicaciones' in p or 'eventos' in p %}
