@@ -130,8 +130,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     hasComp() {
-      return this.linked && this.linkedData && this.linkedData.payment &&
-             (this.linkedData.payment.num_comprobante || this.linkedData.payment.link_constancia);
+      if (!this.linked || !this.linkedData || !this.linkedData.payment) return false;
+      const p = this.linkedData.payment;
+      if (p.num_comprobante || p.link_constancia) return true;
+      if (p.cuotas && p.cuotas.some(c => c.num_comprobante || c.link_constancia)) return true;
+      if (p.pagos_parciales && p.pagos_parciales.some(a => a.num_comprobante || a.link_constancia)) return true;
+      return false;
     },
 
     vincular() {
@@ -498,26 +502,53 @@ document.addEventListener('alpine:init', () => {
         </td>
 
         {# ── Comprobante (dinámico) ── #}
-        <td class="px-4 py-3">
-          <template x-if="hasComp()">
-            <div>
-              <div class="text-slate-700 text-sm">
-                <span class="capitalize" x-text="linkedData.payment.tipo_comprobante || ''"></span>
-                <span class="font-mono text-xs text-slate-500 ml-1"
-                      x-text="linkedData.payment.num_comprobante || ''"></span>
+        <td class="px-4 py-3 text-xs">
+          {# Pago simple #}
+          <div x-show="linked && linkedData && linkedData.payment && !(linkedData.payment.cuotas && linkedData.payment.cuotas.length) && !(linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.length)">
+            <span x-show="linkedData && linkedData.payment && (linkedData.payment.tipo_comprobante || linkedData.payment.num_comprobante)"
+                  class="text-slate-700 capitalize font-mono"
+                  x-text="linkedData && linkedData.payment ? ((linkedData.payment.tipo_comprobante || '') + (linkedData.payment.num_comprobante ? ' ' + linkedData.payment.num_comprobante : '')) : ''"></span>
+            <a x-show="linkedData && linkedData.payment && linkedData.payment.link_constancia"
+               :href="linkedData && linkedData.payment ? (linkedData.payment.link_constancia || '#') : '#'"
+               target="_blank" class="text-blue-500 hover:underline block">Ver constancia</a>
+            <span x-show="linked && linkedData && linkedData.payment && !linkedData.payment.num_comprobante && !linkedData.payment.link_constancia"
+                  class="text-slate-300">Sin comprobante</span>
+          </div>
+
+          {# Fraccionamiento: cuotas pagadas #}
+          <div x-show="linked && linkedData && linkedData.payment && linkedData.payment.cuotas && linkedData.payment.cuotas.length"
+               class="space-y-1">
+            <template x-for="c in (linkedData && linkedData.payment && linkedData.payment.cuotas ? linkedData.payment.cuotas : [])" :key="'comp-c-' + c.numero">
+              <div x-show="c.estado === 'pagado' && (c.num_comprobante || c.link_constancia)" class="pl-2 border-l-2 border-slate-200">
+                <span class="text-slate-500" x-text="'C' + c.numero + ':'"></span>
+                <span class="text-slate-700 capitalize font-mono"
+                      x-text="(c.tipo_comprobante || '') + (c.num_comprobante ? ' ' + c.num_comprobante : '')"></span>
+                <a x-show="c.link_constancia" :href="c.link_constancia || '#'" target="_blank"
+                   class="text-blue-500 hover:underline block">Ver constancia</a>
               </div>
-              <template x-if="linkedData.payment.link_constancia">
-                <a :href="linkedData.payment.link_constancia" target="_blank"
-                   class="text-xs text-blue-500 hover:underline">Ver constancia</a>
-              </template>
-            </div>
-          </template>
-          <template x-if="linked && !hasComp()">
-            <span class="text-xs text-slate-300">Sin comprobante</span>
-          </template>
-          <template x-if="!linked">
-            <span class="text-slate-300">—</span>
-          </template>
+            </template>
+            <span x-show="!(linkedData && linkedData.payment && linkedData.payment.cuotas && linkedData.payment.cuotas.some(c => c.estado === 'pagado' && (c.num_comprobante || c.link_constancia)))"
+                  class="text-slate-300">Sin comprobante</span>
+          </div>
+
+          {# Parcial: abonos #}
+          <div x-show="linked && linkedData && linkedData.payment && linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.length && !(linkedData.payment.cuotas && linkedData.payment.cuotas.length)"
+               class="space-y-1">
+            <template x-for="a in (linkedData && linkedData.payment && linkedData.payment.pagos_parciales ? linkedData.payment.pagos_parciales : [])" :key="'comp-a-' + a.numero">
+              <div x-show="a.num_comprobante || a.link_constancia" class="pl-2 border-l-2 border-slate-200">
+                <span class="text-slate-500" x-text="'A' + a.numero + ':'"></span>
+                <span class="text-slate-700 capitalize font-mono"
+                      x-text="(a.tipo_comprobante || '') + (a.num_comprobante ? ' ' + a.num_comprobante : '')"></span>
+                <a x-show="a.link_constancia" :href="a.link_constancia || '#'" target="_blank"
+                   class="text-blue-500 hover:underline block">Ver constancia</a>
+              </div>
+            </template>
+            <span x-show="!(linkedData && linkedData.payment && linkedData.payment.pagos_parciales && linkedData.payment.pagos_parciales.some(a => a.num_comprobante || a.link_constancia))"
+                  class="text-slate-300">Sin comprobante</span>
+          </div>
+
+          {# No vinculado #}
+          <span x-show="!linked" class="text-slate-300">—</span>
         </td>
 
       </tr>
