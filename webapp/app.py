@@ -1400,6 +1400,92 @@ async def portal_wc_webhook(request: Request):
     return await portal_routes.handle_wc_webhook(request)
 
 
+# ── WooCommerce orders ─────────────────────────────────────────────────────────
+
+@app.get("/wc-orders", response_class=HTMLResponse)
+async def wc_orders_page(
+    request: Request,
+    page: int = Query(1, ge=1),
+    status: str = Query("any"),
+    search: str = Query(""),
+    year: str = Query(""),
+):
+    from webapp.wc_client import get_orders
+    from webapp.portal_db import WC_PRODUCT_MAP
+
+    error = None
+    orders_out = []
+    total_pages = 1
+
+    after = f"{year}-01-01T00:00:00" if year else None
+    before = f"{year}-12-31T23:59:59" if year else None
+
+    try:
+        raw_orders, total_pages = get_orders(
+            page=page,
+            per_page=50,
+            status=status if status != "any" else None,
+            after=after,
+            before=before,
+            search=search or None,
+        )
+
+        for o in raw_orders:
+            order_id = o["id"]
+            billing_email = o.get("billing", {}).get("email", "")
+            billing_name = f"{o.get('billing',{}).get('first_name','')} {o.get('billing',{}).get('last_name','')}".strip()
+            total = o.get("total", "0.00")
+            date_str = (o.get("date_created") or "")[:10]
+            wc_status = o.get("status", "")
+            payment_method = o.get("payment_method_title", "")
+
+            # Productos comprados
+            productos = []
+            for item in o.get("line_items", []):
+                pid = item.get("product_id")
+                cfg = WC_PRODUCT_MAP.get(pid, {})
+                productos.append({
+                    "nombre": item.get("name", ""),
+                    "product_id": pid,
+                    "descripcion": cfg.get("descripcion", ""),
+                    "periodo": cfg.get("periodo"),
+                    "action": cfg.get("action", ""),
+                })
+
+            # Cruce con MongoDB: primero por WC#id, luego por email+periodo
+            mongo_pay = pdb.get_wc_payment(order_id)
+            if not mongo_pay and productos:
+                periodo_guess = next((p["periodo"] for p in productos if p["periodo"]), None)
+                if periodo_guess and billing_email:
+                    mongo_pay = pdb.get_wc_payment_by_email(billing_email, periodo_guess)
+
+            orders_out.append({
+                "order_id":      order_id,
+                "date":          date_str,
+                "billing_name":  billing_name,
+                "billing_email": billing_email,
+                "total":         total,
+                "wc_status":     wc_status,
+                "payment_method": payment_method,
+                "productos":     productos,
+                "mongo":         mongo_pay,
+            })
+
+    except Exception as exc:
+        error = str(exc)
+
+    return templates.TemplateResponse("wc_orders.html", {
+        "request":      request,
+        "orders":       orders_out,
+        "page":         page,
+        "total_pages":  total_pages,
+        "status":       status,
+        "search":       search,
+        "year":         year,
+        "error":        error,
+    })
+
+
 @app.post("/api/portal/update-alternative-email")
 async def portal_update_alt_email(request: Request):
     from config.settings import PORTAL_SECRET

@@ -1272,6 +1272,36 @@ def get_member_ubicaciones() -> list[str]:
     return sorted(members_col.distinct("ubicacion", {"estado": "activo", "ubicacion": {"$nin": [None, ""]}}))
 
 
+# ── WooCommerce ↔ MongoDB cross-reference ──────────────────────────────────────
+
+def get_wc_payment(order_id: int) -> dict | None:
+    """Busca el pago en MongoDB que corresponde a una orden WC (pagado_por = 'WC#<id>')."""
+    tag = f"WC#{order_id}"
+    pay = payments_col.find_one({"pagado_por": tag})
+    if not pay:
+        return None
+    member = members_col.find_one({"member_id": pay["member_id"]}, {"nombres": 1, "apellidos": 1})
+    result = _clean(pay)
+    result["nombre_completo"] = f"{member.get('apellidos','').strip()}, {member.get('nombres','').strip()}".strip(", ") if member else ""
+    return result
+
+
+def get_wc_payment_by_email(email: str, periodo: str) -> dict | None:
+    """Fallback: busca pago por email del socio y período (para órdenes sin 'pagado_por' en WC webhook)."""
+    member = members_col.find_one(
+        {"emails.email": {"$regex": f"^{email}$", "$options": "i"}},
+        {"member_id": 1, "nombres": 1, "apellidos": 1},
+    )
+    if not member:
+        return None
+    pay = payments_col.find_one({"member_id": member["member_id"], "periodo": periodo})
+    if not pay:
+        return None
+    result = _clean(pay)
+    result["nombre_completo"] = f"{member.get('apellidos','').strip()}, {member.get('nombres','').strip()}".strip(", ")
+    return result
+
+
 # ── Facturas a crédito ────────────────────────────────────────────────────────
 
 def _sync_credito_estado(doc: dict) -> str:

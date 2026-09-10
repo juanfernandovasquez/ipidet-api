@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Pedidos WooCommerce{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-slate-800">Pedidos WooCommerce</h1>
+  <span class="text-xs text-slate-400">Solo lectura — los datos se traen de WooCommerce</span>
+</div>
+
+{# ── Filtros ─────────────────────────────────────────────────────────────── #}
+<form method="get" class="bg-white border border-slate-200 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
+  <div class="flex flex-col gap-1">
+    <label class="text-xs font-semibold text-slate-500">Estado WC</label>
+    <select name="status" onchange="this.form.submit()" class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <option value="any"       {% if status == "any"       %}selected{% endif %}>Todos</option>
+      <option value="completed" {% if status == "completed" %}selected{% endif %}>Completado</option>
+      <option value="processing"{% if status == "processing"%}selected{% endif %}>Procesando</option>
+      <option value="pending"   {% if status == "pending"   %}selected{% endif %}>Pendiente</option>
+      <option value="cancelled" {% if status == "cancelled" %}selected{% endif %}>Cancelado</option>
+      <option value="refunded"  {% if status == "refunded"  %}selected{% endif %}>Reembolsado</option>
+    </select>
+  </div>
+  <div class="flex flex-col gap-1">
+    <label class="text-xs font-semibold text-slate-500">Año</label>
+    <select name="year" onchange="this.form.submit()" class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      <option value=""     {% if not year   %}selected{% endif %}>Todos</option>
+      <option value="2027" {% if year=="2027"%}selected{% endif %}>2027</option>
+      <option value="2026" {% if year=="2026"%}selected{% endif %}>2026</option>
+      <option value="2025" {% if year=="2025"%}selected{% endif %}>2025</option>
+      <option value="2024" {% if year=="2024"%}selected{% endif %}>2024</option>
+    </select>
+  </div>
+  <div class="flex flex-col gap-1 flex-1 min-w-[180px]">
+    <label class="text-xs font-semibold text-slate-500">Buscar (email o nombre)</label>
+    <input type="text" name="search" value="{{ search }}"
+           placeholder="email@ejemplo.com"
+           class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+  </div>
+  <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">Buscar</button>
+  {% if search or status != "any" or year %}
+  <a href="/wc-orders" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-semibold hover:bg-slate-200">Limpiar</a>
+  {% endif %}
+</form>
+
+{# ── Error ───────────────────────────────────────────────────────────────── #}
+{% if error %}
+<div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-sm text-red-700">
+  <strong>Error al conectar con WooCommerce:</strong> {{ error }}
+</div>
+{% endif %}
+
+{# ── Tabla ───────────────────────────────────────────────────────────────── #}
+{% if orders %}
+<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+        <th class="px-4 py-3 text-left">Orden</th>
+        <th class="px-4 py-3 text-left">Fecha</th>
+        <th class="px-4 py-3 text-left">Cliente</th>
+        <th class="px-4 py-3 text-left">Producto(s)</th>
+        <th class="px-4 py-3 text-right">Total</th>
+        <th class="px-4 py-3 text-left">Estado WC</th>
+        <th class="px-4 py-3 text-left">Socio en MongoDB</th>
+        <th class="px-4 py-3 text-left">Pago MongoDB</th>
+        <th class="px-4 py-3 text-left">Comprobante</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for o in orders %}
+      <tr class="hover:bg-slate-50">
+        {# Orden WC #}
+        <td class="px-4 py-3">
+          <a href="https://ipidet.org/wp-admin/post.php?post={{ o.order_id }}&action=edit"
+             target="_blank"
+             class="text-blue-600 hover:underline font-mono font-semibold">#{{ o.order_id }}</a>
+        </td>
+
+        {# Fecha #}
+        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ o.date }}</td>
+
+        {# Cliente #}
+        <td class="px-4 py-3">
+          <div class="font-semibold text-slate-800">{{ o.billing_name or "—" }}</div>
+          <div class="text-xs text-slate-400">{{ o.billing_email }}</div>
+          {% if o.payment_method %}
+          <div class="text-xs text-slate-400 mt-0.5">{{ o.payment_method }}</div>
+          {% endif %}
+        </td>
+
+        {# Productos #}
+        <td class="px-4 py-3">
+          {% for prod in o.productos %}
+          <div class="text-slate-700">
+            {{ prod.descripcion or prod.nombre }}
+            {% if prod.periodo %}
+            <span class="text-xs text-slate-400">({{ prod.periodo }})</span>
+            {% endif %}
+          </div>
+          {% endfor %}
+          {% if not o.productos %}
+          <span class="text-slate-400">—</span>
+          {% endif %}
+        </td>
+
+        {# Total #}
+        <td class="px-4 py-3 text-right font-semibold text-slate-800">S/ {{ o.total }}</td>
+
+        {# Estado WC #}
+        <td class="px-4 py-3">
+          {% if o.wc_status == "completed" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">Completado</span>
+          {% elif o.wc_status == "processing" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">Procesando</span>
+          {% elif o.wc_status == "pending" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">Pendiente</span>
+          {% elif o.wc_status == "cancelled" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">Cancelado</span>
+          {% elif o.wc_status == "refunded" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">Reembolsado</span>
+          {% else %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">{{ o.wc_status }}</span>
+          {% endif %}
+        </td>
+
+        {# Socio en MongoDB #}
+        <td class="px-4 py-3">
+          {% if o.mongo %}
+          <a href="/members/{{ o.mongo.member_id }}"
+             class="text-blue-600 hover:underline font-semibold">{{ o.mongo.nombre_completo or o.mongo.member_id }}</a>
+          <div class="text-xs text-slate-400">{{ o.mongo.member_id }}</div>
+          {% else %}
+          <span class="text-xs text-amber-600 font-semibold">⚠ Sin match en padrón</span>
+          {% endif %}
+        </td>
+
+        {# Estado pago MongoDB #}
+        <td class="px-4 py-3">
+          {% if o.mongo %}
+          <div class="text-xs text-slate-500">{{ o.mongo.periodo or "—" }}</div>
+          {% set estado = o.mongo.estado %}
+          {% if estado == "pagado" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">Pagado</span>
+          {% elif estado == "fraccionamiento" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">Fraccionamiento</span>
+          {% elif estado == "parcial" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">Parcial</span>
+          {% elif estado == "debe" %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Debe</span>
+          {% else %}
+          <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">{{ estado }}</span>
+          {% endif %}
+          {% if o.mongo.pagado_por %}
+          <div class="text-xs text-slate-400 mt-0.5 font-mono">{{ o.mongo.pagado_por }}</div>
+          {% endif %}
+          {% else %}
+          <span class="text-slate-300">—</span>
+          {% endif %}
+        </td>
+
+        {# Comprobante #}
+        <td class="px-4 py-3">
+          {% if o.mongo and (o.mongo.num_comprobante or o.mongo.tipo_comprobante or o.mongo.link_constancia) %}
+          <div class="text-slate-700">
+            {% if o.mongo.tipo_comprobante %}
+            <span class="capitalize">{{ o.mongo.tipo_comprobante }}</span>
+            {% endif %}
+            {% if o.mongo.num_comprobante %}
+            <span class="font-mono text-xs text-slate-500">{{ o.mongo.num_comprobante }}</span>
+            {% endif %}
+          </div>
+          {% if o.mongo.link_constancia %}
+          <a href="{{ o.mongo.link_constancia }}" target="_blank"
+             class="text-xs text-blue-500 hover:underline">Ver constancia</a>
+          {% endif %}
+          {% elif o.mongo %}
+          <span class="text-xs text-slate-300">Sin comprobante</span>
+          {% else %}
+          <span class="text-slate-300">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# ── Paginación ──────────────────────────────────────────────────────────── #}
+{% if total_pages > 1 %}
+<div class="flex items-center justify-center gap-2 mt-6">
+  {% if page > 1 %}
+  <a href="?page={{ page-1 }}&status={{ status }}&year={{ year }}&search={{ search }}"
+     class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">← Anterior</a>
+  {% endif %}
+  <span class="text-sm text-slate-500">Página {{ page }} de {{ total_pages }}</span>
+  {% if page < total_pages %}
+  <a href="?page={{ page+1 }}&status={{ status }}&year={{ year }}&search={{ search }}"
+     class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Siguiente →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% elif not error %}
+<div class="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400">
+  No se encontraron pedidos con los filtros aplicados.
+</div>
+{% endif %}
+{% endblock %}

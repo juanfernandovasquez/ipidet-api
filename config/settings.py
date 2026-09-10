@@ -44,6 +44,11 @@ PORTAL_SECRET = os.getenv("PORTAL_SECRET", "")          # secret para server-to-
 WC_WEBHOOK_SECRET = os.getenv("WC_WEBHOOK_SECRET", "")  # secret del webhook WooCommerce
 PORTAL_API_BASE = os.getenv("PORTAL_API_BASE", "http://localhost:8000")  # URL pública de FastAPI
 
+# WooCommerce REST API (solo lectura)
+WC_API_KEY    = os.getenv("WC_API_KEY", "")
+WC_API_SECRET = os.getenv("WC_API_SECRET", "")
+WC_STORE_URL  = os.getenv("WC_STORE_URL", "https://ipidet.org")
+
 # Scheduler de cobranzas
 SCHEDULER_ENABLED        = os.getenv("SCHEDULER_ENABLED", "false").lower() == "true"
 SCHEDULER_INTERVAL_HOURS = int(os.getenv("SCHEDULER_INTERVAL_HOURS", "24"))

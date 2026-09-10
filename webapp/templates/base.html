@@ -109,6 +109,9 @@
         <span class="flex-1">Finanzas</span>
         <span class="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-normal">mockup</span>
       </a>
+      <a href="/wc-orders" class="sidebar-link {% if '/wc-orders' in request.url.path %}active{% endif %}">
+        <i class="fa-brands fa-wordpress"></i> Pedidos WC
+      </a>
       {% endif %}
 
       {% if is_admin or 'faqs' in p or 'marketing' in p or 'comunicaciones' in p or 'eventos' in p %}
