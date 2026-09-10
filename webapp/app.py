@@ -1432,12 +1432,13 @@ async def wc_orders_page(
         )
 
         for o in raw_orders:
-            order_id = o["id"]
+            order_id      = o["id"]
+            customer_id   = o.get("customer_id") or 0
             billing_email = o.get("billing", {}).get("email", "")
-            billing_name = f"{o.get('billing',{}).get('first_name','')} {o.get('billing',{}).get('last_name','')}".strip()
-            total = o.get("total", "0.00")
-            date_str = (o.get("date_created") or "")[:10]
-            wc_status = o.get("status", "")
+            billing_name  = f"{o.get('billing',{}).get('first_name','')} {o.get('billing',{}).get('last_name','')}".strip()
+            total         = o.get("total", "0.00")
+            date_str      = (o.get("date_created") or "")[:10]
+            wc_status     = o.get("status", "")
             payment_method = o.get("payment_method_title", "")
 
             # Productos comprados
@@ -1446,19 +1447,24 @@ async def wc_orders_page(
                 pid = item.get("product_id")
                 cfg = WC_PRODUCT_MAP.get(pid, {})
                 productos.append({
-                    "nombre": item.get("name", ""),
-                    "product_id": pid,
+                    "nombre":      item.get("name", ""),
+                    "product_id":  pid,
                     "descripcion": cfg.get("descripcion", ""),
-                    "periodo": cfg.get("periodo"),
-                    "action": cfg.get("action", ""),
+                    "periodo":     cfg.get("periodo"),
+                    "action":      cfg.get("action", ""),
                 })
 
-            # Cruce con MongoDB: primero por WC#id, luego por email+periodo
+            periodo_guess = next((p["periodo"] for p in productos if p["periodo"]), None)
+
+            # Cruce con MongoDB:
+            # 1) por WC#id (webhook ya lo vinculó)
+            # 2) por wp_user_id del cliente (más fiable que email)
+            # 3) por email de facturación + período (fallback)
             mongo_pay = pdb.get_wc_payment(order_id)
-            if not mongo_pay and productos:
-                periodo_guess = next((p["periodo"] for p in productos if p["periodo"]), None)
-                if periodo_guess and billing_email:
-                    mongo_pay = pdb.get_wc_payment_by_email(billing_email, periodo_guess)
+            if not mongo_pay and customer_id:
+                mongo_pay = pdb.get_wc_payment_by_wp_user_id(customer_id, periodo_guess)
+            if not mongo_pay and periodo_guess and billing_email:
+                mongo_pay = pdb.get_wc_payment_by_email(billing_email, periodo_guess)
 
             orders_out.append({
                 "order_id":      order_id,

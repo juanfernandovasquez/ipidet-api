@@ -61,6 +61,7 @@
         <th class="px-4 py-3 text-left">Producto(s)</th>
         <th class="px-4 py-3 text-right">Total</th>
         <th class="px-4 py-3 text-left">Estado WC</th>
+        <th class="px-4 py-3 text-left">IPIDET ID</th>
         <th class="px-4 py-3 text-left">Socio en MongoDB</th>
         <th class="px-4 py-3 text-left">Pago MongoDB</th>
         <th class="px-4 py-3 text-left">Comprobante</th>
@@ -120,6 +121,18 @@
           <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">Reembolsado</span>
           {% else %}
           <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">{{ o.wc_status }}</span>
+          {% endif %}
+        </td>
+
+        {# IPIDET ID #}
+        <td class="px-4 py-3">
+          {% if o.mongo and o.mongo.member_id %}
+          <a href="/members/{{ o.mongo.member_id }}"
+             class="font-mono text-xs font-semibold text-blue-600 hover:underline">
+            {{ o.mongo.member_id }}
+          </a>
+          {% else %}
+          <span class="text-slate-300 text-xs">—</span>
           {% endif %}
         </td>
 

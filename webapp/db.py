@@ -1286,6 +1286,21 @@ def get_wc_payment(order_id: int) -> dict | None:
     return result
 
 
+def get_wc_payment_by_wp_user_id(wp_user_id: int, periodo: str = None) -> dict | None:
+    """Busca el socio por wp_user_id y, si hay periodo, su pago correspondiente."""
+    member = members_col.find_one({"wp_user_id": wp_user_id}, {"member_id": 1, "nombres": 1, "apellidos": 1})
+    if not member:
+        return None
+    nombre = f"{member.get('apellidos','').strip()}, {member.get('nombres','').strip()}".strip(", ")
+    if periodo:
+        pay = payments_col.find_one({"member_id": member["member_id"], "periodo": periodo})
+        if pay:
+            result = _clean(pay)
+            result["nombre_completo"] = nombre
+            return result
+    return {"member_id": member["member_id"], "nombre_completo": nombre, "solo_socio": True}
+
+
 def get_member_by_email_exact(email: str) -> dict | None:
     """Busca un socio cuyo array emails[] contenga este email (case-insensitive)."""
     email = email.strip().lower()
