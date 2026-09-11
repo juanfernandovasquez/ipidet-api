@@ -96,14 +96,7 @@
       editando: false,
       editandoFactura: false,
       fechaCobro: '',
-      editData: {
-        numero_factura: {{ (f.numero_factura or '') | tojson | replace('"', '&quot;') }},
-        empresa: {{ (f.empresa or '') | tojson | replace('"', '&quot;') }},
-        monto: {{ f.monto or 0 }},
-        fecha_emision: {{ (f.fecha_emision or '') | tojson | replace('"', '&quot;') }},
-        fecha_vencimiento: {{ (f.fecha_vencimiento or '') | tojson | replace('"', '&quot;') }},
-        concepto: {{ (f.concepto or '') | tojson | replace('"', '&quot;') }},
-      },
+      editData: {},
       async guardarEdicion() {
         const r = await fetch('/billing/credito/{{ f._id }}/update', {
           method: 'POST',
@@ -113,9 +106,9 @@
         if (r.ok) location.reload();
       },
       comentario: '',
-      comentarios: {{ coms | tojson | replace('"', '&quot;') }},
+      comentarios: [],
       enviando: false,
-      cuotas: {{ cuotas_init | tojson | replace('"', '&quot;') }},
+      cuotas: [],
       addingCuota: false,
       nuevaCuota: { monto: '', fecha_venc: '' },
       get cuotasPagadas() { return this.cuotas.filter(c => c.estado === 'pagado').length; },
@@ -173,7 +166,15 @@
         const r = await fetch('/billing/credito/{{ f._id }}/comentarios/' + idx + '/delete', { method: 'POST' });
         if (r.ok) this.comentarios.splice(idx, 1);
       },
-    }">
+    }"
+    x-init="
+      editData = JSON.parse($el.dataset.edit);
+      comentarios = JSON.parse($el.dataset.coms);
+      cuotas = JSON.parse($el.dataset.cuotas);
+    "
+    data-edit='{{ {"numero_factura": f.numero_factura or "", "empresa": f.empresa or "", "monto": f.monto or 0, "fecha_emision": f.fecha_emision or "", "fecha_vencimiento": f.fecha_vencimiento or "", "concepto": f.concepto or ""} | tojson }}'
+    data-coms='{{ coms | tojson }}'
+    data-cuotas='{{ cuotas_init | tojson }}'>
 
     <!-- Fila principal -->
     <tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" @click="open = !open">
