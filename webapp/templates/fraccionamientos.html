@@ -318,12 +318,46 @@
                         <button type="submit" class="text-violet-600 hover:text-violet-800 font-semibold text-xs">✓ Guardar</button>
                       </form>
                     </div>
-                    <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
+                    <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-start">
                       <input type="hidden" name="redirect_to" value="{{ rf }}">
                       <input type="hidden" name="estado" value="pagado">
-                      <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28">
-                      <input name="num_comprobante" placeholder="N° comp." class="input text-xs py-0.5 w-20">
-                      <button type="submit" class="text-green-600 hover:text-green-800 font-semibold text-xs">✓ Pagar</button>
+                      <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28 self-center">
+                      <div x-data="{
+                        numComp: '', tipoComp: '', busq: '', resultados: [], t: null,
+                        async buscar() {
+                          clearTimeout(this.t);
+                          if (!this.busq) { this.resultados = []; return; }
+                          this.t = setTimeout(async () => {
+                            const r = await fetch('/api/comprobantes/search?q=' + encodeURIComponent(this.busq));
+                            const d = await r.json();
+                            this.resultados = d.comprobantes || [];
+                          }, 300);
+                        },
+                        seleccionar(c) { this.numComp = c.numero; this.tipoComp = c.tipo; this.busq = c.numero; this.resultados = []; }
+                      }" class="flex flex-col gap-0.5">
+                        <div class="flex gap-1">
+                          <select name="tipo_comprobante" x-model="tipoComp" class="input text-xs py-0.5">
+                            <option value="">Tipo</option>
+                            <option value="boleta">Boleta</option>
+                            <option value="factura">Factura</option>
+                            <option value="recibo">Recibo</option>
+                          </select>
+                          <input name="num_comprobante" x-model="numComp" placeholder="N° comp." class="input text-xs py-0.5 w-24">
+                        </div>
+                        <div>
+                          <input type="text" x-model="busq" @input="buscar()" placeholder="Buscar comprobante…" class="input text-xs py-0.5 w-full">
+                          <div x-show="resultados.length > 0" class="bg-white border border-slate-200 rounded shadow-lg max-h-32 overflow-y-auto text-xs mt-0.5 z-10">
+                            <template x-for="c in resultados" :key="c._id">
+                              <button type="button" @click="seleccionar(c)" class="w-full text-left px-2 py-1 hover:bg-blue-50 flex gap-2">
+                                <span class="font-mono font-semibold text-slate-700" x-text="c.numero"></span>
+                                <span class="text-slate-400 capitalize" x-text="c.tipo"></span>
+                                <span class="text-slate-400" x-text="c.fecha_emision"></span>
+                              </button>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                      <button type="submit" class="text-green-600 hover:text-green-800 font-semibold text-xs self-center">✓ Pagar</button>
                     </form>
                     {% else %}
                     <div class="flex gap-2">
@@ -342,13 +376,43 @@
                         <input type="hidden" name="redirect_to" value="{{ rf }}">
                         <input type="hidden" name="estado" value="pagado">
                         <input name="fecha_pago" type="date" value="{{ cuota.get('fecha_pago','') }}" class="input text-xs py-0.5 w-28">
-                        <select name="tipo_comprobante" class="input text-xs py-0.5">
-                          <option value="">Tipo</option>
-                          <option value="boleta" {% if cuota.get('tipo_comprobante')=='boleta' %}selected{% endif %}>Boleta</option>
-                          <option value="factura" {% if cuota.get('tipo_comprobante')=='factura' %}selected{% endif %}>Factura</option>
-                          <option value="recibo" {% if cuota.get('tipo_comprobante')=='recibo' %}selected{% endif %}>Recibo</option>
-                        </select>
-                        <input name="num_comprobante" value="{{ cuota.get('num_comprobante','') }}" placeholder="N° comp." class="input text-xs py-0.5 w-24">
+                        <div x-data="{
+                          numComp: {{ (cuota.get('num_comprobante') or '') | tojson | replace('"', '&quot;') }},
+                          tipoComp: {{ (cuota.get('tipo_comprobante') or '') | tojson | replace('"', '&quot;') }},
+                          busq: '', resultados: [], t: null,
+                          async buscar() {
+                            clearTimeout(this.t);
+                            if (!this.busq) { this.resultados = []; return; }
+                            this.t = setTimeout(async () => {
+                              const r = await fetch('/api/comprobantes/search?q=' + encodeURIComponent(this.busq));
+                              const d = await r.json();
+                              this.resultados = d.comprobantes || [];
+                            }, 300);
+                          },
+                          seleccionar(c) { this.numComp = c.numero; this.tipoComp = c.tipo; this.busq = c.numero; this.resultados = []; }
+                        }" class="flex flex-col gap-0.5">
+                          <div class="flex gap-1">
+                            <select name="tipo_comprobante" x-model="tipoComp" class="input text-xs py-0.5">
+                              <option value="">Tipo</option>
+                              <option value="boleta">Boleta</option>
+                              <option value="factura">Factura</option>
+                              <option value="recibo">Recibo</option>
+                            </select>
+                            <input name="num_comprobante" x-model="numComp" placeholder="N° comp." class="input text-xs py-0.5 w-24">
+                          </div>
+                          <div>
+                            <input type="text" x-model="busq" @input="buscar()" placeholder="Buscar comprobante…" class="input text-xs py-0.5 w-full">
+                            <div x-show="resultados.length > 0" class="bg-white border border-slate-200 rounded shadow-lg max-h-32 overflow-y-auto text-xs mt-0.5 z-10">
+                              <template x-for="c in resultados" :key="c._id">
+                                <button type="button" @click="seleccionar(c)" class="w-full text-left px-2 py-1 hover:bg-blue-50 flex gap-2">
+                                  <span class="font-mono font-semibold text-slate-700" x-text="c.numero"></span>
+                                  <span class="text-slate-400 capitalize" x-text="c.tipo"></span>
+                                  <span class="text-slate-400" x-text="c.fecha_emision"></span>
+                                </button>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
                         <select name="medio" class="input text-xs py-0.5">
                           <option value="">Medio</option>
                           {% for mp in medios_pago %}<option value="{{ mp }}" {% if cuota.get('medio_pago')==mp %}selected{% endif %}>{{ mp }}</option>{% endfor %}
