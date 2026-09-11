@@ -2006,32 +2006,15 @@ def get_productos_list() -> list:
 
 # ── Ingresos (flujo de caja) ───────────────────────────────────────────────────
 
-def _producto_label_contado(pmt: dict, tipo_entrada: str) -> str:
-    """Deriva etiqueta de producto para entradas contado."""
-    raw = (pmt.get("raw_original") or "").strip()
-    # raw_original de WC contiene el nombre del producto (ej. "Pago 2026")
-    # raw_original de Excel contiene texto libre con "PAGADO EY", etc.
-    if raw and "PAGADO" not in raw.upper():
-        return raw[:60]
-    if tipo_entrada == "cuota":
-        return "Fraccionamiento"
-    if tipo_entrada == "parcial":
-        return "Pago parcial"
-    return "Cuota anual"
-
-
 def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
-                 empresa: str = "", medio: str = "",
-                 modalidad: str = "", producto: str = "",
+                 periodo: str = "", empresa: str = "", medio: str = "",
                  tipo_fecha: str = "pago",
                  page: int = 1, per_page: int = 100) -> tuple:
     """
     Devuelve (page_docs, total, stats).
-    tipo_fecha: 'pago'    → filtra por fecha de cobro/pago
-                'emision' → filtra por fecha de emisión del comprobante/factura
-    modalidad:  ''        → todo
-                'contado' → solo pagos individuales (payments)
-                'credito' → solo facturas de crédito (facturas_credito)
+    Muestra registros de cobranza con fecha_pago registrada, ordenados por fecha.
+    tipo_fecha='pago'    → todos los que tienen fecha_pago
+    tipo_fecha='emision' → solo los que además tienen num_comprobante emitido
     """
     result = []
     member_cache: dict = {}
@@ -2053,139 +2036,101 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
             return False
         return True
 
-    def _ok_producto(label: str) -> bool:
-        return not producto or producto.lower() in label.lower()
+    for pmt in payments_col.find({}):
+        mid      = pmt.get("member_id", "")
+        per      = pmt.get("periodo", "")
+        emp      = pmt.get("empresa_pagadora") or ""
+        pid      = str(pmt["_id"])
+        cuotas   = pmt.get("cuotas", [])
+        parciales= pmt.get("pagos_parciales", [])
+        medio_p  = pmt.get("medio_pago", "") or ""
 
-    # ── Contado: payments collection ──────────────────────────────────────────
-    if modalidad != "credito":
-        for pmt in payments_col.find({}):
-            mid    = pmt.get("member_id", "")
-            periodo= pmt.get("periodo", "")
-            emp    = (pmt.get("empresa_pagadora") or "")
-            pid    = str(pmt["_id"])
-            cuotas = pmt.get("cuotas", [])
-            parciales = pmt.get("pagos_parciales", [])
-            medio_p   = pmt.get("medio_pago", "") or ""
+        if periodo and per != periodo:
+            continue
+        if empresa and emp != empresa:
+            continue
 
-            # Filtros comunes a todo el payment
-            if empresa and emp != empresa:
+        # 1. Pago completo (sin cuotas ni parciales)
+        if not cuotas and not parciales:
+            fecha   = pmt.get("fecha_pago") or ""
+            num_cmp = pmt.get("num_comprobante", "") or ""
+            if tipo_fecha == "emision" and not num_cmp:
+                pass  # modo emisión: solo los que tienen comprobante emitido
+            elif _ok_fecha(fecha) and (not medio or medio_p == medio):
+                result.append({
+                    "_id": pid,
+                    "tipo_entrada": "pago",
+                    "fecha": fecha,
+                    "member_id": mid,
+                    "nombre": _nombre(mid),
+                    "periodo": per,
+                    "concepto": "Pago completo",
+                    "monto": pmt.get("monto"),
+                    "empresa": emp,
+                    "medio_pago": medio_p,
+                    "num_comprobante": num_cmp,
+                    "tipo_comprobante": pmt.get("tipo_comprobante", ""),
+                    "link_constancia": pmt.get("link_constancia", ""),
+                })
+
+        # 2. Cuotas de fraccionamiento pagadas
+        for c in cuotas:
+            if c.get("estado") != "pagado":
                 continue
-
-            # 1. Pago completo
-            if not cuotas and not parciales:
-                fecha = pmt.get("fecha_pago") or ""
-                plabel = _producto_label_contado(pmt, "pago")
-                if _ok_fecha(fecha) and (not medio or medio_p == medio) and _ok_producto(plabel):
-                    result.append({
-                        "_id": pid, "tipo_entrada": "pago", "modalidad": "contado",
-                        "fecha": fecha, "member_id": mid, "nombre": _nombre(mid),
-                        "periodo": periodo, "concepto": "Pago completo",
-                        "producto_label": plabel,
-                        "monto": None, "empresa": emp, "medio_pago": medio_p,
-                        "num_comprobante": pmt.get("num_comprobante", ""),
-                        "tipo_comprobante": pmt.get("tipo_comprobante", ""),
-                    })
-
-            # 2. Cuotas fraccionamiento
-            for c in cuotas:
-                if c.get("estado") != "pagado":
-                    continue
-                fecha  = c.get("fecha_pago") or ""
-                medio_c = c.get("medio_pago") or medio_p
-                plabel  = _producto_label_contado(pmt, "cuota")
-                if _ok_fecha(fecha) and (not medio or medio_c == medio) and _ok_producto(plabel):
-                    result.append({
-                        "_id": f"{pid}_c{c.get('numero',0)}", "tipo_entrada": "cuota",
-                        "modalidad": "contado", "fecha": fecha, "member_id": mid,
-                        "nombre": _nombre(mid), "periodo": periodo,
-                        "concepto": f"Cuota {c.get('numero','')} / fraccionamiento",
-                        "producto_label": plabel,
-                        "monto": c.get("monto"), "empresa": emp, "medio_pago": medio_c,
-                        "num_comprobante": c.get("num_comprobante", ""),
-                        "tipo_comprobante": c.get("tipo_comprobante", ""),
-                    })
-
-            # 3. Pagos parciales
-            for pp in parciales:
-                fecha   = pp.get("fecha_pago") or ""
-                medio_pp = pp.get("medio_pago") or medio_p
-                plabel   = "Pago parcial"
-                if _ok_fecha(fecha) and (not medio or medio_pp == medio) and _ok_producto(plabel):
-                    result.append({
-                        "_id": f"{pid}_p{pp.get('numero',0)}", "tipo_entrada": "parcial",
-                        "modalidad": "contado", "fecha": fecha, "member_id": mid,
-                        "nombre": _nombre(mid), "periodo": periodo,
-                        "concepto": f"Pago parcial {pp.get('numero','')}",
-                        "producto_label": plabel,
-                        "monto": pp.get("monto"), "empresa": emp, "medio_pago": medio_pp,
-                        "num_comprobante": pp.get("num_comprobante", ""),
-                        "tipo_comprobante": pp.get("tipo_comprobante", ""),
-                    })
-
-    # ── Crédito: facturas_credito collection ─────────────────────────────────
-    if modalidad != "contado":
-        for fc in credito_col.find({}):
-            fid     = str(fc["_id"])
-            emp     = (fc.get("empresa") or "")
-            concepto_fc = (fc.get("concepto") or "Crédito empresa").strip()
-            num_fac = fc.get("numero_factura", "") or ""
-            monto_fc= fc.get("monto") or 0
-            fecha_em = fc.get("fecha_emision", "") or ""
-            fecha_co = fc.get("fecha_cobro", "") or ""
-            plabel   = concepto_fc or "Crédito empresa"
-            cuotas_fc = fc.get("cuotas", [])
-
-            if empresa and emp != empresa:
+            fecha   = c.get("fecha_pago") or ""
+            medio_c = c.get("medio_pago") or medio_p
+            num_cmp = c.get("num_comprobante", "") or ""
+            if tipo_fecha == "emision" and not num_cmp:
                 continue
-            if not _ok_producto(plabel):
+            if _ok_fecha(fecha) and (not medio or medio_c == medio):
+                result.append({
+                    "_id": f"{pid}_c{c.get('numero', 0)}",
+                    "tipo_entrada": "cuota",
+                    "fecha": fecha,
+                    "member_id": mid,
+                    "nombre": _nombre(mid),
+                    "periodo": per,
+                    "concepto": f"Fraccionamiento — cuota {c.get('numero', '')}",
+                    "monto": c.get("monto"),
+                    "empresa": emp,
+                    "medio_pago": medio_c,
+                    "num_comprobante": num_cmp,
+                    "tipo_comprobante": c.get("tipo_comprobante", ""),
+                    "link_constancia": c.get("link_constancia", ""),
+                })
+
+        # 3. Pagos parciales
+        for pp in parciales:
+            fecha    = pp.get("fecha_pago") or ""
+            medio_pp = pp.get("medio_pago") or medio_p
+            num_cmp  = pp.get("num_comprobante", "") or ""
+            if tipo_fecha == "emision" and not num_cmp:
                 continue
-
-            def _credito_entry(fecha: str, tipo: str, concepto: str, monto) -> dict:
-                return {
-                    "_id": f"{fid}_{tipo}", "tipo_entrada": f"credito_{tipo}",
-                    "modalidad": "credito", "fecha": fecha,
-                    "member_id": "", "nombre": emp, "periodo": "",
-                    "concepto": concepto, "producto_label": plabel,
-                    "monto": monto, "empresa": emp, "medio_pago": "",
-                    "num_comprobante": num_fac, "tipo_comprobante": "factura",
-                    "estado_credito": fc.get("estado", ""),
-                }
-
-            if tipo_fecha == "emision":
-                # Una entrada por factura, filtrada por fecha de emisión
-                if _ok_fecha(fecha_em):
-                    result.append(_credito_entry(fecha_em, "emision", concepto_fc, monto_fc))
-            else:
-                # tipo_fecha == "pago": solo entradas efectivamente cobradas
-                if not cuotas_fc:
-                    if fc.get("estado") == "cobrado" and _ok_fecha(fecha_co):
-                        result.append(_credito_entry(fecha_co, "cobrado", concepto_fc, monto_fc))
-                else:
-                    for c in cuotas_fc:
-                        if c.get("estado") != "pagado":
-                            continue
-                        fecha_c = c.get("fecha_pago") or ""
-                        if _ok_fecha(fecha_c):
-                            result.append({
-                                "_id": f"{fid}_cc{c.get('numero',0)}",
-                                "tipo_entrada": "credito_cuota",
-                                "modalidad": "credito", "fecha": fecha_c,
-                                "member_id": "", "nombre": emp, "periodo": "",
-                                "concepto": f"{concepto_fc} — Cuota {c.get('numero','')}",
-                                "producto_label": plabel,
-                                "monto": c.get("monto"), "empresa": emp, "medio_pago": "",
-                                "num_comprobante": num_fac, "tipo_comprobante": "factura",
-                                "estado_credito": "cobrado",
-                            })
+            if _ok_fecha(fecha) and (not medio or medio_pp == medio):
+                result.append({
+                    "_id": f"{pid}_p{pp.get('numero', 0)}",
+                    "tipo_entrada": "parcial",
+                    "fecha": fecha,
+                    "member_id": mid,
+                    "nombre": _nombre(mid),
+                    "periodo": per,
+                    "concepto": f"Pago parcial {pp.get('numero', '')}",
+                    "monto": pp.get("monto"),
+                    "empresa": emp,
+                    "medio_pago": medio_pp,
+                    "num_comprobante": num_cmp,
+                    "tipo_comprobante": pp.get("tipo_comprobante", ""),
+                    "link_constancia": pp.get("link_constancia", ""),
+                })
 
     result.sort(key=lambda x: x.get("fecha", ""), reverse=True)
     total = len(result)
+    con_monto  = [r for r in result if r.get("monto")]
+    sin_monto  = total - len(con_monto)
     stats = {
-        "total_contado": sum(1 for r in result if r["modalidad"] == "contado"),
-        "total_credito":  sum(1 for r in result if r["modalidad"] == "credito"),
-        "monto_contado":  sum(r.get("monto") or 0 for r in result if r["modalidad"] == "contado"),
-        "monto_credito":  sum(r.get("monto") or 0 for r in result if r["modalidad"] == "credito"),
-        "monto_total":    sum(r.get("monto") or 0 for r in result),
+        "monto_total":  sum(r["monto"] for r in con_monto),
+        "con_monto":    len(con_monto),
+        "sin_monto":    sin_monto,
     }
     start = (page - 1) * per_page
     return result[start:start + per_page], total, stats

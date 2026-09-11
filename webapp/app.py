@@ -973,21 +973,19 @@ async def credito_update_fields(factura_id: str, request: Request):
 
 @app.get("/billing/ingresos", response_class=HTMLResponse)
 async def billing_ingresos(
-    request:    Request,
+    request:     Request,
     fecha_desde: str = "",
     fecha_hasta: str = "",
+    periodo:     str = "",
     empresa:     str = "",
     medio:       str = "",
-    modalidad:   str = "",
-    producto:    str = "",
     tipo_fecha:  str = "pago",
     page:        int = 1,
 ):
     docs, total, stats = pdb.get_ingresos(
         fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
-        empresa=empresa, medio=medio,
-        modalidad=modalidad, producto=producto, tipo_fecha=tipo_fecha,
-        page=page,
+        periodo=periodo, empresa=empresa, medio=medio,
+        tipo_fecha=tipo_fecha, page=page,
     )
     pages = max(1, (total + 99) // 100)
     return templates.TemplateResponse(request, "ingresos.html", _ctx(
@@ -997,12 +995,12 @@ async def billing_ingresos(
         stats       = stats,
         empresas    = pdb.get_all_companies(),
         medios      = pdb.MEDIOS_PAGO,
+        periodos    = ["2025", "2026", "2027"],
         fecha_desde = fecha_desde,
         fecha_hasta = fecha_hasta,
+        periodo     = periodo,
         empresa     = empresa,
         medio       = medio,
-        modalidad   = modalidad,
-        producto    = producto,
         tipo_fecha  = tipo_fecha,
         page        = page,
         pages       = pages,

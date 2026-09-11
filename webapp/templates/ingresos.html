@@ -3,7 +3,7 @@
 {% block heading %}Cobranzas{% endblock %}
 
 {% block header_actions %}
-<span class="text-sm text-slate-500">{{ total }} entrada{% if total != 1 %}s{% endif %}</span>
+<span class="text-sm text-slate-500">{{ total }} registro{% if total != 1 %}s{% endif %}</span>
 {% endblock %}
 
 {% block content %}
@@ -27,69 +27,47 @@
 </div>
 
 <!-- Stats -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+<div class="grid grid-cols-3 gap-4 mb-5">
   <div class="bg-white rounded-xl border border-slate-200 p-4">
-    <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Total entradas</div>
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Registros</div>
     <div class="text-2xl font-bold text-slate-800">{{ total }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">
-      {{ stats.total_contado }} contado · {{ stats.total_credito }} crédito
-    </div>
+    <div class="text-xs text-slate-400 mt-0.5">con fecha de pago registrada</div>
   </div>
   <div class="bg-white rounded-xl border border-green-200 p-4">
-    <div class="text-xs text-green-600 uppercase tracking-wide mb-1">Monto total</div>
+    <div class="text-xs text-green-600 uppercase tracking-wide mb-1">Monto registrado</div>
     <div class="text-2xl font-bold text-green-700">S/ {{ "%.2f"|format(stats.monto_total) }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">entradas con monto registrado</div>
+    <div class="text-xs text-slate-400 mt-0.5">{{ stats.con_monto }} pago{% if stats.con_monto != 1 %}s{% endif %} con monto</div>
   </div>
-  <div class="bg-white rounded-xl border border-sky-200 p-4">
-    <div class="text-xs text-sky-600 uppercase tracking-wide mb-1">Contado</div>
-    <div class="text-2xl font-bold text-sky-700">S/ {{ "%.2f"|format(stats.monto_contado) }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">{{ stats.total_contado }} pagos individuales</div>
-  </div>
-  <div class="bg-white rounded-xl border border-indigo-200 p-4">
-    <div class="text-xs text-indigo-600 uppercase tracking-wide mb-1">Crédito empresa</div>
-    <div class="text-2xl font-bold text-indigo-700">S/ {{ "%.2f"|format(stats.monto_credito) }}</div>
-    <div class="text-xs text-slate-400 mt-0.5">{{ stats.total_credito }} cobros empresa</div>
+  <div class="bg-white rounded-xl border border-slate-200 p-4">
+    <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Sin monto</div>
+    <div class="text-2xl font-bold text-slate-400">{{ stats.sin_monto }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">pagos anuales sin importe guardado</div>
   </div>
 </div>
 
 <!-- Filtros -->
 <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
-  <form method="get" action="/billing/ingresos" class="flex flex-wrap gap-3 items-end"
-        x-data="{ t: null }">
+  <form method="get" action="/billing/ingresos" class="flex flex-wrap gap-3 items-end" x-data="{ t: null }">
 
-    <!-- Tipo de fecha -->
+    <!-- Toggle: qué se muestra -->
     <div>
-      <label class="block text-xs font-medium text-slate-600 mb-1">Ver fechas de</label>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Mostrar</label>
       <div class="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
         <label class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer
           {% if tipo_fecha == 'pago' %}bg-blue-600 text-white font-medium{% else %}bg-white text-slate-600 hover:bg-slate-50{% endif %}">
           <input type="radio" name="tipo_fecha" value="pago"
             {% if tipo_fecha == 'pago' %}checked{% endif %}
             class="hidden" @change="$el.form.submit()">
-          <i class="fa-solid fa-coins text-[11px]"></i> Pago
+          Todos los pagos
         </label>
         <label class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer border-l border-slate-200
           {% if tipo_fecha == 'emision' %}bg-blue-600 text-white font-medium{% else %}bg-white text-slate-600 hover:bg-slate-50{% endif %}">
           <input type="radio" name="tipo_fecha" value="emision"
             {% if tipo_fecha == 'emision' %}checked{% endif %}
             class="hidden" @change="$el.form.submit()">
-          <i class="fa-solid fa-file-invoice text-[11px]"></i> Emisión
+          Solo con comprobante emitido
         </label>
       </div>
-    </div>
-
-    <!-- Modalidad -->
-    <div>
-      <label class="block text-xs font-medium text-slate-600 mb-1">Modalidad</label>
-      <select name="modalidad" class="input text-sm" @change="$el.form.submit()">
-        <option value="" {% if not modalidad %}selected{% endif %}>Todas</option>
-        <option value="contado" {% if modalidad == 'contado' %}selected{% endif %}>
-          <i class="fa-solid fa-user"></i> Contado
-        </option>
-        <option value="credito" {% if modalidad == 'credito' %}selected{% endif %}>
-          <i class="fa-solid fa-building"></i> Crédito empresa
-        </option>
-      </select>
     </div>
 
     <!-- Rango de fechas -->
@@ -102,6 +80,17 @@
       <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="input text-sm">
     </div>
 
+    <!-- Período -->
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
+      <select name="periodo" class="input text-sm" @change="$el.form.submit()">
+        <option value="">Todos</option>
+        {% for p in periodos %}
+        <option value="{{ p }}" {% if p == periodo %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <!-- Empresa -->
     <div>
       <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
@@ -111,17 +100,6 @@
         <option value="{{ emp.nombre }}" {% if emp.nombre == empresa %}selected{% endif %}>{{ emp.nombre }}</option>
         {% endfor %}
       </select>
-    </div>
-
-    <!-- Producto (text search) -->
-    <div class="flex-1 min-w-40">
-      <label class="block text-xs font-medium text-slate-600 mb-1">Producto / concepto</label>
-      <input type="text" name="producto" value="{{ producto }}"
-             placeholder="Ej: Cuota Filial, Fraccionamiento…"
-             class="input text-sm w-full"
-             x-ref="prod"
-             @input="clearTimeout(t); t = setTimeout(() => $refs.prod.form.submit(), 450)"
-             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
     </div>
 
     <!-- Medio de pago -->
@@ -142,6 +120,13 @@
   </form>
 </div>
 
+{% if tipo_fecha == 'emision' %}
+<div class="text-xs text-slate-400 mb-3 flex items-center gap-1.5">
+  <i class="fa-solid fa-circle-info"></i>
+  Mostrando solo registros que tienen número de comprobante (boleta/factura) emitido.
+</div>
+{% endif %}
+
 <!-- Tabla -->
 <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
   {% if ingresos %}
@@ -149,11 +134,11 @@
     <table class="w-full text-sm">
       <thead class="bg-slate-50 border-b border-slate-200">
         <tr>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha</th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Socio / Empresa</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha pago</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Socio</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Período</th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipo</th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Producto</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Concepto</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
           <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Medio</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Comprobante</th>
@@ -163,81 +148,45 @@
         {% for e in ingresos %}
         <tr class="hover:bg-slate-50 transition-colors">
 
-          <!-- Fecha -->
-          <td class="px-4 py-3 text-slate-600 text-xs font-mono whitespace-nowrap">
-            {{ e.fecha or '—' }}
-          </td>
+          <td class="px-4 py-3 text-slate-600 text-xs font-mono whitespace-nowrap">{{ e.fecha or '—' }}</td>
 
-          <!-- Socio / Empresa -->
           <td class="px-4 py-3">
-            {% if e.modalidad == 'credito' %}
-            <span class="font-medium text-slate-800">{{ e.nombre }}</span>
-            <div class="text-xs text-indigo-500 mt-0.5"><i class="fa-solid fa-building mr-0.5"></i> Empresa</div>
-            {% else %}
             <a href="/members/{{ e.member_id }}" class="font-medium text-slate-800 hover:text-blue-600 transition-colors">
               {{ e.nombre }}
             </a>
             <div class="text-xs text-slate-400">{{ e.member_id }}</div>
-            {% endif %}
           </td>
 
-          <!-- Período -->
           <td class="px-4 py-3 text-slate-500 text-xs">{{ e.periodo or '—' }}</td>
 
-          <!-- Tipo (badge) -->
           <td class="px-4 py-3">
             {% if e.tipo_entrada == 'cuota' %}
             <span class="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
-              <i class="fa-solid fa-layer-group text-[9px]"></i> Cuota fracc.
+              <i class="fa-solid fa-layer-group text-[9px]"></i> {{ e.concepto }}
             </span>
             {% elif e.tipo_entrada == 'parcial' %}
             <span class="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full font-medium">
-              <i class="fa-solid fa-puzzle-piece text-[9px]"></i> Parcial
-            </span>
-            {% elif e.tipo_entrada == 'pago' %}
-            <span class="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-medium">
-              <i class="fa-solid fa-circle-check text-[9px]"></i> Pago completo
-            </span>
-            {% elif e.tipo_entrada == 'credito_cobrado' %}
-            <span class="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-medium">
-              <i class="fa-solid fa-building-columns text-[9px]"></i> Crédito cobrado
-            </span>
-            {% elif e.tipo_entrada == 'credito_cuota' %}
-            <span class="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-medium">
-              <i class="fa-solid fa-building-columns text-[9px]"></i> Crédito cuota
-            </span>
-            {% elif e.tipo_entrada == 'credito_emision' %}
-            <span class="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
-              <i class="fa-solid fa-file-invoice text-[9px]"></i> Emisión factura
-              {% if e.estado_credito == 'vencido' %}
-              <span class="ml-1 text-red-500 font-semibold">· vencida</span>
-              {% elif e.estado_credito == 'pendiente' %}
-              <span class="ml-1 text-slate-400">· pendiente</span>
-              {% endif %}
+              <i class="fa-solid fa-puzzle-piece text-[9px]"></i> {{ e.concepto }}
             </span>
             {% else %}
-            <span class="text-xs text-slate-400">{{ e.tipo_entrada }}</span>
+            <span class="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-medium">
+              <i class="fa-solid fa-circle-check text-[9px]"></i> {{ e.concepto }}
+            </span>
             {% endif %}
           </td>
 
-          <!-- Producto -->
-          <td class="px-4 py-3">
-            <span class="text-xs text-slate-600">{{ e.producto_label or '—' }}</span>
-          </td>
+          <td class="px-4 py-3 text-slate-500 text-xs">{{ e.empresa or '—' }}</td>
 
-          <!-- Monto -->
           <td class="px-4 py-3 text-right font-semibold text-slate-800">
-            {% if e.monto is not none %}
+            {% if e.monto %}
             S/ {{ "%.2f"|format(e.monto) }}
             {% else %}
-            <span class="text-slate-400">—</span>
+            <span class="text-slate-300 font-normal">—</span>
             {% endif %}
           </td>
 
-          <!-- Medio -->
           <td class="px-4 py-3 text-slate-500 text-xs">{{ e.medio_pago or '—' }}</td>
 
-          <!-- Comprobante -->
           <td class="px-4 py-3">
             {% if e.num_comprobante %}
             <div class="font-mono text-xs text-slate-700">{{ e.num_comprobante }}</div>
@@ -248,6 +197,7 @@
             <span class="text-xs text-slate-300">—</span>
             {% endif %}
           </td>
+
         </tr>
         {% endfor %}
       </tbody>
@@ -256,7 +206,7 @@
   {% else %}
   <div class="flex flex-col items-center justify-center py-16 text-slate-400">
     <i class="fa-solid fa-arrow-trend-up text-4xl mb-3 opacity-30"></i>
-    <p class="text-sm font-medium">Sin ingresos para los filtros aplicados</p>
+    <p class="text-sm font-medium">Sin registros para los filtros aplicados</p>
     <p class="text-xs mt-1">Ajusta el rango de fechas o limpia los filtros</p>
   </div>
   {% endif %}
@@ -268,13 +218,13 @@
   <span>Página {{ page }} de {{ pages }}</span>
   <div class="flex gap-1">
     {% if page > 1 %}
-    <a href="?fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&empresa={{ empresa }}&medio={{ medio }}&modalidad={{ modalidad }}&producto={{ producto }}&tipo_fecha={{ tipo_fecha }}&page={{ page - 1 }}"
+    <a href="?fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&periodo={{ periodo }}&empresa={{ empresa }}&medio={{ medio }}&tipo_fecha={{ tipo_fecha }}&page={{ page - 1 }}"
        class="btn-ghost text-xs py-1.5 px-3">
       <i class="fa-solid fa-chevron-left mr-1 text-[10px]"></i> Anterior
     </a>
     {% endif %}
     {% if page < pages %}
-    <a href="?fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&empresa={{ empresa }}&medio={{ medio }}&modalidad={{ modalidad }}&producto={{ producto }}&tipo_fecha={{ tipo_fecha }}&page={{ page + 1 }}"
+    <a href="?fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&periodo={{ periodo }}&empresa={{ empresa }}&medio={{ medio }}&tipo_fecha={{ tipo_fecha }}&page={{ page + 1 }}"
        class="btn-ghost text-xs py-1.5 px-3">
       Siguiente <i class="fa-solid fa-chevron-right ml-1 text-[10px]"></i>
     </a>
