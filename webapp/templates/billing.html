@@ -130,7 +130,13 @@
       {% for p in payments %}
       {% set sl = status_labels.get(p.estado, ('—','gray')) %}
       {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&comprobante_emitido=" ~ comprobante_emitido ~ "&page=" ~ page %}
-      <tbody x-data='billingRow({{ p.get("empresa_pagadora") | tojson }})' class="border-b border-slate-100">
+      <tbody x-data='billingRow({{ p.get("empresa_pagadora") | tojson }})'
+             x-init="nc = $el.dataset.nc; tipoComp = $el.dataset.tipoComp; fechaComp = $el.dataset.fechaComp"
+             data-nc="{{ p.get('num_comprobante') or '' }}"
+             data-tipo-comp="{{ p.get('tipo_comprobante') or '' }}"
+             data-fecha-comp="{{ p.get('fecha_emision_comprobante') or '' }}"
+             @comprobante-picked.window="if ($event.detail.formKey === 'billing-{{ p._id }}') { nc = $event.detail.c.numero; tipoComp = $event.detail.c.tipo; fechaComp = $event.detail.c.fecha_emision || ''; }"
+             class="border-b border-slate-100">
         <tr class="hover:bg-slate-50 transition-colors">
           <td class="px-4 py-3">
             <a href="/members/{{ p.get('member_id','') }}" class="font-medium text-blue-700 hover:underline text-xs">{{ p.get('nombre_completo','') }}</a>
@@ -199,20 +205,27 @@
                 <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de pago</label>
                 <input name="fecha_pago" type="date" value="{{ p.get('fecha_pago','') }}" class="input text-xs py-1">
               </div>
-              <div class="contents" x-data="{ nc: '{{ p.get('num_comprobante','') }}' }">
+              <div class="contents">
                 <div>
                   <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante</label>
-                  <input name="num_comprobante" x-model="nc" placeholder="F001-000123" class="input text-xs py-1 w-32">
+                  <div class="flex items-center gap-1">
+                    <input name="num_comprobante" x-model="nc" placeholder="F001-000123" class="input text-xs py-1 w-32">
+                    <button type="button" @click="$store.picker.abrir('billing-{{ p._id }}')"
+                            title="Buscar comprobante"
+                            class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 rounded px-1.5 py-1 hover:bg-blue-50 transition-colors">
+                      <i class="fa-solid fa-magnifying-glass"></i>
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-slate-600 mb-1">
                     Tipo doc. <span x-show="nc" x-cloak class="text-red-500">*</span>
                   </label>
-                  <select name="tipo_comprobante" :required="!!nc" class="input text-xs py-1">
+                  <select name="tipo_comprobante" x-model="tipoComp" :required="!!nc" class="input text-xs py-1">
                     <option value="">— Sin tipo —</option>
-                    <option value="boleta" {% if p.get('tipo_comprobante') == 'boleta' %}selected{% endif %}>Boleta</option>
-                    <option value="factura" {% if p.get('tipo_comprobante') == 'factura' %}selected{% endif %}>Factura</option>
-                    <option value="recibo" {% if p.get('tipo_comprobante') == 'recibo' %}selected{% endif %}>Recibo</option>
+                    <option value="boleta">Boleta</option>
+                    <option value="factura">Factura</option>
+                    <option value="recibo">Recibo</option>
                   </select>
                 </div>
                 <div>
@@ -220,7 +233,7 @@
                     Fecha emisión SUNAT <span x-show="nc" x-cloak class="text-red-500">*</span>
                   </label>
                   <input name="fecha_emision_comprobante" type="date"
-                    value="{{ p.get('fecha_emision_comprobante','') }}"
+                    x-model="fechaComp"
                     :required="!!nc" class="input text-xs py-1 w-36">
                 </div>
               </div>
@@ -809,6 +822,9 @@ function billingRow(initialEmpresa) {
     tipoPagador: initialEmpresa ? 'empresa' : 'socio',
     empresaVal: initialEmpresa || '',
     copied: false,
+    nc: '',
+    tipoComp: '',
+    fechaComp: '',
     companySuggestions: [],
     showSuggestions: false,
     fetchCompanies() {
