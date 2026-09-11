@@ -28,6 +28,7 @@ events_col = _db.events
 companies_col = _db.companies
 credito_col = _db.facturas_credito
 productos_col = _db.productos
+comprobantes_col = _db.comprobantes
 
 MEDIOS_PAGO = [
     "Transferencia bancaria",
@@ -1917,6 +1918,213 @@ def get_wc_portal_products() -> dict:
 
 def delete_producto(producto_id: str) -> None:
     productos_col.delete_one({"_id": ObjectId(producto_id)})
+
+
+# ── Comprobantes (boletas / facturas) ─────────────────────────────────────────
+
+def get_comprobante_stats() -> dict:
+    hoy = _date.today()
+    este_mes = hoy.strftime("%Y-%m")
+    q = {"estado": {"$ne": "anulado"}}
+    docs = list(comprobantes_col.find(q, {"tipo": 1, "fecha_emision": 1}))
+    return {
+        "total":     len(docs),
+        "boletas":   sum(1 for d in docs if d.get("tipo") == "boleta"),
+        "facturas":  sum(1 for d in docs if d.get("tipo") == "factura"),
+        "este_mes":  sum(1 for d in docs if (d.get("fecha_emision") or "").startswith(este_mes)),
+    }
+
+
+def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
+                     page: int = 1, per_page: int = 50) -> tuple:
+    q: dict = {"estado": {"$ne": "anulado"}}
+    if tipo:
+        q["tipo"] = tipo
+    if empresa:
+        q["empresa"] = {"$regex": empresa, "$options": "i"}
+    if search:
+        q["$or"] = [
+            {"numero":          {"$regex": search, "$options": "i"}},
+            {"empresa":         {"$regex": search, "$options": "i"}},
+            {"producto_nombre": {"$regex": search, "$options": "i"}},
+            {"concepto":        {"$regex": search, "$options": "i"}},
+        ]
+    total = comprobantes_col.count_documents(q)
+    docs = list(
+        comprobantes_col.find(q)
+        .sort("fecha_emision", -1)
+        .skip((page - 1) * per_page)
+        .limit(per_page)
+    )
+    member_cache: dict = {}
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+        socios_info = []
+        for mid in doc.get("socios", []):
+            if mid not in member_cache:
+                m = members_col.find_one({"member_id": mid}, {"nombres": 1, "apellidos": 1})
+                member_cache[mid] = f"{m.get('nombres','') if m else ''} {m.get('apellidos','') if m else ''}".strip()
+            socios_info.append({"member_id": mid, "nombre": member_cache[mid] or mid})
+        doc["socios_info"] = socios_info
+    return docs, total
+
+
+def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: float,
+                        producto_nombre: str, concepto: str, empresa: str,
+                        socios: list) -> str:
+    doc = {
+        "numero":          numero.strip(),
+        "tipo":            tipo,
+        "fecha_emision":   fecha_emision,
+        "monto_total":     monto_total,
+        "producto_nombre": producto_nombre.strip(),
+        "concepto":        concepto.strip(),
+        "empresa":         empresa.strip(),
+        "socios":          socios,
+        "estado":          "emitido",
+        "created_at":      datetime.now(timezone.utc),
+    }
+    result = comprobantes_col.insert_one(doc)
+    return str(result.inserted_id)
+
+
+def update_comprobante(comprobante_id: str, fields: dict) -> None:
+    allowed = {"numero", "tipo", "fecha_emision", "monto_total", "producto_nombre",
+               "concepto", "empresa", "socios", "estado"}
+    update = {k: v for k, v in fields.items() if k in allowed}
+    if update:
+        comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": update})
+
+
+def delete_comprobante(comprobante_id: str) -> None:
+    comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": {"estado": "anulado"}})
+
+
+def get_productos_list() -> list:
+    return list(productos_col.find({"activo": True}, {"nombre": 1, "tipo": 1, "precio": 1}).sort("nombre", 1))
+
+
+# ── Ingresos (flujo de caja) ───────────────────────────────────────────────────
+
+def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
+                 empresa: str = "", medio: str = "",
+                 page: int = 1, per_page: int = 100) -> tuple:
+    """Devuelve todos los eventos de pago con fecha registrada, ordenados por fecha desc."""
+    result = []
+    member_cache: dict = {}
+
+    def _nombre(member_id: str) -> str:
+        if member_id not in member_cache:
+            m = members_col.find_one({"member_id": member_id}, {"nombres": 1, "apellidos": 1})
+            member_cache[member_id] = (
+                f"{m.get('nombres','') if m else ''} {m.get('apellidos','') if m else ''}".strip() or "?"
+            )
+        return member_cache[member_id]
+
+    def _in_range(fecha: str) -> bool:
+        if not fecha:
+            return False
+        if fecha_desde and fecha < fecha_desde:
+            return False
+        if fecha_hasta and fecha > fecha_hasta:
+            return False
+        return True
+
+    for pmt in payments_col.find({}):
+        mid = pmt.get("member_id", "")
+        periodo = pmt.get("periodo", "")
+        emp = pmt.get("empresa_pagadora", "")
+        pid = str(pmt["_id"])
+        cuotas = pmt.get("cuotas", [])
+        parciales = pmt.get("pagos_parciales", [])
+
+        # 1. Pago completo sin cuotas ni parciales
+        if not cuotas and not parciales:
+            fecha = pmt.get("fecha_pago") or ""
+            if _in_range(fecha):
+                if (not empresa or emp == empresa) and (not medio or pmt.get("medio_pago") == medio):
+                    result.append({
+                        "_id": pid,
+                        "tipo_entrada": "pago",
+                        "fecha": fecha,
+                        "member_id": mid,
+                        "nombre": _nombre(mid),
+                        "periodo": periodo,
+                        "concepto": "Pago completo",
+                        "monto": None,
+                        "empresa": emp,
+                        "medio_pago": pmt.get("medio_pago", ""),
+                        "num_comprobante": pmt.get("num_comprobante", ""),
+                        "tipo_comprobante": pmt.get("tipo_comprobante", ""),
+                    })
+
+        # 2. Cuotas pagadas individualmente
+        for c in cuotas:
+            if c.get("estado") != "pagado":
+                continue
+            fecha = c.get("fecha_pago") or ""
+            medio_c = c.get("medio_pago") or pmt.get("medio_pago", "")
+            if _in_range(fecha):
+                if (not empresa or emp == empresa) and (not medio or medio_c == medio):
+                    result.append({
+                        "_id": f"{pid}_c{c.get('numero', 0)}",
+                        "tipo_entrada": "cuota",
+                        "fecha": fecha,
+                        "member_id": mid,
+                        "nombre": _nombre(mid),
+                        "periodo": periodo,
+                        "concepto": f"Cuota {c.get('numero','')}",
+                        "monto": c.get("monto"),
+                        "empresa": emp,
+                        "medio_pago": medio_c,
+                        "num_comprobante": c.get("num_comprobante", ""),
+                        "tipo_comprobante": c.get("tipo_comprobante", ""),
+                    })
+
+        # 3. Pagos parciales
+        for pp in parciales:
+            fecha = pp.get("fecha_pago") or ""
+            medio_p = pp.get("medio_pago") or pmt.get("medio_pago", "")
+            if _in_range(fecha):
+                if (not empresa or emp == empresa) and (not medio or medio_p == medio):
+                    result.append({
+                        "_id": f"{pid}_p{pp.get('numero', 0)}",
+                        "tipo_entrada": "parcial",
+                        "fecha": fecha,
+                        "member_id": mid,
+                        "nombre": _nombre(mid),
+                        "periodo": periodo,
+                        "concepto": f"Pago parcial {pp.get('numero','')}",
+                        "monto": pp.get("monto"),
+                        "empresa": emp,
+                        "medio_pago": medio_p,
+                        "num_comprobante": pp.get("num_comprobante", ""),
+                        "tipo_comprobante": pp.get("tipo_comprobante", ""),
+                    })
+
+    result.sort(key=lambda x: x.get("fecha", ""), reverse=True)
+    total = len(result)
+    start = (page - 1) * per_page
+    return result[start:start + per_page], total
+
+
+# ── Factura crédito: edición de campos ────────────────────────────────────────
+
+def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
+    allowed = {"empresa", "numero_factura", "monto", "fecha_emision", "fecha_vencimiento", "concepto"}
+    update: dict = {}
+    for k, v in fields.items():
+        if k not in allowed or v is None:
+            continue
+        if k == "monto":
+            try:
+                update[k] = float(v)
+            except (ValueError, TypeError):
+                pass
+        else:
+            update[k] = str(v).strip()
+    if update:
+        credito_col.update_one({"_id": ObjectId(factura_id)}, {"$set": update})
 
 
 def get_pendientes_stats() -> dict:

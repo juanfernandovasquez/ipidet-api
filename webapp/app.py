@@ -962,6 +962,110 @@ async def credito_delete_cuota(factura_id: str, numero: int):
     return {"ok": True}
 
 
+@app.post("/billing/credito/{factura_id}/update")
+async def credito_update_fields(factura_id: str, request: Request):
+    data = await request.json()
+    pdb.update_factura_credito_fields(factura_id, data)
+    return {"ok": True}
+
+
+# ── Ingresos (flujo de caja) ──────────────────────────────────────────────────
+
+@app.get("/billing/ingresos", response_class=HTMLResponse)
+async def billing_ingresos(
+    request: Request,
+    fecha_desde: str = "",
+    fecha_hasta:  str = "",
+    empresa:      str = "",
+    medio:        str = "",
+    page:         int = 1,
+):
+    docs, total = pdb.get_ingresos(
+        fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+        empresa=empresa, medio=medio, page=page,
+    )
+    monto_visible = sum(d.get("monto") or 0 for d in docs)
+    pages = max(1, (total + 99) // 100)
+    return templates.TemplateResponse("ingresos.html", {
+        "request":      request,
+        "ingresos":     docs,
+        "total":        total,
+        "monto_visible": monto_visible,
+        "empresas":     pdb.get_all_companies(),
+        "medios":       pdb.MEDIOS_PAGO,
+        "fecha_desde":  fecha_desde,
+        "fecha_hasta":  fecha_hasta,
+        "empresa":      empresa,
+        "medio":        medio,
+        "page":         page,
+        "pages":        pages,
+    })
+
+
+# ── Comprobantes ──────────────────────────────────────────────────────────────
+
+@app.get("/comprobantes", response_class=HTMLResponse)
+async def comprobantes_list(
+    request: Request,
+    search:  str = "",
+    tipo:    str = "",
+    empresa: str = "",
+    page:    int = 1,
+):
+    docs, total = pdb.get_comprobantes(search=search, tipo=tipo, empresa=empresa, page=page)
+    stats    = pdb.get_comprobante_stats()
+    empresas = pdb.get_all_companies()
+    productos = pdb.get_productos_list()
+    pages    = max(1, (total + 49) // 50)
+    return templates.TemplateResponse("comprobantes.html", {
+        "request":      request,
+        "comprobantes": docs,
+        "total":        total,
+        "stats":        stats,
+        "empresas":     empresas,
+        "productos":    productos,
+        "search":       search,
+        "tipo":         tipo,
+        "empresa":      empresa,
+        "page":         page,
+        "pages":        pages,
+    })
+
+
+@app.post("/comprobantes/add")
+async def comprobante_add(request: Request):
+    data = await request.json()
+    comp_id = pdb.create_comprobante(
+        numero          = data.get("numero", ""),
+        tipo            = data.get("tipo", "boleta"),
+        fecha_emision   = data.get("fecha_emision", ""),
+        monto_total     = float(data.get("monto_total") or 0),
+        producto_nombre = data.get("producto_nombre", ""),
+        concepto        = data.get("concepto", ""),
+        empresa         = data.get("empresa", ""),
+        socios          = data.get("socios", []),
+    )
+    return {"ok": True, "id": comp_id}
+
+
+@app.post("/comprobantes/{comprobante_id}/update")
+async def comprobante_update(comprobante_id: str, request: Request):
+    data = await request.json()
+    if "monto_total" in data:
+        try:
+            data["monto_total"] = float(data["monto_total"])
+        except (ValueError, TypeError):
+            data.pop("monto_total", None)
+    pdb.update_comprobante(comprobante_id, data)
+    return {"ok": True}
+
+
+@app.post("/comprobantes/{comprobante_id}/delete")
+async def comprobante_delete(comprobante_id: str):
+    pdb.delete_comprobante(comprobante_id)
+    return {"ok": True}
+
+
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)

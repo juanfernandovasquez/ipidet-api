@@ -76,3 +76,51 @@ def save_overdue_alert_time():
         {"$set": {"sent_at": datetime.now(timezone.utc)}},
         upsert=True,
     )
+
+
+def get_member_by_email(email: str) -> dict | None:
+    import re as _re
+    email_norm = email.lower().strip()
+    return _db.members.find_one({
+        "emails": {"$elemMatch": {"email": {"$regex": f"^{_re.escape(email_norm)}$", "$options": "i"}}}
+    })
+
+
+def get_member_by_id(member_id: str) -> dict | None:
+    return _db.members.find_one({"member_id": member_id})
+
+
+def get_upcoming_cuotas(days_ahead: int) -> list[dict]:
+    from datetime import date, timedelta
+    today = date.today()
+    cutoff = (today + timedelta(days=days_ahead)).isoformat()
+    today_str = today.isoformat()
+    payments = list(_db.payments.find({
+        "cuotas": {"$elemMatch": {"estado": "pendiente", "fecha_venc": {"$gte": today_str, "$lte": cutoff}}}
+    }))
+    result = []
+    for pmt in payments:
+        for cuota in pmt.get("cuotas", []):
+            if cuota.get("estado") != "pendiente":
+                continue
+            fv = cuota.get("fecha_venc", "")
+            if fv and today_str <= fv <= cutoff:
+                result.append({"payment": pmt, "cuota": cuota})
+    return result
+
+
+def get_overdue_cuotas() -> list[dict]:
+    from datetime import date
+    today_str = date.today().isoformat()
+    payments = list(_db.payments.find({
+        "cuotas": {"$elemMatch": {"estado": "pendiente", "fecha_venc": {"$lt": today_str, "$ne": None}}}
+    }))
+    result = []
+    for pmt in payments:
+        for cuota in pmt.get("cuotas", []):
+            if cuota.get("estado") != "pendiente":
+                continue
+            fv = cuota.get("fecha_venc", "")
+            if fv and fv < today_str:
+                result.append({"payment": pmt, "cuota": cuota})
+    return result

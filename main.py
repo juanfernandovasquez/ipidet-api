@@ -24,14 +24,11 @@ from gmail.client import GmailClient
 from workflows.incoming import process_email
 from workflows.learning import check_learning_opportunities
 from knowledge_base.faq_loader import sync_faqs_to_db
-from config.settings import CHECK_INTERVAL_SECONDS, BILLING_SHEET_ID, BILLING_CHECK_INTERVAL_HOURS
+from config.settings import CHECK_INTERVAL_SECONDS, BILLING_CHECK_INTERVAL_HOURS
 
 
 def _billing_scheduler(gmail: GmailClient):
     """Hilo independiente: revisa recordatorios y morosos cada BILLING_CHECK_INTERVAL_HOURS horas."""
-    if not BILLING_SHEET_ID:
-        print("  [COBRO] BILLING_SHEET_ID no configurado, scheduler inactivo.")
-        return
     from billing.reminders import check_and_send_reminders, check_and_alert_overdue
     interval = BILLING_CHECK_INTERVAL_HOURS * 3600
     while True:

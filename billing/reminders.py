@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from gmail.client import GmailClient
-from billing import sheets, db
+from billing import db
 from telegram_bot import notifications
 from config.settings import BILLING_REMINDER_DAYS, BILLING_OVERDUE_ALERT_HOURS
 
@@ -25,40 +25,56 @@ def _reminder_body(nombre: str, nro: int, total: int, monto: str, vencimiento: s
     )
 
 
+def _member_nombre(member: dict) -> str:
+    return f"{member.get('nombres', '')} {member.get('apellidos', '')}".strip() or "estimado/a"
+
+
+def _member_email(member: dict) -> str | None:
+    for e in member.get("emails", []):
+        if e.get("principal") and e.get("estado") == "habilitado":
+            return e["email"]
+    return next((e["email"] for e in member.get("emails", []) if e.get("estado") == "habilitado"), None)
+
+
 def check_and_send_reminders(gmail: GmailClient):
-    upcoming = sheets.get_upcoming_due_cuotas(BILLING_REMINDER_DAYS)
+    upcoming = db.get_upcoming_cuotas(BILLING_REMINDER_DAYS)
     if not upcoming:
         return
 
-    socios_map = {s["id_socio"]: s for s in sheets.get_socios()}
+    members_cache = {}
     sent_count = 0
 
-    for cuota in upcoming:
-        id_cuota = cuota.get("id_cuota", "")
-        id_socio = cuota.get("id_socio", "")
+    for item in upcoming:
+        pmt = item["payment"]
+        cuota = item["cuota"]
+        member_id = pmt.get("member_id", "")
+        numero = cuota.get("numero", 1)
+        id_cuota = f"{pmt['_id']}_{numero}"
 
         if db.reminder_already_sent(id_cuota):
             continue
 
-        socio = socios_map.get(id_socio)
-        if not socio or not socio.get("email"):
-            continue
-        if socio.get("estado", "").lower() != "activo":
+        if member_id not in members_cache:
+            members_cache[member_id] = db.get_member_by_id(member_id)
+        member = members_cache.get(member_id)
+        if not member or member.get("estado") != "activo":
             continue
 
-        nombre = socio["nombre"]
-        email = socio["email"]
-        nro = cuota.get("nro_cuota", 1)
-        total = cuota.get("total_cuotas", 1)
-        monto = cuota.get("monto", "")
-        vencimiento = cuota.get("vencimiento", "")
+        email = _member_email(member)
+        if not email:
+            continue
 
-        subject = f"IPIDET - Cuota {nro}/{total} pendiente | Ref: {id_cuota}"
-        body = _reminder_body(nombre, nro, total, str(monto), vencimiento, id_cuota)
+        nombre = _member_nombre(member)
+        total_cuotas = len(pmt.get("cuotas", []))
+        monto = str(cuota.get("monto", ""))
+        vencimiento = cuota.get("fecha_venc", "")
+
+        subject = f"IPIDET - Cuota {numero}/{total_cuotas} pendiente | Ref: {id_cuota}"
+        body = _reminder_body(nombre, numero, total_cuotas, monto, vencimiento, id_cuota)
 
         message_id = gmail.send_email(to=email, subject=subject, body=body)
         if message_id:
-            db.save_sent_reminder(id_cuota, id_socio, email, message_id)
+            db.save_sent_reminder(id_cuota, member_id, email, message_id)
             print(f"  [COBRO] Recordatorio enviado a {email} — {id_cuota}")
             sent_count += 1
 
@@ -70,12 +86,9 @@ def check_and_send_reminders(gmail: GmailClient):
 
 
 def check_and_alert_overdue(gmail: GmailClient):
-    overdue = sheets.get_overdue_cuotas()
+    overdue = db.get_overdue_cuotas()
     if not overdue:
         return
-
-    for cuota in overdue:
-        sheets.mark_cuota_overdue(cuota["id_cuota"])
 
     last_alert = db.last_overdue_alert()
     if last_alert:
@@ -83,6 +96,31 @@ def check_and_alert_overdue(gmail: GmailClient):
         if hours_since < BILLING_OVERDUE_ALERT_HOURS:
             return
 
-    socios_map = {s["id_socio"]: s for s in sheets.get_socios()}
-    notifications.notify_overdue_members(overdue, socios_map)
+    members_cache = {}
+    overdue_normalized = []
+    socios_map = {}
+
+    for item in overdue:
+        pmt = item["payment"]
+        cuota = item["cuota"]
+        member_id = pmt.get("member_id", "")
+        numero = cuota.get("numero", 1)
+
+        if member_id not in members_cache:
+            members_cache[member_id] = db.get_member_by_id(member_id)
+        member = members_cache.get(member_id) or {}
+
+        socios_map[member_id] = {
+            "nombre": _member_nombre(member),
+            "email": _member_email(member) or "?",
+        }
+        overdue_normalized.append({
+            "id_socio": member_id,
+            "nro_cuota": numero,
+            "total_cuotas": len(pmt.get("cuotas", [])),
+            "monto": cuota.get("monto", ""),
+            "vencimiento": cuota.get("fecha_venc", ""),
+        })
+
+    notifications.notify_overdue_members(overdue_normalized, socios_map)
     db.save_overdue_alert_time()

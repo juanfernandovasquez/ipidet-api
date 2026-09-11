@@ -264,52 +264,48 @@ def _handle_reject(approval_id: str, callback_id: str):
 
 def _handle_billing_confirm(approval_id: str, id_cuota: str, callback_id: str,
                             gmail: GmailClient, msg_id: int):
-    from billing.db import claim_pending_proof, update_proof_status
-    from billing import sheets
-    from datetime import date
+    from billing.db import claim_pending_proof, update_proof_status, get_member_by_email, get_member_by_id
+    import re as _re
 
     pending = claim_pending_proof(approval_id)
     if not pending:
         notifications.answer_callback(callback_id, "Ya procesado.")
         return
 
-    id_socio = pending.get("id_socio") or (
-        sheets.get_socio_by_email(pending["email_data"].get("from", "")) or {}
-    ).get("id_socio")
+    id_socio = pending.get("id_socio")
+    if not id_socio:
+        _from = pending["email_data"].get("from", "")
+        _match = _re.search(r"<(.+?)>", _from)
+        _email = _match.group(1).strip() if _match else _from.strip()
+        _member = get_member_by_email(_email)
+        id_socio = _member.get("member_id") if _member else None
 
-    fecha_pago = date.today().strftime("%d/%m/%Y")
-    ok = sheets.mark_cuota_paid(id_cuota, fecha_pago, "a confirmar")
+    update_proof_status(approval_id, "confirmed")
+    notifications.answer_callback(callback_id, "✅ Comprobante recibido. Actualizá el pago en la plataforma.")
+    notifications.resolve_approval_message(msg_id, f"✅ Comprobante confirmado — {_now_str()}")
 
-    if ok:
-        update_proof_status(approval_id, "confirmed")
-        notifications.answer_callback(callback_id, "✅ Pago registrado en el padrón.")
-        notifications.resolve_approval_message(msg_id, f"✅ Pago confirmado — {_now_str()}")
+    member = get_member_by_id(id_socio) if id_socio else {}
+    socio_data = {
+        "nombre": f"{member.get('nombres', '')} {member.get('apellidos', '')}".strip() or "?",
+        "email": next((e["email"] for e in member.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"), "?"),
+    } if member else {"nombre": "?", "email": "?"}
+    notifications.notify_payment_confirmed(socio_data, id_cuota, "a confirmar — actualizar en plataforma")
 
-        socio = sheets.get_socios()
-        socio_data = next((s for s in socio if s.get("id_socio") == id_socio), {})
-        notifications.notify_payment_confirmed(socio_data, id_cuota, "a confirmar")
-
-        # Confirmar al socio por email
-        email_data = pending["email_data"]
-        nombre = socio_data.get("nombre", "estimado/a")
-        confirmation = (
-            f"Estimado/a {nombre},\n\n"
-            f"Confirmamos la recepción de su comprobante de pago "
-            f"(cuota {id_cuota}).\n\n"
-            f"Su pago ha sido registrado correctamente. Muchas gracias.\n\n"
-            f"Atentamente,\nIPIDET"
-        )
-        gmail.send_reply(
-            thread_id=email_data["thread_id"],
-            to=email_data["from"],
-            subject=email_data["subject"],
-            body=confirmation,
-        )
-        print(f"  [COBRO] Pago confirmado #{approval_id} — cuota {id_cuota}")
-    else:
-        update_proof_status(approval_id, "pending")
-        notifications.answer_callback(callback_id, f"Error: cuota {id_cuota} no encontrada en el padrón.")
-        print(f"  [XX] Cuota {id_cuota} no encontrada en Sheets")
+    email_data = pending["email_data"]
+    nombre = socio_data.get("nombre", "estimado/a")
+    confirmation = (
+        f"Estimado/a {nombre},\n\n"
+        f"Confirmamos la recepción de su comprobante de pago.\n\n"
+        f"Su pago está siendo procesado. Muchas gracias.\n\n"
+        f"Atentamente,\nIPIDET"
+    )
+    gmail.send_reply(
+        thread_id=email_data["thread_id"],
+        to=email_data["from"],
+        subject=email_data["subject"],
+        body=confirmation,
+    )
+    print(f"  [COBRO] Comprobante confirmado #{approval_id}")
 
 
 def _handle_billing_reject(approval_id: str, callback_id: str, msg_id: int):

@@ -272,7 +272,6 @@ def _handle_clarification_reply(email_data: dict, pending_thread: dict, gmail: G
 def _handle_payment_proof(email_data: dict):
     """Constancia de pago recibida: identificar socio/cuota y notificar al admin."""
     from billing import db as billing_db
-    from billing import sheets
 
     email_id = email_data["id"]
     if not db.mark_processed(email_id, "payment_proof_received"):
@@ -282,15 +281,33 @@ def _handle_payment_proof(email_data: dict):
     match = re.search(r"<(.+?)>", sender)
     clean_email = match.group(1).strip() if match else sender.strip()
 
-    socio = sheets.get_socio_by_email(clean_email)
-    id_socio = socio["id_socio"] if socio else None
+    _member = billing_db.get_member_by_email(clean_email)
+    id_socio = _member.get("member_id") if _member else None
+    socio = {
+        "id_socio": id_socio,
+        "nombre": f"{_member.get('nombres', '')} {_member.get('apellidos', '')}".strip(),
+    } if _member else None
 
     # Intentar identificar la cuota por el hilo de conversación
     thread_id = email_data.get("thread_id", "")
     reminder = billing_db.get_reminder_by_thread(thread_id)
     id_cuota = reminder["id_cuota"] if reminder else None
 
-    pending_cuotas = sheets.get_pending_cuotas(id_socio) if id_socio else []
+    if id_socio:
+        _pmt = billing_db._db.payments.find_one({"member_id": id_socio, "estado": "fraccionamiento"})
+        pending_cuotas = [
+            {
+                "id_cuota": f"{_pmt['_id']}_{c['numero']}",
+                "nro_cuota": c["numero"],
+                "total_cuotas": len(_pmt.get("cuotas", [])),
+                "monto": c.get("monto", ""),
+                "vencimiento": c.get("fecha_venc", ""),
+            }
+            for c in (_pmt.get("cuotas", []) if _pmt else [])
+            if c.get("estado") == "pendiente"
+        ]
+    else:
+        pending_cuotas = []
 
     approval_id = billing_db.save_pending_proof(email_data, id_socio, id_cuota)
     notifications.notify_payment_proof(email_data, approval_id, socio, pending_cuotas, id_cuota)
