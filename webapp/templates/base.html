@@ -194,5 +194,147 @@
     </div>
   </main>
 
+  <!-- ── Comprobante Picker Modal (global) ───────────────────────── -->
+  <div x-data="{
+    open: false, formKey: null, t: null,
+    busq: '', fecha: '', resultados: [], sel: null,
+    async buscar() {
+      clearTimeout(this.t);
+      this.t = setTimeout(async () => {
+        const p = new URLSearchParams({ q: this.busq || '', fecha: this.fecha || '' });
+        const r = await fetch('/api/comprobantes/search?' + p);
+        const d = await r.json();
+        this.resultados = d.comprobantes || [];
+        this.sel = null;
+      }, 300);
+    },
+    confirmar() {
+      if (this.sel) this.$dispatch('comprobante-picked', { formKey: this.formKey, c: this.sel });
+      this.open = false;
+    }
+  }"
+  @open-comprobante-picker.window="open = true; formKey = $event.detail.formKey; busq = ''; fecha = ''; resultados = []; sel = null; $nextTick(() => $refs.pickerInput.focus())"
+  @keydown.escape.window="open = false"
+  x-show="open" x-cloak
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:85vh" @click.stop>
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
+        <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-receipt text-blue-500"></i> Buscar y vincular comprobante
+        </h3>
+        <button @click="open = false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
+      </div>
+
+      <!-- Filtros -->
+      <div class="px-5 py-3 border-b border-slate-100 flex gap-2 flex-shrink-0 flex-wrap">
+        <input type="text" x-model="busq" @input="buscar()" x-ref="pickerInput"
+               placeholder="Número, empresa, nombre del receptor, concepto…"
+               class="input flex-1 min-w-48 text-sm">
+        <input type="date" x-model="fecha" @change="buscar()" class="input w-36 text-sm">
+        <button type="button" @click="busq=''; fecha=''; resultados=[]; sel=null"
+                class="text-xs text-slate-400 hover:text-slate-600 px-2">Limpiar</button>
+      </div>
+
+      <!-- Cuerpo: lista + detalle -->
+      <div class="flex flex-1 min-h-0">
+
+        <!-- Lista -->
+        <div class="w-5/12 border-r border-slate-100 overflow-y-auto">
+          <template x-if="resultados.length === 0">
+            <div class="p-8 text-center text-slate-400 text-sm">
+              <i class="fa-solid fa-magnifying-glass text-2xl mb-3 block opacity-25"></i>
+              Escribe para buscar
+            </div>
+          </template>
+          <template x-for="c in resultados" :key="c._id">
+            <button type="button" @click="sel = c"
+                    class="w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-blue-50 transition-colors"
+                    :class="sel && sel._id === c._id ? 'bg-blue-50 border-l-[3px] border-l-blue-500' : 'border-l-[3px] border-l-transparent'">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="font-mono font-bold text-sm text-slate-800" x-text="c.numero"></span>
+                <span class="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded"
+                      :class="c.tipo === 'boleta' ? 'bg-green-100 text-green-700' : c.tipo === 'factura' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'"
+                      x-text="c.tipo"></span>
+              </div>
+              <div class="text-xs text-slate-500 font-mono" x-text="c.fecha_emision || '—'"></div>
+              <div class="text-xs text-slate-400 truncate" x-text="c.empresa || '—'"></div>
+            </button>
+          </template>
+        </div>
+
+        <!-- Detalle -->
+        <div class="flex-1 overflow-y-auto p-5">
+          <template x-if="!sel">
+            <div class="h-full flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
+              <i class="fa-solid fa-hand-pointer text-3xl opacity-20"></i>
+              <span>Selecciona un resultado para ver sus datos</span>
+            </div>
+          </template>
+          <template x-if="sel">
+            <div>
+              <div class="flex items-center gap-3 mb-4">
+                <span class="font-mono font-bold text-xl text-slate-800" x-text="sel.numero"></span>
+                <span class="text-xs uppercase font-bold px-2 py-1 rounded-lg"
+                      :class="sel.tipo === 'boleta' ? 'bg-green-100 text-green-700' : sel.tipo === 'factura' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'"
+                      x-text="sel.tipo"></span>
+              </div>
+              <dl class="space-y-2.5 text-sm">
+                <div class="flex gap-3">
+                  <dt class="text-slate-400 w-28 flex-shrink-0">Fecha emisión</dt>
+                  <dd class="font-mono text-slate-700" x-text="sel.fecha_emision || '—'"></dd>
+                </div>
+                <div class="flex gap-3">
+                  <dt class="text-slate-400 w-28 flex-shrink-0">Empresa</dt>
+                  <dd class="text-slate-700" x-text="sel.empresa || '—'"></dd>
+                </div>
+                <div class="flex gap-3">
+                  <dt class="text-slate-400 w-28 flex-shrink-0">Concepto</dt>
+                  <dd class="text-slate-700" x-text="sel.concepto || '—'"></dd>
+                </div>
+                <div class="flex gap-3">
+                  <dt class="text-slate-400 w-28 flex-shrink-0">Monto total</dt>
+                  <dd class="font-semibold text-slate-800" x-text="sel.monto_total != null ? 'S/ ' + Number(sel.monto_total).toFixed(2) : '—'"></dd>
+                </div>
+                <div class="flex gap-3">
+                  <dt class="text-slate-400 w-28 flex-shrink-0">Receptores</dt>
+                  <dd class="text-slate-700">
+                    <template x-if="sel.socios_info && sel.socios_info.length > 0">
+                      <ul class="space-y-0.5">
+                        <template x-for="s in sel.socios_info" :key="s.member_id">
+                          <li>
+                            <span x-text="s.nombre || s.member_id"></span>
+                            <span class="text-xs text-slate-400 font-mono ml-1" x-text="'(' + s.member_id + ')'"></span>
+                          </li>
+                        </template>
+                      </ul>
+                    </template>
+                    <template x-if="!sel.socios_info || sel.socios_info.length === 0">
+                      <span class="text-slate-400">—</span>
+                    </template>
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex items-center justify-between flex-shrink-0">
+        <span class="text-xs text-slate-400" x-text="resultados.length + ' resultado' + (resultados.length !== 1 ? 's' : '')"></span>
+        <div class="flex gap-2">
+          <button type="button" @click="open = false" class="btn-ghost text-sm">Cancelar</button>
+          <button type="button" @click="confirmar()" :disabled="!sel"
+                  class="btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-check mr-1.5"></i> Confirmar selección
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

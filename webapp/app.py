@@ -825,11 +825,19 @@ async def api_member(member_id: str):
 
 
 @app.get("/api/comprobantes/search")
-async def api_comprobantes_search(q: str = ""):
-    docs, _ = pdb.get_comprobantes(search=q, page=1, per_page=10)
+async def api_comprobantes_search(q: str = "", fecha: str = ""):
+    docs, _ = pdb.get_comprobantes(search=q, fecha=fecha, page=1, per_page=20)
     return {"comprobantes": [
-        {"_id": d["_id"], "numero": d.get("numero",""), "tipo": d.get("tipo",""),
-         "fecha_emision": d.get("fecha_emision",""), "empresa": d.get("empresa","")}
+        {
+            "_id": d["_id"],
+            "numero": d.get("numero", ""),
+            "tipo": d.get("tipo", ""),
+            "fecha_emision": d.get("fecha_emision", ""),
+            "empresa": d.get("empresa", ""),
+            "concepto": d.get("concepto", ""),
+            "monto_total": d.get("monto_total"),
+            "socios_info": d.get("socios_info", []),
+        }
         for d in docs
     ]}
 

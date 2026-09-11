@@ -1936,19 +1936,31 @@ def get_comprobante_stats() -> dict:
 
 
 def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
+                     fecha: str = "",
                      page: int = 1, per_page: int = 50) -> tuple:
     q: dict = {"estado": {"$ne": "anulado"}}
     if tipo:
         q["tipo"] = tipo
     if empresa:
         q["empresa"] = {"$regex": empresa, "$options": "i"}
+    if fecha:
+        q["fecha_emision"] = fecha
     if search:
-        q["$or"] = [
+        or_conds: list = [
             {"numero":          {"$regex": search, "$options": "i"}},
             {"empresa":         {"$regex": search, "$options": "i"}},
             {"producto_nombre": {"$regex": search, "$options": "i"}},
             {"concepto":        {"$regex": search, "$options": "i"}},
         ]
+        matching = list(members_col.find(
+            {"$or": [
+                {"nombres":   {"$regex": search, "$options": "i"}},
+                {"apellidos": {"$regex": search, "$options": "i"}},
+            ]}, {"member_id": 1}
+        ))
+        if matching:
+            or_conds.append({"socios": {"$in": [m["member_id"] for m in matching]}})
+        q["$or"] = or_conds
     total = comprobantes_col.count_documents(q)
     docs = list(
         comprobantes_col.find(q)
