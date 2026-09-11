@@ -130,7 +130,7 @@
       {% for p in payments %}
       {% set sl = status_labels.get(p.estado, ('—','gray')) %}
       {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&comprobante_emitido=" ~ comprobante_emitido ~ "&page=" ~ page %}
-      <tbody x-data="billingRow({{ p.get('empresa_pagadora') | tojson }})" class="border-b border-slate-100">
+      <tbody x-data='billingRow({{ p.get("empresa_pagadora") | tojson }})' class="border-b border-slate-100">
         <tr class="hover:bg-slate-50 transition-colors">
           <td class="px-4 py-3">
             <a href="/members/{{ p.get('member_id','') }}" class="font-medium text-blue-700 hover:underline text-xs">{{ p.get('nombre_completo','') }}</a>
