@@ -824,6 +824,16 @@ async def api_member(member_id: str):
     return doc or JSONResponse({"error": "not found"}, status_code=404)
 
 
+@app.get("/api/comprobantes/search")
+async def api_comprobantes_search(q: str = ""):
+    docs, _ = pdb.get_comprobantes(search=q, page=1, per_page=10)
+    return {"comprobantes": [
+        {"_id": d["_id"], "numero": d.get("numero",""), "tipo": d.get("tipo",""),
+         "fecha_emision": d.get("fecha_emision",""), "empresa": d.get("empresa","")}
+        for d in docs
+    ]}
+
+
 @app.get("/api/payments")
 async def api_payments(periodo: str = "2026", estado: str = ""):
     docs, total = pdb.get_payments(periodo, estado)
