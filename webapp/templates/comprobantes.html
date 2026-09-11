@@ -104,16 +104,7 @@
       <tbody x-data="{
         open: false,
         editando: false,
-        editData: {
-          numero:          {{ (c.numero or '') | tojson }},
-          tipo:            {{ (c.tipo or 'boleta') | tojson }},
-          fecha_emision:   {{ (c.fecha_emision or '') | tojson }},
-          monto_total:     {{ c.monto_total or 0 }},
-          empresa:         {{ (c.empresa or '') | tojson }},
-          producto_nombre: {{ (c.producto_nombre or '') | tojson }},
-          concepto:        {{ (c.concepto or '') | tojson }},
-          socios:          {{ (c.socios or []) | tojson }},
-        },
+        editData: {},
         async guardarEdicion() {
           const r = await fetch('/comprobantes/{{ c._id }}/update', {
             method: 'POST',
@@ -127,7 +118,9 @@
           const r = await fetch('/comprobantes/{{ c._id }}/delete', { method: 'POST' });
           if (r.ok) location.reload();
         },
-      }">
+      }"
+      x-init="editData = JSON.parse($el.dataset.edit)"
+      data-edit='{{ {"numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "monto_total": c.monto_total or 0, "empresa": c.empresa or "", "producto_nombre": c.producto_nombre or "", "concepto": c.concepto or "", "socios": c.socios or []} | tojson }}'>
       <!-- Fila principal -->
       <tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" @click="open = !open">
         <td class="px-3 py-3 text-center text-slate-400">
