@@ -453,7 +453,7 @@
                             </select>
                             <input name="num_comprobante" x-model="numComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
                             <button type="button"
-                                    @click="$dispatch('open-comprobante-picker', { formKey: formKey })"
+                                    @click="$store.picker.abrir(formKey)"
                                     class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
                               <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
                             </button>
@@ -514,7 +514,7 @@
                                     </select>
                                     <input name="num_comprobante" x-model="numComp" placeholder="F001-000123" class="input text-xs py-0.5 w-28">
                                     <button type="button"
-                                            @click="$dispatch('open-comprobante-picker', { formKey: formKey })"
+                                            @click="$store.picker.abrir(formKey)"
                                             class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
                                       <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
                                     </button>
