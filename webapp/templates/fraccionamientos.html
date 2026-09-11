@@ -295,7 +295,16 @@
                   </td>
                   <td class="py-1.5 pr-3 text-slate-500">{{ cuota.get('fecha_pago') or '—' }}</td>
                   <td class="py-1.5 pr-3 text-slate-500 font-mono">{{ cuota.get('num_comprobante') or '—' }}</td>
-                  <td class="py-1.5" x-data="{ editingCuota: false, editandoDatos: false }">
+                  <td class="py-1.5" x-data="{
+                    editingCuota: false, editandoDatos: false,
+                    payNumComp: '', payTipoComp: '',
+                    editNumComp: {{ (cuota.get('num_comprobante') or '') | tojson | replace('"', '&quot;') }},
+                    editTipoComp: {{ (cuota.get('tipo_comprobante') or '') | tojson | replace('"', '&quot;') }}
+                  }"
+                  @comprobante-picked.window="
+                    if ($event.detail.formKey === 'pay-{{ f._id }}-{{ cuota.numero }}') { payNumComp = $event.detail.c.numero; payTipoComp = $event.detail.c.tipo; }
+                    if ($event.detail.formKey === 'edit-{{ f._id }}-{{ cuota.numero }}') { editNumComp = $event.detail.c.numero; editTipoComp = $event.detail.c.tipo; }
+                  ">
                     {% if cuota.estado != 'pagado' %}
                     <div class="mb-1">
                       <button type="button" @click="editandoDatos = !editandoDatos"
@@ -318,33 +327,26 @@
                         <button type="submit" class="text-violet-600 hover:text-violet-800 font-semibold text-xs">✓ Guardar</button>
                       </form>
                     </div>
-                    <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-start">
+                    <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
                       <input type="hidden" name="redirect_to" value="{{ rf }}">
                       <input type="hidden" name="estado" value="pagado">
-                      <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28 self-center">
-                      <div x-data="{
-                        formKey: 'pay-{{ f._id }}-{{ cuota.numero }}',
-                        numComp: '', tipoComp: ''
-                      }"
-                      @comprobante-picked.window="if ($event.detail.formKey === formKey) { numComp = $event.detail.c.numero; tipoComp = $event.detail.c.tipo; }"
-                      class="flex items-center gap-1 flex-wrap">
-                        <select name="tipo_comprobante" x-model="tipoComp" class="input text-xs py-0.5">
-                          <option value="">Tipo</option>
-                          <option value="boleta">Boleta</option>
-                          <option value="factura">Factura</option>
-                          <option value="recibo">Recibo</option>
-                        </select>
-                        <input name="num_comprobante" x-model="numComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
-                        <button type="button"
-                                @click="$store.picker.abrir(formKey)"
-                                class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
-                          <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
-                        </button>
-                        <button type="button" x-show="numComp" @click="numComp=''; tipoComp=''"
-                                class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
-                          <i class="fa-solid fa-xmark"></i>
-                        </button>
-                      </div>
+                      <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28">
+                      <select name="tipo_comprobante" x-model="payTipoComp" class="input text-xs py-0.5">
+                        <option value="">Tipo</option>
+                        <option value="boleta">Boleta</option>
+                        <option value="factura">Factura</option>
+                        <option value="recibo">Recibo</option>
+                      </select>
+                      <input name="num_comprobante" x-model="payNumComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
+                      <button type="button"
+                              @click="$store.picker.abrir('pay-{{ f._id }}-{{ cuota.numero }}')"
+                              class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
+                        <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
+                      </button>
+                      <button type="button" x-show="payNumComp" @click="payNumComp=''; payTipoComp=''"
+                              class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
+                        <i class="fa-solid fa-xmark"></i>
+                      </button>
                       <button type="submit" class="text-green-600 hover:text-green-800 font-semibold text-xs">✓ Pagar</button>
                     </form>
                     {% else %}
@@ -360,37 +362,26 @@
                               x-text="editingCuota ? 'Cancelar' : 'Editar comp.'"></button>
                     </div>
                     <div x-show="editingCuota" x-cloak class="mt-1">
-                      <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
+                      <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
                         <input type="hidden" name="redirect_to" value="{{ rf }}">
                         <input type="hidden" name="estado" value="pagado">
                         <input name="fecha_pago" type="date" value="{{ cuota.get('fecha_pago','') }}" class="input text-xs py-0.5 w-28">
-                        <div x-data="{
-                          formKey: 'edit-{{ f._id }}-{{ cuota.numero }}',
-                          numComp: {{ (cuota.get('num_comprobante') or '') | tojson | replace('"', '&quot;') }},
-                          tipoComp: {{ (cuota.get('tipo_comprobante') or '') | tojson | replace('"', '&quot;') }}
-                        }"
-                        @comprobante-picked.window="if ($event.detail.formKey === formKey) { numComp = $event.detail.c.numero; tipoComp = $event.detail.c.tipo; }"
-                        class="flex flex-col gap-0.5">
-                          <label class="block text-xs text-slate-500 mb-0.5">Comprobante</label>
-                          <div class="flex items-center gap-1 flex-wrap">
-                            <select name="tipo_comprobante" x-model="tipoComp" class="input text-xs py-0.5">
-                              <option value="">Tipo</option>
-                              <option value="boleta">Boleta</option>
-                              <option value="factura">Factura</option>
-                              <option value="recibo">Recibo</option>
-                            </select>
-                            <input name="num_comprobante" x-model="numComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
-                            <button type="button"
-                                    @click="$store.picker.abrir(formKey)"
-                                    class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
-                              <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
-                            </button>
-                            <button type="button" x-show="numComp" @click="numComp=''; tipoComp=''"
-                                    class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
-                              <i class="fa-solid fa-xmark"></i>
-                            </button>
-                          </div>
-                        </div>
+                        <select name="tipo_comprobante" x-model="editTipoComp" class="input text-xs py-0.5">
+                          <option value="">Tipo</option>
+                          <option value="boleta">Boleta</option>
+                          <option value="factura">Factura</option>
+                          <option value="recibo">Recibo</option>
+                        </select>
+                        <input name="num_comprobante" x-model="editNumComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
+                        <button type="button"
+                                @click="$store.picker.abrir('edit-{{ f._id }}-{{ cuota.numero }}')"
+                                class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
+                          <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
+                        </button>
+                        <button type="button" x-show="editNumComp" @click="editNumComp=''; editTipoComp=''"
+                                class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
+                          <i class="fa-solid fa-xmark"></i>
+                        </button>
                         <select name="medio" class="input text-xs py-0.5">
                           <option value="">Medio</option>
                           {% for mp in medios_pago %}<option value="{{ mp }}" {% if cuota.get('medio_pago')==mp %}selected{% endif %}>{{ mp }}</option>{% endfor %}
