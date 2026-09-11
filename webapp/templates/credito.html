@@ -97,12 +97,12 @@
       editandoFactura: false,
       fechaCobro: '',
       editData: {
-        numero_factura: {{ (f.numero_factura or '') | tojson }},
-        empresa: {{ (f.empresa or '') | tojson }},
+        numero_factura: {{ (f.numero_factura or '') | tojson | replace('"', '&quot;') }},
+        empresa: {{ (f.empresa or '') | tojson | replace('"', '&quot;') }},
         monto: {{ f.monto or 0 }},
-        fecha_emision: {{ (f.fecha_emision or '') | tojson }},
-        fecha_vencimiento: {{ (f.fecha_vencimiento or '') | tojson }},
-        concepto: {{ (f.concepto or '') | tojson }},
+        fecha_emision: {{ (f.fecha_emision or '') | tojson | replace('"', '&quot;') }},
+        fecha_vencimiento: {{ (f.fecha_vencimiento or '') | tojson | replace('"', '&quot;') }},
+        concepto: {{ (f.concepto or '') | tojson | replace('"', '&quot;') }},
       },
       async guardarEdicion() {
         const r = await fetch('/billing/credito/{{ f._id }}/update', {
@@ -113,9 +113,9 @@
         if (r.ok) location.reload();
       },
       comentario: '',
-      comentarios: {{ coms | tojson }},
+      comentarios: {{ coms | tojson | replace('"', '&quot;') }},
       enviando: false,
-      cuotas: {{ cuotas_init | tojson }},
+      cuotas: {{ cuotas_init | tojson | replace('"', '&quot;') }},
       addingCuota: false,
       nuevaCuota: { monto: '', fecha_venc: '' },
       get cuotasPagadas() { return this.cuotas.filter(c => c.estado === 'pagado').length; },

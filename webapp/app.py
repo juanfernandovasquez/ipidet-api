@@ -986,20 +986,20 @@ async def billing_ingresos(
     )
     monto_visible = sum(d.get("monto") or 0 for d in docs)
     pages = max(1, (total + 99) // 100)
-    return templates.TemplateResponse("ingresos.html", {
-        "request":      request,
-        "ingresos":     docs,
-        "total":        total,
-        "monto_visible": monto_visible,
-        "empresas":     pdb.get_all_companies(),
-        "medios":       pdb.MEDIOS_PAGO,
-        "fecha_desde":  fecha_desde,
-        "fecha_hasta":  fecha_hasta,
-        "empresa":      empresa,
-        "medio":        medio,
-        "page":         page,
-        "pages":        pages,
-    })
+    return templates.TemplateResponse("ingresos.html", _ctx(
+        request,
+        ingresos     = docs,
+        total        = total,
+        monto_visible= monto_visible,
+        empresas     = pdb.get_all_companies(),
+        medios       = pdb.MEDIOS_PAGO,
+        fecha_desde  = fecha_desde,
+        fecha_hasta  = fecha_hasta,
+        empresa      = empresa,
+        medio        = medio,
+        page         = page,
+        pages        = pages,
+    ))
 
 
 # ── Comprobantes ──────────────────────────────────────────────────────────────
@@ -1017,19 +1017,19 @@ async def comprobantes_list(
     empresas = pdb.get_all_companies()
     productos = pdb.get_productos_list()
     pages    = max(1, (total + 49) // 50)
-    return templates.TemplateResponse("comprobantes.html", {
-        "request":      request,
-        "comprobantes": docs,
-        "total":        total,
-        "stats":        stats,
-        "empresas":     empresas,
-        "productos":    productos,
-        "search":       search,
-        "tipo":         tipo,
-        "empresa":      empresa,
-        "page":         page,
-        "pages":        pages,
-    })
+    return templates.TemplateResponse("comprobantes.html", _ctx(
+        request,
+        comprobantes = docs,
+        total        = total,
+        stats        = stats,
+        empresas     = empresas,
+        productos    = productos,
+        search       = search,
+        tipo         = tipo,
+        empresa      = empresa,
+        page         = page,
+        pages        = pages,
+    ))
 
 
 @app.post("/comprobantes/add")
