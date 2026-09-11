@@ -347,10 +347,13 @@
              this.socioResults = (data.members || []).slice(0, 8);
            } finally { this.buscando = false; }
          },
+         nombreSocio(s) {
+           return ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id;
+         },
          agregarSocio(s) {
            if (!this.form.socios.includes(s.member_id)) {
              this.form.socios.push(s.member_id);
-             this.socioNombres[s.member_id] = s.nombre_completo || s.member_id;
+             this.socioNombres[s.member_id] = this.nombreSocio(s);
            }
            this.socioSearch = '';
            this.socioResults = [];
@@ -455,14 +458,14 @@
             class="input w-full text-sm pr-8">
           <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"
              :class="buscando ? 'animate-spin fa-spinner' : 'fa-magnifying-glass'"></i>
-          <!-- Resultados -->
+          <!-- Resultados (inline, sin absolute para evitar clipping del modal) -->
           <div x-show="socioResults.length > 0"
-               class="absolute z-20 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 max-h-52 overflow-y-auto">
+               class="w-full bg-white border border-slate-200 rounded-lg shadow mt-1 max-h-52 overflow-y-auto">
             <template x-for="s in socioResults" :key="s.member_id">
               <button type="button" @click="agregarSocio(s)"
                 class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2 border-b border-slate-100 last:border-0">
                 <span class="text-xs font-mono text-slate-400 w-24 shrink-0" x-text="s.member_id"></span>
-                <span class="font-medium text-slate-700" x-text="s.nombre_completo || s.member_id"></span>
+                <span class="font-medium text-slate-700" x-text="nombreSocio(s)"></span>
               </button>
             </template>
           </div>
