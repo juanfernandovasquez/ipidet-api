@@ -986,7 +986,7 @@ async def billing_ingresos(
     )
     monto_visible = sum(d.get("monto") or 0 for d in docs)
     pages = max(1, (total + 99) // 100)
-    return templates.TemplateResponse("ingresos.html", _ctx(
+    return templates.TemplateResponse(request, "ingresos.html", _ctx(
         request,
         ingresos     = docs,
         total        = total,
@@ -1017,7 +1017,7 @@ async def comprobantes_list(
     empresas = pdb.get_all_companies()
     productos = pdb.get_productos_list()
     pages    = max(1, (total + 49) // 50)
-    return templates.TemplateResponse("comprobantes.html", _ctx(
+    return templates.TemplateResponse(request, "comprobantes.html", _ctx(
         request,
         comprobantes = docs,
         total        = total,
