@@ -253,14 +253,16 @@
             <button type="button" @click="sel = c"
                     class="w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-blue-50 transition-colors"
                     :class="sel && sel._id === c._id ? 'bg-blue-50 border-l-[3px] border-l-blue-500' : 'border-l-[3px] border-l-transparent'">
-              <div class="flex items-center gap-2 mb-0.5">
+              <div class="flex items-center gap-2 mb-1">
                 <span class="font-mono font-bold text-sm text-slate-800" x-text="c.numero"></span>
                 <span class="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded"
                       :class="c.tipo === 'boleta' ? 'bg-green-100 text-green-700' : c.tipo === 'factura' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'"
                       x-text="c.tipo"></span>
+                <span class="ml-auto font-semibold text-slate-700 text-xs" x-text="c.monto_total != null ? 'S/ ' + Number(c.monto_total).toFixed(2) : ''"></span>
               </div>
-              <div class="text-xs text-slate-500 font-mono" x-text="c.fecha_emision || '—'"></div>
-              <div class="text-xs text-slate-400 truncate" x-text="c.empresa || '—'"></div>
+              <div class="text-xs text-slate-500 font-mono mb-0.5" x-text="c.fecha_emision || '—'"></div>
+              <div class="text-xs text-slate-600 truncate"
+                   x-text="c.socios_info && c.socios_info.length ? c.socios_info.map(s => s.nombre || s.member_id).join(', ') : (c.empresa || '—')"></div>
             </button>
           </template>
         </div>
