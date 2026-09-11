@@ -295,12 +295,11 @@
                   </td>
                   <td class="py-1.5 pr-3 text-slate-500">{{ cuota.get('fecha_pago') or '—' }}</td>
                   <td class="py-1.5 pr-3 text-slate-500 font-mono">{{ cuota.get('num_comprobante') or '—' }}</td>
-                  <td class="py-1.5" x-data="{
-                    editingCuota: false, editandoDatos: false,
-                    payNumComp: '', payTipoComp: '',
-                    editNumComp: {{ (cuota.get('num_comprobante') or '') | tojson | replace('"', '&quot;') }},
-                    editTipoComp: {{ (cuota.get('tipo_comprobante') or '') | tojson | replace('"', '&quot;') }}
-                  }"
+                  <td class="py-1.5"
+                  x-data="{ editingCuota: false, editandoDatos: false, payNumComp: '', payTipoComp: '', editNumComp: '', editTipoComp: '' }"
+                  x-init="editNumComp = $el.dataset.numComp; editTipoComp = $el.dataset.tipoComp"
+                  data-num-comp="{{ cuota.get('num_comprobante') or '' }}"
+                  data-tipo-comp="{{ cuota.get('tipo_comprobante') or '' }}"
                   @comprobante-picked.window="
                     if ($event.detail.formKey === 'pay-{{ f._id }}-{{ cuota.numero }}') { payNumComp = $event.detail.c.numero; payTipoComp = $event.detail.c.tipo; }
                     if ($event.detail.formKey === 'edit-{{ f._id }}-{{ cuota.numero }}') { editNumComp = $event.detail.c.numero; editTipoComp = $event.detail.c.tipo; }
