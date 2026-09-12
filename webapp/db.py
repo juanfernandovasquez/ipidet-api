@@ -2037,7 +2037,12 @@ def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
 
 def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: float,
                         producto_nombre: str, concepto: str, empresa: str,
-                        socios: list) -> str:
+                        socios: list, items: list = None) -> str:
+    # Derive socios from items if provided
+    if items:
+        seen = set()
+        socios = [it["member_id"] for it in items
+                  if it.get("member_id") and it["member_id"] not in seen and not seen.add(it["member_id"])]
     doc = {
         "numero":          numero.strip(),
         "tipo":            tipo,
@@ -2047,6 +2052,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "concepto":        concepto.strip(),
         "empresa":         empresa.strip(),
         "socios":          socios,
+        "items":           items or [],
         "estado":          "emitido",
         "created_at":      datetime.now(timezone.utc),
     }

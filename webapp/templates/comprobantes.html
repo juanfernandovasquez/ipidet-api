@@ -325,67 +325,63 @@
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
        x-data="{
          form: {
-           numero: '', tipo: 'boleta', fecha_emision: '', monto_total: '',
-           empresa: '', producto_nombre: '', concepto: '', socios: [],
+           numero: '', tipo: 'boleta', fecha_emision: '',
+           empresa: '', concepto: '',
            modalidad: 'contado', fecha_vencimiento: '', periodo: '',
            medio_pago: '',
          },
          get es_credito() { return this.form.modalidad === 'credito'; },
-         get es_empresa() { return !!this.form.empresa.trim(); },
          productos: [],
-         selProductoId: '',
-         onProductoChange() {
-           const p = this.productos.find(p => p.id === this.selProductoId);
+         items: [],
+         get montoTotal() {
+           return this.items.reduce((s, it) => s + (parseFloat(it.monto) || 0), 0);
+         },
+         agregarItem() {
+           this.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', monto: '' });
+         },
+         quitarItem(idx) { this.items.splice(idx, 1); },
+         async buscarSocio(item) {
+           if (item.sSearch.length < 2) { item.sResults = []; return; }
+           const r = await fetch('/api/members?search=' + encodeURIComponent(item.sSearch));
+           const d = await r.json();
+           item.sResults = (d.members || []).slice(0, 6);
+         },
+         elegirSocio(item, s) {
+           item.sid     = s.member_id;
+           item.snombre = ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id;
+           item.sSearch = item.snombre;
+           item.sResults = [];
+         },
+         cambiarProducto(item) {
+           const p = this.productos.find(p => p.id === item.pid);
            if (p) {
-             this.form.producto_nombre = p.nombre;
-             if (p.precio != null) this.form.monto_total = p.precio;
-             if (p.periodo) this.form.periodo = p.periodo;
+             item.pnombre = p.nombre;
+             if (p.precio != null) item.monto = p.precio;
+             if (p.periodo && !this.form.periodo) this.form.periodo = p.periodo;
            } else {
-             this.form.producto_nombre = '';
+             item.pnombre = '';
            }
          },
-         socioSearch: '',
-         socioResults: [],
-         buscando: false,
-         async buscarSocios() {
-           if (this.socioSearch.length < 2) { this.socioResults = []; return; }
-           this.buscando = true;
-           try {
-             const r = await fetch('/api/members?search=' + encodeURIComponent(this.socioSearch));
-             const data = await r.json();
-             this.socioResults = (data.members || []).slice(0, 8);
-           } finally { this.buscando = false; }
-         },
-         nombreSocio(s) {
-           return ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id;
-         },
-         agregarSocio(s) {
-           if (!this.form.socios.includes(s.member_id)) {
-             this.form.socios.push(s.member_id);
-             this.socioNombres[s.member_id] = this.nombreSocio(s);
-           }
-           this.socioSearch = '';
-           this.socioResults = [];
-         },
-         quitarSocio(mid) { this.form.socios = this.form.socios.filter(m => m !== mid); },
-         socioNombres: {},
          get canGuardar() {
-           if (!this.form.tipo || !this.form.fecha_emision || !this.selProductoId) return false;
+           if (!this.form.tipo || !this.form.fecha_emision) return false;
+           if (!this.items.some(it => it.pid)) return false;
            if (this.es_credito && !this.form.fecha_vencimiento) return false;
            return true;
          },
          async guardar() {
            if (!this.canGuardar) return;
-           const payload = { ...this.form, es_credito: this.es_credito };
+           const items = this.items.filter(it => it.pid).map(it => ({
+             member_id: it.sid || null, producto_nombre: it.pnombre, monto: parseFloat(it.monto) || 0
+           }));
            const r = await fetch('/comprobantes/add', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify(payload),
+             body: JSON.stringify({ ...this.form, items, monto_total: this.montoTotal, es_credito: this.es_credito }),
            });
            if (r.ok) location.reload();
          },
        }"
-       x-init="productos = JSON.parse($el.dataset.productos)"
+       x-init="productos = JSON.parse($el.dataset.productos); agregarItem();"
        data-productos='{{ productos_json | tojson }}'>
 
     <!-- Cabecera -->
@@ -400,26 +396,23 @@
     <!-- Cuerpo -->
     <div class="px-6 py-5 space-y-4">
 
-      <!-- Fila 1: Tipo + N° + Fecha emisión -->
+      <!-- Tipo + N° + Fecha -->
       <div class="space-y-3">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1.5">Tipo de comprobante <span class="text-red-500">*</span></label>
           <div class="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
-            <button type="button"
-                    @click="form.tipo = 'boleta'"
-                    :class="form.tipo === 'boleta' ? 'bg-sky-600 text-white font-semibold shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'"
+            <button type="button" @click="form.tipo = 'boleta'"
+                    :class="form.tipo === 'boleta' ? 'bg-sky-600 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-slate-50'"
                     class="flex-1 px-3 py-2.5 transition-colors flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-file-lines text-xs"></i> Boleta
             </button>
-            <button type="button"
-                    @click="form.tipo = 'factura'"
-                    :class="form.tipo === 'factura' ? 'bg-violet-600 text-white font-semibold shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'"
+            <button type="button" @click="form.tipo = 'factura'"
+                    :class="form.tipo === 'factura' ? 'bg-violet-600 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-slate-50'"
                     class="flex-1 px-3 py-2.5 border-l border-slate-200 transition-colors flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-file-invoice text-xs"></i> Factura
             </button>
-            <button type="button"
-                    @click="form.tipo = 'recibo'"
-                    :class="form.tipo === 'recibo' ? 'bg-slate-700 text-white font-semibold shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'"
+            <button type="button" @click="form.tipo = 'recibo'"
+                    :class="form.tipo === 'recibo' ? 'bg-slate-700 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-slate-50'"
                     class="flex-1 px-3 py-2.5 border-l border-slate-200 transition-colors flex items-center justify-center gap-1.5">
               <i class="fa-solid fa-file text-xs"></i> Recibo
             </button>
@@ -437,20 +430,78 @@
         </div>
       </div>
 
-      <!-- Fila 2: Producto (auto-carga precio y período) -->
+      <!-- Líneas de detalle -->
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Producto <span class="text-red-500">*</span></label>
-        <select x-model="selProductoId" @change="onProductoChange()" class="input w-full text-sm">
-          <option value="">— Selecciona un producto —</option>
-          <template x-for="p in productos" :key="p.id">
-            <option :value="p.id"
-                    x-text="p.nombre + (p.precio != null ? ' — S/ ' + parseFloat(p.precio).toFixed(2) : '')"></option>
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-xs font-medium text-slate-600">Detalle <span class="text-red-500">*</span></label>
+          <button type="button" @click="agregarItem()"
+                  class="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
+            <i class="fa-solid fa-plus text-[10px]"></i> Agregar línea
+          </button>
+        </div>
+
+        <!-- Cabecera de columnas -->
+        <div class="grid gap-1.5 mb-1 text-[11px] font-medium text-slate-400 uppercase tracking-wide px-0.5"
+             style="grid-template-columns: 1fr 10rem 5.5rem 1.5rem">
+          <span>Socio</span><span>Producto</span><span class="text-right">Monto S/</span><span></span>
+        </div>
+
+        <!-- Filas de ítems -->
+        <div class="space-y-1.5">
+          <template x-for="(item, idx) in items" :key="idx">
+            <div class="grid items-start gap-1.5"
+                 style="grid-template-columns: 1fr 10rem 5.5rem 1.5rem">
+
+              <!-- Socio (autocomplete) -->
+              <div class="relative">
+                <input type="text" x-model="item.sSearch"
+                       @input.debounce.300ms="buscarSocio(item)"
+                       @blur.debounce.200ms="item.sResults = []"
+                       placeholder="Socio (opcional)"
+                       class="input w-full text-xs py-1.5">
+                <div x-show="item.sResults.length > 0"
+                     class="absolute z-20 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-36 overflow-y-auto">
+                  <template x-for="s in item.sResults" :key="s.member_id">
+                    <button type="button" @mousedown.prevent="elegirSocio(item, s)"
+                            class="w-full text-left px-2.5 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0 flex gap-2">
+                      <span class="font-mono text-slate-400 shrink-0" x-text="s.member_id"></span>
+                      <span class="truncate" x-text="(s.apellidos || '') + ' ' + (s.nombres || '')"></span>
+                    </button>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Producto -->
+              <select x-model="item.pid" @change="cambiarProducto(item)" class="input w-full text-xs py-1.5">
+                <option value="">— Producto —</option>
+                <template x-for="p in productos" :key="p.id">
+                  <option :value="p.id" x-text="p.nombre"></option>
+                </template>
+              </select>
+
+              <!-- Monto -->
+              <input type="number" step="0.01" x-model="item.monto"
+                     placeholder="0.00" class="input w-full text-xs py-1.5 text-right">
+
+              <!-- Quitar -->
+              <button type="button" @click="quitarItem(idx)"
+                      class="text-slate-300 hover:text-red-500 p-1 mt-0.5 rounded transition-colors"
+                      x-show="items.length > 1">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
           </template>
-        </select>
+        </div>
+
+        <!-- Total -->
+        <div class="flex justify-end items-center gap-2 mt-2 pt-2 border-t border-slate-100">
+          <span class="text-xs text-slate-500">Total:</span>
+          <span class="text-sm font-bold text-green-700" x-text="'S/ ' + montoTotal.toFixed(2)"></span>
+        </div>
       </div>
 
-      <!-- Fila 3: Empresa + Monto -->
-      <div class="grid grid-cols-2 gap-3">
+      <!-- Empresa + Modalidad + Medio de pago -->
+      <div class="grid grid-cols-3 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Empresa (si aplica)</label>
           <select x-model="form.empresa" class="input w-full text-sm">
@@ -461,27 +512,17 @@
           </select>
         </div>
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Monto total (S/)</label>
-          <input type="number" step="0.01" x-model="form.monto_total" placeholder="0.00" class="input w-full text-sm">
-        </div>
-      </div>
-
-      <!-- Fila 4: Modalidad de pago + Medio de pago -->
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Modalidad de pago</label>
-          <div class="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
-            <button type="button"
-                    @click="form.modalidad = 'contado'"
+          <label class="block text-xs font-medium text-slate-600 mb-1">Modalidad</label>
+          <div class="flex rounded-lg border border-slate-200 overflow-hidden text-sm h-[38px]">
+            <button type="button" @click="form.modalidad = 'contado'"
                     :class="form.modalidad === 'contado' ? 'bg-blue-600 text-white font-medium' : 'bg-white text-slate-600 hover:bg-slate-50'"
-                    class="flex-1 px-3 py-2 transition-colors">
-              <i class="fa-solid fa-bolt mr-1 text-xs"></i> Contado
+                    class="flex-1 px-2 transition-colors text-xs">
+              <i class="fa-solid fa-bolt mr-1"></i>Contado
             </button>
-            <button type="button"
-                    @click="form.modalidad = 'credito'"
+            <button type="button" @click="form.modalidad = 'credito'"
                     :class="form.modalidad === 'credito' ? 'bg-amber-500 text-white font-medium' : 'bg-white text-slate-600 hover:bg-slate-50'"
-                    class="flex-1 px-3 py-2 border-l border-slate-200 transition-colors">
-              <i class="fa-solid fa-building-columns mr-1 text-xs"></i> A crédito
+                    class="flex-1 px-2 border-l border-slate-200 transition-colors text-xs">
+              <i class="fa-solid fa-building-columns mr-1"></i>Crédito
             </button>
           </div>
         </div>
@@ -496,7 +537,7 @@
         </div>
       </div>
 
-      <!-- Fila 5: Campos de crédito (solo si modalidad = crédito) -->
+      <!-- Campos crédito -->
       <div x-show="es_credito" x-cloak
            class="grid grid-cols-2 gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
         <div>
@@ -510,49 +551,19 @@
           <p class="text-[11px] text-slate-400 mt-0.5">Se asigna automáticamente según el producto.</p>
         </div>
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de vencimiento <span class="text-red-500">*</span></label>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha vencimiento <span class="text-red-500">*</span></label>
           <input type="date" x-model="form.fecha_vencimiento" class="input w-full text-sm">
         </div>
         <div class="col-span-2 flex items-start gap-2 text-xs text-amber-800">
-          <i class="fa-solid fa-circle-info mt-0.5 flex-shrink-0"></i>
-          <span>Los socios vinculados quedarán como <strong>Por cobrar</strong> en Cobranzas y pasarán a <strong>Pagado</strong> al registrar el cobro en la pestaña Crédito.</span>
+          <i class="fa-solid fa-circle-info mt-0.5 shrink-0"></i>
+          <span>Los socios quedarán como <strong>Por cobrar</strong> en Cobranzas y pasarán a <strong>Pagado</strong> al cobrar en la pestaña Crédito.</span>
         </div>
       </div>
 
-      <!-- Fila 6: Concepto -->
+      <!-- Concepto -->
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Concepto / Notas</label>
         <input type="text" x-model="form.concepto" placeholder="Descripción adicional (opcional)" class="input w-full text-sm">
-      </div>
-
-      <!-- Fila 7: Socios asociados -->
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Socios asociados</label>
-        <div class="flex flex-wrap gap-1.5 mb-2" x-show="form.socios.length > 0">
-          <template x-for="mid in form.socios" :key="mid">
-            <span class="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
-              <span x-text="socioNombres[mid] || mid"></span>
-              <button type="button" @click="quitarSocio(mid)" class="hover:text-red-500 ml-0.5">&times;</button>
-            </span>
-          </template>
-        </div>
-        <div class="relative">
-          <input type="text" x-model="socioSearch"
-            @input.debounce.350ms="buscarSocios()"
-            placeholder="Buscar socio por nombre o ID…"
-            class="input w-full text-sm pr-8">
-          <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
-          <div x-show="socioResults.length > 0"
-               class="w-full bg-white border border-slate-200 rounded-lg shadow mt-1 max-h-40 overflow-y-auto">
-            <template x-for="s in socioResults" :key="s.member_id">
-              <button type="button" @click="agregarSocio(s)"
-                class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2 border-b border-slate-100 last:border-0">
-                <span class="text-xs font-mono text-slate-400 w-24 shrink-0" x-text="s.member_id"></span>
-                <span class="font-medium text-slate-700" x-text="nombreSocio(s)"></span>
-              </button>
-            </template>
-          </div>
-        </div>
       </div>
 
     </div>

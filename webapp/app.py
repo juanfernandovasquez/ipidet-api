@@ -1065,25 +1065,35 @@ async def comprobantes_list(
 
 @app.post("/comprobantes/add")
 async def comprobante_add(request: Request):
-    data = await request.json()
-    socios  = data.get("socios", [])
+    data    = await request.json()
+    items   = data.get("items", [])
     empresa = data.get("empresa", "").strip()
+    monto_total = float(data.get("monto_total") or 0)
+
+    # Derive socios and a summary product name from line items
+    socios = list({it["member_id"] for it in items if it.get("member_id")})
+    producto_nombre = (
+        data.get("producto_nombre", "")
+        or (", ".join(sorted({it["producto_nombre"] for it in items if it.get("producto_nombre")})))
+    )
+
     comp_id = pdb.create_comprobante(
         numero          = data.get("numero", ""),
         tipo            = data.get("tipo", "boleta"),
         fecha_emision   = data.get("fecha_emision", ""),
-        monto_total     = float(data.get("monto_total") or 0),
-        producto_nombre = data.get("producto_nombre", ""),
+        monto_total     = monto_total,
+        producto_nombre = producto_nombre,
         concepto        = data.get("concepto", ""),
         empresa         = empresa,
         socios          = socios,
+        items           = items,
     )
     if data.get("es_credito"):
         periodo = data.get("periodo", "").strip()
         pdb.create_factura_credito(
             empresa           = empresa,
             numero_factura    = data.get("numero", ""),
-            monto             = float(data.get("monto_total") or 0),
+            monto             = monto_total,
             fecha_emision     = data.get("fecha_emision", ""),
             fecha_vencimiento = data.get("fecha_vencimiento", ""),
             concepto          = data.get("concepto", ""),
