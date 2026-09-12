@@ -152,7 +152,7 @@
         <td class="px-4 py-3 text-right" @click.stop>
           <div class="flex items-center justify-end gap-1">
             <button @click="$dispatch('comp-editar', JSON.parse($el.dataset.comp))"
-              data-comp='{{ {"id": c._id, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.items or [], "socios_info": c.socios_info or []} | tojson }}'
+              data-comp='{{ {"id": c._id, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.lineas, "socios_info": c.socios_info or []} | tojson }}'
               class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
               <i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar
             </button>
@@ -168,7 +168,7 @@
       <tr x-show="open" x-cloak class="border-t border-slate-100 bg-slate-50/50">
         <td></td>
         <td colspan="8" class="px-4 py-4">
-          {% if c.items %}
+          {% if c.lineas %}
           <!-- Líneas de detalle -->
           <table class="w-full text-sm mb-2">
             <thead>
@@ -179,7 +179,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for item in c.items %}
+              {% for item in c.lineas %}
               <tr class="border-b border-slate-100 last:border-0">
                 <td class="py-1.5 pr-4 text-slate-700">
                   {% if item.member_id %}
@@ -192,7 +192,7 @@
                 </td>
                 <td class="py-1.5 pr-4 text-slate-600">{{ item.producto_nombre or '—' }}</td>
                 <td class="py-1.5 text-right font-medium text-slate-800">
-                  S/ {{ "%.2f"|format(item.monto) }}
+                  S/ {{ "%.2f"|format(item.monto or 0) }}
                 </td>
               </tr>
               {% endfor %}
@@ -201,7 +201,7 @@
               <tr>
                 <td colspan="2" class="pt-2 text-xs text-slate-400 text-right pr-4">Total</td>
                 <td class="pt-2 text-right font-bold text-green-700">
-                  S/ {{ "%.2f"|format(c.monto_total) }}
+                  S/ {{ "%.2f"|format(c.monto_total or 0) }}
                 </td>
               </tr>
             </tfoot>

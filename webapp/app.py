@@ -1049,9 +1049,9 @@ async def comprobantes_list(
     pages    = max(1, (total + 49) // 50)
     for doc in docs:
         doc["socios_map"] = {s["member_id"]: s["nombre"] for s in doc.get("socios_info", [])}
-        items = doc.get("items", [])
-        if items:
-            prod_names = list({it.get("producto_nombre", "") for it in items if it.get("producto_nombre")})
+        doc["lineas"] = doc.get("items") or []   # "items" colisiona con dict.items() en Jinja2
+        if doc["lineas"]:
+            prod_names = list({it.get("producto_nombre", "") for it in doc["lineas"] if it.get("producto_nombre")})
             doc["display_producto"] = prod_names[0] if len(prod_names) == 1 else "Varios productos"
         else:
             doc["display_producto"] = doc.get("producto_nombre") or "—"
