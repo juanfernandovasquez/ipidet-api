@@ -444,7 +444,7 @@
           <option value="">— Selecciona un producto —</option>
           <template x-for="p in productos" :key="p.id">
             <option :value="p.id"
-                    :text="p.nombre + (p.precio != null ? ' — S/ ' + parseFloat(p.precio).toFixed(2) : '')"></option>
+                    x-text="p.nombre + (p.precio != null ? ' — S/ ' + parseFloat(p.precio).toFixed(2) : '')"></option>
           </template>
         </select>
       </div>
@@ -453,11 +453,12 @@
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Empresa (si aplica)</label>
-          <input type="text" x-model="form.empresa" list="empresas-modal"
-                 placeholder="Dejar vacío si es persona natural" class="input w-full text-sm">
-          <datalist id="empresas-modal">
-            {% for emp in empresas %}<option value="{{ emp.nombre }}">{% endfor %}
-          </datalist>
+          <select x-model="form.empresa" class="input w-full text-sm">
+            <option value="">— Persona natural —</option>
+            {% for emp in empresas %}
+            <option value="{{ emp.nombre }}">{{ emp.nombre }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Monto total (S/)</label>
