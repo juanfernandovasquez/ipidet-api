@@ -1047,6 +1047,14 @@ async def comprobantes_list(
         for p in productos_raw
     ]
     pages    = max(1, (total + 49) // 50)
+    for doc in docs:
+        doc["socios_map"] = {s["member_id"]: s["nombre"] for s in doc.get("socios_info", [])}
+        items = doc.get("items", [])
+        if items:
+            prod_names = list({it.get("producto_nombre", "") for it in items if it.get("producto_nombre")})
+            doc["display_producto"] = prod_names[0] if len(prod_names) == 1 else "Varios productos"
+        else:
+            doc["display_producto"] = doc.get("producto_nombre") or "—"
     return templates.TemplateResponse(request, "comprobantes.html", _ctx(
         request,
         comprobantes   = docs,
@@ -1105,13 +1113,24 @@ async def comprobante_add(request: Request):
 
 @app.post("/comprobantes/{comprobante_id}/update")
 async def comprobante_update(comprobante_id: str, request: Request):
-    data = await request.json()
-    if "monto_total" in data:
-        try:
-            data["monto_total"] = float(data["monto_total"])
-        except (ValueError, TypeError):
-            data.pop("monto_total", None)
-    pdb.update_comprobante(comprobante_id, data)
+    data  = await request.json()
+    items = data.get("items", [])
+    fields = {
+        "numero":        data.get("numero", ""),
+        "tipo":          data.get("tipo", "boleta"),
+        "fecha_emision": data.get("fecha_emision", ""),
+        "empresa":       data.get("empresa", "").strip(),
+        "concepto":      data.get("concepto", ""),
+        "monto_total":   float(data.get("monto_total") or 0),
+        "items":         items,
+    }
+    if items:
+        fields["socios"] = list({it["member_id"] for it in items if it.get("member_id")})
+        prod_names = list({it.get("producto_nombre", "") for it in items if it.get("producto_nombre")})
+        fields["producto_nombre"] = prod_names[0] if len(prod_names) == 1 else ", ".join(sorted(prod_names))
+    else:
+        fields["producto_nombre"] = data.get("producto_nombre", "")
+    pdb.update_comprobante(comprobante_id, fields)
     return {"ok": True}
 
 

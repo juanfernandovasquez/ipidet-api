@@ -41,7 +41,7 @@
     <div class="text-2xl font-bold text-slate-800">{{ stats.facturas }}</div>
   </div>
   <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
-    <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
+    <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden'); window.dispatchEvent(new CustomEvent('comp-nuevo'))"
       class="btn-primary text-sm w-full">
       <i class="fa-solid fa-plus mr-1.5"></i> Nuevo comprobante
     </button>
@@ -103,24 +103,12 @@
       {% for c in comprobantes %}
       <tbody x-data="{
         open: false,
-        editando: false,
-        editData: {},
-        async guardarEdicion() {
-          const r = await fetch('/comprobantes/{{ c._id }}/update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(this.editData),
-          });
-          if (r.ok) location.reload();
-        },
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
           const r = await fetch('/comprobantes/{{ c._id }}/delete', { method: 'POST' });
           if (r.ok) location.reload();
         },
-      }"
-      x-init="editData = JSON.parse($el.dataset.edit)"
-      data-edit='{{ {"numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "monto_total": c.monto_total or 0, "empresa": c.empresa or "", "producto_nombre": c.producto_nombre or "", "concepto": c.concepto or "", "socios": c.socios or []} | tojson }}'>
+      }">
       <!-- Fila principal -->
       <tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" @click="open = !open">
         <td class="px-3 py-3 text-center text-slate-400">
@@ -150,25 +138,21 @@
         <td class="px-4 py-3">
           {% set si = c.socios_info %}
           {% if si %}
-          <div class="flex flex-wrap gap-1">
-            {% for s in si[:3] %}
-            <span class="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium">{{ s.nombre }}</span>
-            {% endfor %}
-            {% if si | length > 3 %}
-            <span class="text-xs text-slate-400">+{{ si | length - 3 }} más</span>
-            {% endif %}
-          </div>
+          <span class="text-sm text-slate-700">
+            {{ si[:2] | map(attribute='nombre') | join(', ') }}{% if si | length > 2 %}<span class="text-slate-400 text-xs"> y {{ si | length - 2 }} más</span>{% endif %}
+          </span>
           {% else %}
           <span class="text-xs text-slate-300">—</span>
           {% endif %}
         </td>
-        <td class="px-4 py-3 text-slate-500 text-xs">{{ c.producto_nombre or '—' }}</td>
+        <td class="px-4 py-3 text-slate-500 text-xs">{{ c.display_producto }}</td>
         <td class="px-4 py-3 text-right font-semibold text-slate-800">
           {% if c.monto_total %}S/ {{ "%.2f"|format(c.monto_total) }}{% else %}—{% endif %}
         </td>
         <td class="px-4 py-3 text-right" @click.stop>
           <div class="flex items-center justify-end gap-1">
-            <button @click="editando = !editando; open = editando || open"
+            <button @click="$dispatch('comp-editar', JSON.parse($el.dataset.comp))"
+              data-comp='{{ {"id": c._id, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.items or [], "socios_info": c.socios_info or []} | tojson }}'
               class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
               <i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar
             </button>
@@ -180,109 +164,63 @@
         </td>
       </tr>
 
-      <!-- Fila: edición inline -->
-      <tr x-show="editando" x-cloak class="border-t border-amber-100 bg-amber-50">
-        <td></td>
-        <td colspan="8" class="px-4 py-4">
-          <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">N° Comprobante</label>
-              <input type="text" x-model="editData.numero" placeholder="B001-00001" class="input text-sm w-full">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
-              <select x-model="editData.tipo" class="input text-sm w-full">
-                <option value="boleta">Boleta</option>
-                <option value="factura">Factura</option>
-                <option value="recibo">Recibo</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión</label>
-              <input type="date" x-model="editData.fecha_emision" class="input text-sm w-full">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Empresa (opcional)</label>
-              <input type="text" x-model="editData.empresa" list="empresas-edit-{{ c._id }}" class="input text-sm w-full">
-              <datalist id="empresas-edit-{{ c._id }}">
-                {% for emp in empresas %}<option value="{{ emp.nombre }}">{% endfor %}
-              </datalist>
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Monto total (S/)</label>
-              <input type="number" step="0.01" x-model="editData.monto_total" class="input text-sm w-full">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Producto</label>
-              <input type="text" x-model="editData.producto_nombre" list="prods-edit-{{ c._id }}" placeholder="Selecciona o escribe" class="input text-sm w-full">
-              <datalist id="prods-edit-{{ c._id }}">
-                {% for p in productos %}<option value="{{ p.nombre }}">{% endfor %}
-              </datalist>
-            </div>
-            <div class="md:col-span-3">
-              <label class="block text-xs font-medium text-slate-600 mb-1">Concepto / Notas</label>
-              <input type="text" x-model="editData.concepto" class="input text-sm w-full" placeholder="Descripción adicional">
-            </div>
-          </div>
-          <div class="flex gap-2">
-            <button @click="guardarEdicion()" class="btn-primary text-xs py-2">
-              <i class="fa-solid fa-floppy-disk mr-1"></i> Guardar
-            </button>
-            <button type="button" @click="editando = false" class="btn-ghost text-xs py-2">Cancelar</button>
-          </div>
-        </td>
-      </tr>
-
       <!-- Fila: detalle expandido -->
-      <tr x-show="open && !editando" x-cloak class="border-t border-slate-100 bg-slate-50/50">
+      <tr x-show="open" x-cloak class="border-t border-slate-100 bg-slate-50/50">
         <td></td>
         <td colspan="8" class="px-4 py-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- Socios vinculados -->
-            <div>
-              <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                <i class="fa-solid fa-users mr-1"></i> Socios vinculados ({{ c.socios_info | length }})
-              </h4>
-              {% if c.socios_info %}
-              <ul class="space-y-1">
-                {% for s in c.socios_info %}
-                <li class="flex items-center gap-2 text-sm">
-                  <span class="text-xs font-mono text-slate-400">{{ s.member_id }}</span>
-                  <a href="/members/{{ s.member_id }}" class="text-blue-600 hover:text-blue-800 hover:underline font-medium">
-                    {{ s.nombre }}
-                  </a>
-                </li>
-                {% endfor %}
-              </ul>
-              {% else %}
-              <p class="text-xs text-slate-400">Sin socios asociados</p>
-              {% endif %}
+          {% if c.items %}
+          <!-- Líneas de detalle -->
+          <table class="w-full text-sm mb-2">
+            <thead>
+              <tr class="text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-200">
+                <th class="pb-1.5 pr-4">Socio</th>
+                <th class="pb-1.5 pr-4">Producto</th>
+                <th class="pb-1.5 text-right">Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in c.items %}
+              <tr class="border-b border-slate-100 last:border-0">
+                <td class="py-1.5 pr-4 text-slate-700">
+                  {% if item.member_id %}
+                  <a href="/members/{{ item.member_id }}"
+                     class="text-blue-600 hover:underline">{{ c.socios_map.get(item.member_id, item.member_id) }}</a>
+                  <span class="text-xs text-slate-400 font-mono ml-1">{{ item.member_id }}</span>
+                  {% else %}
+                  <span class="text-slate-400 text-xs italic">—</span>
+                  {% endif %}
+                </td>
+                <td class="py-1.5 pr-4 text-slate-600">{{ item.producto_nombre or '—' }}</td>
+                <td class="py-1.5 text-right font-medium text-slate-800">
+                  S/ {{ "%.2f"|format(item.monto) }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" class="pt-2 text-xs text-slate-400 text-right pr-4">Total</td>
+                <td class="pt-2 text-right font-bold text-green-700">
+                  S/ {{ "%.2f"|format(c.monto_total) }}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+          {% else %}
+          <!-- Fallback para comprobantes sin items -->
+          <div class="text-sm text-slate-600 space-y-1">
+            {% if c.producto_nombre %}<div><span class="text-slate-400">Producto:</span> {{ c.producto_nombre }}</div>{% endif %}
+            {% for s in c.socios_info %}
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-slate-400">{{ s.member_id }}</span>
+              <a href="/members/{{ s.member_id }}" class="text-blue-600 hover:underline">{{ s.nombre }}</a>
             </div>
-            <!-- Datos del comprobante -->
-            <div>
-              <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                <i class="fa-solid fa-circle-info mr-1"></i> Detalle
-              </h4>
-              <dl class="space-y-1 text-sm">
-                {% if c.producto_nombre %}
-                <div class="flex gap-2">
-                  <dt class="text-slate-400 min-w-20">Producto</dt>
-                  <dd class="text-slate-700 font-medium">{{ c.producto_nombre }}</dd>
-                </div>
-                {% endif %}
-                {% if c.concepto %}
-                <div class="flex gap-2">
-                  <dt class="text-slate-400 min-w-20">Concepto</dt>
-                  <dd class="text-slate-700">{{ c.concepto }}</dd>
-                </div>
-                {% endif %}
-                <div class="flex gap-2">
-                  <dt class="text-slate-400 min-w-20">Registrado</dt>
-                  <dd class="text-slate-500 text-xs font-mono">{{ c.created_at | default('—') }}</dd>
-                </div>
-              </dl>
-            </div>
+            {% endfor %}
           </div>
+          {% endif %}
+          {% if c.concepto %}
+          <p class="text-xs text-slate-400 mt-2"><i class="fa-solid fa-comment-dots mr-1"></i>{{ c.concepto }}</p>
+          {% endif %}
         </td>
       </tr>
       </tbody>
@@ -324,6 +262,7 @@
 <div id="modal-nuevo" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
        x-data="{
+         editId: null,
          form: {
            numero: '', tipo: 'boleta', fecha_emision: '',
            empresa: '', concepto: '',
@@ -364,16 +303,52 @@
          },
          get canGuardar() {
            if (!this.form.tipo || !this.form.fecha_emision) return false;
-           if (!this.items.some(it => it.pid)) return false;
+           if (!this.items.some(it => it.pid || it.pnombre)) return false;
            if (this.es_credito && !this.form.fecha_vencimiento) return false;
            return true;
          },
+         resetForm() {
+           this.editId = null;
+           this.form = { numero: '', tipo: 'boleta', fecha_emision: '', empresa: '', concepto: '',
+                         modalidad: 'contado', fecha_vencimiento: '', periodo: '', medio_pago: '' };
+           this.items = [];
+           this.agregarItem();
+         },
+         cargarEdicion(comp) {
+           this.editId = comp.id;
+           this.form.numero          = comp.numero || '';
+           this.form.tipo            = comp.tipo || 'boleta';
+           this.form.fecha_emision   = comp.fecha_emision || '';
+           this.form.empresa         = comp.empresa || '';
+           this.form.concepto        = comp.concepto || '';
+           this.form.modalidad       = 'contado';
+           this.form.medio_pago      = '';
+           this.form.fecha_vencimiento = '';
+           this.form.periodo         = '';
+           const sm = {};
+           (comp.socios_info || []).forEach(s => { sm[s.member_id] = s.nombre; });
+           if (comp.items && comp.items.length) {
+             this.items = comp.items.map(it => {
+               const pid = (this.productos.find(p => p.nombre === it.producto_nombre) || {}).id || '';
+               const sid = it.member_id || '';
+               const snombre = sid ? (sm[sid] || sid) : '';
+               return { sid, snombre, sSearch: snombre, sResults: [], pid, pnombre: it.producto_nombre || '', monto: it.monto || '' };
+             });
+           } else {
+             this.items = [];
+             this.agregarItem();
+           }
+           document.getElementById('modal-nuevo').classList.remove('hidden');
+         },
          async guardar() {
            if (!this.canGuardar) return;
-           const items = this.items.filter(it => it.pid).map(it => ({
+           const items = this.items.filter(it => it.pid || it.pnombre).map(it => ({
              member_id: it.sid || null, producto_nombre: it.pnombre, monto: parseFloat(it.monto) || 0
            }));
-           const r = await fetch('/comprobantes/add', {
+           const url = this.editId
+             ? '/comprobantes/' + this.editId + '/update'
+             : '/comprobantes/add';
+           const r = await fetch(url, {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ ...this.form, items, monto_total: this.montoTotal, es_credito: this.es_credito }),
@@ -382,12 +357,15 @@
          },
        }"
        x-init="productos = JSON.parse($el.dataset.productos); agregarItem();"
+       @comp-editar.window="cargarEdicion($event.detail)"
+       @comp-nuevo.window="resetForm()"
        data-productos='{{ productos_json | tojson }}'>
 
     <!-- Cabecera -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
       <h2 class="text-base font-semibold text-slate-800">
-        <i class="fa-solid fa-receipt mr-2 text-blue-500"></i> Nuevo comprobante
+        <i class="fa-solid fa-receipt mr-2 text-blue-500"></i>
+        <span x-text="editId ? 'Editar comprobante' : 'Nuevo comprobante'"></span>
       </h2>
       <button onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
         class="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button>
