@@ -121,6 +121,7 @@ def _ctx(request: Request, **kwargs):
 @app.on_event("startup")
 async def _startup():
     pdb.seed_companies()
+    pdb._seed_productos()
     auth.seed_admin()
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
@@ -1041,7 +1042,8 @@ async def comprobantes_list(
     empresas = pdb.get_all_companies()
     productos_raw = pdb.get_productos_list()
     productos_json = [
-        {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"), "tipo": p.get("tipo", "")}
+        {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"),
+         "tipo": p.get("tipo", ""), "periodo": p.get("periodo", "")}
         for p in productos_raw
     ]
     pages    = max(1, (total + 49) // 50)

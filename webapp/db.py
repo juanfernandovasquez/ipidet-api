@@ -2049,7 +2049,7 @@ def delete_comprobante(comprobante_id: str) -> None:
 
 
 def get_productos_list() -> list:
-    return list(productos_col.find({"activo": True}, {"nombre": 1, "tipo": 1, "precio": 1}).sort("nombre", 1))
+    return list(productos_col.find({"activo": True}, {"nombre": 1, "tipo": 1, "precio": 1, "periodo": 1}).sort("nombre", 1))
 
 
 # ── Ingresos (flujo de caja) ───────────────────────────────────────────────────
