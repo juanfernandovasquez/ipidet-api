@@ -108,7 +108,7 @@ STATUS_LABELS = {
 def _ctx(request: Request, **kwargs):
     return {
         "status_labels": STATUS_LABELS,
-        "medios_pago": pdb.MEDIOS_PAGO,
+        "medios_pago": pdb.get_medios_pago(),
         "bancos": pdb.BANCOS,
         "current_user_email":   request.session.get("user_email", ""),
         "current_user_role":    request.session.get("user_role", ""),
@@ -1014,7 +1014,7 @@ async def billing_ingresos(
         total       = total,
         stats       = stats,
         empresas    = pdb.get_all_companies(),
-        medios      = pdb.MEDIOS_PAGO,
+        medios      = pdb.get_medios_pago(),
         periodos    = ["2025", "2026", "2027"],
         fecha_desde = fecha_desde,
         fecha_hasta = fecha_hasta,
@@ -1477,7 +1477,15 @@ async def productos_list(request: Request, tipo: str = ""):
     productos = pdb.get_productos(tipo=tipo)
     return templates.TemplateResponse(request, "productos.html", _ctx(request,
         productos=productos, tipo=tipo, tipos=pdb.TIPOS_PRODUCTO,
+        medios_pago_lista=pdb.get_medios_pago(),
     ))
+
+
+@app.post("/productos/medios-pago")
+async def productos_medios_pago_update(request: Request):
+    data = await request.json()
+    pdb.update_medios_pago(data.get("valores", []))
+    return {"ok": True}
 
 
 @app.post("/productos/add")

@@ -61,6 +61,61 @@
           </button>
         </form>
       </div>
+
+      <!-- Medios de pago -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5"
+           x-data="{
+             medios: [],
+             nuevo: '',
+             guardado: false,
+             agregar() {
+               const v = this.nuevo.trim();
+               if (v && !this.medios.includes(v)) this.medios.push(v);
+               this.nuevo = '';
+             },
+             quitar(i) { this.medios.splice(i, 1); },
+             async guardar() {
+               const r = await fetch('/productos/medios-pago', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ valores: this.medios }),
+               });
+               if (r.ok) { this.guardado = true; setTimeout(() => this.guardado = false, 2000); }
+             },
+           }"
+           x-init="medios = JSON.parse($el.dataset.medios)"
+           data-medios='{{ medios_pago_lista | tojson }}'>
+        <h2 class="text-sm font-semibold text-slate-700 mb-3">
+          <i class="fa-solid fa-credit-card text-slate-400 mr-1.5"></i> Medios de pago
+        </h2>
+        <div class="space-y-1.5 mb-3">
+          <template x-for="(m, i) in medios" :key="i">
+            <div class="flex items-center gap-2">
+              <span class="flex-1 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 truncate" x-text="m"></span>
+              <button @click="quitar(i)" type="button"
+                      class="text-slate-300 hover:text-red-500 p-1.5 rounded transition-colors">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+          </template>
+          <div x-show="medios.length === 0" class="text-xs text-slate-400 italic py-1">Sin medios de pago configurados.</div>
+        </div>
+        <div class="flex gap-2 mb-3">
+          <input type="text" x-model="nuevo"
+                 @keydown.enter.prevent="agregar()"
+                 placeholder="Nuevo medio de pago…"
+                 class="input flex-1 text-sm">
+          <button @click="agregar()" type="button"
+                  class="btn-ghost text-sm px-3">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+        <button @click="guardar()" type="button"
+                class="btn-primary w-full text-sm">
+          <span x-show="!guardado"><i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar cambios</span>
+          <span x-show="guardado" class="text-green-100"><i class="fa-solid fa-check mr-1.5"></i> Guardado</span>
+        </button>
+      </div>
     </div>
 
     <!-- ── Panel derecho: Lista ── -->

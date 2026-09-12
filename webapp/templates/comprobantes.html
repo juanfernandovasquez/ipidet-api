@@ -401,22 +401,39 @@
     <div class="px-6 py-5 space-y-4">
 
       <!-- Fila 1: Tipo + N° + Fecha emisión -->
-      <div class="grid grid-cols-3 gap-3">
+      <div class="space-y-3">
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Tipo <span class="text-red-500">*</span></label>
-          <select x-model="form.tipo" class="input w-full text-sm">
-            <option value="boleta">Boleta</option>
-            <option value="factura">Factura</option>
-            <option value="recibo">Recibo</option>
-          </select>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">Tipo de comprobante <span class="text-red-500">*</span></label>
+          <div class="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+            <button type="button"
+                    @click="form.tipo = 'boleta'"
+                    :class="form.tipo === 'boleta' ? 'bg-sky-600 text-white font-semibold shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    class="flex-1 px-3 py-2.5 transition-colors flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-file-lines text-xs"></i> Boleta
+            </button>
+            <button type="button"
+                    @click="form.tipo = 'factura'"
+                    :class="form.tipo === 'factura' ? 'bg-violet-600 text-white font-semibold shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    class="flex-1 px-3 py-2.5 border-l border-slate-200 transition-colors flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-file-invoice text-xs"></i> Factura
+            </button>
+            <button type="button"
+                    @click="form.tipo = 'recibo'"
+                    :class="form.tipo === 'recibo' ? 'bg-slate-700 text-white font-semibold shadow-inner' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    class="flex-1 px-3 py-2.5 border-l border-slate-200 transition-colors flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-file text-xs"></i> Recibo
+            </button>
+          </div>
         </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">N° Comprobante</label>
-          <input type="text" x-model="form.numero" placeholder="B001-00001" class="input w-full text-sm">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión <span class="text-red-500">*</span></label>
-          <input type="date" x-model="form.fecha_emision" class="input w-full text-sm">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">N° Comprobante</label>
+            <input type="text" x-model="form.numero" placeholder="B001-00001" class="input w-full text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión <span class="text-red-500">*</span></label>
+            <input type="date" x-model="form.fecha_emision" class="input w-full text-sm">
+          </div>
         </div>
       </div>
 
@@ -540,13 +557,24 @@
     </div>
 
     <!-- Footer -->
-    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
       <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
-        class="btn-ghost text-sm">Cancelar</button>
-      <button @click="guardar()" :disabled="!canGuardar"
-        class="btn-primary text-sm" :class="!canGuardar ? 'opacity-50 cursor-not-allowed' : ''">
-        <i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar comprobante
+        class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+        <i class="fa-solid fa-arrow-left text-xs"></i> Volver
       </button>
+      <div class="flex items-center gap-2">
+        <span x-show="!canGuardar" class="text-xs text-slate-400">
+          <i class="fa-solid fa-circle-info mr-1"></i>Completa los campos requeridos
+        </span>
+        <button @click="guardar()" :disabled="!canGuardar"
+          class="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all"
+          :class="canGuardar
+            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95'
+            : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+          <i class="fa-solid fa-floppy-disk"></i>
+          <span x-text="canGuardar ? 'Guardar comprobante' : 'Guardar'"></span>
+        </button>
+      </div>
     </div>
   </div>
 </div>

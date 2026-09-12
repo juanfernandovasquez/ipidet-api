@@ -29,6 +29,7 @@ companies_col = _db.companies
 credito_col = _db.facturas_credito
 productos_col = _db.productos
 comprobantes_col = _db.comprobantes
+config_col = _db.config
 
 MEDIOS_PAGO = [
     "Transferencia bancaria",
@@ -40,6 +41,23 @@ MEDIOS_PAGO = [
     "Cheque",
     "Otro",
 ]
+
+
+def get_medios_pago() -> list:
+    doc = config_col.find_one({"_id": "medios_pago"})
+    if doc and doc.get("valores"):
+        return doc["valores"]
+    return MEDIOS_PAGO
+
+
+def update_medios_pago(valores: list) -> None:
+    clean = [v.strip() for v in valores if isinstance(v, str) and v.strip()]
+    config_col.replace_one(
+        {"_id": "medios_pago"},
+        {"_id": "medios_pago", "valores": clean},
+        upsert=True,
+    )
+
 
 BANCOS = [
     "BCP",
