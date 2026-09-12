@@ -108,10 +108,17 @@
       </a>
       {% endif %}
 
-      {% if is_admin or 'members' in p %}
+      {% if is_admin or 'members' in p or 'empresas' in p %}
       <div class="sidebar-section">Padrón</div>
+      {% endif %}
+      {% if is_admin or 'members' in p %}
       <a href="/members" class="sidebar-link {% if '/members' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-users"></i> Socios
+      </a>
+      {% endif %}
+      {% if is_admin or 'empresas' in p %}
+      <a href="/empresas" class="sidebar-link {% if '/empresas' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-building"></i> Empresas
       </a>
       {% endif %}
 
@@ -129,11 +136,6 @@
       {% if is_admin or 'fraccionamientos' in p %}
       <a href="/fraccionamientos" class="sidebar-link {% if '/fraccionamientos' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-calendar-days"></i> Fraccionamientos
-      </a>
-      {% endif %}
-      {% if is_admin or 'empresas' in p %}
-      <a href="/empresas" class="sidebar-link {% if '/empresas' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-building"></i> Empresas
       </a>
       {% endif %}
       {% if is_admin or 'finanzas' in p %}
