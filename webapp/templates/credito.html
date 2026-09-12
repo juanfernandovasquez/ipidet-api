@@ -40,10 +40,9 @@
     <div class="text-2xl font-bold text-green-700">S/ {{ "%.2f"|format(stats.total_cobrado) }}</div>
   </div>
   <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
-    <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
-      class="btn-primary text-sm w-full">
+    <a href="/comprobantes" class="btn-primary text-sm w-full text-center">
       <i class="fa-solid fa-plus mr-1.5"></i> Nueva factura
-    </button>
+    </a>
   </div>
 </div>
 
@@ -495,64 +494,11 @@
 <div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
   <i class="fa-solid fa-file-invoice text-4xl text-slate-300 mb-3"></i>
   <p class="text-slate-600 font-medium">Sin facturas a crédito registradas</p>
-  <button onclick="document.getElementById('modal-nueva').classList.remove('hidden')"
-    class="mt-4 btn-primary text-sm">
+  <a href="/comprobantes" class="mt-4 btn-primary text-sm inline-block">
     <i class="fa-solid fa-plus mr-1.5"></i> Registrar primera factura
-  </button>
+  </a>
 </div>
 {% endif %}
 
-<!-- Modal: nueva factura -->
-<div id="modal-nueva" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
-  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-nueva').classList.add('hidden')"></div>
-  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 class="font-semibold text-slate-800">Nueva factura a crédito</h2>
-      <button onclick="document.getElementById('modal-nueva').classList.add('hidden')"
-        class="text-slate-400 hover:text-slate-600">
-        <i class="fa-solid fa-xmark text-lg"></i>
-      </button>
-    </div>
-    <form method="post" action="/billing/credito/nueva" class="space-y-4" x-data="{ emp: '' }">
-      <div class="relative">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Empresa <span class="text-red-500">*</span></label>
-        <input name="empresa" x-model="emp" required placeholder="Nombre de la empresa…" class="input w-full"
-               list="emp-list" autocomplete="off">
-        <datalist id="emp-list">
-          {% for e in empresas %}<option value="{{ e.nombre }}">{% endfor %}
-        </datalist>
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">N° Factura <span class="text-red-500">*</span></label>
-          <input name="numero_factura" required placeholder="F001-00123" class="input w-full">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Monto (S/) <span class="text-red-500">*</span></label>
-          <input name="monto" type="number" step="0.01" min="0" required placeholder="0.00" class="input w-full">
-        </div>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Concepto</label>
-        <input name="concepto" placeholder="Ej: Cuotas anuales socios EY 2026" class="input w-full">
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión <span class="text-red-500">*</span></label>
-          <input name="fecha_emision" type="date" required class="input w-full">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de vencimiento <span class="text-red-500">*</span></label>
-          <input name="fecha_vencimiento" type="date" required class="input w-full">
-        </div>
-      </div>
-      <div class="flex gap-3 pt-2">
-        <button type="submit" class="btn-primary flex-1">Registrar factura</button>
-        <button type="button" onclick="document.getElementById('modal-nueva').classList.add('hidden')"
-          class="btn-ghost">Cancelar</button>
-      </div>
-    </form>
-  </div>
-</div>
 
 {% endblock %}

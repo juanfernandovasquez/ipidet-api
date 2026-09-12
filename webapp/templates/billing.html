@@ -196,7 +196,7 @@
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
                 <select name="estado" class="input text-xs py-1">
-                  {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("exonerado","Exonerado"),("no_aplica","N/A"),("pendiente","Pendiente"),("retirar","Retirar"),("en_revision","En revisión"),("revisar","Revisar")] %}
+                  {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("por_cobrar","Por cobrar"),("exonerado","Exonerado"),("no_aplica","N/A"),("pendiente","Pendiente"),("retirar","Retirar"),("en_revision","En revisión"),("revisar","Revisar")] %}
                   <option value="{{ val }}" {% if p.estado == val %}selected{% endif %}>{{ lbl }}</option>
                   {% endfor %}
                 </select>

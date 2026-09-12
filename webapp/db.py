@@ -1485,7 +1485,8 @@ def get_facturas_credito(empresa: str = "", estado: str = "") -> list:
 
 def create_factura_credito(empresa: str, numero_factura: str, monto: float,
                             fecha_emision: str, fecha_vencimiento: str,
-                            concepto: str = "", socios: list | None = None) -> str:
+                            concepto: str = "", socios: list | None = None,
+                            periodo: str = "") -> str:
     doc = {
         "empresa": empresa.strip(),
         "numero_factura": numero_factura.strip(),
@@ -1494,10 +1495,43 @@ def create_factura_credito(empresa: str, numero_factura: str, monto: float,
         "fecha_vencimiento": fecha_vencimiento,
         "concepto": concepto.strip(),
         "socios": socios or [],
+        "periodo": periodo,
         "estado": "pendiente",
         "created_at": datetime.now(timezone.utc),
     }
-    return str(credito_col.insert_one(doc).inserted_id)
+    factura_id = str(credito_col.insert_one(doc).inserted_id)
+    if socios and periodo:
+        sync_credito_to_cobranzas(factura_id)
+    return factura_id
+
+
+def sync_credito_to_cobranzas(factura_id: str) -> None:
+    """Sincroniza el estado de pagos en Cobranzas según el estado de cobro de la factura de crédito."""
+    f = credito_col.find_one({"_id": ObjectId(factura_id)})
+    if not f:
+        return
+    socios = f.get("socios") or []
+    periodo = f.get("periodo") or ""
+    if not socios or not periodo:
+        return
+
+    cuotas = f.get("cuotas") or []
+    estado = f.get("estado", "pendiente")
+
+    if estado == "cobrado" or (cuotas and all(c.get("estado") == "pagado" for c in cuotas)):
+        new_estado = "pagado"
+        fecha = f.get("fecha_cobro") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    else:
+        new_estado = "por_cobrar"
+        fecha = None
+
+    for member_id in socios:
+        p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
+        if p:
+            upd = {"estado": new_estado}
+            if new_estado == "pagado" and fecha:
+                upd["fecha_pago"] = fecha
+            payments_col.update_one({"_id": p["_id"]}, {"$set": upd})
 
 
 def update_factura_credito_estado(factura_id: str, estado: str,
@@ -1506,6 +1540,7 @@ def update_factura_credito_estado(factura_id: str, estado: str,
     if estado == "cobrado" and fecha_cobro:
         fields["fecha_cobro"] = fecha_cobro
     credito_col.update_one({"_id": ObjectId(factura_id)}, {"$set": fields})
+    sync_credito_to_cobranzas(factura_id)
 
 
 def delete_factura_credito(factura_id: str) -> None:
@@ -1560,6 +1595,7 @@ def update_cuota_credito(factura_id: str, numero: int, estado: str, fecha_pago: 
         {"_id": ObjectId(factura_id), "cuotas.numero": numero},
         {"$set": update},
     )
+    sync_credito_to_cobranzas(factura_id)
 
 
 def delete_cuota_credito(factura_id: str, numero: int) -> None:

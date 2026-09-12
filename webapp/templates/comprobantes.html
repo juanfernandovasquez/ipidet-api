@@ -327,10 +327,22 @@
          form: {
            numero: '', tipo: 'boleta', fecha_emision: '', monto_total: '',
            empresa: '', producto_nombre: '', concepto: '', socios: [],
+           es_credito: false, fecha_vencimiento: '', periodo: '2026',
          },
+         productos: [],
          socioSearch: '',
          socioResults: [],
          buscando: false,
+         selProductoId: '',
+         onProductoChange() {
+           const p = this.productos.find(p => p.id === this.selProductoId);
+           if (p) {
+             this.form.producto_nombre = p.nombre;
+             if (p.precio != null) this.form.monto_total = p.precio;
+           } else {
+             this.form.producto_nombre = '';
+           }
+         },
          async buscarSocios() {
            if (this.socioSearch.length < 2) { this.socioResults = []; return; }
            this.buscando = true;
@@ -362,7 +374,9 @@
            });
            if (r.ok) location.reload();
          },
-       }">
+       }"
+       x-init="productos = JSON.parse($el.dataset.productos)"
+       data-productos='{{ productos_json | tojson }}'>
     <!-- Cabecera -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
       <h2 class="text-base font-semibold text-slate-800">
@@ -395,6 +409,18 @@
         </div>
       </div>
 
+      <!-- Producto (selector del catálogo con auto-precio) -->
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Producto <span class="text-red-500">*</span></label>
+        <select x-model="selProductoId" @change="onProductoChange()" class="input w-full text-sm">
+          <option value="">— Selecciona un producto —</option>
+          <template x-for="p in productos" :key="p.id">
+            <option :value="p.id"
+                    :text="p.nombre + (p.precio != null ? ' — S/ ' + parseFloat(p.precio).toFixed(2) : '')"></option>
+          </template>
+        </select>
+      </div>
+
       <!-- Empresa + Monto -->
       <div class="grid grid-cols-2 gap-3">
         <div>
@@ -410,21 +436,6 @@
         </div>
       </div>
 
-      <!-- Producto -->
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Producto</label>
-        <input type="text" x-model="form.producto_nombre" list="prods-modal"
-          placeholder="Selecciona del catálogo o escribe uno personalizado" class="input w-full text-sm">
-        <datalist id="prods-modal">
-          {% for p in productos %}<option value="{{ p.nombre }}">{% endfor %}
-          <option value="Membresía Anual Lima">
-          <option value="Membresía Anual Provincias">
-          <option value="Cuota de fraccionamiento">
-          <option value="Membresía Exonerada">
-        </datalist>
-        <p class="text-[11px] text-slate-400 mt-1">Los productos del catálogo aparecen en la lista. También puedes escribir uno personalizado.</p>
-      </div>
-
       <!-- Concepto -->
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Concepto / Notas</label>
@@ -434,7 +445,6 @@
       <!-- Socios -->
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Socios asociados</label>
-        <!-- Socios seleccionados -->
         <div class="flex flex-wrap gap-1.5 mb-2" x-show="form.socios.length > 0">
           <template x-for="mid in form.socios" :key="mid">
             <span class="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
@@ -443,15 +453,12 @@
             </span>
           </template>
         </div>
-        <!-- Búsqueda -->
         <div class="relative">
           <input type="text" x-model="socioSearch"
             @input.debounce.350ms="buscarSocios()"
             placeholder="Buscar socio por nombre o ID…"
             class="input w-full text-sm pr-8">
-          <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"
-             :class="buscando ? 'animate-spin fa-spinner' : 'fa-magnifying-glass'"></i>
-          <!-- Resultados (inline, sin absolute para evitar clipping del modal) -->
+          <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs"></i>
           <div x-show="socioResults.length > 0"
                class="w-full bg-white border border-slate-200 rounded-lg shadow mt-1 max-h-52 overflow-y-auto">
             <template x-for="s in socioResults" :key="s.member_id">
@@ -465,14 +472,47 @@
         </div>
       </div>
 
+      <!-- Toggle: factura a crédito -->
+      <div class="border-t border-slate-100 pt-4">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" x-model="form.es_credito" class="rounded border-slate-300 text-blue-600">
+          <span class="text-sm font-medium text-slate-700">
+            <i class="fa-solid fa-building-columns mr-1 text-slate-400"></i>
+            Factura a crédito (la empresa pagará después)
+          </span>
+        </label>
+
+        <div x-show="form.es_credito" x-cloak class="mt-3 grid grid-cols-2 gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Período <span class="text-red-500">*</span></label>
+            <select x-model="form.periodo" class="input w-full text-sm">
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de vencimiento <span class="text-red-500">*</span></label>
+            <input type="date" x-model="form.fecha_vencimiento" class="input w-full text-sm">
+          </div>
+          <div class="col-span-2">
+            <p class="text-xs text-amber-700">
+              <i class="fa-solid fa-circle-info mr-1"></i>
+              Los socios vinculados quedarán en estado <strong>Por cobrar</strong> en Cobranzas.
+              Se actualizarán a <strong>Pagado</strong> cuando registres el cobro en la pestaña Crédito.
+            </p>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- Footer -->
     <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
       <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
         class="btn-ghost text-sm">Cancelar</button>
-      <button @click="guardar()" :disabled="!form.tipo || !form.fecha_emision"
-        class="btn-primary text-sm" :class="(!form.tipo || !form.fecha_emision) ? 'opacity-50 cursor-not-allowed' : ''">
+      <button @click="guardar()" :disabled="!form.tipo || !form.fecha_emision || !selProductoId"
+        class="btn-primary text-sm" :class="(!form.tipo || !form.fecha_emision || !selProductoId) ? 'opacity-50 cursor-not-allowed' : ''">
         <i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar comprobante
       </button>
     </div>

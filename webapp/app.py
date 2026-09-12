@@ -102,6 +102,7 @@ STATUS_LABELS = {
     "en_revision":   ("En revisión",   "purple"),
     "revisar":       ("Revisar",       "orange"),
     "parcial":       ("Parcial",       "blue"),
+    "por_cobrar":    ("Por cobrar",    "orange"),
 }
 
 def _ctx(request: Request, **kwargs):
@@ -1038,26 +1039,33 @@ async def comprobantes_list(
     docs, total = pdb.get_comprobantes(search=search, tipo=tipo, empresa=empresa, page=page)
     stats    = pdb.get_comprobante_stats()
     empresas = pdb.get_all_companies()
-    productos = pdb.get_productos_list()
+    productos_raw = pdb.get_productos_list()
+    productos_json = [
+        {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"), "tipo": p.get("tipo", "")}
+        for p in productos_raw
+    ]
     pages    = max(1, (total + 49) // 50)
     return templates.TemplateResponse(request, "comprobantes.html", _ctx(
         request,
-        comprobantes = docs,
-        total        = total,
-        stats        = stats,
-        empresas     = empresas,
-        productos    = productos,
-        search       = search,
-        tipo         = tipo,
-        empresa      = empresa,
-        page         = page,
-        pages        = pages,
+        comprobantes   = docs,
+        total          = total,
+        stats          = stats,
+        empresas       = empresas,
+        productos      = productos_raw,
+        productos_json = productos_json,
+        search         = search,
+        tipo           = tipo,
+        empresa        = empresa,
+        page           = page,
+        pages          = pages,
     ))
 
 
 @app.post("/comprobantes/add")
 async def comprobante_add(request: Request):
     data = await request.json()
+    socios  = data.get("socios", [])
+    empresa = data.get("empresa", "").strip()
     comp_id = pdb.create_comprobante(
         numero          = data.get("numero", ""),
         tipo            = data.get("tipo", "boleta"),
@@ -1065,9 +1073,21 @@ async def comprobante_add(request: Request):
         monto_total     = float(data.get("monto_total") or 0),
         producto_nombre = data.get("producto_nombre", ""),
         concepto        = data.get("concepto", ""),
-        empresa         = data.get("empresa", ""),
-        socios          = data.get("socios", []),
+        empresa         = empresa,
+        socios          = socios,
     )
+    if data.get("es_credito"):
+        periodo = data.get("periodo", "").strip()
+        pdb.create_factura_credito(
+            empresa           = empresa,
+            numero_factura    = data.get("numero", ""),
+            monto             = float(data.get("monto_total") or 0),
+            fecha_emision     = data.get("fecha_emision", ""),
+            fecha_vencimiento = data.get("fecha_vencimiento", ""),
+            concepto          = data.get("concepto", ""),
+            socios            = socios,
+            periodo           = periodo,
+        )
     return {"ok": True, "id": comp_id}
 
 
