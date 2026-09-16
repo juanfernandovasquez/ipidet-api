@@ -244,12 +244,13 @@ def add_email(member_id: str, email: str):
     )
 
 
-def mark_email_bounce(email: str, bounce_type: str = "hard"):
+def mark_email_bounce(email: str, bounce_type: str = "hard", reason: str = ""):
     """Registra un rebote en el email del socio. hard → inhabilita, soft → solo marca."""
     email = email.strip().lower()
     update = {"$set": {
-        "emails.$.bounce_type":  bounce_type,
-        "emails.$.bounce_at":    datetime.now(timezone.utc).isoformat(),
+        "emails.$.bounce_type":   bounce_type,
+        "emails.$.bounce_at":     datetime.now(timezone.utc).isoformat(),
+        "emails.$.bounce_reason": reason,
     }}
     if bounce_type == "hard":
         update["$set"]["emails.$.estado"] = "inhabilitado"
@@ -262,11 +263,12 @@ def get_bounced_emails():
         {"$unwind": "$emails"},
         {"$match": {"emails.bounce_type": {"$exists": True}}},
         {"$project": {
-            "member_id": 1, "nombres": 1, "apellidos": 1,
-            "email":       "$emails.email",
-            "bounce_type": "$emails.bounce_type",
-            "bounce_at":   "$emails.bounce_at",
-            "estado":      "$emails.estado",
+            "member_id":    1, "nombres": 1, "apellidos": 1,
+            "email":        "$emails.email",
+            "bounce_type":  "$emails.bounce_type",
+            "bounce_at":    "$emails.bounce_at",
+            "bounce_reason":"$emails.bounce_reason",
+            "estado":       "$emails.estado",
         }},
         {"$sort": {"bounce_at": -1}},
     ]
@@ -1327,22 +1329,28 @@ def get_comunicacion_destinatarios(
 
 
 def save_comunicacion_log(asunto: str, plantilla: str, filtros: dict,
-                           destinatarios: list, usuario: str = "") -> str:
+                           destinatarios: list, usuario: str = "",
+                           fallidos_detalle: list | None = None) -> str:
     from datetime import datetime, timezone
+    fd = fallidos_detalle or []
     doc = {
-        "fecha":          datetime.now(timezone.utc),
-        "usuario":        usuario,
-        "asunto":         asunto,
-        "plantilla":      plantilla,
-        "filtros":        filtros,
-        "total_enviados": len(destinatarios),
-        "destinatarios":  destinatarios,
+        "fecha":             datetime.now(timezone.utc),
+        "usuario":           usuario,
+        "asunto":            asunto,
+        "plantilla":         plantilla,
+        "filtros":           filtros,
+        "total_enviados":    len(destinatarios) - len(fd),
+        "total_fallidos":    len(fd),
+        "fallidos_detalle":  fd,
+        "destinatarios":     destinatarios,
     }
     return str(comunicaciones_col.insert_one(doc).inserted_id)
 
 
 def get_comunicaciones_history(limit: int = 20) -> list:
-    docs = list(comunicaciones_col.find({}, {"destinatarios": 0}).sort("fecha", -1).limit(limit))
+    docs = list(comunicaciones_col.find(
+        {}, {"destinatarios": 0}
+    ).sort("fecha", -1).limit(limit))
     return _clean(docs)
 
 

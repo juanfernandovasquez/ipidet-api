@@ -97,22 +97,24 @@ async def send_email(
         )
 
 
-def _send_bulk_sync(
-    mensajes: list[dict],
-) -> tuple[int, int, list[str]]:
+def _send_bulk_sync(mensajes: list[dict]) -> tuple[int, int, list[str], list[dict]]:
     """
     Envía múltiples emails en una sola sesión SMTP.
-    mensajes: [{"to": str, "subject": str, "html_body": str}]
-    Devuelve (enviados, fallidos, errores[]).
+    mensajes: [{"to": str, "nombre": str, "subject": str, "html_body": str}]
+    Devuelve (enviados, fallidos, errores[], fallidos_detalle[]).
     """
-    enviados, fallidos, errores = 0, 0, []
+    enviados, fallidos, errores, fallidos_detalle = 0, 0, [], []
     try:
         server = smtplib.SMTP(BREVO_SMTP_HOST, BREVO_SMTP_PORT, timeout=30)
         server.ehlo()
         server.starttls()
         server.login(BREVO_SMTP_USER, BREVO_SMTP_PASSWORD)
     except Exception as exc:
-        return 0, len(mensajes), [str(exc)]
+        err = str(exc)
+        return 0, len(mensajes), [err], [
+            {"email": m["to"], "nombre": m.get("nombre", ""), "error": err}
+            for m in mensajes
+        ]
 
     try:
         for m in mensajes:
@@ -126,21 +128,22 @@ def _send_bulk_sync(
                 enviados += 1
             except Exception as exc:
                 fallidos += 1
-                msg_err = str(exc)
-                if msg_err not in errores:
-                    errores.append(msg_err)
+                err = str(exc)
+                if err not in errores:
+                    errores.append(err)
+                fallidos_detalle.append({"email": m["to"], "nombre": m.get("nombre", ""), "error": err})
     finally:
         try:
             server.quit()
         except Exception:
             pass
 
-    return enviados, fallidos, errores
+    return enviados, fallidos, errores, fallidos_detalle
 
 
-def _send_bulk_api(mensajes: list[dict]) -> tuple[int, int, list[str]]:
+def _send_bulk_api(mensajes: list[dict]) -> tuple[int, int, list[str], list[dict]]:
     """Usa Brevo HTTP API v3 — funciona en Render y cualquier servidor (puerto 443)."""
-    enviados, fallidos, errores = 0, 0, []
+    enviados, fallidos, errores, fallidos_detalle = 0, 0, [], []
     for m in mensajes:
         payload = _json.dumps({
             "sender":      {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
@@ -167,15 +170,17 @@ def _send_bulk_api(mensajes: list[dict]) -> tuple[int, int, list[str]]:
             err = f"HTTP {exc.code}: {body[:200]}"
             if err not in errores:
                 errores.append(err)
+            fallidos_detalle.append({"email": m["to"], "nombre": m.get("nombre", ""), "error": err})
         except Exception as exc:
             fallidos += 1
             err = str(exc)
             if err not in errores:
                 errores.append(err)
-    return enviados, fallidos, errores
+            fallidos_detalle.append({"email": m["to"], "nombre": m.get("nombre", ""), "error": err})
+    return enviados, fallidos, errores, fallidos_detalle
 
 
-async def send_bulk(mensajes: list[dict]) -> tuple[int, int, list[str]]:
+async def send_bulk(mensajes: list[dict]) -> tuple[int, int, list[str], list[dict]]:
     """Usa HTTP API si BREVO_API_KEY está configurada; si no, SMTP."""
     loop = asyncio.get_running_loop()
     if BREVO_API_KEY:

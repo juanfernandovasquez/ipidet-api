@@ -374,14 +374,26 @@
              class="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700 mb-4">
           <i class="fa-solid fa-circle-exclamation"></i> <span x-text="errorMsg"></span>
         </div>
-        <div x-show="resultado" x-cloak
-             class="flex items-start gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700 mb-4">
-          <i class="fa-solid fa-circle-check mt-0.5"></i>
-          <div>
-            <span x-text="'Enviado a ' + resultado.enviados + ' socios.'"></span>
-            <span x-show="resultado && resultado.fallidos > 0" x-cloak
-                  class="block text-xs text-amber-600 mt-0.5"
-                  x-text="resultado.fallidos + ' fallaron: ' + (resultado.errores && resultado.errores[0] ? resultado.errores[0] : '')"></span>
+        <div x-show="resultado" x-cloak class="mb-4 space-y-2">
+          <div class="flex items-start gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700">
+            <i class="fa-solid fa-circle-check mt-0.5"></i>
+            <span x-text="'Enviado correctamente a ' + resultado.enviados + ' socios.'"></span>
+          </div>
+          <div x-show="resultado && resultado.fallidos > 0" x-cloak
+               class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
+            <p class="font-medium text-amber-800 mb-2">
+              <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+              <span x-text="resultado.fallidos + ' envío(s) fallaron (Brevo rechazó la solicitud):'"></span>
+            </p>
+            <div class="space-y-1 max-h-40 overflow-y-auto">
+              <template x-for="f in (resultado.fallidos_detalle || [])" :key="f.email">
+                <div class="text-xs text-amber-900 flex gap-2">
+                  <span class="font-medium truncate" x-text="f.nombre || f.email"></span>
+                  <span class="text-amber-500 font-mono truncate" x-text="'<' + f.email + '>'"></span>
+                  <span class="text-amber-700 flex-shrink-0" x-text="'— ' + f.error"></span>
+                </div>
+              </template>
+            </div>
           </div>
         </div>
 
@@ -434,21 +446,45 @@
         </h2>
         <div class="space-y-2">
           {% for h in history %}
-          <div class="flex items-start justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-            <div class="min-w-0">
-              <div class="text-sm font-medium text-slate-800 truncate">{{ h.asunto }}</div>
-              <div class="text-xs text-slate-400 mt-0.5">
-                {{ h.fecha[:10] if h.fecha else '—' }}
-                {% if h.filtros %}
-                  · {{ h.filtros.get('periodo', '') }}
-                  {% if h.filtros.get('estados_pago') %} · {{ h.filtros.estados_pago | join(', ') }}{% endif %}
-                  {% if h.filtros.get('empresa') %} · {{ h.filtros.empresa }}{% endif %}
+          {% set fd = h.get('fallidos_detalle', []) %}
+          <div x-data="{ abierto: false }" class="bg-slate-50 rounded-lg border border-slate-100">
+            <div class="flex items-start justify-between p-3">
+              <div class="min-w-0 flex-1">
+                <div class="text-sm font-medium text-slate-800 truncate">{{ h.asunto }}</div>
+                <div class="text-xs text-slate-400 mt-0.5">
+                  {{ h.fecha[:10] if h.fecha else '—' }}
+                  {% if h.filtros %}
+                    · {{ h.filtros.get('periodo', '') }}
+                    {% if h.filtros.get('estados_pago') %} · {{ h.filtros.estados_pago | join(', ') }}{% endif %}
+                    {% if h.filtros.get('empresa') %} · {{ h.filtros.empresa }}{% endif %}
+                  {% endif %}
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 flex-shrink-0 ml-3">
+                <span class="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                  <i class="fa-solid fa-paper-plane text-[10px]"></i> {{ h.total_enviados or h.get('total_enviados', 0) }}
+                </span>
+                {% if fd %}
+                <button @click="abierto = !abierto"
+                        class="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-600 px-2 py-0.5 rounded-full hover:bg-red-100 transition-colors">
+                  <i class="fa-solid fa-circle-exclamation text-[10px]"></i> {{ fd | length }} fallido{% if fd | length != 1 %}s{% endif %}
+                </button>
                 {% endif %}
               </div>
             </div>
-            <span class="flex-shrink-0 ml-3 inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-              <i class="fa-solid fa-paper-plane text-[10px]"></i> {{ h.total_enviados }}
-            </span>
+            {% if fd %}
+            <div x-show="abierto" x-cloak
+                 class="px-3 pb-3 border-t border-slate-200 mt-0 pt-2 space-y-1">
+              <p class="text-xs font-semibold text-slate-500 mb-1">Rechazados por Brevo:</p>
+              {% for f in fd %}
+              <div class="text-xs flex gap-2 text-slate-600">
+                <span class="font-medium">{{ f.get('nombre', '') or f.get('email', '') }}</span>
+                <span class="text-slate-400 font-mono">{{ f.get('email', '') }}</span>
+                <span class="text-red-500">— {{ f.get('error', '') | truncate(80) }}</span>
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
           </div>
           {% endfor %}
         </div>

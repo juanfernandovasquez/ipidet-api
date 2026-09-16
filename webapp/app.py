@@ -1219,14 +1219,14 @@ async def comunicaciones_enviar(request: Request):
     for d in destinatarios:
         if not d.get("email"):
             continue
-        nombre     = d.get("nombre", "asociado/a")
-        asunto_p   = asunto.replace("{{nombre}}", nombre)
-        cuerpo_p   = cuerpo.replace("{{nombre}}", nombre)
+        nombre      = d.get("nombre", "asociado/a")
+        asunto_p    = asunto.replace("{{nombre}}", nombre)
+        cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
         cuerpo_html = cuerpo_p.replace("\n", "<br>")
-        html_body  = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
-        mensajes.append({"to": d["email"], "subject": asunto_p, "html_body": html_body})
+        html_body   = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
+        mensajes.append({"to": d["email"], "nombre": nombre, "subject": asunto_p, "html_body": html_body})
 
-    enviados, fallidos, errores = await mailer.send_bulk(mensajes)
+    enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(mensajes)
 
     if enviados == 0 and fallidos > 0:
         return JSONResponse(
@@ -1235,10 +1235,11 @@ async def comunicaciones_enviar(request: Request):
         )
 
     usuario = request.session.get("user_email", "")
-    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario)
+    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario, fallidos_detalle)
 
     return {"ok": True, "enviados": enviados, "fallidos": fallidos,
-            "errores": errores if errores else []}
+            "errores": errores if errores else [],
+            "fallidos_detalle": fallidos_detalle}
 
 
 @app.get("/api/comunicaciones/buscar-miembro")
@@ -1289,12 +1290,13 @@ async def brevo_bounce(request: Request):
 
     email   = payload.get("email", "")
     event   = payload.get("event", "")
+    reason  = payload.get("reason", "") or payload.get("description", "")
     if not email or event not in ("hard_bounce", "soft_bounce", "invalid_email",
                                    "blocked", "unsubscribed"):
         return {"ok": True, "skipped": True}
 
     bounce_type = "hard" if event in ("hard_bounce", "invalid_email", "blocked") else "soft"
-    pdb.mark_email_bounce(email, bounce_type)
+    pdb.mark_email_bounce(email, bounce_type, reason=f"{event}: {reason}".strip(": "))
     return {"ok": True, "email": email, "bounce_type": bounce_type}
 
 
@@ -1587,6 +1589,16 @@ async def producto_delete(producto_id: str):
 async def comunicaciones_rebotes(request: Request):
     rebotes = pdb.get_bounced_emails()
     return templates.TemplateResponse(request, "rebotes.html", _ctx(request, rebotes=rebotes))
+
+
+@app.post("/comunicaciones/rebotes/inhabilitar")
+async def rebote_inhabilitar(request: Request):
+    form = await request.form()
+    member_id = form.get("member_id", "")
+    email     = form.get("email", "")
+    if member_id and email:
+        pdb.update_email_status(member_id, email, "inhabilitado")
+    return RedirectResponse("/comunicaciones/rebotes", status_code=303)
 
 
 # ── Portal de socios ──────────────────────────────────────────────────────────

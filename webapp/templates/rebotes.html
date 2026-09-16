@@ -38,8 +38,9 @@
           <th class="px-4 py-2.5 text-left">Socio</th>
           <th class="px-4 py-2.5 text-left">Email</th>
           <th class="px-4 py-2.5 text-center">Tipo</th>
-          <th class="px-4 py-2.5 text-center">Estado email</th>
-          <th class="px-4 py-2.5 text-left">Fecha rebote</th>
+          <th class="px-4 py-2.5 text-left">Razón</th>
+          <th class="px-4 py-2.5 text-left">Fecha</th>
+          <th class="px-4 py-2.5 text-center">Estado</th>
           <th class="px-4 py-2.5"></th>
         </tr>
       </thead>
@@ -65,21 +66,37 @@
             </span>
             {% endif %}
           </td>
+          <td class="px-4 py-3 text-xs text-slate-500 max-w-xs">
+            {{ r.bounce_reason or '—' }}
+          </td>
+          <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+            {{ r.bounce_at[:10] if r.bounce_at else '—' }}
+          </td>
           <td class="px-4 py-3 text-center">
             {% if r.estado == 'inhabilitado' %}
             <span class="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Inhabilitado</span>
             {% else %}
-            <span class="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Habilitado</span>
+            <span class="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Habilitado</span>
             {% endif %}
           </td>
-          <td class="px-4 py-3 text-xs text-slate-500">
-            {{ r.bounce_at[:10] if r.bounce_at else '—' }}
-          </td>
           <td class="px-4 py-3 text-right">
-            <a href="/members/{{ r.member_id }}"
-               class="text-xs text-blue-600 hover:text-blue-800 hover:underline">
-              Ver socio →
-            </a>
+            <div class="flex items-center justify-end gap-3">
+              {% if r.estado != 'inhabilitado' %}
+              <form method="post" action="/comunicaciones/rebotes/inhabilitar"
+                    onsubmit="return confirm('¿Inhabilitar {{ r.email }}?')">
+                <input type="hidden" name="member_id" value="{{ r.member_id }}">
+                <input type="hidden" name="email" value="{{ r.email }}">
+                <button type="submit"
+                        class="text-xs font-medium text-red-600 hover:text-red-800 hover:underline">
+                  Inhabilitar
+                </button>
+              </form>
+              {% endif %}
+              <a href="/members/{{ r.member_id }}"
+                 class="text-xs text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap">
+                Ver socio →
+              </a>
+            </div>
           </td>
         </tr>
         {% endfor %}
