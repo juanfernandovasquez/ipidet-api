@@ -445,9 +445,9 @@
           </button>
         </div>
 
-        <div class="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div class="border border-slate-200 rounded-xl shadow-sm">
           <!-- Encabezado de columnas -->
-          <div class="grid text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-b border-slate-200 px-3 py-2"
+          <div class="grid text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-b border-slate-200 px-3 py-2 rounded-t-xl"
                style="grid-template-columns: 1.5rem 1fr 9rem 5.5rem 2rem">
             <span class="text-center">#</span>
             <span>Socio</span>
@@ -472,7 +472,7 @@
                          placeholder="Socio (opcional)"
                          class="input w-full text-xs py-1.5">
                   <div x-show="item.sResults.length > 0"
-                       class="absolute z-20 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-36 overflow-y-auto">
+                       class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto">
                     <template x-for="s in item.sResults" :key="s.member_id">
                       <button type="button" @mousedown.prevent="elegirSocio(item, s)"
                               class="w-full text-left px-2.5 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0 flex gap-2">
@@ -506,7 +506,7 @@
           </div>
 
           <!-- Pie: agregar + total -->
-          <div class="flex items-center justify-between px-3 py-2.5 bg-slate-50 border-t border-slate-200">
+          <div class="flex items-center justify-between px-3 py-2.5 bg-slate-50 border-t border-slate-200 rounded-b-xl">
             <button type="button" @click="agregarItem()"
                     class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-blue-600 transition-colors">
               <i class="fa-solid fa-plus text-[10px]"></i> otra línea
