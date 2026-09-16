@@ -1215,6 +1215,7 @@ async def comunicaciones_enviar(request: Request):
     if not destinatarios:
         return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
 
+    disclaimer = data.get("disclaimer", True)
     mensajes = []
     for d in destinatarios:
         if not d.get("email"):
@@ -1223,7 +1224,7 @@ async def comunicaciones_enviar(request: Request):
         asunto_p    = asunto.replace("{{nombre}}", nombre)
         cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
         cuerpo_html = cuerpo_p.replace("\n", "<br>")
-        html_body   = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
+        html_body   = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>', disclaimer=disclaimer)
         mensajes.append({"to": d["email"], "nombre": nombre, "subject": asunto_p, "html_body": html_body})
 
     enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(mensajes)
@@ -1270,11 +1271,12 @@ async def comunicaciones_buscar_miembro(q: str = ""):
 async def comunicaciones_preview_html(request: Request):
     """Devuelve el HTML renderizado del email para vista previa."""
     data   = await request.json()
-    cuerpo = (data.get("cuerpo") or "").strip()
+    cuerpo      = (data.get("cuerpo") or "").strip()
+    disclaimer  = data.get("disclaimer", True)
     nombre_muestra = "Juan Pérez"
     cuerpo_p    = cuerpo.replace("{{nombre}}", nombre_muestra)
     cuerpo_html = cuerpo_p.replace("\n", "<br>")
-    html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>')
+    html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>', disclaimer=disclaimer)
     return {"html": html}
 
 

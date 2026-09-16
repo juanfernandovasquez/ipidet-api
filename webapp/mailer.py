@@ -190,7 +190,11 @@ async def send_bulk(mensajes: list[dict]) -> tuple[int, int, list[str], list[dic
 
 # ── Plantillas ────────────────────────────────────────────────────────────────
 
-def _base_html(contenido: str) -> str:
+def _base_html(contenido: str, disclaimer: bool = True) -> str:
+    disclaimer_line = (
+        "<br>Este correo fue generado automáticamente. No responder directamente a este mensaje."
+        if disclaimer else ""
+    )
     return f"""
 <!DOCTYPE html>
 <html lang="es">
@@ -211,8 +215,7 @@ def _base_html(contenido: str) -> str:
         <!-- Footer -->
         <tr><td style="background:#f1f5f9;padding:16px 32px;border-top:1px solid #e2e8f0">
           <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center">
-            IPIDET · administracion@ipidet.org<br>
-            Este correo fue generado automáticamente. No responder directamente a este mensaje.
+            IPIDET · administracion@ipidet.org{disclaimer_line}
           </p>
         </td></tr>
       </table>

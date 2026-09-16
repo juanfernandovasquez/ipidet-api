@@ -356,9 +356,15 @@
         <p class="text-xs text-slate-400 mb-1">
           Usa <code class="bg-slate-100 px-1 rounded font-mono">{{ '{{nombre}}' }}</code> en el asunto o mensaje para personalizar con el nombre de cada destinatario.
         </p>
-        <p class="text-xs text-slate-400 mb-5">
+        <p class="text-xs text-slate-400 mb-3">
           El mensaje se envía con el formato corporativo de IPIDET. Cada email es individual (no van en copia).
         </p>
+
+        <!-- Opción disclaimer -->
+        <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-5 select-none">
+          <input type="checkbox" x-model="disclaimer" class="rounded accent-blue-600">
+          Incluir aviso <em>"No responder directamente a este mensaje"</em> en el pie del email
+        </label>
 
         <!-- Botón vista previa -->
         <div class="mb-4">
@@ -580,6 +586,7 @@ function comunicaciones() {
       },
     },
 
+    disclaimer:  true,
     confirmando: false,
     enviando:    false,
     resultado:   null,
@@ -713,7 +720,7 @@ function comunicaciones() {
       const r = await fetch('/api/comunicaciones/preview-html', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cuerpo: this.cuerpo }),
+        body: JSON.stringify({ cuerpo: this.cuerpo, disclaimer: this.disclaimer }),
       });
       const data = await r.json();
       this.showPreviewModal = true;
@@ -744,6 +751,7 @@ function comunicaciones() {
             asunto:        this.asunto,
             cuerpo:        this.cuerpo,
             plantilla:     this.plantilla,
+            disclaimer:    this.disclaimer,
             destinatarios: this.seleccionados,
             filtros:       this.filtros,
           }),
