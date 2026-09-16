@@ -1939,6 +1939,42 @@ def delete_pendiente(pendiente_id: str) -> None:
     pendientes_col.delete_one({"_id": ObjectId(pendiente_id)})
 
 
+# ── Tareas IA ──────────────────────────────────────────────────────────────────
+
+ia_col = _db.ia_tareas
+
+
+def get_ia_tareas(solo_pendientes: bool = False) -> list:
+    q: dict = {}
+    if solo_pendientes:
+        q["estado"] = {"$ne": "completado"}
+    docs = list(ia_col.find(q).sort("created_at", 1))
+    return _clean(docs)
+
+
+def create_ia_tarea(texto: str) -> str:
+    doc = {
+        "texto":      texto.strip(),
+        "estado":     "pendiente",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    return str(ia_col.insert_one(doc).inserted_id)
+
+
+def update_ia_tarea(tarea_id: str, texto: str | None = None, estado: str | None = None) -> None:
+    fields: dict = {"updated_at": datetime.now(timezone.utc)}
+    if texto is not None:
+        fields["texto"] = texto.strip()
+    if estado is not None:
+        fields["estado"] = estado
+    ia_col.update_one({"_id": ObjectId(tarea_id)}, {"$set": fields})
+
+
+def delete_ia_tarea(tarea_id: str) -> None:
+    ia_col.delete_one({"_id": ObjectId(tarea_id)})
+
+
 # ── Productos facturables ──────────────────────────────────────────────────────
 
 TIPOS_PRODUCTO = ["cuota_anual", "cuota_provincia", "evento", "fraccionamiento", "otro"]

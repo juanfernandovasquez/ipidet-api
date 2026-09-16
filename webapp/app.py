@@ -1459,14 +1459,15 @@ async def api_evento_detalle(evento_id: str):
 @app.get("/pendientes", response_class=HTMLResponse)
 async def pendientes_list(
     request: Request,
-    estado: str = "",
+    estado: str  = "",
     prioridad: str = "",
     search: str = "",
 ):
-    items = pdb.get_pendientes(estado, prioridad, search)
-    stats = pdb.get_pendientes_stats()
+    items     = pdb.get_pendientes(estado, prioridad, search)
+    stats     = pdb.get_pendientes_stats()
+    ia_tareas = pdb.get_ia_tareas()
     return templates.TemplateResponse(request, "pendientes.html", _ctx(request,
-        items=items, stats=stats,
+        items=items, stats=stats, ia_tareas=ia_tareas,
         estado=estado, prioridad=prioridad, search=search,
     ))
 
@@ -1532,6 +1533,38 @@ async def pendiente_delete(
 ):
     pdb.delete_pendiente(pendiente_id)
     return RedirectResponse(redirect_to, status_code=303)
+
+
+# ── Tareas IA ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/ia-tareas")
+async def api_ia_tareas():
+    """Para leer desde la terminal. Devuelve las tareas pendientes en JSON."""
+    return pdb.get_ia_tareas(solo_pendientes=True)
+
+
+@app.post("/ia-tareas/add")
+async def ia_tarea_add(texto: str = Form(...)):
+    pdb.create_ia_tarea(texto)
+    return RedirectResponse("/pendientes", status_code=303)
+
+
+@app.post("/ia-tareas/{tarea_id}/estado")
+async def ia_tarea_estado(tarea_id: str, estado: str = Form(...)):
+    pdb.update_ia_tarea(tarea_id, estado=estado)
+    return RedirectResponse("/pendientes", status_code=303)
+
+
+@app.post("/ia-tareas/{tarea_id}/update")
+async def ia_tarea_update(tarea_id: str, texto: str = Form(...)):
+    pdb.update_ia_tarea(tarea_id, texto=texto)
+    return RedirectResponse("/pendientes", status_code=303)
+
+
+@app.post("/ia-tareas/{tarea_id}/delete")
+async def ia_tarea_delete(tarea_id: str):
+    pdb.delete_ia_tarea(tarea_id)
+    return RedirectResponse("/pendientes", status_code=303)
 
 
 # ── Productos facturables ────────────────────────────────────────────────────
