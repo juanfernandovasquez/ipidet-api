@@ -241,6 +241,7 @@
                  class="input w-full text-sm" autocomplete="off">
           <div x-show="sugMiembros.length > 0"
                @click.outside="sugMiembros = []"
+               @mousedown.prevent
                class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full">
             <template x-for="m in sugMiembros" :key="m.member_id">
               <button type="button"
@@ -657,10 +658,12 @@ function comunicaciones() {
     },
 
     agregarMiembro(m) {
-      const yaEnFiltro = this.destinatarios.some(d => d.member_id === m.member_id);
-      const yaManual  = this.manuales.some(d => d.member_id === m.member_id);
-      if (!yaEnFiltro && !yaManual) {
+      const yaManual = this.manuales.some(d => d.member_id === m.member_id);
+      if (!yaManual) {
         this.manuales.push({ ...m, selected: true });
+        // Si está en el filtro pero deseleccionado, seleccionarlo también
+        const enFiltro = this.destinatarios.find(d => d.member_id === m.member_id);
+        if (enFiltro) enFiltro.selected = true;
       }
       this.busquedaMiembro = '';
       this.sugMiembros     = [];
