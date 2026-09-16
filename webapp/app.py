@@ -820,6 +820,14 @@ async def api_empresa_socios(empresa: str = "", periodo: str = "2026"):
     return pdb.get_socios_por_empresa(empresa.strip(), periodo)
 
 
+@app.get("/api/empresas/facturas")
+async def api_empresa_facturas(empresa: str = ""):
+    """Facturas de crédito giradas a una empresa (historial completo)."""
+    if not empresa.strip():
+        return []
+    return pdb.get_facturas_credito(empresa=empresa.strip())
+
+
 # ── API (para uso del bot) ────────────────────────────────────────────────────
 
 @app.get("/api/members")
