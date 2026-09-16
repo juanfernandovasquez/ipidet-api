@@ -921,7 +921,7 @@ def get_companies(search: str = "") -> list:
     if search.strip():
         rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
         query["$or"] = [{"nombre": rx}, {"ruc": rx}, {"razon_social": rx}]
-    docs = list(companies_col.find(query, {"_id": 1, "nombre": 1, "ruc": 1, "tipo": 1, "razon_social": 1}).sort("nombre", 1).limit(15))
+    docs = list(companies_col.find(query, {"_id": 1, "nombre": 1, "ruc": 1, "tipo": 1, "razon_social": 1, "contacto_email": 1}).sort("nombre", 1).limit(15))
     return _clean(docs)
 
 def _resolve_empresa_nombres(search: str) -> list[str] | None:
@@ -970,6 +970,36 @@ def update_company(company_id: str, nombre: str, ruc: str = "",
 
 def delete_company(company_id: str):
     companies_col.delete_one({"_id": ObjectId(company_id)})
+
+
+def get_socios_por_empresa(empresa_nombre: str, periodo: str) -> list:
+    """Socios cuyo payment del período tiene empresa_pagadora == empresa_nombre."""
+    pipeline = [
+        {"$match": {"empresa_pagadora": empresa_nombre, "periodo": periodo}},
+        {"$lookup": {
+            "from": "members",
+            "localField": "member_id",
+            "foreignField": "member_id",
+            "as": "m",
+        }},
+        {"$unwind": {"path": "$m", "preserveNullAndEmptyArrays": True}},
+        {"$project": {
+            "member_id": 1,
+            "estado": 1,
+            "nombre_completo": {
+                "$concat": [
+                    {"$ifNull": ["$m.apellidos", ""]},
+                    ", ",
+                    {"$ifNull": ["$m.nombres", ""]},
+                ]
+            },
+            "titulo": "$m.titulo",
+            "ubicacion": "$m.ubicacion",
+        }},
+        {"$sort": {"nombre_completo": 1}},
+    ]
+    docs = list(payments_col.aggregate(pipeline))
+    return _clean(docs)
 
 
 # ── Facturación ───────────────────────────────────────────────────────────────

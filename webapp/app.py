@@ -812,6 +812,14 @@ async def api_delete_company(company_id: str):
     return {"ok": True}
 
 
+@app.get("/api/empresas/socios")
+async def api_empresa_socios(empresa: str = "", periodo: str = "2026"):
+    """Socios con payments.empresa_pagadora == empresa para el período dado."""
+    if not empresa.strip():
+        return []
+    return pdb.get_socios_por_empresa(empresa.strip(), periodo)
+
+
 # ── API (para uso del bot) ────────────────────────────────────────────────────
 
 @app.get("/api/members")

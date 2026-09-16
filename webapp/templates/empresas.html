@@ -43,12 +43,13 @@
         <th class="px-4 py-3 text-left font-semibold text-slate-600">RUC</th>
         <th class="px-4 py-3 text-left font-semibold text-slate-600">Tipo</th>
         <th class="px-4 py-3 text-left font-semibold text-slate-600">Contacto</th>
+        <th class="px-4 py-3 text-center font-semibold text-slate-600">Socios</th>
         <th class="px-4 py-3 text-right font-semibold text-slate-600">Acciones</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
-      {% for e in empresas %}
-      <tr class="hover:bg-slate-50 transition-colors" x-data="{ editing: false }">
+    {% for e in empresas %}
+    <tbody x-data="empresaRow('{{ e.nombre | replace("'", "\\'") }}')" class="border-b border-slate-100 last:border-0">
+      <tr class="hover:bg-slate-50 transition-colors">
         <!-- Vista normal -->
         <td class="px-4 py-3 font-semibold text-slate-800" x-show="!editing">{{ e.nombre }}</td>
         <td class="px-4 py-3 text-slate-600" x-show="!editing">{{ e.razon_social or '—' }}</td>
@@ -73,6 +74,13 @@
           {% endif %}
           {% if not e.contacto_nombre and not e.contacto_email and not e.contacto_telefono %}—{% endif %}
         </td>
+        <td class="px-4 py-3 text-center" x-show="!editing">
+          <button @click="toggleSocios()"
+                  class="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 mx-auto">
+            <i class="fa-solid fa-users text-[11px]"></i>
+            <span x-text="showSocios ? 'Ocultar' : 'Ver socios'"></span>
+          </button>
+        </td>
         <td class="px-4 py-3 text-right" x-show="!editing">
           <button @click="editing = true" class="text-blue-600 hover:text-blue-800 text-xs px-2 py-1 rounded hover:bg-blue-50">
             <i class="fa-solid fa-pen"></i> Editar
@@ -86,7 +94,7 @@
         </td>
 
         <!-- Formulario de edición inline -->
-        <td colspan="6" class="px-4 py-3" x-show="editing" x-cloak>
+        <td colspan="7" class="px-4 py-3" x-show="editing" x-cloak>
           <form method="post" action="/empresas/{{ e._id }}/update" class="flex flex-wrap gap-2 items-end">
             <div>
               <label class="block text-xs text-slate-500 mb-1">Nombre corto *</label>
@@ -138,15 +146,61 @@
           </form>
         </td>
       </tr>
-      {% else %}
+
+      <!-- Panel de socios por período -->
+      <tr x-show="showSocios" x-cloak>
+        <td colspan="7" class="px-5 pb-4 pt-0 bg-blue-50/50 border-t border-blue-100">
+          <div class="flex items-center gap-3 pt-3 mb-3">
+            <span class="text-xs font-semibold text-slate-600">
+              <i class="fa-solid fa-users text-blue-500 mr-1"></i>
+              Socios con empresa pagadora: <strong>{{ e.nombre }}</strong>
+            </span>
+            <select x-model="sociosPeriodo"
+                    @change="cargarSocios()"
+                    class="text-xs border border-slate-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+              <option value="2023">2023</option>
+            </select>
+          </div>
+          <div x-show="loadingSocios" class="text-xs text-slate-400 py-2">
+            <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
+          </div>
+          <div x-show="!loadingSocios && socios.length === 0" class="text-xs text-slate-400 py-2">
+            No hay socios con pagos de empresa para este período.
+          </div>
+          <div x-show="!loadingSocios && socios.length > 0" class="flex flex-wrap gap-2">
+            <template x-for="s in socios" :key="s.member_id">
+              <a :href="'/members/' + s.member_id"
+                 class="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:text-blue-700 transition-colors shadow-sm">
+                <i class="fa-solid fa-user text-slate-300 text-[10px]"></i>
+                <span x-text="s.nombre_completo"></span>
+                <span x-show="s.titulo" class="text-slate-400 font-normal" x-text="'· ' + s.titulo"></span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded-full ml-0.5"
+                  :class="{
+                    'bg-green-100 text-green-700': s.estado === 'pagado',
+                    'bg-red-100 text-red-700': s.estado === 'debe',
+                    'bg-amber-100 text-amber-700': s.estado === 'fraccionamiento' || s.estado === 'parcial',
+                    'bg-slate-100 text-slate-500': !['pagado','debe','fraccionamiento','parcial'].includes(s.estado),
+                  }"
+                  x-text="s.estado || '—'"></span>
+              </a>
+            </template>
+          </div>
+        </td>
+      </tr>
+    </tbody>
+    {% else %}
+    <tbody>
       <tr>
-        <td colspan="6" class="px-4 py-10 text-center text-slate-400 text-sm">
+        <td colspan="7" class="px-4 py-10 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-building text-2xl mb-2 block opacity-30"></i>
           No hay empresas registradas
         </td>
       </tr>
-      {% endfor %}
     </tbody>
+    {% endfor %}
   </table>
 </div>
 
@@ -217,4 +271,40 @@
     </form>
   </div>
 </div>
+
+<script>
+function empresaRow(nombre) {
+  return {
+    editing: false,
+    showSocios: false,
+    sociosPeriodo: '2026',
+    socios: [],
+    loadingSocios: false,
+    empresaNombre: nombre,
+
+    async toggleSocios() {
+      this.showSocios = !this.showSocios;
+      if (this.showSocios && this.socios.length === 0) {
+        await this.cargarSocios();
+      }
+    },
+
+    async cargarSocios() {
+      this.loadingSocios = true;
+      this.socios = [];
+      try {
+        const r = await fetch(
+          '/api/empresas/socios?empresa=' + encodeURIComponent(this.empresaNombre) +
+          '&periodo=' + encodeURIComponent(this.sociosPeriodo)
+        );
+        this.socios = await r.json();
+      } catch (err) {
+        this.socios = [];
+      } finally {
+        this.loadingSocios = false;
+      }
+    },
+  };
+}
+</script>
 {% endblock %}
