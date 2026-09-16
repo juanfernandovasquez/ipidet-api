@@ -457,25 +457,25 @@
 
     </div>
   </div>
-</div>
 
-<!-- Modal vista previa -->
-<div x-show="showPreviewModal" x-cloak
-     class="fixed inset-0 z-50 flex items-center justify-center p-4"
-     @keydown.escape.window="showPreviewModal = false">
-  <div class="absolute inset-0 bg-black/50" @click="showPreviewModal = false"></div>
-  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:90vh">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
-      <div>
-        <h2 class="font-semibold text-slate-800">Vista previa del email</h2>
-        <p class="text-xs text-slate-400 mt-0.5">Así lo verá el destinatario (con "Juan Pérez" de ejemplo para <code>{{ '{{nombre}}' }}</code>)</p>
+  <!-- Modal vista previa -->
+  <div x-show="showPreviewModal" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       @keydown.escape.window="showPreviewModal = false">
+    <div class="absolute inset-0 bg-black/50" @click="showPreviewModal = false"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:90vh">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
+        <div>
+          <h2 class="font-semibold text-slate-800">Vista previa del email</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Así lo verá el destinatario (con "Juan Pérez" de ejemplo para <code>{{ '{{nombre}}' }}</code>)</p>
+        </div>
+        <button @click="showPreviewModal = false" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
       </div>
-      <button @click="showPreviewModal = false" class="text-slate-400 hover:text-slate-600">
-        <i class="fa-solid fa-xmark text-lg"></i>
-      </button>
-    </div>
-    <div class="flex-1 overflow-auto p-0">
-      <iframe x-ref="previewFrame" class="w-full border-0 rounded-b-2xl" style="min-height:500px"></iframe>
+      <div class="flex-1 overflow-auto p-0">
+        <iframe x-ref="previewFrame" class="w-full border-0 rounded-b-2xl" style="min-height:500px"></iframe>
+      </div>
     </div>
   </div>
 </div>
