@@ -84,7 +84,7 @@
         </div>
 
         <!-- Título profesional -->
-        <div class="mb-5">
+        <div class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Título profesional</label>
           <select x-model="filtros.titulo" class="input w-full text-sm">
             <option value="">Todos los títulos</option>
@@ -92,6 +92,23 @@
             <option value="{{ t }}">{{ t }}</option>
             {% endfor %}
           </select>
+        </div>
+
+        <!-- Centro de trabajo -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Centro de trabajo</label>
+          <input x-model="filtros.centro_trabajo" type="text"
+                 placeholder="Ej. Ministerio, SUNAT, EY…"
+                 class="input w-full text-sm">
+        </div>
+
+        <!-- Palabras clave -->
+        <div class="mb-5">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Palabras clave</label>
+          <input x-model="filtros.keywords" type="text"
+                 placeholder="Busca en nombre, apellido, centro de trabajo, notas…"
+                 class="input w-full text-sm">
+          <p class="text-xs text-slate-400 mt-1">Busca en nombre, apellido, centro de trabajo y notas.</p>
         </div>
 
         <!-- Criterios de exclusión (collapsible) -->
@@ -176,6 +193,22 @@
                 <option value="{{ t }}">{{ t }}</option>
                 {% endfor %}
               </select>
+            </div>
+
+            <!-- Excluir centro de trabajo -->
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Excluir centro de trabajo</label>
+              <input x-model="exclusiones.centro_trabajo" type="text"
+                     placeholder="Ej. SUNAT, BDO…"
+                     class="input w-full text-sm">
+            </div>
+
+            <!-- Excluir palabras clave -->
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Excluir palabras clave</label>
+              <input x-model="exclusiones.keywords" type="text"
+                     placeholder="Excluir si aparece en nombre, centro de trabajo, notas…"
+                     class="input w-full text-sm">
             </div>
 
             <button type="button" @click="limpiarExclusiones()"
@@ -450,18 +483,22 @@
 function comunicaciones() {
   return {
     filtros: {
-      periodo:     '2026',
-      estados_pago: [],
-      empresa:     '',
-      ubicacion:   '',
-      titulo:      '',
+      periodo:        '2026',
+      estados_pago:   [],
+      empresa:        '',
+      ubicacion:      '',
+      titulo:         '',
+      centro_trabajo: '',
+      keywords:       '',
     },
 
     exclusiones: {
-      estados_pago: [],
-      empresa:     '',
-      ubicacion:   '',
-      titulo:      '',
+      estados_pago:   [],
+      empresa:        '',
+      ubicacion:      '',
+      titulo:         '',
+      centro_trabajo: '',
+      keywords:       '',
     },
     showExclusiones:  false,
     empresaExSugg:    [],
@@ -546,18 +583,22 @@ function comunicaciones() {
       return this.exclusiones.estados_pago.length > 0
           || this.exclusiones.empresa.trim() !== ''
           || this.exclusiones.ubicacion !== ''
-          || this.exclusiones.titulo !== '';
+          || this.exclusiones.titulo !== ''
+          || this.exclusiones.centro_trabajo.trim() !== ''
+          || this.exclusiones.keywords.trim() !== '';
     },
 
     numExclusiones() {
       return this.exclusiones.estados_pago.length
            + (this.exclusiones.empresa.trim() ? 1 : 0)
            + (this.exclusiones.ubicacion ? 1 : 0)
-           + (this.exclusiones.titulo ? 1 : 0);
+           + (this.exclusiones.titulo ? 1 : 0)
+           + (this.exclusiones.centro_trabajo.trim() ? 1 : 0)
+           + (this.exclusiones.keywords.trim() ? 1 : 0);
     },
 
     limpiarExclusiones() {
-      this.exclusiones = { estados_pago: [], empresa: '', ubicacion: '', titulo: '' };
+      this.exclusiones = { estados_pago: [], empresa: '', ubicacion: '', titulo: '', centro_trabajo: '', keywords: '' };
     },
 
     async fetchEmpresasEx() {
@@ -590,10 +631,12 @@ function comunicaciones() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...this.filtros,
-          excluir_estados_pago: this.exclusiones.estados_pago,
-          excluir_empresa:      this.exclusiones.empresa,
-          excluir_ubicacion:    this.exclusiones.ubicacion,
-          excluir_titulo:       this.exclusiones.titulo,
+          excluir_estados_pago:   this.exclusiones.estados_pago,
+          excluir_empresa:        this.exclusiones.empresa,
+          excluir_ubicacion:      this.exclusiones.ubicacion,
+          excluir_titulo:         this.exclusiones.titulo,
+          excluir_centro_trabajo: this.exclusiones.centro_trabajo,
+          excluir_keywords:       this.exclusiones.keywords,
         }),
       });
       const data = await r.json();

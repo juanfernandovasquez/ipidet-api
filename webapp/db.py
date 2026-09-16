@@ -1229,10 +1229,14 @@ def get_comunicacion_destinatarios(
     empresa: str = "",
     ubicacion: str = "",
     titulo: str = "",
+    centro_trabajo: str = "",
+    keywords: str = "",
     excluir_estados_pago: list[str] | None = None,
     excluir_empresa: str = "",
     excluir_ubicacion: str = "",
     excluir_titulo: str = "",
+    excluir_centro_trabajo: str = "",
+    excluir_keywords: str = "",
 ) -> list:
     """Socios activos con email habilitado que coincidan con los filtros."""
     q: dict = {"estado": "activo", "emails": {"$elemMatch": {"estado": "habilitado"}}}
@@ -1240,10 +1244,33 @@ def get_comunicacion_destinatarios(
         q["titulo"] = titulo
     if ubicacion:
         q["ubicacion"] = ubicacion
+    if centro_trabajo:
+        q["centro_trabajo"] = {"$regex": _re.escape(centro_trabajo.strip()), "$options": "i"}
+    if keywords:
+        kw = _re.escape(keywords.strip())
+        q["$and"] = q.pop("$and", []) + [{"$or": [
+            {"apellidos":     {"$regex": kw, "$options": "i"}},
+            {"nombres":       {"$regex": kw, "$options": "i"}},
+            {"centro_trabajo":{"$regex": kw, "$options": "i"}},
+            {"notas":         {"$regex": kw, "$options": "i"}},
+        ]}]
     if excluir_titulo:
         q["titulo"] = {**q.get("titulo", {}), "$ne": excluir_titulo} if isinstance(q.get("titulo"), dict) else {"$ne": excluir_titulo}
     if excluir_ubicacion:
         q["ubicacion"] = {**q.get("ubicacion", {}), "$ne": excluir_ubicacion} if isinstance(q.get("ubicacion"), dict) else {"$ne": excluir_ubicacion}
+    if excluir_centro_trabajo:
+        q["centro_trabajo"] = {
+            **(q["centro_trabajo"] if isinstance(q.get("centro_trabajo"), dict) else {}),
+            "$not": {"$regex": _re.escape(excluir_centro_trabajo.strip()), "$options": "i"},
+        }
+    if excluir_keywords:
+        kw_ex = _re.escape(excluir_keywords.strip())
+        q["$and"] = q.pop("$and", []) + [{"$nor": [
+            {"apellidos":     {"$regex": kw_ex, "$options": "i"}},
+            {"nombres":       {"$regex": kw_ex, "$options": "i"}},
+            {"centro_trabajo":{"$regex": kw_ex, "$options": "i"}},
+            {"notas":         {"$regex": kw_ex, "$options": "i"}},
+        ]}]
 
     members = list(members_col.find(q, {
         "member_id": 1, "apellidos": 1, "nombres": 1,
