@@ -1229,6 +1229,10 @@ def get_comunicacion_destinatarios(
     empresa: str = "",
     ubicacion: str = "",
     titulo: str = "",
+    excluir_estados_pago: list[str] | None = None,
+    excluir_empresa: str = "",
+    excluir_ubicacion: str = "",
+    excluir_titulo: str = "",
 ) -> list:
     """Socios activos con email habilitado que coincidan con los filtros."""
     q: dict = {"estado": "activo", "emails": {"$elemMatch": {"estado": "habilitado"}}}
@@ -1236,6 +1240,10 @@ def get_comunicacion_destinatarios(
         q["titulo"] = titulo
     if ubicacion:
         q["ubicacion"] = ubicacion
+    if excluir_titulo:
+        q["titulo"] = {**q.get("titulo", {}), "$ne": excluir_titulo} if isinstance(q.get("titulo"), dict) else {"$ne": excluir_titulo}
+    if excluir_ubicacion:
+        q["ubicacion"] = {**q.get("ubicacion", {}), "$ne": excluir_ubicacion} if isinstance(q.get("ubicacion"), dict) else {"$ne": excluir_ubicacion}
 
     members = list(members_col.find(q, {
         "member_id": 1, "apellidos": 1, "nombres": 1,
@@ -1250,6 +1258,15 @@ def get_comunicacion_destinatarios(
             pay_q["empresa_pagadora"] = {"$regex": _re.escape(empresa.strip()), "$options": "i"}
         valid_ids = {p["member_id"] for p in payments_col.find(pay_q, {"member_id": 1})}
         members = [m for m in members if m["member_id"] in valid_ids]
+
+    if excluir_estados_pago or excluir_empresa:
+        ex_q: dict = {"periodo": periodo}
+        if excluir_estados_pago:
+            ex_q["estado"] = {"$in": excluir_estados_pago}
+        if excluir_empresa:
+            ex_q["empresa_pagadora"] = {"$regex": _re.escape(excluir_empresa.strip()), "$options": "i"}
+        excluded_ids = {p["member_id"] for p in payments_col.find(ex_q, {"member_id": 1})}
+        members = [m for m in members if m["member_id"] not in excluded_ids]
 
     member_ids = [m["member_id"] for m in members]
     pay_map = {

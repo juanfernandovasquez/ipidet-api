@@ -1179,9 +1179,17 @@ async def comunicaciones_preview(request: Request):
     empresa     = data.get("empresa", "")
     ubicacion   = data.get("ubicacion", "")
     titulo      = data.get("titulo", "")
+    excluir_estados = data.get("excluir_estados_pago", [])
+    excluir_empresa = data.get("excluir_empresa", "")
+    excluir_ubicacion = data.get("excluir_ubicacion", "")
+    excluir_titulo  = data.get("excluir_titulo", "")
     destinatarios = pdb.get_comunicacion_destinatarios(
         periodo=periodo, estados_pago=estados or None,
         empresa=empresa, ubicacion=ubicacion, titulo=titulo,
+        excluir_estados_pago=excluir_estados or None,
+        excluir_empresa=excluir_empresa,
+        excluir_ubicacion=excluir_ubicacion,
+        excluir_titulo=excluir_titulo,
     )
     return {"total": len(destinatarios), "destinatarios": destinatarios}
 

@@ -94,6 +94,97 @@
           </select>
         </div>
 
+        <!-- Criterios de exclusión (collapsible) -->
+        <div class="mb-5 border border-slate-200 rounded-xl overflow-hidden">
+          <button type="button" @click="showExclusiones = !showExclusiones"
+                  class="flex items-center justify-between w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
+            <span class="text-xs font-semibold text-slate-600">
+              <i class="fa-solid fa-ban text-slate-400 mr-1.5"></i> Criterios de exclusión
+              <span x-show="tieneExclusiones()"
+                    class="ml-2 inline-flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4"
+                    x-text="numExclusiones()"></span>
+            </span>
+            <i class="fa-solid text-slate-400 text-xs"
+               :class="showExclusiones ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+          </button>
+
+          <div x-show="showExclusiones" x-cloak class="p-4 space-y-4 border-t border-slate-200">
+
+            <!-- Excluir estado de pago -->
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-2">Excluir estado de pago</label>
+              <div class="space-y-1.5">
+                {% for val, lbl in [
+                  ("debe","Debe"), ("pagado","Pagado"), ("fraccionamiento","Fraccionamiento"),
+                  ("parcial","Parcial"), ("exonerado","Exonerado"), ("pendiente","Pendiente"),
+                  ("en_revision","En revisión")
+                ] %}
+                <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input type="checkbox" value="{{ val }}"
+                    @change="toggleExcluirEstado($event.target.value, $event.target.checked)"
+                    class="rounded accent-red-500">
+                  {{ lbl }}
+                </label>
+                {% endfor %}
+              </div>
+            </div>
+
+            <!-- Excluir empresa -->
+            <div class="relative">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Excluir empresa pagadora</label>
+              <input x-model="exclusiones.empresa"
+                     @input.debounce.300ms="fetchEmpresasEx()"
+                     @focus="if (exclusiones.empresa.length > 0) fetchEmpresasEx()"
+                     @keydown.escape="showEmpresaExSugg = false"
+                     placeholder="Ninguna empresa excluida…"
+                     class="input w-full text-sm" autocomplete="off">
+              <div x-show="showEmpresaExSugg && empresaExSugg.length > 0"
+                   @click.outside="showEmpresaExSugg = false"
+                   class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full">
+                <button type="button" @click="exclusiones.empresa = ''; showEmpresaExSugg = false"
+                  class="block w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-slate-50 border-b border-slate-100">
+                  — Ninguna —
+                </button>
+                <template x-for="e in empresaExSugg" :key="e._id">
+                  <button type="button"
+                          @click="exclusiones.empresa = e.nombre; showEmpresaExSugg = false"
+                          class="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                    <span x-text="e.nombre"></span>
+                    <span class="text-xs text-slate-400 ml-1" x-show="e.ruc" x-text="'· ' + e.ruc"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <!-- Excluir ubicación -->
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Excluir ubicación</label>
+              <select x-model="exclusiones.ubicacion" class="input w-full text-sm">
+                <option value="">Ninguna ubicación excluida</option>
+                {% for u in ubicaciones %}
+                <option value="{{ u }}">{{ u }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Excluir título -->
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Excluir título profesional</label>
+              <select x-model="exclusiones.titulo" class="input w-full text-sm">
+                <option value="">Ningún título excluido</option>
+                {% for t in titulos %}
+                <option value="{{ t }}">{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <button type="button" @click="limpiarExclusiones()"
+                    class="text-xs text-red-500 hover:underline">
+              <i class="fa-solid fa-xmark mr-1"></i> Limpiar exclusiones
+            </button>
+          </div>
+        </div>
+
         <!-- Botón preview -->
         <button type="button" @click="preview()"
           :disabled="previewing"
@@ -366,6 +457,16 @@ function comunicaciones() {
       titulo:      '',
     },
 
+    exclusiones: {
+      estados_pago: [],
+      empresa:     '',
+      ubicacion:   '',
+      titulo:      '',
+    },
+    showExclusiones:  false,
+    empresaExSugg:    [],
+    showEmpresaExSugg: false,
+
     empresaSugg:    [],
     showEmpresaSugg: false,
 
@@ -433,6 +534,39 @@ function comunicaciones() {
       }
     },
 
+    toggleExcluirEstado(val, checked) {
+      if (checked) {
+        if (!this.exclusiones.estados_pago.includes(val)) this.exclusiones.estados_pago.push(val);
+      } else {
+        this.exclusiones.estados_pago = this.exclusiones.estados_pago.filter(e => e !== val);
+      }
+    },
+
+    tieneExclusiones() {
+      return this.exclusiones.estados_pago.length > 0
+          || this.exclusiones.empresa.trim() !== ''
+          || this.exclusiones.ubicacion !== ''
+          || this.exclusiones.titulo !== '';
+    },
+
+    numExclusiones() {
+      return this.exclusiones.estados_pago.length
+           + (this.exclusiones.empresa.trim() ? 1 : 0)
+           + (this.exclusiones.ubicacion ? 1 : 0)
+           + (this.exclusiones.titulo ? 1 : 0);
+    },
+
+    limpiarExclusiones() {
+      this.exclusiones = { estados_pago: [], empresa: '', ubicacion: '', titulo: '' };
+    },
+
+    async fetchEmpresasEx() {
+      if (!this.exclusiones.empresa.trim()) { this.showEmpresaExSugg = false; return; }
+      const r = await fetch('/api/companies?q=' + encodeURIComponent(this.exclusiones.empresa));
+      this.empresaExSugg = await r.json();
+      this.showEmpresaExSugg = this.empresaExSugg.length > 0;
+    },
+
     async fetchEmpresas() {
       if (!this.filtros.empresa.trim()) { this.showEmpresaSugg = false; return; }
       const r = await fetch('/api/companies?q=' + encodeURIComponent(this.filtros.empresa));
@@ -454,7 +588,13 @@ function comunicaciones() {
       const r = await fetch('/api/comunicaciones/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.filtros),
+        body: JSON.stringify({
+          ...this.filtros,
+          excluir_estados_pago: this.exclusiones.estados_pago,
+          excluir_empresa:      this.exclusiones.empresa,
+          excluir_ubicacion:    this.exclusiones.ubicacion,
+          excluir_titulo:       this.exclusiones.titulo,
+        }),
       });
       const data = await r.json();
       this.destinatarios = (data.destinatarios || []).map(d => ({ ...d, selected: true }));
