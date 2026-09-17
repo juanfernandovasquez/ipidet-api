@@ -27,7 +27,7 @@
 </div>
 
 <!-- Stats -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
   <div class="bg-white rounded-xl border border-slate-200 p-4">
     <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Total emitidos</div>
     <div class="text-2xl font-bold text-slate-800">{{ stats.total }}</div>
@@ -40,11 +40,13 @@
     <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Facturas</div>
     <div class="text-2xl font-bold text-slate-800">{{ stats.facturas }}</div>
   </div>
-  <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-2 items-center justify-center">
+  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
     <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden'); window.dispatchEvent(new CustomEvent('comp-nuevo'))"
       class="btn-primary text-sm w-full">
       <i class="fa-solid fa-plus mr-1.5"></i> Nuevo comprobante
     </button>
+  </div>
+  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
     <button onclick="document.getElementById('modal-xml').classList.remove('hidden')"
       class="btn-ghost text-sm w-full border border-slate-200">
       <i class="fa-solid fa-file-import mr-1.5"></i> Importar XML
