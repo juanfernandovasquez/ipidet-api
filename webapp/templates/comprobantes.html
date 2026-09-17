@@ -270,6 +270,16 @@
            modalidad: 'contado', fecha_vencimiento: '', periodo: '',
            medio_pago: '',
          },
+         empFormSugg: [],
+         empFormNueva: false,
+         async buscarEmpresaForm() {
+           const q = this.form.empresa.trim();
+           if (!q) { this.empFormSugg = []; this.empFormNueva = false; return; }
+           const r = await fetch('/api/companies?q=' + encodeURIComponent(q));
+           const all = await r.json();
+           this.empFormSugg = all;
+           this.empFormNueva = all.length === 0 || !all.some(e => e.nombre.toLowerCase() === q.toLowerCase());
+         },
          get es_credito() { return this.form.modalidad === 'credito'; },
          productos: [],
          items: [],
@@ -313,6 +323,8 @@
            this.form = { numero: '', tipo: 'boleta', fecha_emision: '', empresa: '', concepto: '',
                          modalidad: 'contado', fecha_vencimiento: '', periodo: '', medio_pago: '' };
            this.items = [];
+           this.empFormSugg = [];
+           this.empFormNueva = false;
            this.agregarItem();
          },
          cargarEdicion(comp) {
@@ -321,6 +333,8 @@
            this.form.tipo            = comp.tipo || 'boleta';
            this.form.fecha_emision   = comp.fecha_emision || '';
            this.form.empresa         = comp.empresa || '';
+           this.empFormSugg = [];
+           this.empFormNueva = false;
            this.form.concepto        = comp.concepto || '';
            this.form.modalidad       = 'contado';
            this.form.medio_pago      = '';
@@ -529,12 +543,37 @@
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Empresa (si aplica)</label>
-              <select x-model="form.empresa" class="input w-full text-sm">
-                <option value="">— Persona natural —</option>
-                {% for emp in empresas %}
-                <option value="{{ emp.nombre }}">{{ emp.nombre }}</option>
-                {% endfor %}
-              </select>
+              <div class="relative">
+                <input type="text" x-model="form.empresa"
+                       @input.debounce.300ms="buscarEmpresaForm()"
+                       @keydown.escape="empFormSugg = []; empFormNueva = false"
+                       placeholder="Buscar o escribir empresa…"
+                       autocomplete="off"
+                       class="input w-full text-sm pr-7">
+                <button type="button" x-show="form.empresa" x-cloak
+                        @click="form.empresa = ''; empFormSugg = []; empFormNueva = false"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+                <div x-show="empFormSugg.length > 0"
+                     @mousedown.prevent
+                     @click.outside="empFormSugg = []"
+                     class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-40 overflow-y-auto">
+                  <template x-for="e in empFormSugg" :key="e._id">
+                    <button type="button"
+                            @click="form.empresa = e.nombre; empFormSugg = []; empFormNueva = false"
+                            class="flex items-center justify-between w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                      <span x-text="e.nombre"></span>
+                      <span class="text-xs text-slate-400 font-mono" x-show="e.ruc" x-text="e.ruc"></span>
+                    </button>
+                  </template>
+                </div>
+                <p x-show="empFormNueva" x-cloak
+                   class="text-[11px] text-blue-600 mt-1 flex items-center gap-1">
+                  <i class="fa-solid fa-building-circle-arrow-right text-[10px]"></i>
+                  Se registrará como nueva empresa al guardar
+                </p>
+              </div>
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Modalidad</label>

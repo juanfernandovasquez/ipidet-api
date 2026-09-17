@@ -1094,6 +1094,14 @@ async def comprobante_add(request: Request):
     empresa = data.get("empresa", "").strip()
     monto_total = float(data.get("monto_total") or 0)
 
+    # Auto-registrar empresa si no existe en companies
+    if empresa:
+        exists = pdb.companies_col.find_one(
+            {"nombre": {"$regex": f"^{re.escape(empresa)}$", "$options": "i"}}
+        )
+        if not exists:
+            pdb.add_company(nombre=empresa)
+
     # Derive socios and a summary product name from line items
     socios = list({it["member_id"] for it in items if it.get("member_id")})
     producto_nombre = (
@@ -1131,11 +1139,21 @@ async def comprobante_add(request: Request):
 async def comprobante_update(comprobante_id: str, request: Request):
     data  = await request.json()
     items = data.get("items", [])
+    empresa = data.get("empresa", "").strip()
+
+    # Auto-registrar empresa si no existe en companies
+    if empresa:
+        exists = pdb.companies_col.find_one(
+            {"nombre": {"$regex": f"^{re.escape(empresa)}$", "$options": "i"}}
+        )
+        if not exists:
+            pdb.add_company(nombre=empresa)
+
     fields = {
         "numero":        data.get("numero", ""),
         "tipo":          data.get("tipo", "boleta"),
         "fecha_emision": data.get("fecha_emision", ""),
-        "empresa":       data.get("empresa", "").strip(),
+        "empresa":       empresa,
         "concepto":      data.get("concepto", ""),
         "monto_total":   float(data.get("monto_total") or 0),
         "items":         items,
