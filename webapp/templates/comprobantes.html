@@ -667,29 +667,78 @@
 
 <!-- Modal: Importar XML -->
 <div id="modal-xml" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
        x-data="{
          archivos: [],
+         previews: [],
+         parseando: false,
          importando: false,
          resultados: [],
          arrastrando: false,
-         get hayArchivos() { return this.archivos.length > 0; },
-         get listo() { return this.resultados.length > 0; },
-         get importados()    { return this.resultados.filter(r => r.status === 'importado').length; },
-         get duplicados()    { return this.resultados.filter(r => r.status === 'duplicado').length; },
-         get errores()       { return this.resultados.filter(r => r.status === 'error').length; },
-         get empNuevas()     { return this.resultados.filter(r => r.empresa_nueva).length; },
+         get hayArchivos()  { return this.archivos.length > 0; },
+         get hayPreview()   { return this.previews.length > 0 && !this.listo; },
+         get listo()        { return this.resultados.length > 0; },
+         get importados()   { return this.resultados.filter(r => r.status === 'importado').length; },
+         get duplicados()   { return this.resultados.filter(r => r.status === 'duplicado').length; },
+         get errores()      { return this.resultados.filter(r => r.status === 'error').length; },
+         get empNuevas()    { return this.resultados.filter(r => r.empresa_nueva).length; },
+         tipoBadge(tipo) {
+           if (tipo === 'factura') return 'bg-violet-100 text-violet-700 border border-violet-200';
+           if (tipo === 'boleta')  return 'bg-sky-100 text-sky-700 border border-sky-200';
+           return 'bg-slate-100 text-slate-600 border border-slate-200';
+         },
+         tipoLabel(tipo) {
+           return tipo === 'factura' ? 'Factura' : tipo === 'boleta' ? 'Boleta' : 'Recibo';
+         },
+         async parseXML(file) {
+           const text = await file.text();
+           const doc = new DOMParser().parseFromString(text, 'application/xml');
+           if (doc.querySelector('parsererror')) throw new Error('XML malformado');
+           const CBS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
+           const CAC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
+           const g = (el, tag, ns) => { const n = el ? el.getElementsByTagNameNS(ns, tag)[0] : null; return n ? n.textContent.trim() : ''; };
+           const numero    = g(doc, 'ID', CBS);
+           const tipoCode  = g(doc, 'InvoiceTypeCode', CBS);
+           const tipoMap   = { '01': 'factura', '03': 'boleta', '07': 'recibo', '08': 'recibo' };
+           const tipo      = tipoMap[tipoCode] || (numero.toUpperCase().startsWith('F') ? 'factura' : 'boleta');
+           const fecha     = g(doc, 'IssueDate', CBS);
+           const custEl    = doc.getElementsByTagNameNS(CAC, 'AccountingCustomerParty')[0];
+           const partyEl   = custEl ? custEl.getElementsByTagNameNS(CAC, 'Party')[0] : null;
+           const tsEl      = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyTaxScheme')[0] : null;
+           const leEl      = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyLegalEntity')[0] : null;
+           const pnEl      = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyName')[0] : null;
+           const ruc       = g(tsEl, 'CompanyID', CBS);
+           const empresa   = g(leEl, 'RegistrationName', CBS) || g(pnEl, 'Name', CBS);
+           const monetary  = doc.getElementsByTagNameNS(CAC, 'LegalMonetaryTotal')[0];
+           const monto     = parseFloat(g(monetary, 'PayableAmount', CBS)) || 0;
+           const esEmpresa = tipo === 'factura' && ruc && ruc.length === 11 && /^\d+$/.test(ruc);
+           return { filename: file.name, numero, tipo, fecha, ruc, empresa, monto, esEmpresa };
+         },
+         async parsearArchivos() {
+           this.previews = [];
+           this.parseando = true;
+           for (const f of this.archivos) {
+             try { this.previews.push(await this.parseXML(f)); }
+             catch(e) { this.previews.push({ filename: f.name, error: e.message }); }
+           }
+           this.parseando = false;
+         },
          onFileChange(e) {
            this.archivos = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.xml'));
            this.resultados = [];
+           if (this.hayArchivos) this.parsearArchivos();
          },
          onDrop(e) {
            e.preventDefault();
            this.arrastrando = false;
            this.archivos = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.xml'));
            this.resultados = [];
+           if (this.hayArchivos) this.parsearArchivos();
          },
-         quitarArchivo(i) { this.archivos.splice(i, 1); },
+         quitarArchivo(i) {
+           this.archivos.splice(i, 1);
+           this.previews.splice(i, 1);
+         },
          async importar() {
            if (!this.hayArchivos || this.importando) return;
            this.importando = true;
@@ -707,6 +756,7 @@
          cerrar() {
            const reload = this.importados > 0;
            this.archivos = [];
+           this.previews = [];
            this.resultados = [];
            document.getElementById('modal-xml').classList.add('hidden');
            if (reload) location.reload();
@@ -731,42 +781,103 @@
     <!-- Cuerpo -->
     <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
-      <!-- Zona de carga -->
-      <div x-show="!listo">
+      <!-- FASE A: Drop zone (sin archivos) -->
+      <div x-show="!hayArchivos && !listo">
         <div @dragover.prevent="arrastrando = true"
              @dragleave.prevent="arrastrando = false"
              @drop="onDrop($event)"
              :class="arrastrando ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'"
-             class="border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer"
+             class="border-2 border-dashed rounded-xl p-10 text-center transition-colors cursor-pointer"
              @click="$refs.fileInput.click()">
-          <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-300 mb-3 block"></i>
+          <i class="fa-solid fa-cloud-arrow-up text-4xl text-slate-300 mb-3 block"></i>
           <p class="text-sm font-medium text-slate-600">Arrastra los archivos XML aquí</p>
           <p class="text-xs text-slate-400 mt-1">o haz clic para seleccionar — puedes subir varios a la vez</p>
           <input x-ref="fileInput" type="file" multiple accept=".xml"
                  @change="onFileChange($event)" class="hidden">
         </div>
+      </div>
 
-        <div x-show="hayArchivos" x-cloak class="mt-3 space-y-1">
-          <p class="text-xs font-medium text-slate-500 mb-2"
-             x-text="archivos.length + ' archivo(s) seleccionado(s)'"></p>
-          <template x-for="(f, i) in archivos" :key="i">
-            <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-              <div class="flex items-center gap-2 min-w-0">
-                <i class="fa-solid fa-file-code text-slate-400 text-xs shrink-0"></i>
-                <span class="text-sm text-slate-700 truncate" x-text="f.name"></span>
-                <span class="text-xs text-slate-400 shrink-0"
-                      x-text="(f.size/1024).toFixed(1) + ' KB'"></span>
-              </div>
-              <button type="button" @click="quitarArchivo(i)"
-                      class="text-slate-300 hover:text-red-500 transition-colors ml-2 shrink-0">
-                <i class="fa-solid fa-xmark text-xs"></i>
-              </button>
-            </div>
-          </template>
+      <!-- FASE B: Preview (archivos parseados, antes de importar) -->
+      <div x-show="hayPreview" x-cloak>
+
+        <!-- Barra superior: contadores + agregar más -->
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-medium text-slate-600"
+                  x-text="previews.length + ' archivo(s) listos para importar'"></span>
+            <span x-show="previews.filter(p=>p.tipo==='factura').length"
+                  class="text-[11px] bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full font-medium"
+                  x-text="previews.filter(p=>p.tipo==='factura').length + ' facturas'"></span>
+            <span x-show="previews.filter(p=>p.tipo==='boleta').length"
+                  class="text-[11px] bg-sky-100 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full font-medium"
+                  x-text="previews.filter(p=>p.tipo==='boleta').length + ' boletas'"></span>
+          </div>
+          <button type="button" @click="$refs.fileInput.click()"
+                  class="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            <i class="fa-solid fa-plus text-[10px]"></i> Agregar mas
+          </button>
+          <input x-ref="fileInput" type="file" multiple accept=".xml"
+                 @change="onFileChange($event)" class="hidden">
+        </div>
+
+        <!-- Tabla de preview -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide w-20">Tipo</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">N° Comp.</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Empresa / Receptor</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Fecha</th>
+                <th class="text-right px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+                <th class="px-2 py-2 w-6"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <template x-for="(p, i) in previews" :key="i">
+                <tr :class="p.error ? 'bg-red-50/50' : 'hover:bg-slate-50/50'">
+                  <td class="px-3 py-2">
+                    <template x-if="!p.error">
+                      <span :class="tipoBadge(p.tipo)"
+                            class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                            x-text="tipoLabel(p.tipo)"></span>
+                    </template>
+                    <template x-if="p.error">
+                      <span class="text-[10px] text-red-600 font-medium">Error</span>
+                    </template>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-slate-800" x-text="p.numero || p.filename"></td>
+                  <td class="px-3 py-2 text-slate-600">
+                    <template x-if="p.error">
+                      <span class="text-red-500 italic text-[11px]" x-text="p.error"></span>
+                    </template>
+                    <template x-if="!p.error && p.esEmpresa">
+                      <span>
+                        <span x-text="p.empresa || p.ruc"></span>
+                        <span class="text-[10px] text-slate-400 font-mono ml-1" x-text="p.ruc ? '· ' + p.ruc : ''"></span>
+                      </span>
+                    </template>
+                    <template x-if="!p.error && !p.esEmpresa">
+                      <span class="text-slate-400 italic">Persona natural</span>
+                    </template>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-slate-400 text-[11px]" x-text="p.fecha || '—'"></td>
+                  <td class="px-3 py-2 text-right font-mono text-slate-700"
+                      x-text="p.monto != null ? 'S/ ' + p.monto.toFixed(2) : '—'"></td>
+                  <td class="px-2 py-2 text-center">
+                    <button type="button" @click="quitarArchivo(i)"
+                            class="text-slate-300 hover:text-red-500 transition-colors">
+                      <i class="fa-solid fa-xmark text-[10px]"></i>
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <!-- Resultados -->
+      <!-- FASE C: Resultados (post-import) -->
       <div x-show="listo" x-cloak>
         <div class="grid grid-cols-4 gap-3 mb-4">
           <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
@@ -791,11 +902,11 @@
           <table class="w-full text-xs">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Archivo</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide w-20">Tipo</th>
                 <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">N° Comp.</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Empresa / Receptor</th>
                 <th class="text-right px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
-                <th class="px-3 py-2"></th>
+                <th class="px-3 py-2 text-center font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -805,23 +916,47 @@
                   'bg-amber-50/40':   r.status === 'duplicado',
                   'bg-red-50/40':     r.status === 'error',
                 }">
-                  <td class="px-3 py-2 text-slate-600 font-mono truncate max-w-[180px]"
-                      x-text="r.filename"></td>
+                  <td class="px-3 py-2">
+                    <template x-if="r.tipo">
+                      <span :class="tipoBadge(r.tipo)"
+                            class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                            x-text="tipoLabel(r.tipo)"></span>
+                    </template>
+                    <template x-if="!r.tipo">
+                      <span class="text-slate-400 font-mono text-[10px]" x-text="r.filename"></span>
+                    </template>
+                  </td>
                   <td class="px-3 py-2 font-mono text-slate-800" x-text="r.numero || '—'"></td>
                   <td class="px-3 py-2 text-slate-600">
-                    <span x-text="r.empresa || r.msg || '—'"></span>
-                    <span x-show="r.empresa_nueva"
-                          class="ml-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">nueva</span>
+                    <template x-if="r.status === 'error'">
+                      <span class="text-red-500 italic" x-text="r.msg || '—'"></span>
+                    </template>
+                    <template x-if="r.status !== 'error' && r.empresa">
+                      <span>
+                        <span x-text="r.empresa"></span>
+                        <span x-show="r.empresa_nueva"
+                              class="ml-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">nueva</span>
+                      </span>
+                    </template>
+                    <template x-if="r.status !== 'error' && !r.empresa">
+                      <span class="text-slate-400 italic">Persona natural</span>
+                    </template>
                   </td>
                   <td class="px-3 py-2 text-right font-mono text-slate-700"
                       x-text="r.monto != null ? 'S/ ' + r.monto.toFixed(2) : '—'"></td>
                   <td class="px-3 py-2 text-center">
                     <span x-show="r.status === 'importado'"
-                          class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                          class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      <i class="fa-solid fa-check text-[8px]"></i> OK
+                    </span>
                     <span x-show="r.status === 'duplicado'"
-                          class="inline-block w-2 h-2 rounded-full bg-amber-400"></span>
+                          class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                      <i class="fa-solid fa-copy text-[8px]"></i> Dup.
+                    </span>
                     <span x-show="r.status === 'error'"
-                          class="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                          class="inline-flex items-center gap-1 text-[10px] font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
+                      <i class="fa-solid fa-xmark text-[8px]"></i> Error
+                    </span>
                   </td>
                 </tr>
               </template>
@@ -839,18 +974,18 @@
         <i class="fa-solid fa-xmark text-xs"></i>
         <span x-text="listo && importados > 0 ? 'Cerrar y actualizar' : 'Cancelar'"></span>
       </button>
-      <div x-show="!listo">
-        <button @click="importar()" :disabled="!hayArchivos || importando"
+      <div x-show="hayPreview && !listo">
+        <button @click="importar()" :disabled="importando"
           class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
-          :class="(hayArchivos && !importando)
+          :class="!importando
             ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow-md active:scale-95'
             : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
           <i class="fa-solid" :class="importando ? 'fa-circle-notch fa-spin' : 'fa-file-import'"></i>
-          <span x-text="importando ? 'Importando...' : 'Importar ' + (archivos.length > 0 ? archivos.length + ' archivo(s)' : '')"></span>
+          <span x-text="importando ? 'Importando...' : 'Confirmar e importar ' + previews.length + ' archivo(s)'"></span>
         </button>
       </div>
       <div x-show="listo" x-cloak>
-        <button @click="archivos = []; resultados = [];"
+        <button @click="archivos = []; previews = []; resultados = [];"
           class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">
           <i class="fa-solid fa-rotate-left text-xs"></i> Importar mas
         </button>

@@ -1192,6 +1192,7 @@ async def comprobantes_import_xml(files: List[UploadFile] = File(...)):
         results.append({
             "filename":      fname,
             "numero":        numero,
+            "tipo":          data["tipo"],
             "status":        "importado",
             "empresa":       empresa_nombre,
             "empresa_nueva": empresa_nueva,
