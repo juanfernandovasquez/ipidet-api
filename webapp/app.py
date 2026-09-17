@@ -1,7 +1,8 @@
 import io
 import re
 from markupsafe import Markup, escape
-from fastapi import FastAPI, Request, Form, Query
+from fastapi import FastAPI, Request, Form, Query, UploadFile, File
+from typing import List
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -1133,6 +1134,71 @@ async def comprobante_add(request: Request):
             periodo           = periodo,
         )
     return {"ok": True, "id": comp_id}
+
+
+@app.post("/comprobantes/import-xml")
+async def comprobantes_import_xml(files: List[UploadFile] = File(...)):
+    from webapp.xml_parser import parse_sunat_xml
+    results = []
+
+    for file in files:
+        fname = file.filename or "desconocido.xml"
+        try:
+            content = await file.read()
+            data = parse_sunat_xml(content)
+        except Exception as e:
+            results.append({"filename": fname, "status": "error", "msg": str(e)})
+            continue
+
+        numero = data["numero"]
+        if not numero:
+            results.append({"filename": fname, "status": "error", "msg": "No se encontró número de comprobante"})
+            continue
+
+        # Deduplicar por número de comprobante
+        if pdb.comprobantes_col.find_one({"numero": numero}):
+            results.append({"filename": fname, "numero": numero, "status": "duplicado"})
+            continue
+
+        # Upsert empresa por RUC (solo si es RUC de 11 dígitos, no DNI)
+        empresa_nombre = data["razon_social"]
+        ruc = data["ruc_empresa"]
+        empresa_nueva = False
+
+        if ruc and len(ruc) == 11 and ruc.isdigit():
+            existing_emp = pdb.companies_col.find_one({"ruc": ruc})
+            if not existing_emp:
+                pdb.add_company(nombre=empresa_nombre or ruc, ruc=ruc, razon_social=empresa_nombre)
+                empresa_nueva = True
+            else:
+                empresa_nombre = existing_emp.get("nombre", empresa_nombre)
+
+        descs = [it["producto_nombre"] for it in data["items"] if it.get("producto_nombre")]
+        prod_nombre = descs[0] if descs else ""
+        concepto    = "; ".join(descs[:3])
+
+        pdb.create_comprobante(
+            numero          = numero,
+            tipo            = data["tipo"],
+            fecha_emision   = data["fecha_emision"],
+            monto_total     = data["monto_total"],
+            producto_nombre = prod_nombre,
+            concepto        = concepto,
+            empresa         = empresa_nombre,
+            socios          = [],
+            items           = data["items"],
+        )
+
+        results.append({
+            "filename":      fname,
+            "numero":        numero,
+            "status":        "importado",
+            "empresa":       empresa_nombre,
+            "empresa_nueva": empresa_nueva,
+            "monto":         data["monto_total"],
+        })
+
+    return {"results": results}
 
 
 @app.post("/comprobantes/{comprobante_id}/update")

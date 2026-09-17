@@ -40,10 +40,14 @@
     <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Facturas</div>
     <div class="text-2xl font-bold text-slate-800">{{ stats.facturas }}</div>
   </div>
-  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
+  <div class="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-2 items-center justify-center">
     <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden'); window.dispatchEvent(new CustomEvent('comp-nuevo'))"
       class="btn-primary text-sm w-full">
       <i class="fa-solid fa-plus mr-1.5"></i> Nuevo comprobante
+    </button>
+    <button onclick="document.getElementById('modal-xml').classList.remove('hidden')"
+      class="btn-ghost text-sm w-full border border-slate-200">
+      <i class="fa-solid fa-file-import mr-1.5"></i> Importar XML
     </button>
   </div>
 </div>
@@ -658,6 +662,201 @@
         </button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Modal: Importar XML -->
+<div id="modal-xml" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+       x-data="{
+         archivos: [],
+         importando: false,
+         resultados: [],
+         arrastrando: false,
+         get hayArchivos() { return this.archivos.length > 0; },
+         get listo() { return this.resultados.length > 0; },
+         get importados()    { return this.resultados.filter(r => r.status === 'importado').length; },
+         get duplicados()    { return this.resultados.filter(r => r.status === 'duplicado').length; },
+         get errores()       { return this.resultados.filter(r => r.status === 'error').length; },
+         get empNuevas()     { return this.resultados.filter(r => r.empresa_nueva).length; },
+         onFileChange(e) {
+           this.archivos = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.xml'));
+           this.resultados = [];
+         },
+         onDrop(e) {
+           e.preventDefault();
+           this.arrastrando = false;
+           this.archivos = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.xml'));
+           this.resultados = [];
+         },
+         quitarArchivo(i) { this.archivos.splice(i, 1); },
+         async importar() {
+           if (!this.hayArchivos || this.importando) return;
+           this.importando = true;
+           const fd = new FormData();
+           this.archivos.forEach(f => fd.append('files', f));
+           try {
+             const r = await fetch('/comprobantes/import-xml', { method: 'POST', body: fd });
+             const d = await r.json();
+             this.resultados = d.results || [];
+           } catch(e) {
+             this.resultados = [{ status: 'error', filename: '---', msg: 'Error de red: ' + e.message }];
+           }
+           this.importando = false;
+         },
+         cerrar() {
+           const reload = this.importados > 0;
+           this.archivos = [];
+           this.resultados = [];
+           document.getElementById('modal-xml').classList.add('hidden');
+           if (reload) location.reload();
+         },
+       }">
+
+    <!-- Cabecera -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center text-white shrink-0">
+          <i class="fa-solid fa-file-import text-sm"></i>
+        </div>
+        <div>
+          <h2 class="text-sm font-semibold text-slate-800">Importar comprobantes XML</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Formato SUNAT — boletas y facturas electrónicas</p>
+        </div>
+      </div>
+      <button @click="cerrar()"
+        class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-xl leading-none">&times;</button>
+    </div>
+
+    <!-- Cuerpo -->
+    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+      <!-- Zona de carga -->
+      <div x-show="!listo">
+        <div @dragover.prevent="arrastrando = true"
+             @dragleave.prevent="arrastrando = false"
+             @drop="onDrop($event)"
+             :class="arrastrando ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-slate-50 hover:bg-slate-100'"
+             class="border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer"
+             @click="$refs.fileInput.click()">
+          <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-300 mb-3 block"></i>
+          <p class="text-sm font-medium text-slate-600">Arrastra los archivos XML aquí</p>
+          <p class="text-xs text-slate-400 mt-1">o haz clic para seleccionar — puedes subir varios a la vez</p>
+          <input x-ref="fileInput" type="file" multiple accept=".xml"
+                 @change="onFileChange($event)" class="hidden">
+        </div>
+
+        <div x-show="hayArchivos" x-cloak class="mt-3 space-y-1">
+          <p class="text-xs font-medium text-slate-500 mb-2"
+             x-text="archivos.length + ' archivo(s) seleccionado(s)'"></p>
+          <template x-for="(f, i) in archivos" :key="i">
+            <div class="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <i class="fa-solid fa-file-code text-slate-400 text-xs shrink-0"></i>
+                <span class="text-sm text-slate-700 truncate" x-text="f.name"></span>
+                <span class="text-xs text-slate-400 shrink-0"
+                      x-text="(f.size/1024).toFixed(1) + ' KB'"></span>
+              </div>
+              <button type="button" @click="quitarArchivo(i)"
+                      class="text-slate-300 hover:text-red-500 transition-colors ml-2 shrink-0">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Resultados -->
+      <div x-show="listo" x-cloak>
+        <div class="grid grid-cols-4 gap-3 mb-4">
+          <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-emerald-700" x-text="importados"></div>
+            <div class="text-[11px] text-emerald-600 mt-0.5">Importados</div>
+          </div>
+          <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-amber-700" x-text="duplicados"></div>
+            <div class="text-[11px] text-amber-600 mt-0.5">Duplicados</div>
+          </div>
+          <div class="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-red-700" x-text="errores"></div>
+            <div class="text-[11px] text-red-600 mt-0.5">Errores</div>
+          </div>
+          <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-blue-700" x-text="empNuevas"></div>
+            <div class="text-[11px] text-blue-600 mt-0.5">Empresas nuevas</div>
+          </div>
+        </div>
+
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Archivo</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">N° Comp.</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
+                <th class="text-right px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+                <th class="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <template x-for="r in resultados" :key="r.filename">
+                <tr :class="{
+                  'bg-emerald-50/40': r.status === 'importado',
+                  'bg-amber-50/40':   r.status === 'duplicado',
+                  'bg-red-50/40':     r.status === 'error',
+                }">
+                  <td class="px-3 py-2 text-slate-600 font-mono truncate max-w-[180px]"
+                      x-text="r.filename"></td>
+                  <td class="px-3 py-2 font-mono text-slate-800" x-text="r.numero || '—'"></td>
+                  <td class="px-3 py-2 text-slate-600">
+                    <span x-text="r.empresa || r.msg || '—'"></span>
+                    <span x-show="r.empresa_nueva"
+                          class="ml-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">nueva</span>
+                  </td>
+                  <td class="px-3 py-2 text-right font-mono text-slate-700"
+                      x-text="r.monto != null ? 'S/ ' + r.monto.toFixed(2) : '—'"></td>
+                  <td class="px-3 py-2 text-center">
+                    <span x-show="r.status === 'importado'"
+                          class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span x-show="r.status === 'duplicado'"
+                          class="inline-block w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span x-show="r.status === 'error'"
+                          class="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
+      <button type="button" @click="cerrar()"
+        class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors">
+        <i class="fa-solid fa-xmark text-xs"></i>
+        <span x-text="listo && importados > 0 ? 'Cerrar y actualizar' : 'Cancelar'"></span>
+      </button>
+      <div x-show="!listo">
+        <button @click="importar()" :disabled="!hayArchivos || importando"
+          class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+          :class="(hayArchivos && !importando)
+            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow-md active:scale-95'
+            : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+          <i class="fa-solid" :class="importando ? 'fa-circle-notch fa-spin' : 'fa-file-import'"></i>
+          <span x-text="importando ? 'Importando...' : 'Importar ' + (archivos.length > 0 ? archivos.length + ' archivo(s)' : '')"></span>
+        </button>
+      </div>
+      <div x-show="listo" x-cloak>
+        <button @click="archivos = []; resultados = [];"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">
+          <i class="fa-solid fa-rotate-left text-xs"></i> Importar mas
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
 
