@@ -40,17 +40,25 @@
     <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Facturas</div>
     <div class="text-2xl font-bold text-slate-800">{{ stats.facturas }}</div>
   </div>
-  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
-    <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden'); window.dispatchEvent(new CustomEvent('comp-nuevo'))"
-      class="btn-primary text-sm w-full">
-      <i class="fa-solid fa-plus mr-1.5"></i> Nuevo comprobante
-    </button>
+  <div class="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl p-4 flex flex-col justify-between cursor-pointer transition-colors"
+       onclick="document.getElementById('modal-nuevo').classList.remove('hidden'); window.dispatchEvent(new CustomEvent('comp-nuevo'))">
+    <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center mb-3">
+      <i class="fa-solid fa-plus text-white text-sm"></i>
+    </div>
+    <div>
+      <div class="text-sm font-semibold text-white">Nuevo comprobante</div>
+      <div class="text-xs text-blue-100 mt-0.5">Registrar boleta o factura</div>
+    </div>
   </div>
-  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-center">
-    <button onclick="document.getElementById('modal-xml').classList.remove('hidden')"
-      class="btn-ghost text-sm w-full border border-slate-200">
-      <i class="fa-solid fa-file-import mr-1.5"></i> Importar XML
-    </button>
+  <div class="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl p-4 flex flex-col justify-between cursor-pointer transition-colors"
+       onclick="document.getElementById('modal-xml').classList.remove('hidden')">
+    <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center mb-3">
+      <i class="fa-solid fa-file-import text-white text-sm"></i>
+    </div>
+    <div>
+      <div class="text-sm font-semibold text-white">Importar XML</div>
+      <div class="text-xs text-emerald-100 mt-0.5">Boletas y facturas SUNAT</div>
+    </div>
   </div>
 </div>
 
@@ -780,6 +788,10 @@
         class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-xl leading-none">&times;</button>
     </div>
 
+    <!-- Input de archivos compartido (fuera de las fases para evitar ref duplicada) -->
+    <input x-ref="fileInput" type="file" multiple accept=".xml"
+           @change="onFileChange($event)" class="hidden">
+
     <!-- Cuerpo -->
     <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
@@ -794,8 +806,6 @@
           <i class="fa-solid fa-cloud-arrow-up text-4xl text-slate-300 mb-3 block"></i>
           <p class="text-sm font-medium text-slate-600">Arrastra los archivos XML aquí</p>
           <p class="text-xs text-slate-400 mt-1">o haz clic para seleccionar — puedes subir varios a la vez</p>
-          <input x-ref="fileInput" type="file" multiple accept=".xml"
-                 @change="onFileChange($event)" class="hidden">
         </div>
       </div>
 
@@ -804,9 +814,9 @@
 
         <!-- Barra superior: contadores + agregar más -->
         <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 flex-wrap">
             <span class="text-xs font-medium text-slate-600"
-                  x-text="previews.length + ' archivo(s) listos para importar'"></span>
+                  x-text="previews.length + ' archivo(s)'"></span>
             <span x-show="previews.filter(p=>p.tipo==='factura').length"
                   class="text-[11px] bg-violet-100 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full font-medium"
                   x-text="previews.filter(p=>p.tipo==='factura').length + ' facturas'"></span>
@@ -815,11 +825,9 @@
                   x-text="previews.filter(p=>p.tipo==='boleta').length + ' boletas'"></span>
           </div>
           <button type="button" @click="$refs.fileInput.click()"
-                  class="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                  class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-300 px-2.5 py-1 rounded-lg transition-colors">
             <i class="fa-solid fa-plus text-[10px]"></i> Agregar mas
           </button>
-          <input x-ref="fileInput" type="file" multiple accept=".xml"
-                 @change="onFileChange($event)" class="hidden">
         </div>
 
         <!-- Tabla de preview -->
@@ -971,26 +979,45 @@
 
     <!-- Footer -->
     <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
+
+      <!-- Botón izquierdo: siempre Cancelar / Cerrar -->
       <button type="button" @click="cerrar()"
-        class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors">
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-slate-300 text-slate-600 hover:bg-slate-100 hover:border-slate-400 transition-colors">
         <i class="fa-solid fa-xmark text-xs"></i>
-        <span x-text="listo && importados > 0 ? 'Cerrar y actualizar' : 'Cancelar'"></span>
+        <span x-text="listo && importados > 0 ? 'Cerrar' : 'Cancelar'"></span>
       </button>
-      <div x-show="hayPreview && !listo">
-        <button @click="importar()" :disabled="importando"
-          class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
-          :class="!importando
-            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow-md active:scale-95'
-            : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
-          <i class="fa-solid" :class="importando ? 'fa-circle-notch fa-spin' : 'fa-file-import'"></i>
-          <span x-text="importando ? 'Importando...' : 'Confirmar e importar ' + previews.length + ' archivo(s)'"></span>
-        </button>
-      </div>
-      <div x-show="listo" x-cloak>
-        <button @click="archivos = []; previews = []; resultados = [];"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-200 transition-colors">
-          <i class="fa-solid fa-rotate-left text-xs"></i> Importar mas
-        </button>
+
+      <!-- Botón derecho: varía según fase -->
+      <div class="flex items-center gap-2">
+
+        <!-- Fase A y B sin archivos: vacío -->
+
+        <!-- Fase B: Confirmar import -->
+        <template x-if="hayPreview && !listo">
+          <div class="flex items-center gap-2">
+            <button type="button" @click="archivos = []; previews = [];"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-slate-300 text-slate-600 hover:bg-slate-100 transition-colors">
+              <i class="fa-solid fa-rotate-left text-xs"></i> Limpiar
+            </button>
+            <button @click="importar()" :disabled="importando"
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+              :class="!importando
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm hover:shadow-md active:scale-95'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+              <i class="fa-solid" :class="importando ? 'fa-circle-notch fa-spin' : 'fa-cloud-arrow-up'"></i>
+              <span x-text="importando ? 'Importando...' : 'Importar ' + previews.length + ' archivo(s)'"></span>
+            </button>
+          </div>
+        </template>
+
+        <!-- Fase C: Importar más -->
+        <template x-if="listo">
+          <button @click="archivos = []; previews = []; resultados = [];"
+            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95 transition-all">
+            <i class="fa-solid fa-rotate-left text-xs"></i> Importar mas
+          </button>
+        </template>
+
       </div>
     </div>
 
