@@ -56,6 +56,16 @@
             <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
             <textarea name="descripcion" rows="2" placeholder="Descripción opcional…" class="input w-full text-sm resize-none"></textarea>
           </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Código WC</label>
+              <input name="codigo_wc" type="text" placeholder="SKU-WC" class="input w-full text-sm font-mono">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Código SUNAT</label>
+              <input name="codigo_sunat" type="text" placeholder="CUOTA-2026" class="input w-full text-sm font-mono">
+            </div>
+          </div>
           <button type="submit" class="btn-primary w-full text-sm">
             <i class="fa-solid fa-plus mr-1.5"></i> Agregar producto
           </button>
@@ -165,10 +175,13 @@
                 {% if not p.activo %}
                 <span class="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">Inactivo</span>
                 {% endif %}
-                {% if p.get('wc_product_id') %}
+                {% if p.get('codigo_sunat') %}
+                <span class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono" title="Código SUNAT">SUNAT: {{ p.codigo_sunat }}</span>
+                {% endif %}
+                {% if p.get('codigo_wc') %}
+                <span class="text-xs text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded font-mono" title="Código WooCommerce">WC: {{ p.codigo_wc }}</span>
+                {% elif p.get('wc_product_id') %}
                 <span class="text-xs text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-mono">WC #{{ p.wc_product_id }}</span>
-                {% else %}
-                <span class="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Sin ID WC</span>
                 {% endif %}
               </div>
               {% if p.descripcion %}
@@ -240,11 +253,29 @@
                 <div class="col-span-2">
                   <label class="block text-xs text-slate-500 mb-0.5">
                     ID Producto WooCommerce
-                    <span class="text-slate-400 font-normal ml-1">(para botón de pago en portal de socios)</span>
+                    <span class="text-slate-400 font-normal ml-1">(numérico, para portal de socios)</span>
                   </label>
                   <input name="wc_product_id" type="number" min="1"
                          value="{{ p.get('wc_product_id') or '' }}"
                          placeholder="ej: 8882"
+                         class="input w-full text-sm font-mono">
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">
+                    Código WC <span class="text-slate-400 font-normal">(SKU)</span>
+                  </label>
+                  <input name="codigo_wc" type="text"
+                         value="{{ p.get('codigo_wc') or '' }}"
+                         placeholder="ej: CUOTA-LIMA-2026"
+                         class="input w-full text-sm font-mono">
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">
+                    Código SUNAT <span class="text-slate-400 font-normal">(en boletas/facturas)</span>
+                  </label>
+                  <input name="codigo_sunat" type="text"
+                         value="{{ p.get('codigo_sunat') or '' }}"
+                         placeholder="ej: CUOTA-2026"
                          class="input w-full text-sm font-mono">
                 </div>
               </div>

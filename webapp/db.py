@@ -2034,22 +2034,26 @@ def get_productos(tipo: str = "", solo_activos: bool = False) -> list:
 
 
 def create_producto(nombre: str, tipo: str, precio: float | None,
-                    periodo: str, descripcion: str) -> str:
+                    periodo: str, descripcion: str,
+                    codigo_wc: str = "", codigo_sunat: str = "") -> str:
     doc = {
-        "nombre":      nombre.strip(),
-        "tipo":        tipo,
-        "precio":      precio,
-        "periodo":     periodo.strip(),
-        "descripcion": descripcion.strip(),
-        "activo":      True,
-        "created_at":  datetime.now(timezone.utc),
+        "nombre":       nombre.strip(),
+        "tipo":         tipo,
+        "precio":       precio,
+        "periodo":      periodo.strip(),
+        "descripcion":  descripcion.strip(),
+        "codigo_wc":    codigo_wc.strip(),
+        "codigo_sunat": codigo_sunat.strip(),
+        "activo":       True,
+        "created_at":   datetime.now(timezone.utc),
     }
     return str(productos_col.insert_one(doc).inserted_id)
 
 
 def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | None,
                     periodo: str, descripcion: str, activo: bool,
-                    wc_product_id: int | None = None) -> None:
+                    wc_product_id: int | None = None,
+                    codigo_wc: str = "", codigo_sunat: str = "") -> None:
     productos_col.update_one(
         {"_id": ObjectId(producto_id)},
         {"$set": {
@@ -2060,6 +2064,8 @@ def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | No
             "descripcion":   descripcion.strip(),
             "activo":        activo,
             "wc_product_id": wc_product_id,
+            "codigo_wc":     codigo_wc.strip(),
+            "codigo_sunat":  codigo_sunat.strip(),
         }},
     )
 

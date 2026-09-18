@@ -2,7 +2,10 @@
 Parser de facturas electrónicas SUNAT (UBL 2.1).
 Soporta: Factura (01), Boleta (03), Nota de Crédito (07), Nota de Débito (08).
 """
+import re
 import xml.etree.ElementTree as ET
+
+_MEMBER_RE = re.compile(r'^(IPIDET-\d+)', re.IGNORECASE)
 
 _NS = {
     'cbc': 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2',
@@ -82,17 +85,23 @@ def parse_sunat_xml(content: bytes) -> dict:
 
     items = []
     for line in root.findall(line_tag, _NS):
-        desc    = _txt(line, 'cac:Item/cbc:Description')
+        desc     = _txt(line, 'cac:Item/cbc:Description')
         subtotal = _float(_txt(line, 'cbc:LineExtensionAmount'))
-        price   = _float(_txt(line, 'cac:Price/cbc:PriceAmount'))
+        price    = _float(_txt(line, 'cac:Price/cbc:PriceAmount'))
         qty_node = line.find(qty_tag, _NS)
-        qty = _float(qty_node.text if qty_node is not None else '1')
+        qty      = _float(qty_node.text if qty_node is not None else '1')
+        # Código interno del producto (SellersItemIdentification)
+        codigo_sunat = _txt(line, 'cac:Item/cac:SellersItemIdentification/cbc:ID')
+        # Auto-detectar member_id si la descripción empieza con IPIDET-XXXX
+        m = _MEMBER_RE.match(desc)
+        member_id = m.group(1).upper() if m else None
         items.append({
             'producto_nombre': desc,
+            'codigo_sunat':    codigo_sunat,
             'cantidad':        qty,
             'precio_unitario': price,
             'monto':           subtotal,
-            'member_id':       None,
+            'member_id':       member_id,
         })
 
     return {
