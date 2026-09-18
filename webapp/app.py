@@ -1340,7 +1340,7 @@ async def comprobante_sync(comprobante_id: str):
     comp = pdb.comprobantes_col.find_one({"_id": _ObjId(comprobante_id)})
     if not comp:
         raise HTTPException(status_code=404, detail="Comprobante no encontrado")
-    items = comp.get("lineas") or []
+    items = comp.get("items") or []
     if not items:
         return {"ok": True, "cruce_ok": 0, "cruce_alerts": 0, "cruce_items": [],
                 "msg": "Este comprobante no tiene líneas de detalle vinculadas"}
