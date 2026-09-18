@@ -1947,8 +1947,10 @@ ia_col = _db.ia_tareas
 def get_ia_tareas(solo_pendientes: bool = False) -> list:
     q: dict = {}
     if solo_pendientes:
-        q["estado"] = {"$ne": "completado"}
-    docs = list(ia_col.find(q).sort("created_at", 1))
+        # Excluir completadas Y las que están en stand_by (no deben ejecutarse aún)
+        q["estado"]   = {"$ne": "completado"}
+        q["stand_by"] = {"$ne": True}
+    docs = list(ia_col.find(q).sort([("stand_by", 1), ("created_at", 1)]))
     return _clean(docs)
 
 
@@ -1956,19 +1958,29 @@ def create_ia_tarea(texto: str) -> str:
     doc = {
         "texto":      texto.strip(),
         "estado":     "pendiente",
+        "stand_by":   False,
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc),
     }
     return str(ia_col.insert_one(doc).inserted_id)
 
 
-def update_ia_tarea(tarea_id: str, texto: str | None = None, estado: str | None = None) -> None:
+def update_ia_tarea(tarea_id: str, texto: str | None = None,
+                    estado: str | None = None, stand_by: bool | None = None) -> None:
     fields: dict = {"updated_at": datetime.now(timezone.utc)}
     if texto is not None:
         fields["texto"] = texto.strip()
     if estado is not None:
         fields["estado"] = estado
+    if stand_by is not None:
+        fields["stand_by"] = stand_by
     ia_col.update_one({"_id": ObjectId(tarea_id)}, {"$set": fields})
+
+
+def toggle_ia_tarea_stand_by(tarea_id: str) -> None:
+    doc = ia_col.find_one({"_id": ObjectId(tarea_id)})
+    if doc:
+        update_ia_tarea(tarea_id, stand_by=not bool(doc.get("stand_by")))
 
 
 def delete_ia_tarea(tarea_id: str) -> None:

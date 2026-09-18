@@ -1685,6 +1685,12 @@ async def ia_tarea_update(tarea_id: str, texto: str = Form(...)):
     return RedirectResponse("/pendientes", status_code=303)
 
 
+@app.post("/ia-tareas/{tarea_id}/stand-by")
+async def ia_tarea_stand_by(tarea_id: str):
+    pdb.toggle_ia_tarea_stand_by(tarea_id)
+    return RedirectResponse("/pendientes", status_code=303)
+
+
 @app.post("/ia-tareas/{tarea_id}/delete")
 async def ia_tarea_delete(tarea_id: str):
     pdb.delete_ia_tarea(tarea_id)

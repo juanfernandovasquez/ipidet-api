@@ -25,7 +25,10 @@ DB_NAME     = os.getenv("DB_NAME", "ipidet_agent")
 client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
 db     = client[DB_NAME]
 
-tareas = list(db.ia_tareas.find({"estado": {"$ne": "completado"}}).sort("created_at", 1))
+tareas = list(db.ia_tareas.find({
+    "estado":   {"$ne": "completado"},
+    "stand_by": {"$ne": True},
+}).sort("created_at", 1))
 
 if not tareas:
     print("✓ No hay tareas IA pendientes.")
