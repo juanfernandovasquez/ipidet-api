@@ -90,3 +90,93 @@ async def _ejecutar_ciclo():
         "fallidos":     fallidos,
     })
     logger.info("Scheduler: ciclo completado — %d enviados, %d fallidos", enviados, fallidos)
+
+
+# ── Envíos programados ─────────────────────────────────────────────────────────
+
+PROGRAMADOS_INTERVAL = 300  # 5 minutos
+
+
+async def run_programados_scheduler():
+    """Chequea cada 5 minutos si hay envíos masivos programados listos para enviarse."""
+    logger.info("Scheduler de envíos programados iniciado")
+
+    # Ejecutar inmediatamente al arrancar por si quedó algo pendiente del pasado
+    await _ejecutar_programados()
+
+    while True:
+        await asyncio.sleep(PROGRAMADOS_INTERVAL)
+        await _ejecutar_programados()
+
+
+async def _ejecutar_programados():
+    try:
+        pendientes = pdb.get_envios_programados_pendientes()
+    except Exception as exc:
+        logger.error("Programados: error consultando pendientes — %s", exc)
+        return
+
+    if not pendientes:
+        return
+
+    for envio in pendientes:
+        envio_id = envio["_id"]
+        logger.info("Programados: ejecutando envío %s — '%s'", envio_id, envio.get("asunto", ""))
+
+        # Marcar como enviando para evitar doble ejecución en caso de restart
+        try:
+            pdb.update_envio_programado_estado(envio_id, "enviando")
+        except Exception as exc:
+            logger.error("Programados: no se pudo marcar como enviando %s — %s", envio_id, exc)
+            continue
+
+        try:
+            asunto      = envio.get("asunto", "")
+            cuerpo      = envio.get("cuerpo", "")
+            disclaimer  = envio.get("disclaimer", True)
+            destinatarios = envio.get("destinatarios", [])
+
+            mensajes = []
+            for d in destinatarios:
+                email  = d.get("email", "")
+                nombre = d.get("nombre", "")
+                if not email:
+                    continue
+                cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
+                cuerpo_html = cuerpo_p.replace("\n", "<br>")
+                html = mailer._base_html(
+                    f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>',
+                    disclaimer=disclaimer,
+                )
+                asunto_p = asunto.replace("{{nombre}}", nombre)
+                mensajes.append({"to": email, "nombre": nombre,
+                                  "subject": asunto_p, "html_body": html})
+
+            enviados, fallidos, _, fallidos_detalle = await mailer.send_bulk(mensajes)
+
+            try:
+                pdb.save_comunicacion_log(
+                    asunto=asunto,
+                    plantilla="programado",
+                    filtros=envio.get("filtros", {}),
+                    destinatarios=destinatarios,
+                    usuario="scheduler_programado",
+                    fallidos_detalle=fallidos_detalle,
+                )
+            except Exception as exc:
+                logger.error("Programados: error guardando log — %s", exc)
+
+            pdb.update_envio_programado_estado(envio_id, "enviado", resultado={
+                "enviados": enviados,
+                "fallidos": fallidos,
+            })
+            logger.info("Programados: %s completado — %d enviados, %d fallidos",
+                        envio_id, enviados, fallidos)
+
+        except Exception as exc:
+            logger.error("Programados: error ejecutando %s — %s", envio_id, exc)
+            try:
+                pdb.update_envio_programado_estado(envio_id, "fallido",
+                                                    resultado={"error": str(exc)})
+            except Exception:
+                pass

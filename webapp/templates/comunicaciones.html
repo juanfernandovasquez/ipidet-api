@@ -457,14 +457,52 @@
           </div>
         </div>
 
-        <!-- Botón enviar / confirmar -->
-        <div x-show="!confirmando">
+        <!-- Botón enviar / programar -->
+        <div x-show="!confirmando && !confirmandoProgramar" class="flex flex-wrap gap-2">
           <button type="button" @click="iniciarEnvio()"
             :disabled="seleccionados.length === 0 || !asunto.trim() || !cuerpo.trim() || enviando"
             class="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
             <i class="fa-solid fa-paper-plane mr-1.5"></i>
             <span x-text="'Enviar a ' + seleccionados.length + ' destinatario(s)'"></span>
           </button>
+          <button type="button" @click="abrirProgramar()"
+            :disabled="seleccionados.length === 0 || !asunto.trim() || !cuerpo.trim()"
+            class="btn-ghost disabled:opacity-40 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-clock mr-1.5"></i> Programar envío
+          </button>
+        </div>
+
+        <!-- Confirmar programación -->
+        <div x-show="confirmandoProgramar" x-cloak
+             class="bg-sky-50 border border-sky-200 rounded-xl p-4">
+          <p class="text-sm font-medium text-sky-800 mb-1">
+            <i class="fa-solid fa-clock mr-1.5"></i>
+            Programar envío a <strong x-text="seleccionados.length"></strong> destinatario(s)
+          </p>
+          <p class="text-xs text-sky-700 mb-3">Asunto: <em x-text="asunto"></em></p>
+
+          <div class="mb-4">
+            <label class="block text-xs font-medium text-slate-600 mb-1">
+              Fecha y hora de envío <span class="text-red-500">*</span>
+              <span class="text-slate-400 font-normal ml-1">(hora local de tu equipo)</span>
+            </label>
+            <input type="datetime-local" x-model="fechaProgramada"
+                   class="input w-full text-sm font-mono"
+                   :min="fechaMinima()">
+          </div>
+
+          <div x-show="programarError" x-cloak
+               class="text-xs text-red-600 mb-3" x-text="programarError"></div>
+
+          <div class="flex gap-2">
+            <button type="button" @click="confirmarProgramar()"
+              :disabled="programando || !fechaProgramada"
+              class="btn-primary text-sm disabled:opacity-40">
+              <i class="fa-solid fa-spinner fa-spin mr-1" x-show="programando" x-cloak></i>
+              <span x-text="programando ? 'Guardando…' : 'Confirmar programación'"></span>
+            </button>
+            <button type="button" @click="confirmandoProgramar = false" class="btn-ghost text-sm">Cancelar</button>
+          </div>
         </div>
 
         <!-- Confirmación -->
@@ -553,6 +591,71 @@
         </div>
       </div>
       {% endif %}
+
+      <!-- Envíos programados -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5"
+           x-data="programados()" x-init="cargar()">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-slate-700">
+            <i class="fa-solid fa-clock text-slate-400 mr-1.5"></i> Envíos programados
+          </h2>
+          <button @click="cargar()" class="text-xs text-slate-400 hover:text-slate-600">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
+        </div>
+
+        <div x-show="!lista.length" class="text-center py-6 text-slate-400 text-sm">
+          <i class="fa-solid fa-circle-info mr-1"></i> No hay envíos programados.
+        </div>
+
+        <div x-show="lista.length > 0" class="space-y-2">
+          <template x-for="e in lista" :key="e._id">
+            <div class="bg-slate-50 rounded-lg border border-slate-100 p-3">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-medium text-slate-800 truncate" x-text="e.asunto"></div>
+                  <div class="flex flex-wrap items-center gap-2 mt-1">
+                    <span class="text-xs text-slate-500">
+                      <i class="fa-solid fa-calendar-clock mr-1"></i>
+                      <span x-text="formatFecha(e.fecha_envio)"></span>
+                    </span>
+                    <span class="text-xs text-slate-400">
+                      <i class="fa-solid fa-users mr-1"></i>
+                      <span x-text="(e.destinatarios_count || 0) + ' dest.'"></span>
+                    </span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                  <span class="text-xs font-medium px-2 py-0.5 rounded-full"
+                    :class="{
+                      'bg-sky-50 text-sky-700':     e.estado === 'pendiente',
+                      'bg-amber-50 text-amber-700': e.estado === 'enviando',
+                      'bg-green-50 text-green-700': e.estado === 'enviado',
+                      'bg-slate-100 text-slate-500': e.estado === 'cancelado',
+                      'bg-red-50 text-red-600':     e.estado === 'fallido',
+                    }"
+                    x-text="estadoLabel(e.estado)">
+                  </span>
+                  <button x-show="e.estado === 'pendiente'"
+                          @click="cancelar(e._id)"
+                          title="Cancelar envío programado"
+                          class="text-slate-400 hover:text-red-500 p-1 rounded transition-colors">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                  </button>
+                </div>
+              </div>
+              <!-- Resultado si fue enviado -->
+              <div x-show="e.resultado && e.estado === 'enviado'"
+                   class="mt-1 text-xs text-slate-400">
+                <span x-text="(e.resultado?.enviados || 0) + ' enviados'"></span>
+                <span x-show="e.resultado?.fallidos" x-text="', ' + e.resultado.fallidos + ' fallidos'" class="text-amber-600"></span>
+              </div>
+              <div x-show="e.estado === 'fallido' && e.resultado?.error"
+                   class="mt-1 text-xs text-red-500 truncate" x-text="e.resultado?.error"></div>
+            </div>
+          </template>
+        </div>
+      </div>
 
     </div>
   </div>
@@ -728,6 +831,13 @@ function comunicaciones() {
     enviando:    false,
     resultado:   null,
     errorMsg:    '',
+
+    // Programar envío
+    confirmandoProgramar: false,
+    fechaProgramada:      '',
+    programando:          false,
+    programarError:       '',
+    programarOk:          false,
 
     init() {
       // Pre-cargar socio desde URL (botón "Incluir en comunicación" del perfil)
@@ -953,6 +1063,94 @@ function comunicaciones() {
           this.showSocioModal = true;
         }
       } catch {}
+    },
+
+    // ── Programar envío ───────────────────────────────────────────────────────
+
+    fechaMinima() {
+      const d = new Date();
+      d.setMinutes(d.getMinutes() + 5);
+      return d.toISOString().slice(0, 16);
+    },
+
+    abrirProgramar() {
+      this.programarError      = '';
+      this.confirmandoProgramar = true;
+      this.fechaProgramada     = '';
+    },
+
+    async confirmarProgramar() {
+      this.programarError = '';
+      if (!this.fechaProgramada) { this.programarError = 'Elige una fecha y hora.'; return; }
+      const sel = this.seleccionados;
+      if (!sel.length) { this.programarError = 'No hay destinatarios seleccionados.'; return; }
+
+      this.programando = true;
+      try {
+        const r = await fetch('/api/comunicaciones/programar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asunto:        this.asunto,
+            cuerpo:        this.cuerpo,
+            disclaimer:    this.disclaimer,
+            destinatarios: sel,
+            filtros:       this.filtros,
+            fecha_envio:   this.fechaProgramada.replace('T', 'T').slice(0, 16) + ':00',
+          }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          this.confirmandoProgramar = false;
+          this.resultado = null;
+          this.errorMsg  = '';
+          // Refrescar el panel de programados
+          window.dispatchEvent(new CustomEvent('programados-updated'));
+        } else {
+          this.programarError = data.error || 'Error al programar.';
+        }
+      } catch {
+        this.programarError = 'Error de red.';
+      } finally {
+        this.programando = false;
+      }
+    },
+  };
+}
+
+function programados() {
+  return {
+    lista: [],
+
+    async cargar() {
+      try {
+        const r = await fetch('/api/comunicaciones/programados');
+        this.lista = await r.json();
+      } catch {}
+    },
+
+    estadoLabel(e) {
+      return { pendiente: 'Pendiente', enviando: 'Enviando…', enviado: 'Enviado',
+               cancelado: 'Cancelado', fallido: 'Fallido' }[e] || e;
+    },
+
+    formatFecha(iso) {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString('es-PE', { day: '2-digit', month: '2-digit',
+          year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch { return iso; }
+    },
+
+    async cancelar(id) {
+      if (!confirm('¿Cancelar este envío programado?')) return;
+      await fetch('/api/comunicaciones/programados/' + id + '/cancelar', { method: 'POST' });
+      await this.cargar();
+    },
+
+    init() {
+      window.addEventListener('programados-updated', () => this.cargar());
     },
   };
 }

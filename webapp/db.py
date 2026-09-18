@@ -2383,3 +2383,62 @@ def get_pendientes_stats() -> dict:
         "en_proceso": sum(1 for d in docs if d.get("estado") == "en_proceso"),
         "resueltos": sum(1 for d in docs if d.get("estado") == "resuelto"),
     }
+
+
+# ── Envíos programados ─────────────────────────────────────────────────────────
+
+programados_col = _db.comunicaciones_programadas
+
+
+def create_envio_programado(asunto: str, cuerpo: str, filtros: dict,
+                             destinatarios: list, fecha_envio: str,
+                             disclaimer: bool = True) -> str:
+    """
+    fecha_envio: ISO 8601 string en UTC, ej. "2026-09-18T14:00:00"
+    destinatarios: lista de dicts con {member_id, nombre, email, ...}
+    """
+    doc = {
+        "asunto":        asunto.strip(),
+        "cuerpo":        cuerpo.strip(),
+        "filtros":       filtros,
+        "destinatarios": destinatarios,
+        "fecha_envio":   fecha_envio,
+        "disclaimer":    disclaimer,
+        "estado":        "pendiente",
+        "resultado":     None,
+        "created_at":    datetime.now(timezone.utc),
+    }
+    return str(programados_col.insert_one(doc).inserted_id)
+
+
+def get_envios_programados_pendientes() -> list:
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    docs = list(programados_col.find({
+        "estado":     "pendiente",
+        "fecha_envio": {"$lte": now_iso},
+    }).sort("fecha_envio", 1))
+    return _clean(docs)
+
+
+def update_envio_programado_estado(envio_id: str, estado: str,
+                                    resultado: dict | None = None) -> None:
+    update: dict = {"estado": estado}
+    if resultado is not None:
+        update["resultado"] = resultado
+    programados_col.update_one({"_id": ObjectId(envio_id)}, {"$set": update})
+
+
+def cancel_envio_programado(envio_id: str) -> None:
+    programados_col.update_one(
+        {"_id": ObjectId(envio_id), "estado": "pendiente"},
+        {"$set": {"estado": "cancelado"}},
+    )
+
+
+def get_envios_programados(limit: int = 30) -> list:
+    docs = list(programados_col.find({}).sort("fecha_envio", -1).limit(limit))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+        d.setdefault("destinatarios_count", len(d.get("destinatarios", [])))
+        d.pop("destinatarios", None)  # don't serialize the full list
+    return docs

@@ -126,6 +126,7 @@ async def _startup():
     auth.seed_admin()
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
+    asyncio.create_task(scheduler.run_programados_scheduler())
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1418,6 +1419,44 @@ async def comunicaciones_preview_html(request: Request):
     cuerpo_html = cuerpo_p.replace("\n", "<br>")
     html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>', disclaimer=disclaimer)
     return {"html": html}
+
+
+# ── Envíos programados ───────────────────────────────────────────────────────
+
+@app.post("/api/comunicaciones/programar")
+async def comunicaciones_programar(request: Request):
+    data = await request.json()
+    asunto        = (data.get("asunto") or "").strip()
+    cuerpo        = (data.get("cuerpo") or "").strip()
+    fecha_envio   = (data.get("fecha_envio") or "").strip()
+    destinatarios = data.get("destinatarios", [])
+    filtros       = data.get("filtros", {})
+    disclaimer    = data.get("disclaimer", True)
+
+    if not asunto or not cuerpo or not fecha_envio or not destinatarios:
+        return JSONResponse({"error": "Faltan campos obligatorios."}, status_code=400)
+
+    envio_id = pdb.create_envio_programado(
+        asunto=asunto,
+        cuerpo=cuerpo,
+        filtros=filtros,
+        destinatarios=destinatarios,
+        fecha_envio=fecha_envio,
+        disclaimer=disclaimer,
+    )
+    return {"ok": True, "id": envio_id}
+
+
+@app.post("/api/comunicaciones/programados/{envio_id}/cancelar")
+async def comunicaciones_cancelar_programado(envio_id: str):
+    pdb.cancel_envio_programado(envio_id)
+    return {"ok": True}
+
+
+@app.get("/api/comunicaciones/programados")
+async def comunicaciones_list_programados():
+    docs = pdb.get_envios_programados(limit=30)
+    return docs
 
 
 # ── Bounce tracking (Brevo webhook) ──────────────────────────────────────────
