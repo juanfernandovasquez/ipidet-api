@@ -15,8 +15,35 @@
           <i class="fa-solid fa-filter text-slate-400 mr-1.5"></i> 1. Definir destinatarios
         </h2>
 
-        <!-- Período -->
+        <!-- Modo de segmentación -->
         <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-2">Modo de segmentación</label>
+          <div class="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
+            <button type="button"
+                    @click="filtros.modo = 'padron'"
+                    :class="filtros.modo === 'padron'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    class="flex-1 px-3 py-2 transition-colors text-center">
+              <i class="fa-solid fa-users mr-1"></i> Padrón completo
+            </button>
+            <button type="button"
+                    @click="filtros.modo = 'periodo'"
+                    :class="filtros.modo === 'periodo'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    class="flex-1 px-3 py-2 border-l border-slate-200 transition-colors text-center">
+              <i class="fa-solid fa-coins mr-1"></i> Por período de pago
+            </button>
+          </div>
+          <p class="text-xs text-slate-400 mt-1.5">
+            <span x-show="filtros.modo === 'padron'">Todos los socios activos con email habilitado, independientemente de su deuda.</span>
+            <span x-show="filtros.modo === 'periodo'">Filtra por estado de pago de un período específico.</span>
+          </p>
+        </div>
+
+        <!-- Período (solo modo periodo) -->
+        <div x-show="filtros.modo === 'periodo'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
           <select x-model="filtros.periodo" class="input w-full text-sm">
             <option value="2026">2026</option>
@@ -25,8 +52,8 @@
           </select>
         </div>
 
-        <!-- Estado de pago (multi) -->
-        <div class="mb-4">
+        <!-- Estado de pago (solo modo periodo) -->
+        <div x-show="filtros.modo === 'periodo'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-2">Estado de pago</label>
           <div class="space-y-1.5">
             {% for val, lbl in [
@@ -45,8 +72,8 @@
           <p class="text-xs text-slate-400 mt-2">Sin selección = todos los estados</p>
         </div>
 
-        <!-- Empresa -->
-        <div class="mb-4 relative">
+        <!-- Empresa (solo modo periodo) -->
+        <div x-show="filtros.modo === 'periodo'" x-cloak class="mb-4 relative">
           <label class="block text-xs font-medium text-slate-600 mb-1">Empresa pagadora</label>
           <input x-model="filtros.empresa"
                  @input.debounce.300ms="fetchEmpresas()"
@@ -108,11 +135,11 @@
           <input x-model="filtros.keywords" type="text"
                  placeholder="Busca en nombre, apellido, centro de trabajo, notas…"
                  class="input w-full text-sm">
-          <p class="text-xs text-slate-400 mt-1">Busca en nombre, apellido, centro de trabajo y notas.</p>
         </div>
 
-        <!-- Criterios de exclusión (collapsible) -->
-        <div class="mb-5 border border-slate-200 rounded-xl overflow-hidden">
+        <!-- Criterios de exclusión (solo modo periodo, collapsible) -->
+        <div x-show="filtros.modo === 'periodo'" x-cloak
+             class="mb-5 border border-slate-200 rounded-xl overflow-hidden">
           <button type="button" @click="showExclusiones = !showExclusiones"
                   class="flex items-center justify-between w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
             <span class="text-xs font-semibold text-slate-600">
@@ -126,8 +153,6 @@
           </button>
 
           <div x-show="showExclusiones" x-cloak class="p-4 space-y-4 border-t border-slate-200">
-
-            <!-- Excluir estado de pago -->
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-2">Excluir estado de pago</label>
               <div class="space-y-1.5">
@@ -145,8 +170,6 @@
                 {% endfor %}
               </div>
             </div>
-
-            <!-- Excluir empresa -->
             <div class="relative">
               <label class="block text-xs font-medium text-slate-600 mb-1">Excluir empresa pagadora</label>
               <input x-model="exclusiones.empresa"
@@ -167,13 +190,10 @@
                           @click="exclusiones.empresa = e.nombre; showEmpresaExSugg = false"
                           class="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
                     <span x-text="e.nombre"></span>
-                    <span class="text-xs text-slate-400 ml-1" x-show="e.ruc" x-text="'· ' + e.ruc"></span>
                   </button>
                 </template>
               </div>
             </div>
-
-            <!-- Excluir ubicación -->
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Excluir ubicación</label>
               <select x-model="exclusiones.ubicacion" class="input w-full text-sm">
@@ -183,8 +203,6 @@
                 {% endfor %}
               </select>
             </div>
-
-            <!-- Excluir título -->
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Excluir título profesional</label>
               <select x-model="exclusiones.titulo" class="input w-full text-sm">
@@ -194,23 +212,18 @@
                 {% endfor %}
               </select>
             </div>
-
-            <!-- Excluir centro de trabajo -->
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Excluir centro de trabajo</label>
               <input x-model="exclusiones.centro_trabajo" type="text"
                      placeholder="Ej. SUNAT, BDO…"
                      class="input w-full text-sm">
             </div>
-
-            <!-- Excluir palabras clave -->
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Excluir palabras clave</label>
               <input x-model="exclusiones.keywords" type="text"
                      placeholder="Excluir si aparece en nombre, centro de trabajo, notas…"
                      class="input w-full text-sm">
             </div>
-
             <button type="button" @click="limpiarExclusiones()"
                     class="text-xs text-red-500 hover:underline">
               <i class="fa-solid fa-xmark mr-1"></i> Limpiar exclusiones
@@ -256,7 +269,6 @@
             </template>
           </div>
         </div>
-        <!-- Destinatarios agregados manualmente -->
         <div x-show="manuales.length > 0" class="mt-3 space-y-1">
           <div class="text-xs font-medium text-slate-500 mb-1">Agregados manualmente:</div>
           <template x-for="m in manuales" :key="m.member_id">
@@ -350,7 +362,8 @@
                 <div class="text-xs font-medium text-slate-800 truncate" x-text="d.nombre"></div>
                 <div class="text-xs text-slate-400 truncate" x-text="d.email"></div>
               </div>
-              <span class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium"
+              <span x-show="d.estado_pago"
+                    class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium"
                 :class="{
                   'bg-red-50 text-red-600': d.estado_pago === 'debe',
                   'bg-green-50 text-green-600': d.estado_pago === 'pagado',
@@ -358,7 +371,7 @@
                   'bg-purple-50 text-purple-600': d.estado_pago === 'parcial',
                   'bg-slate-100 text-slate-500': !['debe','pagado','fraccionamiento','parcial'].includes(d.estado_pago),
                 }"
-                x-text="d.estado_pago || '—'"></span>
+                x-text="d.estado_pago"></span>
               <button @click.prevent.stop="verSocio(d.member_id)"
                       title="Ver detalle"
                       class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-600 flex-shrink-0 ml-0.5 transition-opacity">
@@ -401,18 +414,57 @@
           <input x-model="asunto" type="text" placeholder="Asunto del correo…" class="input w-full">
         </div>
 
+        <!-- Toolbar imagen -->
+        <div class="flex items-center gap-1 mb-1">
+          <button type="button" @click="insertarImagen()"
+                  class="text-xs px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
+            <i class="fa-solid fa-image mr-1"></i> Imagen
+          </button>
+          <button type="button" @click="insertarLink()"
+                  class="text-xs px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
+            <i class="fa-solid fa-link mr-1"></i> Enlace
+          </button>
+          <span class="text-xs text-slate-300 ml-1">HTML permitido en el cuerpo</span>
+        </div>
+
         <!-- Cuerpo -->
         <div class="mb-2">
           <label class="block text-xs font-medium text-slate-600 mb-1">Mensaje <span class="text-red-500">*</span></label>
-          <textarea x-model="cuerpo" rows="12" placeholder="Escribe el mensaje aquí…"
+          <textarea x-model="cuerpo" x-ref="cuerpoTextarea" rows="12"
+            placeholder="Escribe el mensaje aquí…"
             class="input w-full font-mono text-sm resize-y"></textarea>
         </div>
         <p class="text-xs text-slate-400 mb-1">
-          Usa <code class="bg-slate-100 px-1 rounded font-mono">{{ '{{nombre}}' }}</code> en el asunto o mensaje para personalizar con el nombre de cada destinatario.
+          Usa <code class="bg-slate-100 px-1 rounded font-mono">{{ '{{nombre}}' }}</code> para personalizar con el nombre de cada destinatario.
         </p>
-        <p class="text-xs text-slate-400 mb-3">
+        <p class="text-xs text-slate-400 mb-4">
           El mensaje se envía con el formato corporativo de IPIDET. Cada email es individual (no van en copia).
         </p>
+
+        <!-- Archivos adjuntos -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-slate-600 mb-1">
+            <i class="fa-solid fa-paperclip text-slate-400 mr-1"></i> Archivos adjuntos
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer bg-slate-50 border border-dashed border-slate-300 rounded-lg px-3 py-2.5 hover:bg-slate-100 transition-colors text-sm text-slate-500">
+            <i class="fa-solid fa-paperclip text-slate-400"></i>
+            <span>Adjuntar archivo…</span>
+            <input type="file" multiple class="hidden" @change="agregarAdjuntos($event)">
+          </label>
+          <div x-show="adjuntos.length > 0" class="mt-2 space-y-1">
+            <template x-for="(a, i) in adjuntos" :key="i">
+              <div class="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                <i class="fa-solid fa-file text-slate-400 flex-shrink-0"></i>
+                <span x-text="a.filename" class="flex-1 truncate text-slate-700 font-medium"></span>
+                <span x-text="formatSize(a.size)" class="text-slate-400 flex-shrink-0"></span>
+                <button type="button" @click="adjuntos.splice(i, 1)"
+                        class="text-slate-400 hover:text-red-500 flex-shrink-0 ml-1">
+                  <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
 
         <!-- Opción disclaimer -->
         <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-5 select-none">
@@ -420,16 +472,34 @@
           Incluir aviso <em>"No responder directamente a este mensaje"</em> en el pie del email
         </label>
 
-        <!-- Botón vista previa -->
-        <div class="mb-4">
+        <!-- Vista previa + correo de prueba -->
+        <div class="flex flex-wrap items-end gap-3 mb-4">
           <button type="button" @click="verPreview()"
                   :disabled="!cuerpo.trim()"
                   class="btn-ghost text-xs py-1.5 disabled:opacity-40">
-            <i class="fa-solid fa-eye mr-1.5"></i> Vista previa del email
+            <i class="fa-solid fa-eye mr-1.5"></i> Vista previa
           </button>
+
+          <div class="flex items-center gap-1.5">
+            <input x-model="emailPrueba" type="email" placeholder="tu@correo.com para prueba"
+                   class="input text-xs py-1.5 w-48" autocomplete="off">
+            <button type="button" @click="enviarPrueba()"
+                    :disabled="!emailPrueba.trim() || !asunto.trim() || !cuerpo.trim() || enviandoPrueba"
+                    class="btn-ghost text-xs py-1.5 disabled:opacity-40 whitespace-nowrap">
+              <i class="fa-solid fa-flask mr-1" x-show="!enviandoPrueba"></i>
+              <i class="fa-solid fa-spinner fa-spin mr-1" x-show="enviandoPrueba" x-cloak></i>
+              <span x-text="enviandoPrueba ? 'Enviando…' : 'Enviar prueba'"></span>
+            </button>
+          </div>
         </div>
 
-        <!-- Feedback -->
+        <!-- Feedback prueba -->
+        <div x-show="pruebaOk" x-cloak
+             class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700 mb-3">
+          <i class="fa-solid fa-circle-check"></i> Correo de prueba enviado correctamente.
+        </div>
+
+        <!-- Feedback envío -->
         <div x-show="errorMsg" x-cloak
              class="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700 mb-4">
           <i class="fa-solid fa-circle-exclamation"></i> <span x-text="errorMsg"></span>
@@ -443,7 +513,7 @@
                class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
             <p class="font-medium text-amber-800 mb-2">
               <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-              <span x-text="resultado.fallidos + ' envío(s) fallaron (Brevo rechazó la solicitud):'"></span>
+              <span x-text="resultado.fallidos + ' envío(s) fallaron:'"></span>
             </p>
             <div class="space-y-1 max-h-40 overflow-y-auto">
               <template x-for="f in (resultado.fallidos_detalle || [])" :key="f.email">
@@ -480,7 +550,6 @@
             Programar envío a <strong x-text="seleccionados.length"></strong> destinatario(s)
           </p>
           <p class="text-xs text-sky-700 mb-3">Asunto: <em x-text="asunto"></em></p>
-
           <div class="mb-4">
             <label class="block text-xs font-medium text-slate-600 mb-1">
               Fecha y hora de envío <span class="text-red-500">*</span>
@@ -490,10 +559,7 @@
                    class="input w-full text-sm font-mono"
                    :min="fechaMinima()">
           </div>
-
-          <div x-show="programarError" x-cloak
-               class="text-xs text-red-600 mb-3" x-text="programarError"></div>
-
+          <div x-show="programarError" x-cloak class="text-xs text-red-600 mb-3" x-text="programarError"></div>
           <div class="flex gap-2">
             <button type="button" @click="confirmarProgramar()"
               :disabled="programando || !fechaProgramada"
@@ -505,7 +571,7 @@
           </div>
         </div>
 
-        <!-- Confirmación -->
+        <!-- Confirmación envío inmediato -->
         <div x-show="confirmando" x-cloak
              class="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <p class="text-sm font-medium text-amber-800 mb-1">
@@ -513,8 +579,10 @@
             ¿Confirmas el envío a <strong x-text="seleccionados.length"></strong> destinatario(s)?
           </p>
           <p class="text-xs text-amber-700 mb-3">Asunto: <em x-text="asunto"></em></p>
-
-          <!-- Lista de destinatarios seleccionados -->
+          <div x-show="adjuntos.length > 0" class="text-xs text-amber-700 mb-3">
+            <i class="fa-solid fa-paperclip mr-1"></i>
+            <span x-text="adjuntos.length + ' archivo(s) adjunto(s)'"></span>
+          </div>
           <div class="bg-white border border-amber-200 rounded-lg max-h-40 overflow-y-auto mb-4">
             <template x-for="d in seleccionados" :key="d.member_id || d.email">
               <div class="flex items-center justify-between px-3 py-1.5 border-b border-amber-100 last:border-0">
@@ -526,7 +594,6 @@
               </div>
             </template>
           </div>
-
           <div class="flex gap-2">
             <button type="button" @click="enviar()"
               :disabled="enviando"
@@ -555,7 +622,7 @@
                 <div class="text-xs text-slate-400 mt-0.5">
                   {{ h.fecha[:10] if h.fecha else '—' }}
                   {% if h.filtros %}
-                    · {{ h.filtros.get('periodo', '') }}
+                    {% if h.filtros.get('periodo') %} · {{ h.filtros.periodo }}{% endif %}
                     {% if h.filtros.get('estados_pago') %} · {{ h.filtros.estados_pago | join(', ') }}{% endif %}
                     {% if h.filtros.get('empresa') %} · {{ h.filtros.empresa }}{% endif %}
                   {% endif %}
@@ -563,7 +630,7 @@
               </div>
               <div class="flex items-center gap-1.5 flex-shrink-0 ml-3">
                 <span class="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
-                  <i class="fa-solid fa-paper-plane text-[10px]"></i> {{ h.total_enviados or h.get('total_enviados', 0) }}
+                  <i class="fa-solid fa-paper-plane text-[10px]"></i> {{ h.total_enviados or 0 }}
                 </span>
                 {% if fd %}
                 <button @click="abierto = !abierto"
@@ -603,11 +670,9 @@
             <i class="fa-solid fa-rotate-right"></i>
           </button>
         </div>
-
         <div x-show="!lista.length" class="text-center py-6 text-slate-400 text-sm">
           <i class="fa-solid fa-circle-info mr-1"></i> No hay envíos programados.
         </div>
-
         <div x-show="lista.length > 0" class="space-y-2">
           <template x-for="e in lista" :key="e._id">
             <div class="bg-slate-50 rounded-lg border border-slate-100 p-3">
@@ -638,15 +703,12 @@
                   </span>
                   <button x-show="e.estado === 'pendiente'"
                           @click="cancelar(e._id)"
-                          title="Cancelar envío programado"
                           class="text-slate-400 hover:text-red-500 p-1 rounded transition-colors">
                     <i class="fa-solid fa-xmark text-xs"></i>
                   </button>
                 </div>
               </div>
-              <!-- Resultado si fue enviado -->
-              <div x-show="e.resultado && e.estado === 'enviado'"
-                   class="mt-1 text-xs text-slate-400">
+              <div x-show="e.resultado && e.estado === 'enviado'" class="mt-1 text-xs text-slate-400">
                 <span x-text="(e.resultado?.enviados || 0) + ' enviados'"></span>
                 <span x-show="e.resultado?.fallidos" x-text="', ' + e.resultado.fallidos + ' fallidos'" class="text-amber-600"></span>
               </div>
@@ -740,7 +802,7 @@
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
         <div>
           <h2 class="font-semibold text-slate-800">Vista previa del email</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Así lo verá el destinatario (con "Juan Pérez" de ejemplo para <code>{{ '{{nombre}}' }}</code>)</p>
+          <p class="text-xs text-slate-400 mt-0.5">Así lo verá el destinatario (con "Juan Pérez" de ejemplo)</p>
         </div>
         <button @click="showPreviewModal = false" class="text-slate-400 hover:text-slate-600">
           <i class="fa-solid fa-xmark text-lg"></i>
@@ -757,13 +819,14 @@
 function comunicaciones() {
   return {
     filtros: {
-      periodo:        '2026',
-      estados_pago:   [],
-      empresa:        '',
-      ubicacion:      '',
-      titulo:         '',
+      modo:          'padron',
+      periodo:       '2026',
+      estados_pago:  [],
+      empresa:       '',
+      ubicacion:     '',
+      titulo:        '',
       centro_trabajo: '',
-      keywords:       '',
+      keywords:      '',
     },
 
     exclusiones: {
@@ -774,31 +837,27 @@ function comunicaciones() {
       centro_trabajo: '',
       keywords:       '',
     },
-    showExclusiones:  false,
-    empresaExSugg:    [],
+    showExclusiones:   false,
+    empresaExSugg:     [],
     showEmpresaExSugg: false,
+    empresaSugg:       [],
+    showEmpresaSugg:   false,
 
-    empresaSugg:    [],
-    showEmpresaSugg: false,
+    previewing:    false,
+    showPreview:   false,
+    destinatarios: [],
 
-    previewing:     false,
-    showPreview:    false,
-    destinatarios:  [],
-
-    // Destinatarios agregados manualmente (buscador individual)
     manuales:          [],
     busquedaMiembro:   '',
     sugMiembros:       [],
     showPreviewModal:  false,
 
-    // Empresas destinatarias
     empresasDestinatarias: [],
     busquedaEmpresaDest:   '',
     sugEmpresasDest:       [],
 
-    // Modal detalle de socio
-    socioModal:       null,
-    showSocioModal:   false,
+    socioModal:      null,
+    showSocioModal:  false,
 
     plantilla:  'libre',
     asunto:     '',
@@ -832,15 +891,21 @@ function comunicaciones() {
     resultado:   null,
     errorMsg:    '',
 
+    // Adjuntos
+    adjuntos: [],
+
+    // Correo de prueba
+    emailPrueba:     '',
+    enviandoPrueba:  false,
+    pruebaOk:        false,
+
     // Programar envío
     confirmandoProgramar: false,
     fechaProgramada:      '',
     programando:          false,
     programarError:       '',
-    programarOk:          false,
 
     init() {
-      // Pre-cargar socio desde URL (botón "Incluir en comunicación" del perfil)
       {% if pre_member %}
       this.manuales.push({ ...{{ pre_member | tojson }}, selected: true });
       {% endif %}
@@ -912,6 +977,10 @@ function comunicaciones() {
       this.cuerpo = t.cuerpo;
     },
 
+    _periodoParaFiltro() {
+      return this.filtros.modo === 'periodo' ? this.filtros.periodo : '';
+    },
+
     async preview() {
       this.previewing = true;
       this.resultado  = null;
@@ -921,6 +990,7 @@ function comunicaciones() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...this.filtros,
+          periodo: this._periodoParaFiltro(),
           excluir_estados_pago:   this.exclusiones.estados_pago,
           excluir_empresa:        this.exclusiones.empresa,
           excluir_ubicacion:      this.exclusiones.ubicacion,
@@ -950,7 +1020,6 @@ function comunicaciones() {
       const yaManual = this.manuales.some(d => d.member_id === m.member_id);
       if (!yaManual) {
         this.manuales.push({ ...m, selected: true });
-        // Si está en el filtro pero deseleccionado, seleccionarlo también
         const enFiltro = this.destinatarios.find(d => d.member_id === m.member_id);
         if (enFiltro) enFiltro.selected = true;
       }
@@ -999,17 +1068,19 @@ function comunicaciones() {
             plantilla:     this.plantilla,
             disclaimer:    this.disclaimer,
             destinatarios: this.seleccionados,
-            filtros:       this.filtros,
+            filtros:       { ...this.filtros, periodo: this._periodoParaFiltro() },
+            attachments:   this.adjuntos,
           }),
         });
         const data = await r.json();
         if (r.ok) {
-          this.resultado            = data;
-          this.confirmando          = false;
-          this.showPreview          = false;
-          this.destinatarios        = [];
-          this.manuales             = [];
+          this.resultado             = data;
+          this.confirmando           = false;
+          this.showPreview           = false;
+          this.destinatarios         = [];
+          this.manuales              = [];
           this.empresasDestinatarias = [];
+          this.adjuntos              = [];
         } else {
           this.errorMsg    = data.error || 'Error al enviar.';
           this.confirmando = false;
@@ -1019,6 +1090,92 @@ function comunicaciones() {
         this.confirmando = false;
       } finally {
         this.enviando = false;
+      }
+    },
+
+    // ── Adjuntos ──────────────────────────────────────────────────────────────
+
+    async agregarAdjuntos(event) {
+      const files = Array.from(event.target.files);
+      for (const file of files) {
+        const data_b64 = await new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result.split(',')[1]);
+          reader.readAsDataURL(file);
+        });
+        this.adjuntos.push({
+          filename: file.name,
+          data_b64,
+          mime: file.type || 'application/octet-stream',
+          size: file.size,
+        });
+      }
+      event.target.value = '';
+    },
+
+    formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    },
+
+    // ── Imagen / Enlace en cuerpo ─────────────────────────────────────────────
+
+    insertarImagen() {
+      const url = prompt('URL de la imagen (debe ser pública):');
+      if (!url) return;
+      this.insertAtCursor(`<img src="${url}" style="max-width:100%;height:auto;display:block;margin:8px 0">`);
+    },
+
+    insertarLink() {
+      const url  = prompt('URL del enlace:');
+      if (!url) return;
+      const texto = prompt('Texto del enlace:', url) || url;
+      this.insertAtCursor(`<a href="${url}" style="color:#2563eb">${texto}</a>`);
+    },
+
+    insertAtCursor(text) {
+      const el = this.$refs.cuerpoTextarea;
+      if (!el) { this.cuerpo += '\n' + text; return; }
+      const start = el.selectionStart;
+      const end   = el.selectionEnd;
+      this.cuerpo = this.cuerpo.slice(0, start) + text + this.cuerpo.slice(end);
+      this.$nextTick(() => {
+        el.selectionStart = el.selectionEnd = start + text.length;
+        el.focus();
+      });
+    },
+
+    // ── Correo de prueba ──────────────────────────────────────────────────────
+
+    async enviarPrueba() {
+      if (!this.emailPrueba.trim()) return;
+      this.enviandoPrueba = true;
+      this.pruebaOk       = false;
+      this.errorMsg       = '';
+      try {
+        const r = await fetch('/api/comunicaciones/enviar-prueba', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email_prueba: this.emailPrueba,
+            asunto:       this.asunto,
+            cuerpo:       this.cuerpo,
+            disclaimer:   this.disclaimer,
+            attachments:  this.adjuntos,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          this.pruebaOk = true;
+          setTimeout(() => this.pruebaOk = false, 5000);
+        } else {
+          this.errorMsg = data.error || 'Error al enviar prueba.';
+        }
+      } catch {
+        this.errorMsg = 'Error de red.';
+      } finally {
+        this.enviandoPrueba = false;
       }
     },
 
@@ -1059,7 +1216,7 @@ function comunicaciones() {
       try {
         const r = await fetch('/api/members/' + encodeURIComponent(member_id));
         if (r.ok) {
-          this.socioModal    = await r.json();
+          this.socioModal     = await r.json();
           this.showSocioModal = true;
         }
       } catch {}
@@ -1074,9 +1231,9 @@ function comunicaciones() {
     },
 
     abrirProgramar() {
-      this.programarError      = '';
+      this.programarError       = '';
       this.confirmandoProgramar = true;
-      this.fechaProgramada     = '';
+      this.fechaProgramada      = '';
     },
 
     async confirmarProgramar() {
@@ -1084,7 +1241,6 @@ function comunicaciones() {
       if (!this.fechaProgramada) { this.programarError = 'Elige una fecha y hora.'; return; }
       const sel = this.seleccionados;
       if (!sel.length) { this.programarError = 'No hay destinatarios seleccionados.'; return; }
-
       this.programando = true;
       try {
         const r = await fetch('/api/comunicaciones/programar', {
@@ -1095,16 +1251,13 @@ function comunicaciones() {
             cuerpo:        this.cuerpo,
             disclaimer:    this.disclaimer,
             destinatarios: sel,
-            filtros:       this.filtros,
-            fecha_envio:   this.fechaProgramada.replace('T', 'T').slice(0, 16) + ':00',
+            filtros:       { ...this.filtros, periodo: this._periodoParaFiltro() },
+            fecha_envio:   this.fechaProgramada.slice(0, 16) + ':00',
           }),
         });
         const data = await r.json();
         if (r.ok) {
           this.confirmandoProgramar = false;
-          this.resultado = null;
-          this.errorMsg  = '';
-          // Refrescar el panel de programados
           window.dispatchEvent(new CustomEvent('programados-updated'));
         } else {
           this.programarError = data.error || 'Error al programar.';
@@ -1137,9 +1290,10 @@ function programados() {
     formatFecha(iso) {
       if (!iso) return '—';
       try {
-        const d = new Date(iso);
-        return d.toLocaleString('es-PE', { day: '2-digit', month: '2-digit',
-          year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        return new Date(iso).toLocaleString('es-PE', {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        });
       } catch { return iso; }
     },
 

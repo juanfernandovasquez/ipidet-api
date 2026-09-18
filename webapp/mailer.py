@@ -3,6 +3,8 @@ Envío de correos transaccionales vía Brevo.
 - Si BREVO_API_KEY está configurada: usa HTTP API v3 (funciona en cualquier servidor)
 - Si no: fallback a SMTP (requiere puerto 587 abierto y IP autorizada)
 """
+import base64 as _b64
+import re as _re
 import smtplib
 import asyncio
 import json as _json
@@ -97,7 +99,17 @@ async def send_email(
         )
 
 
-def _send_bulk_sync(mensajes: list[dict]) -> tuple[int, int, list[str], list[dict]]:
+_HAS_HTML = _re.compile(r'<[a-zA-Z/!]')
+
+
+def _render_body(cuerpo: str) -> str:
+    """Plain text → \n a <br>. Si hay etiquetas HTML, pasa el cuerpo directo."""
+    if _HAS_HTML.search(cuerpo):
+        return cuerpo
+    return cuerpo.replace("\n", "<br>")
+
+
+def _send_bulk_sync(mensajes: list[dict], attachments: list[dict] | None = None) -> tuple[int, int, list[str], list[dict]]:
     """
     Envía múltiples emails en una sola sesión SMTP.
     mensajes: [{"to": str, "nombre": str, "subject": str, "html_body": str}]
@@ -116,6 +128,16 @@ def _send_bulk_sync(mensajes: list[dict]) -> tuple[int, int, list[str], list[dic
             for m in mensajes
         ]
 
+    # Decodificar adjuntos una sola vez para toda la sesión SMTP
+    att_bytes = []
+    for a in (attachments or []):
+        try:
+            data = _b64.b64decode(a["data_b64"]) if "data_b64" in a else a.get("data", b"")
+            att_bytes.append({"filename": a["filename"], "data": data,
+                               "mime": a.get("mime", "application/octet-stream")})
+        except Exception:
+            pass
+
     try:
         for m in mensajes:
             try:
@@ -124,6 +146,13 @@ def _send_bulk_sync(mensajes: list[dict]) -> tuple[int, int, list[str], list[dic
                 msg["To"]      = m["to"]
                 msg["Subject"] = m["subject"]
                 msg.attach(MIMEText(m["html_body"], "html", "utf-8"))
+                for att in att_bytes:
+                    mime_type, mime_subtype = att["mime"].split("/", 1)
+                    part = MIMEBase(mime_type, mime_subtype)
+                    part.set_payload(att["data"])
+                    encoders.encode_base64(part)
+                    part.add_header("Content-Disposition", "attachment", filename=att["filename"])
+                    msg.attach(part)
                 server.sendmail(BREVO_FROM_EMAIL, [m["to"]], msg.as_bytes())
                 enviados += 1
             except Exception as exc:
@@ -141,16 +170,25 @@ def _send_bulk_sync(mensajes: list[dict]) -> tuple[int, int, list[str], list[dic
     return enviados, fallidos, errores, fallidos_detalle
 
 
-def _send_bulk_api(mensajes: list[dict]) -> tuple[int, int, list[str], list[dict]]:
+def _send_bulk_api(mensajes: list[dict], attachments: list[dict] | None = None) -> tuple[int, int, list[str], list[dict]]:
     """Usa Brevo HTTP API v3 — funciona en Render y cualquier servidor (puerto 443)."""
     enviados, fallidos, errores, fallidos_detalle = 0, 0, [], []
+
+    # Preparar adjuntos en formato Brevo (base64 ya listo)
+    att_brevo = []
+    for a in (attachments or []):
+        att_brevo.append({"name": a["filename"], "content": a.get("data_b64", "")})
+
     for m in mensajes:
-        payload = _json.dumps({
+        body: dict = {
             "sender":      {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
             "to":          [{"email": m["to"]}],
             "subject":     m["subject"],
             "htmlContent": m["html_body"],
-        }).encode("utf-8")
+        }
+        if att_brevo:
+            body["attachment"] = att_brevo
+        payload = _json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
             "https://api.brevo.com/v3/smtp/email",
             data=payload,
@@ -180,12 +218,16 @@ def _send_bulk_api(mensajes: list[dict]) -> tuple[int, int, list[str], list[dict
     return enviados, fallidos, errores, fallidos_detalle
 
 
-async def send_bulk(mensajes: list[dict]) -> tuple[int, int, list[str], list[dict]]:
-    """Usa HTTP API si BREVO_API_KEY está configurada; si no, SMTP."""
+async def send_bulk(mensajes: list[dict],
+                    attachments: list[dict] | None = None) -> tuple[int, int, list[str], list[dict]]:
+    """
+    Usa HTTP API si BREVO_API_KEY está configurada; si no, SMTP.
+    attachments: [{"filename": str, "data_b64": str, "mime": str}]  — mismo adjunto para todos.
+    """
     loop = asyncio.get_running_loop()
     if BREVO_API_KEY:
-        return await loop.run_in_executor(None, partial(_send_bulk_api, mensajes))
-    return await loop.run_in_executor(None, partial(_send_bulk_sync, mensajes))
+        return await loop.run_in_executor(None, partial(_send_bulk_api, mensajes, attachments))
+    return await loop.run_in_executor(None, partial(_send_bulk_sync, mensajes, attachments))
 
 
 # ── Plantillas ────────────────────────────────────────────────────────────────

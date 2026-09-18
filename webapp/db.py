@@ -1309,7 +1309,8 @@ def get_comunicacion_destinatarios(
         "titulo": 1, "ubicacion": 1, "emails": 1,
     }))
 
-    if estados_pago or empresa:
+    # Filtros de pago solo aplican cuando hay un período definido
+    if periodo and (estados_pago or empresa):
         pay_q: dict = {"periodo": periodo}
         if estados_pago:
             pay_q["estado"] = {"$in": estados_pago}
@@ -1318,7 +1319,7 @@ def get_comunicacion_destinatarios(
         valid_ids = {p["member_id"] for p in payments_col.find(pay_q, {"member_id": 1})}
         members = [m for m in members if m["member_id"] in valid_ids]
 
-    if excluir_estados_pago or excluir_empresa:
+    if periodo and (excluir_estados_pago or excluir_empresa):
         ex_q: dict = {"periodo": periodo}
         if excluir_estados_pago:
             ex_q["estado"] = {"$in": excluir_estados_pago}
@@ -1328,13 +1329,15 @@ def get_comunicacion_destinatarios(
         members = [m for m in members if m["member_id"] not in excluded_ids]
 
     member_ids = [m["member_id"] for m in members]
-    pay_map = {
-        p["member_id"]: p.get("estado", "")
-        for p in payments_col.find(
-            {"member_id": {"$in": member_ids}, "periodo": periodo},
-            {"member_id": 1, "estado": 1},
-        )
-    }
+    pay_map = {}
+    if periodo and member_ids:
+        pay_map = {
+            p["member_id"]: p.get("estado", "")
+            for p in payments_col.find(
+                {"member_id": {"$in": member_ids}, "periodo": periodo},
+                {"member_id": 1, "estado": 1},
+            )
+        }
 
     result = []
     for m in members:
@@ -1352,7 +1355,7 @@ def get_comunicacion_destinatarios(
             "email":       email,
             "titulo":      m.get("titulo", ""),
             "ubicacion":   m.get("ubicacion", ""),
-            "estado_pago": pay_map.get(m["member_id"], "sin registro"),
+            "estado_pago": pay_map.get(m["member_id"], "sin registro") if periodo else "",
         })
 
     return sorted(result, key=lambda x: x["nombre"])

@@ -1,5 +1,6 @@
 import io
 import re
+import base64 as _b64
 from markupsafe import Markup, escape
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File
 from typing import List
@@ -1315,7 +1316,7 @@ async def comunicaciones(request: Request, pre_member_id: str = ""):
 @app.post("/api/comunicaciones/preview")
 async def comunicaciones_preview(request: Request):
     data        = await request.json()
-    periodo     = data.get("periodo", "2026")
+    periodo     = data.get("periodo", "")      # vacío = modo padrón (sin filtro de período)
     estados     = data.get("estados_pago", [])
     empresa     = data.get("empresa", "")
     ubicacion   = data.get("ubicacion", "")
@@ -1356,7 +1357,9 @@ async def comunicaciones_enviar(request: Request):
     if not destinatarios:
         return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
 
-    disclaimer = data.get("disclaimer", True)
+    disclaimer      = data.get("disclaimer", True)
+    attachments_raw = data.get("attachments", [])  # [{"filename", "data_b64", "mime"}]
+
     mensajes = []
     for d in destinatarios:
         if not d.get("email"):
@@ -1364,11 +1367,16 @@ async def comunicaciones_enviar(request: Request):
         nombre      = d.get("nombre", "asociado/a")
         asunto_p    = asunto.replace("{{nombre}}", nombre)
         cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
-        cuerpo_html = cuerpo_p.replace("\n", "<br>")
-        html_body   = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>', disclaimer=disclaimer)
+        cuerpo_html = mailer._render_body(cuerpo_p)
+        html_body   = mailer._base_html(
+            f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>',
+            disclaimer=disclaimer,
+        )
         mensajes.append({"to": d["email"], "nombre": nombre, "subject": asunto_p, "html_body": html_body})
 
-    enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(mensajes)
+    enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(
+        mensajes, attachments=attachments_raw or None
+    )
 
     if enviados == 0 and fallidos > 0:
         return JSONResponse(
@@ -1411,14 +1419,59 @@ async def comunicaciones_buscar_miembro(q: str = ""):
 @app.post("/api/comunicaciones/preview-html")
 async def comunicaciones_preview_html(request: Request):
     """Devuelve el HTML renderizado del email para vista previa."""
-    data   = await request.json()
+    data        = await request.json()
     cuerpo      = (data.get("cuerpo") or "").strip()
     disclaimer  = data.get("disclaimer", True)
     nombre_muestra = "Juan Pérez"
     cuerpo_p    = cuerpo.replace("{{nombre}}", nombre_muestra)
-    cuerpo_html = cuerpo_p.replace("\n", "<br>")
-    html = mailer._base_html(f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>', disclaimer=disclaimer)
+    cuerpo_html = mailer._render_body(cuerpo_p)
+    html = mailer._base_html(
+        f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>',
+        disclaimer=disclaimer,
+    )
     return {"html": html}
+
+
+@app.post("/api/comunicaciones/enviar-prueba")
+async def comunicaciones_enviar_prueba(request: Request):
+    """Envía un correo de prueba a la dirección indicada."""
+    data         = await request.json()
+    email_prueba = (data.get("email_prueba") or "").strip()
+    asunto       = (data.get("asunto") or "").strip()
+    cuerpo       = (data.get("cuerpo") or "").strip()
+    disclaimer   = data.get("disclaimer", True)
+    attachments  = data.get("attachments", [])
+
+    if not email_prueba or not asunto or not cuerpo:
+        return JSONResponse({"error": "Faltan campos obligatorios."}, status_code=400)
+
+    nombre_muestra = "Juan Pérez"
+    cuerpo_p    = cuerpo.replace("{{nombre}}", nombre_muestra)
+    cuerpo_html = mailer._render_body(cuerpo_p)
+    banner = (
+        '<div style="background:#f59e0b;color:#fff;text-align:center;'
+        'padding:6px 16px;font-size:11px;font-weight:600;letter-spacing:.5px">'
+        '✉ CORREO DE PRUEBA — No enviar a destinatarios reales</div>'
+    )
+    html_body = mailer._base_html(
+        f'{banner}<div style="color:#475569;line-height:1.7;margin-top:16px">{cuerpo_html}</div>',
+        disclaimer=disclaimer,
+    )
+    try:
+        await mailer.send_email(
+            email_prueba,
+            f"[PRUEBA] {asunto.replace('{{nombre}}', nombre_muestra)}",
+            html_body,
+            attachments=[
+                {"filename": a["filename"],
+                 "data": _b64.b64decode(a["data_b64"]),
+                 "mime": a.get("mime", "application/octet-stream")}
+                for a in attachments if a.get("data_b64")
+            ] or None,
+        )
+        return {"ok": True}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
 # ── Envíos programados ───────────────────────────────────────────────────────
