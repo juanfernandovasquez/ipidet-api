@@ -1144,8 +1144,17 @@ async def comprobante_add(request: Request):
 
 
 @app.post("/comprobantes/import-xml")
-async def comprobantes_import_xml(files: List[UploadFile] = File(...)):
+async def comprobantes_import_xml(
+    files: List[UploadFile] = File(...),
+    items_map: str = Form("{}"),
+):
+    import json as _json
     from webapp.xml_parser import parse_sunat_xml
+    try:
+        items_map_dict = _json.loads(items_map)
+    except Exception:
+        items_map_dict = {}
+
     results = []
 
     for file in files:
@@ -1164,7 +1173,8 @@ async def comprobantes_import_xml(files: List[UploadFile] = File(...)):
 
         # Deduplicar por número de comprobante
         if pdb.comprobantes_col.find_one({"numero": numero}):
-            results.append({"filename": fname, "numero": numero, "status": "duplicado"})
+            results.append({"filename": fname, "numero": numero, "status": "duplicado",
+                            "tipo": data["tipo"], "empresa": data["razon_social"], "monto": data["monto_total"]})
             continue
 
         # Upsert empresa por RUC (solo si es RUC de 11 dígitos, no DNI)
@@ -1180,9 +1190,15 @@ async def comprobantes_import_xml(files: List[UploadFile] = File(...)):
             else:
                 empresa_nombre = existing_emp.get("nombre", empresa_nombre)
 
-        descs = [it["producto_nombre"] for it in data["items"] if it.get("producto_nombre")]
-        prod_nombre = descs[0] if descs else ""
-        concepto    = "; ".join(descs[:3])
+        # Items: usar los vinculados por el usuario si existen; si no, los del XML
+        user_items = items_map_dict.get(numero)
+        items = user_items if user_items else data["items"]
+
+        descs = [it["producto_nombre"] for it in items if it.get("producto_nombre")]
+        prod_nombre = descs[0] if len(descs) == 1 else (", ".join(sorted(set(descs))) if descs else "")
+        concepto    = "" if user_items else "; ".join(descs[:3])
+
+        socios = list({it["member_id"] for it in items if it.get("member_id")})
 
         pdb.create_comprobante(
             numero          = numero,
@@ -1192,8 +1208,8 @@ async def comprobantes_import_xml(files: List[UploadFile] = File(...)):
             producto_nombre = prod_nombre,
             concepto        = concepto,
             empresa         = empresa_nombre,
-            socios          = [],
-            items           = data["items"],
+            socios          = socios,
+            items           = items,
         )
 
         results.append({
@@ -1204,6 +1220,7 @@ async def comprobantes_import_xml(files: List[UploadFile] = File(...)):
             "empresa":       empresa_nombre,
             "empresa_nueva": empresa_nueva,
             "monto":         data["monto_total"],
+            "socios_count":  len(socios),
         })
 
     return {"results": results}

@@ -701,7 +701,7 @@
 
 <!-- Modal: Importar XML -->
 <div id="modal-xml" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col"
        x-data="{
          archivos: [],
          previews: [],
@@ -709,6 +709,7 @@
          importando: false,
          resultados: [],
          arrastrando: false,
+         productos: [],
          get hayArchivos()  { return this.archivos.length > 0; },
          get hayPreview()   { return this.previews.length > 0 && !this.listo; },
          get listo()        { return this.resultados.length > 0; },
@@ -731,29 +732,34 @@
            const CBS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
            const CAC = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
            const g = (el, tag, ns) => { const n = el ? el.getElementsByTagNameNS(ns, tag)[0] : null; return n ? n.textContent.trim() : ''; };
-           const numero    = g(doc, 'ID', CBS);
-           const tipoCode  = g(doc, 'InvoiceTypeCode', CBS);
-           const tipoMap   = { '01': 'factura', '03': 'boleta', '07': 'recibo', '08': 'recibo' };
-           const tipo      = tipoMap[tipoCode] || (numero.toUpperCase().startsWith('F') ? 'factura' : 'boleta');
-           const fecha     = g(doc, 'IssueDate', CBS);
-           const custEl    = doc.getElementsByTagNameNS(CAC, 'AccountingCustomerParty')[0];
-           const partyEl   = custEl ? custEl.getElementsByTagNameNS(CAC, 'Party')[0] : null;
-           const tsEl      = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyTaxScheme')[0] : null;
-           const leEl      = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyLegalEntity')[0] : null;
-           const pnEl      = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyName')[0] : null;
-           const ruc       = g(tsEl, 'CompanyID', CBS);
-           const empresa   = g(leEl, 'RegistrationName', CBS) || g(pnEl, 'Name', CBS);
-           const monetary  = doc.getElementsByTagNameNS(CAC, 'LegalMonetaryTotal')[0];
-           const monto     = parseFloat(g(monetary, 'PayableAmount', CBS)) || 0;
+           const numero   = g(doc, 'ID', CBS);
+           const tipoCode = g(doc, 'InvoiceTypeCode', CBS);
+           const tipoMap  = { '01': 'factura', '03': 'boleta', '07': 'recibo', '08': 'recibo' };
+           const tipo     = tipoMap[tipoCode] || (numero.toUpperCase().startsWith('F') ? 'factura' : 'boleta');
+           const fecha    = g(doc, 'IssueDate', CBS);
+           const custEl   = doc.getElementsByTagNameNS(CAC, 'AccountingCustomerParty')[0];
+           const partyEl  = custEl ? custEl.getElementsByTagNameNS(CAC, 'Party')[0] : null;
+           const tsEl     = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyTaxScheme')[0] : null;
+           const leEl     = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyLegalEntity')[0] : null;
+           const pnEl     = partyEl ? partyEl.getElementsByTagNameNS(CAC, 'PartyName')[0] : null;
+           const ruc      = g(tsEl, 'CompanyID', CBS);
+           const receptor = g(leEl, 'RegistrationName', CBS) || g(pnEl, 'Name', CBS);
+           const monetary = doc.getElementsByTagNameNS(CAC, 'LegalMonetaryTotal')[0];
+           const monto    = parseFloat(g(monetary, 'PayableAmount', CBS)) || 0;
            const esEmpresa = tipo === 'factura' && ruc && ruc.length === 11 && /^\d+$/.test(ruc);
-           return { filename: file.name, numero, tipo, fecha, ruc, empresa, monto, esEmpresa };
+           return { filename: file.name, numero, tipo, fecha, ruc, receptor, esEmpresa, monto };
          },
          async parsearArchivos() {
            this.previews = [];
            this.parseando = true;
            for (const f of this.archivos) {
-             try { this.previews.push(await this.parseXML(f)); }
-             catch(e) { this.previews.push({ filename: f.name, error: e.message }); }
+             try {
+               const p = await this.parseXML(f);
+               p.items    = [];
+               p.expanded = false;
+               this.previews.push(p);
+             }
+             catch(e) { this.previews.push({ filename: f.name, error: e.message, items: [], expanded: false }); }
            }
            this.parseando = false;
          },
@@ -773,11 +779,44 @@
            this.archivos.splice(i, 1);
            this.previews.splice(i, 1);
          },
+         agregarItemXml(p) {
+           p.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', monto: '' });
+         },
+         quitarItemXml(p, j) { p.items.splice(j, 1); },
+         async buscarSocioXml(item) {
+           if (item.sSearch.length < 2) { item.sResults = []; return; }
+           const r = await fetch('/api/members?search=' + encodeURIComponent(item.sSearch));
+           const d = await r.json();
+           item.sResults = (d.members || []).slice(0, 6);
+         },
+         elegirSocioXml(item, s) {
+           item.sid     = s.member_id;
+           item.snombre = ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id;
+           item.sSearch = item.snombre;
+           item.sResults = [];
+         },
+         cambiarProductoXml(item) {
+           const pr = this.productos.find(pr => pr.id === item.pid);
+           if (pr) { item.pnombre = pr.nombre; if (pr.precio != null) item.monto = pr.precio; }
+           else item.pnombre = '';
+         },
          async importar() {
            if (!this.hayArchivos || this.importando) return;
            this.importando = true;
            const fd = new FormData();
            this.archivos.forEach(f => fd.append('files', f));
+           const items_map = {};
+           this.previews.forEach(p => {
+             const valid = (p.items || []).filter(it => it.pid || it.pnombre);
+             if (p.numero && valid.length > 0) {
+               items_map[p.numero] = valid.map(it => ({
+                 member_id: it.sid || null,
+                 producto_nombre: it.pnombre,
+                 monto: parseFloat(it.monto) || 0,
+               }));
+             }
+           });
+           fd.append('items_map', JSON.stringify(items_map));
            try {
              const r = await fetch('/comprobantes/import-xml', { method: 'POST', body: fd });
              const d = await r.json();
@@ -793,7 +832,9 @@
            this.resultados = [];
            document.getElementById('modal-xml').classList.add('hidden');
          },
-       }">
+       }"
+       x-init="productos = JSON.parse($el.dataset.productos)"
+       data-productos='{{ productos_json | tojson }}'>
 
     <!-- Cabecera -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
@@ -848,7 +889,7 @@
           </div>
           <button type="button" @click="$refs.fileInput.click()"
                   class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-300 px-2.5 py-1 rounded-lg transition-colors">
-            <i class="fa-solid fa-plus text-[10px]"></i> Agregar mas
+            <i class="fa-solid fa-plus text-[10px]"></i> Agregar más
           </button>
         </div>
 
@@ -859,15 +900,17 @@
               <tr>
                 <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide w-20">Tipo</th>
                 <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">N° Comp.</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Empresa / Receptor</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Dirigido a</th>
                 <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Fecha</th>
                 <th class="text-right px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+                <th class="text-center px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Socios</th>
                 <th class="px-2 py-2 w-6"></th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
-              <template x-for="(p, i) in previews" :key="i">
-                <tr :class="p.error ? 'bg-red-50/50' : 'hover:bg-slate-50/50'">
+            <template x-for="(p, i) in previews" :key="i">
+              <tbody>
+                <!-- Fila principal -->
+                <tr :class="p.error ? 'bg-red-50/50' : 'hover:bg-slate-50/50'" class="border-t border-slate-100">
                   <td class="px-3 py-2">
                     <template x-if="!p.error">
                       <span :class="tipoBadge(p.tipo)"
@@ -879,23 +922,43 @@
                     </template>
                   </td>
                   <td class="px-3 py-2 font-mono text-slate-800" x-text="p.numero || p.filename"></td>
+                  <!-- Dirigido a -->
                   <td class="px-3 py-2 text-slate-600">
                     <template x-if="p.error">
                       <span class="text-red-500 italic text-[11px]" x-text="p.error"></span>
                     </template>
                     <template x-if="!p.error && p.esEmpresa">
-                      <span>
-                        <span x-text="p.empresa || p.ruc"></span>
-                        <span class="text-[10px] text-slate-400 font-mono ml-1" x-text="p.ruc ? '· ' + p.ruc : ''"></span>
+                      <span class="flex flex-col gap-0.5">
+                        <span class="font-medium text-slate-800" x-text="p.receptor || p.ruc"></span>
+                        <span class="text-[10px] text-slate-400 font-mono" x-text="p.ruc ? 'RUC ' + p.ruc : ''"></span>
                       </span>
                     </template>
-                    <template x-if="!p.error && !p.esEmpresa">
+                    <template x-if="!p.error && !p.esEmpresa && p.receptor">
+                      <span class="flex flex-col gap-0.5">
+                        <span class="text-slate-700" x-text="p.receptor"></span>
+                        <span class="text-[10px] text-slate-400 italic">persona natural</span>
+                      </span>
+                    </template>
+                    <template x-if="!p.error && !p.esEmpresa && !p.receptor">
                       <span class="text-slate-400 italic">Persona natural</span>
                     </template>
                   </td>
                   <td class="px-3 py-2 font-mono text-slate-400 text-[11px]" x-text="p.fecha || '—'"></td>
-                  <td class="px-3 py-2 text-right font-mono text-slate-700"
+                  <td class="px-3 py-2 text-right font-mono font-semibold text-slate-700"
                       x-text="p.monto != null ? 'S/ ' + p.monto.toFixed(2) : '—'"></td>
+                  <!-- Toggle socios -->
+                  <td class="px-3 py-2 text-center">
+                    <template x-if="!p.error">
+                      <button type="button" @click="p.expanded = !p.expanded"
+                              :class="p.items.length > 0
+                                ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200'
+                                : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200'"
+                              class="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors whitespace-nowrap">
+                        <i class="fa-solid fa-users text-[9px]"></i>
+                        <span x-text="p.items.length > 0 ? p.items.length + ' socio(s)' : 'Vincular'"></span>
+                      </button>
+                    </template>
+                  </td>
                   <td class="px-2 py-2 text-center">
                     <button type="button" @click="quitarArchivo(i)"
                             class="text-slate-300 hover:text-red-500 transition-colors">
@@ -903,8 +966,73 @@
                     </button>
                   </td>
                 </tr>
-              </template>
-            </tbody>
+                <!-- Fila expandida: vincular socios -->
+                <tr x-show="p.expanded" x-cloak class="border-t border-blue-100">
+                  <td colspan="7" class="px-0 py-0">
+                    <div class="bg-blue-50/40 px-4 py-3 border-b border-blue-100">
+                      <div class="flex items-center justify-between mb-2.5">
+                        <span class="text-[11px] font-bold text-blue-700 uppercase tracking-widest flex items-center gap-1.5">
+                          <i class="fa-solid fa-users text-[10px]"></i> Vincular socios y productos
+                        </span>
+                        <button type="button" @click="agregarItemXml(p)"
+                                class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 bg-white hover:bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors">
+                          <i class="fa-solid fa-plus text-[9px]"></i> Agregar socio
+                        </button>
+                      </div>
+
+                      <template x-if="p.items.length === 0">
+                        <p class="text-[11px] text-slate-400 italic py-1">Sin socios vinculados — haz clic en "Agregar socio" para asociar.</p>
+                      </template>
+
+                      <div class="space-y-1.5">
+                        <template x-for="(item, j) in p.items" :key="j">
+                          <div class="grid items-center gap-2 bg-white rounded-lg px-2 py-1.5 border border-slate-100"
+                               style="grid-template-columns: 1fr 10rem 5rem 1.5rem">
+
+                            <!-- Socio autocomplete -->
+                            <div class="relative">
+                              <input type="text" x-model="item.sSearch"
+                                     @input.debounce.300ms="buscarSocioXml(item)"
+                                     @blur.debounce.200ms="item.sResults = []"
+                                     placeholder="Buscar socio…"
+                                     class="input w-full text-xs py-1.5">
+                              <div x-show="item.sResults.length > 0"
+                                   class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-40 overflow-y-auto">
+                                <template x-for="s in item.sResults" :key="s.member_id">
+                                  <button type="button" @mousedown.prevent="elegirSocioXml(item, s)"
+                                          class="w-full text-left px-2.5 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0 flex gap-2">
+                                    <span class="font-mono text-slate-400 shrink-0" x-text="s.member_id"></span>
+                                    <span class="truncate" x-text="(s.apellidos || '') + ' ' + (s.nombres || '')"></span>
+                                  </button>
+                                </template>
+                              </div>
+                            </div>
+
+                            <!-- Producto -->
+                            <select x-model="item.pid" @change="cambiarProductoXml(item)" class="input w-full text-xs py-1.5">
+                              <option value="">— Producto —</option>
+                              <template x-for="pr in productos" :key="pr.id">
+                                <option :value="pr.id" x-text="pr.nombre"></option>
+                              </template>
+                            </select>
+
+                            <!-- Monto -->
+                            <input type="number" step="0.01" x-model="item.monto"
+                                   placeholder="0.00" class="input w-full text-xs py-1.5 text-right font-mono">
+
+                            <!-- Quitar -->
+                            <button type="button" @click="quitarItemXml(p, j)"
+                                    class="flex items-center justify-center text-slate-300 hover:text-red-500 p-1 rounded transition-colors">
+                              <i class="fa-solid fa-xmark text-xs"></i>
+                            </button>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </template>
           </table>
         </div>
       </div>
@@ -936,7 +1064,8 @@
               <tr>
                 <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide w-20">Tipo</th>
                 <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">N° Comp.</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Empresa / Receptor</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Dirigido a</th>
+                <th class="text-center px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Socios</th>
                 <th class="text-right px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
                 <th class="px-3 py-2 text-center font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
               </tr>
@@ -974,7 +1103,18 @@
                       <span class="text-slate-400 italic">Persona natural</span>
                     </template>
                   </td>
-                  <td class="px-3 py-2 text-right font-mono text-slate-700"
+                  <td class="px-3 py-2 text-center">
+                    <template x-if="r.socios_count > 0">
+                      <span class="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                        <i class="fa-solid fa-users text-[8px]"></i>
+                        <span x-text="r.socios_count"></span>
+                      </span>
+                    </template>
+                    <template x-if="!r.socios_count">
+                      <span class="text-slate-300">—</span>
+                    </template>
+                  </td>
+                  <td class="px-3 py-2 text-right font-mono font-semibold text-slate-700"
                       x-text="r.monto != null ? 'S/ ' + r.monto.toFixed(2) : '—'"></td>
                   <td class="px-3 py-2 text-center">
                     <span x-show="r.status === 'importado'"
