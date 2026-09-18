@@ -1056,6 +1056,26 @@ async def billing_ingresos(
 
 # ── Comprobantes ──────────────────────────────────────────────────────────────
 
+@app.get("/comprobantes/preparar", response_class=HTMLResponse)
+async def comprobantes_preparar(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login")
+    productos_raw = pdb.get_productos(solo_activos=True)
+    productos_json = [
+        {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"),
+         "tipo": p.get("tipo", ""), "periodo": p.get("periodo", ""),
+         "codigo_sunat": p.get("codigo_sunat", "")}
+        for p in productos_raw
+    ]
+    empresas = pdb.get_all_companies()
+    return templates.TemplateResponse(request, "comprobantes_preparar.html", _ctx(
+        request,
+        productos_json = productos_json,
+        empresas       = empresas,
+    ))
+
+
 @app.get("/comprobantes", response_class=HTMLResponse)
 async def comprobantes_list(
     request:  Request,
