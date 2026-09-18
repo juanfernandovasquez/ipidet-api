@@ -131,28 +131,44 @@ async def _ejecutar_programados():
             continue
 
         try:
-            asunto      = envio.get("asunto", "")
-            cuerpo      = envio.get("cuerpo", "")
-            disclaimer  = envio.get("disclaimer", True)
-            destinatarios = envio.get("destinatarios", [])
+            asunto          = envio.get("asunto", "")
+            cuerpo          = envio.get("cuerpo", "")
+            disclaimer      = envio.get("disclaimer", True)
+            destinatarios   = envio.get("destinatarios", [])
+            imagenes_inline = envio.get("imagenes_inline", [])
 
             mensajes = []
+            inline_atts: list = []
             for d in destinatarios:
                 email  = d.get("email", "")
                 nombre = d.get("nombre", "")
                 if not email:
                     continue
                 cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
-                cuerpo_html = cuerpo_p.replace("\n", "<br>")
-                html = mailer._base_html(
-                    f'<p style="color:#475569;line-height:1.7">{cuerpo_html}</p>',
-                    disclaimer=disclaimer,
-                )
+                cuerpo_html = mailer._render_body(cuerpo_p)
+                full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
+                if imagenes_inline and not inline_atts:
+                    import re as _re_sched
+                    for img in imagenes_inline:
+                        cid = img.get("id", "")
+                        if not cid:
+                            continue
+                        pat = r'src="data:[^"]*"(\s+data-inline-id="' + _re_sched.escape(cid) + r'")'
+                        full_html = _re_sched.sub(pat, f'src="cid:{cid}"\\1', full_html)
+                        inline_atts.append({
+                            "filename":   img.get("filename", f"{cid}.png"),
+                            "data_b64":   img.get("data_b64", ""),
+                            "mime":       img.get("mime", "image/png"),
+                            "content_id": cid,
+                        })
+                html = mailer._base_html(full_html, disclaimer=disclaimer)
                 asunto_p = asunto.replace("{{nombre}}", nombre)
                 mensajes.append({"to": email, "nombre": nombre,
                                   "subject": asunto_p, "html_body": html})
 
-            enviados, fallidos, _, fallidos_detalle = await mailer.send_bulk(mensajes)
+            enviados, fallidos, _, fallidos_detalle = await mailer.send_bulk(
+                mensajes, attachments=inline_atts or None
+            )
 
             try:
                 pdb.save_comunicacion_log(

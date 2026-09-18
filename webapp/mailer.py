@@ -71,6 +71,18 @@ def _send_api(to: str, subject: str, html_body: str,
     }
     if reply_to:
         payload["replyTo"] = {"email": reply_to}
+    att_brevo = []
+    for a in (attachments or []):
+        raw = a.get("data") or b""
+        item = {
+            "name":    a["filename"],
+            "content": _b64.b64encode(raw).decode() if isinstance(raw, bytes) else a.get("data_b64", ""),
+        }
+        if a.get("content_id"):
+            item["contentId"] = a["content_id"]
+        att_brevo.append(item)
+    if att_brevo:
+        payload["attachment"] = att_brevo
     req = urllib.request.Request(
         "https://api.brevo.com/v3/smtp/email",
         data=_json.dumps(payload).encode("utf-8"),
@@ -177,7 +189,10 @@ def _send_bulk_api(mensajes: list[dict], attachments: list[dict] | None = None) 
     # Preparar adjuntos en formato Brevo (base64 ya listo)
     att_brevo = []
     for a in (attachments or []):
-        att_brevo.append({"name": a["filename"], "content": a.get("data_b64", "")})
+        item = {"name": a["filename"], "content": a.get("data_b64", "")}
+        if a.get("content_id"):
+            item["contentId"] = a["content_id"]
+        att_brevo.append(item)
 
     for m in mensajes:
         body: dict = {

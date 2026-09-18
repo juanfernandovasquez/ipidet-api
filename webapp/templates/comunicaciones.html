@@ -416,10 +416,83 @@
 
         <!-- Toolbar imagen -->
         <div class="flex items-center gap-1 mb-1">
-          <button type="button" @click="insertarImagen()"
-                  class="text-xs px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
-            <i class="fa-solid fa-image mr-1"></i> Imagen
-          </button>
+
+          <!-- Botón Imagen con panel -->
+          <div class="relative">
+            <button type="button"
+                    @click="imagenPanel = !imagenPanel"
+                    :class="imagenPanel ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'"
+                    class="text-xs px-2 py-1 rounded border transition-colors">
+              <i class="fa-solid fa-image mr-1"></i> Imagen
+            </button>
+
+            <div x-show="imagenPanel" x-cloak
+                 @click.outside="imagenPanel = false"
+                 class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 w-72 p-4">
+
+              <!-- Tabs -->
+              <div class="flex border-b border-slate-200 mb-3 text-xs font-medium">
+                <button type="button"
+                        @click="imagenTab = 'archivo'"
+                        :class="imagenTab === 'archivo' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'"
+                        class="flex-1 pb-2 transition-colors">
+                  <i class="fa-solid fa-upload mr-1"></i> Subir archivo
+                </button>
+                <button type="button"
+                        @click="imagenTab = 'url'"
+                        :class="imagenTab === 'url' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'"
+                        class="flex-1 pb-2 transition-colors">
+                  <i class="fa-solid fa-link mr-1"></i> URL pública
+                </button>
+              </div>
+
+              <!-- Tab: subir archivo -->
+              <div x-show="imagenTab === 'archivo'">
+                <label class="flex items-center gap-2 cursor-pointer bg-slate-50 border border-dashed border-slate-300 rounded-lg px-3 py-2.5 hover:bg-slate-100 transition-colors text-xs text-slate-500 mb-2">
+                  <i class="fa-solid fa-upload text-slate-400"></i>
+                  <span x-text="imagenArchivoNombre || 'Elegir imagen (PNG, JPG, GIF…)'"></span>
+                  <input type="file" accept="image/*" class="hidden" @change="cargarImagenArchivo($event)">
+                </label>
+                <div class="rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center mb-3 overflow-hidden" style="min-height:80px">
+                  <img x-show="imagenArchivoPreview" :src="imagenArchivoPreview"
+                       class="max-w-full max-h-36 object-contain p-1">
+                  <p x-show="!imagenArchivoPreview" class="text-xs text-slate-400">
+                    <i class="fa-regular fa-image mr-1"></i> Vista previa
+                  </p>
+                </div>
+                <button type="button" @click="insertarImagenDesdeArchivo()"
+                        :disabled="!imagenArchivoPreview"
+                        class="btn-primary w-full text-xs py-1.5 disabled:opacity-40">
+                  <i class="fa-solid fa-plus mr-1"></i> Insertar en el mensaje
+                </button>
+              </div>
+
+              <!-- Tab: URL pública -->
+              <div x-show="imagenTab === 'url'">
+                <input x-model="imagenUrl" type="url" placeholder="https://…"
+                       class="input w-full text-sm mb-2" @input="imagenUrlError = false">
+                <div class="rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center mb-3 overflow-hidden" style="min-height:80px">
+                  <img x-show="imagenUrl.trim() && !imagenUrlError"
+                       :src="imagenUrl"
+                       class="max-w-full max-h-36 object-contain p-1"
+                       @error="imagenUrlError = true"
+                       @load="imagenUrlError = false">
+                  <p x-show="imagenUrlError" class="text-xs text-red-500 px-3 text-center">
+                    <i class="fa-solid fa-triangle-exclamation mr-1"></i> No se pudo cargar la imagen desde esa URL.
+                  </p>
+                  <p x-show="!imagenUrl.trim()" class="text-xs text-slate-400">
+                    <i class="fa-regular fa-image mr-1"></i> Vista previa
+                  </p>
+                </div>
+                <button type="button" @click="insertarImagenDesdeUrl()"
+                        :disabled="!imagenUrl.trim() || imagenUrlError"
+                        class="btn-primary w-full text-xs py-1.5 disabled:opacity-40">
+                  <i class="fa-solid fa-plus mr-1"></i> Insertar en el mensaje
+                </button>
+              </div>
+            </div>
+          </div>
+
           <button type="button" @click="insertarLink()"
                   class="text-xs px-2 py-1 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors">
             <i class="fa-solid fa-link mr-1"></i> Enlace
@@ -894,6 +967,17 @@ function comunicaciones() {
     // Adjuntos
     adjuntos: [],
 
+    // Imágenes inline
+    imagenesInline:       [],
+    imgCounter:           0,
+    imagenPanel:          false,
+    imagenTab:            'archivo',
+    imagenUrl:            '',
+    imagenUrlError:       false,
+    imagenArchivoNombre:  '',
+    imagenArchivoPreview: null,
+    imagenArchivoData:    null,
+
     // Correo de prueba
     emailPrueba:     '',
     enviandoPrueba:  false,
@@ -1066,10 +1150,11 @@ function comunicaciones() {
             asunto:        this.asunto,
             cuerpo:        this.cuerpo,
             plantilla:     this.plantilla,
-            disclaimer:    this.disclaimer,
-            destinatarios: this.seleccionados,
-            filtros:       { ...this.filtros, periodo: this._periodoParaFiltro() },
-            attachments:   this.adjuntos,
+            disclaimer:     this.disclaimer,
+            destinatarios:  this.seleccionados,
+            filtros:        { ...this.filtros, periodo: this._periodoParaFiltro() },
+            attachments:    this.adjuntos,
+            imagenesInline: this.imagenesInline,
           }),
         });
         const data = await r.json();
@@ -1121,10 +1206,39 @@ function comunicaciones() {
 
     // ── Imagen / Enlace en cuerpo ─────────────────────────────────────────────
 
-    insertarImagen() {
-      const url = prompt('URL de la imagen (debe ser pública):');
-      if (!url) return;
+    async cargarImagenArchivo(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      this.imagenArchivoNombre = file.name;
+      const data_b64 = await new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result.split(',')[1]);
+        reader.readAsDataURL(file);
+      });
+      this.imagenArchivoPreview = `data:${file.type || 'image/png'};base64,${data_b64}`;
+      this.imagenArchivoData    = { data_b64, mime: file.type || 'image/png', filename: file.name };
+      event.target.value = '';
+    },
+
+    insertarImagenDesdeArchivo() {
+      if (!this.imagenArchivoData || !this.imagenArchivoPreview) return;
+      const id = `img_${this.imgCounter++}`;
+      this.imagenesInline.push({ id, ...this.imagenArchivoData });
+      this.insertAtCursor(
+        `<img src="${this.imagenArchivoPreview}" data-inline-id="${id}" style="max-width:100%;height:auto;display:block;margin:8px 0">`
+      );
+      this.imagenPanel          = false;
+      this.imagenArchivoPreview = null;
+      this.imagenArchivoNombre  = '';
+      this.imagenArchivoData    = null;
+    },
+
+    insertarImagenDesdeUrl() {
+      const url = this.imagenUrl.trim();
+      if (!url || this.imagenUrlError) return;
       this.insertAtCursor(`<img src="${url}" style="max-width:100%;height:auto;display:block;margin:8px 0">`);
+      this.imagenPanel = false;
+      this.imagenUrl   = '';
     },
 
     insertarLink() {
@@ -1159,10 +1273,11 @@ function comunicaciones() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email_prueba: this.emailPrueba,
-            asunto:       this.asunto,
-            cuerpo:       this.cuerpo,
-            disclaimer:   this.disclaimer,
-            attachments:  this.adjuntos,
+            asunto:         this.asunto,
+            cuerpo:         this.cuerpo,
+            disclaimer:     this.disclaimer,
+            attachments:    this.adjuntos,
+            imagenesInline: this.imagenesInline,
           }),
         });
         const data = await r.json();
@@ -1247,12 +1362,13 @@ function comunicaciones() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            asunto:        this.asunto,
-            cuerpo:        this.cuerpo,
-            disclaimer:    this.disclaimer,
-            destinatarios: sel,
-            filtros:       { ...this.filtros, periodo: this._periodoParaFiltro() },
-            fecha_envio:   this.fechaProgramada.slice(0, 16) + ':00',
+            asunto:         this.asunto,
+            cuerpo:         this.cuerpo,
+            disclaimer:     this.disclaimer,
+            destinatarios:  sel,
+            filtros:        { ...this.filtros, periodo: this._periodoParaFiltro() },
+            fecha_envio:    this.fechaProgramada.slice(0, 16) + ':00',
+            imagenesInline: this.imagenesInline,
           }),
         });
         const data = await r.json();

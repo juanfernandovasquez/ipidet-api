@@ -2395,21 +2395,24 @@ programados_col = _db.comunicaciones_programadas
 
 def create_envio_programado(asunto: str, cuerpo: str, filtros: dict,
                              destinatarios: list, fecha_envio: str,
-                             disclaimer: bool = True) -> str:
+                             disclaimer: bool = True,
+                             imagenes_inline: list | None = None) -> str:
     """
     fecha_envio: ISO 8601 string en UTC, ej. "2026-09-18T14:00:00"
     destinatarios: lista de dicts con {member_id, nombre, email, ...}
+    imagenes_inline: [{id, filename, data_b64, mime}] — imágenes embebidas como CID
     """
     doc = {
-        "asunto":        asunto.strip(),
-        "cuerpo":        cuerpo.strip(),
-        "filtros":       filtros,
-        "destinatarios": destinatarios,
-        "fecha_envio":   fecha_envio,
-        "disclaimer":    disclaimer,
-        "estado":        "pendiente",
-        "resultado":     None,
-        "created_at":    datetime.now(timezone.utc),
+        "asunto":          asunto.strip(),
+        "cuerpo":          cuerpo.strip(),
+        "filtros":         filtros,
+        "destinatarios":   destinatarios,
+        "fecha_envio":     fecha_envio,
+        "disclaimer":      disclaimer,
+        "imagenes_inline": imagenes_inline or [],
+        "estado":          "pendiente",
+        "resultado":       None,
+        "created_at":      datetime.now(timezone.utc),
     }
     return str(programados_col.insert_one(doc).inserted_id)
 

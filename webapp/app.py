@@ -1343,6 +1343,29 @@ async def comunicaciones_preview(request: Request):
     return {"total": len(destinatarios), "destinatarios": destinatarios}
 
 
+def _process_inline_images(html: str, imagenesInline: list) -> tuple[str, list]:
+    """
+    Sustituye data: URLs de imágenes inline por referencias CID.
+    Devuelve (html_procesado, inline_attachments).
+    inline_attachments contiene {filename, data_b64, mime, content_id}.
+    """
+    inline_atts = []
+    for img in imagenesInline:
+        cid = img.get("id", "")
+        if not cid:
+            continue
+        # El tag generado siempre tiene: src="data:..." data-inline-id="CID"
+        pattern = r'src="data:[^"]*"(\s+data-inline-id="' + re.escape(cid) + r'")'
+        html    = re.sub(pattern, f'src="cid:{cid}"\\1', html)
+        inline_atts.append({
+            "filename":   img.get("filename", f"{cid}.png"),
+            "data_b64":   img.get("data_b64", ""),
+            "mime":       img.get("mime", "image/png"),
+            "content_id": cid,
+        })
+    return html, inline_atts
+
+
 @app.post("/api/comunicaciones/enviar")
 async def comunicaciones_enviar(request: Request):
     data          = await request.json()
@@ -1358,7 +1381,8 @@ async def comunicaciones_enviar(request: Request):
         return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
 
     disclaimer      = data.get("disclaimer", True)
-    attachments_raw = data.get("attachments", [])  # [{"filename", "data_b64", "mime"}]
+    attachments_raw = data.get("attachments", [])
+    imagenesInline  = data.get("imagenesInline", [])
 
     mensajes = []
     for d in destinatarios:
@@ -1368,14 +1392,17 @@ async def comunicaciones_enviar(request: Request):
         asunto_p    = asunto.replace("{{nombre}}", nombre)
         cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
         cuerpo_html = mailer._render_body(cuerpo_p)
-        html_body   = mailer._base_html(
-            f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>',
-            disclaimer=disclaimer,
-        )
+        full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
+        if imagenesInline:
+            full_html, inline_atts = _process_inline_images(full_html, imagenesInline)
+        else:
+            inline_atts = []
+        html_body = mailer._base_html(full_html, disclaimer=disclaimer)
         mensajes.append({"to": d["email"], "nombre": nombre, "subject": asunto_p, "html_body": html_body})
 
+    all_attachments = list(attachments_raw) + inline_atts if imagenesInline else list(attachments_raw)
     enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(
-        mensajes, attachments=attachments_raw or None
+        mensajes, attachments=all_attachments or None
     )
 
     if enviados == 0 and fallidos > 0:
@@ -1453,21 +1480,31 @@ async def comunicaciones_enviar_prueba(request: Request):
         'padding:6px 16px;font-size:11px;font-weight:600;letter-spacing:.5px">'
         '✉ CORREO DE PRUEBA — No enviar a destinatarios reales</div>'
     )
-    html_body = mailer._base_html(
-        f'{banner}<div style="color:#475569;line-height:1.7;margin-top:16px">{cuerpo_html}</div>',
-        disclaimer=disclaimer,
-    )
+    full_html = f'{banner}<div style="color:#475569;line-height:1.7;margin-top:16px">{cuerpo_html}</div>'
+    imagenesInline = data.get("imagenesInline", [])
+    inline_atts: list = []
+    if imagenesInline:
+        full_html, inline_atts = _process_inline_images(full_html, imagenesInline)
+    html_body = mailer._base_html(full_html, disclaimer=disclaimer)
+    regular_atts = [
+        {"filename": a["filename"],
+         "data": _b64.b64decode(a["data_b64"]),
+         "mime": a.get("mime", "application/octet-stream")}
+        for a in attachments if a.get("data_b64")
+    ]
+    # Inline images para send_email usan data_b64 (Brevo API) en lugar de data bytes
+    inline_atts_api = [
+        {"filename": a["filename"], "data_b64": a["data_b64"],
+         "mime": a["mime"], "content_id": a["content_id"]}
+        for a in inline_atts
+    ]
+    all_atts = regular_atts + inline_atts_api
     try:
         await mailer.send_email(
             email_prueba,
             f"[PRUEBA] {asunto.replace('{{nombre}}', nombre_muestra)}",
             html_body,
-            attachments=[
-                {"filename": a["filename"],
-                 "data": _b64.b64decode(a["data_b64"]),
-                 "mime": a.get("mime", "application/octet-stream")}
-                for a in attachments if a.get("data_b64")
-            ] or None,
+            attachments=all_atts or None,
         )
         return {"ok": True}
     except Exception as exc:
@@ -1489,6 +1526,7 @@ async def comunicaciones_programar(request: Request):
     if not asunto or not cuerpo or not fecha_envio or not destinatarios:
         return JSONResponse({"error": "Faltan campos obligatorios."}, status_code=400)
 
+    imagenesInline = data.get("imagenesInline", [])
     envio_id = pdb.create_envio_programado(
         asunto=asunto,
         cuerpo=cuerpo,
@@ -1496,6 +1534,7 @@ async def comunicaciones_programar(request: Request):
         destinatarios=destinatarios,
         fecha_envio=fecha_envio,
         disclaimer=disclaimer,
+        imagenes_inline=imagenesInline or None,
     )
     return {"ok": True, "id": envio_id}
 
