@@ -1058,9 +1058,6 @@ async def billing_ingresos(
 
 @app.get("/comprobantes/preparar", response_class=HTMLResponse)
 async def comprobantes_preparar(request: Request):
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/login")
     productos_raw = pdb.get_productos(solo_activos=True)
     productos_json = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"),
