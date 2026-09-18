@@ -127,6 +127,9 @@
         <i class="fa-solid fa-building"></i> Empresas
       </a>
       {% endif %}
+      <a href="/comprobantes" class="sidebar-link {% if '/comprobantes' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-receipt"></i> Comprobantes
+      </a>
 
       {% if is_admin or 'billing' in p or 'fraccionamientos' in p or 'finanzas' in p %}
       <div class="sidebar-section">Finanzas</div>

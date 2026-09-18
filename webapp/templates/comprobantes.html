@@ -21,25 +21,6 @@
     </a>
   </th>
 {% endmacro %}
-<!-- Tabs -->
-<div class="flex gap-1 mb-5 border-b border-slate-200 flex-wrap">
-  <a href="/billing" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-money-bill-wave mr-1.5"></i> Cobranzas
-  </a>
-  <a href="/billing/ingresos" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-arrow-trend-up mr-1.5"></i> Ingresos
-  </a>
-  <a href="/billing/facturacion" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-clock mr-1.5"></i> Sin Comprobante
-  </a>
-  <a href="/comprobantes" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-blue-600 text-blue-600 bg-white">
-    <i class="fa-solid fa-receipt mr-1.5"></i> Comprobantes
-  </a>
-  <a href="/billing/credito" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-building-columns mr-1.5"></i> Crédito
-  </a>
-</div>
-
 <!-- Stats -->
 <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-5">
   <div class="bg-white rounded-xl border border-slate-200 p-4">
@@ -132,10 +113,21 @@
       {% for c in comprobantes %}
       <tbody x-data="{
         open: false,
+        syncing: false,
+        syncResult: null,
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
           const r = await fetch('/comprobantes/{{ c._id }}/delete', { method: 'POST' });
           if (r.ok) location.reload();
+        },
+        async sincronizar() {
+          this.syncing = true;
+          this.syncResult = null;
+          const r = await fetch('/comprobantes/{{ c._id }}/sync', { method: 'POST' });
+          const d = await r.json();
+          this.syncResult = d;
+          this.syncing = false;
+          this.open = true;
         },
       }">
       <!-- Fila principal -->
@@ -191,6 +183,13 @@
               class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
               <i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar
             </button>
+            {% if c.lineas %}
+            <button @click="sincronizar()" :disabled="syncing"
+              class="text-xs text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded hover:bg-emerald-50 transition-colors disabled:opacity-50"
+              title="Sincronizar con cobranzas">
+              <i class="fa-solid text-[10px]" :class="syncing ? 'fa-circle-notch fa-spin' : 'fa-rotate'"></i>
+            </button>
+            {% endif %}
             <button @click="eliminar()"
               class="text-slate-300 hover:text-red-500 transition-colors p-1">
               <i class="fa-solid fa-trash-can text-xs"></i>
@@ -256,6 +255,55 @@
           {% if c.concepto %}
           <p class="text-xs text-slate-400 mt-2"><i class="fa-solid fa-comment-dots mr-1"></i>{{ c.concepto }}</p>
           {% endif %}
+
+          <!-- Resultado de sincronización -->
+          <div x-show="syncResult" x-cloak class="mt-3 border border-slate-200 rounded-xl overflow-hidden">
+            <div class="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                <i class="fa-solid fa-rotate text-[10px]"></i> Resultado de sincronización
+              </span>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="text-emerald-700 font-medium" x-text="(syncResult?.cruce_ok || 0) + ' pagos actualizados'"></span>
+                <span x-show="syncResult?.cruce_alerts > 0"
+                      class="text-orange-700 font-medium flex items-center gap-1">
+                  <i class="fa-solid fa-triangle-exclamation text-[9px]"></i>
+                  <span x-text="syncResult.cruce_alerts + ' alertas'"></span>
+                </span>
+                <span x-show="syncResult?.msg" class="text-slate-500 italic" x-text="syncResult?.msg"></span>
+              </div>
+            </div>
+            <template x-if="syncResult?.cruce_items?.length > 0">
+              <table class="w-full text-[11px]">
+                <thead class="bg-slate-50">
+                  <tr class="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                    <th class="px-3 py-1.5">Socio</th>
+                    <th class="px-3 py-1.5">Producto</th>
+                    <th class="px-3 py-1.5">Código</th>
+                    <th class="px-3 py-1.5 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="ci in syncResult.cruce_items" :key="ci.member_id + ci.codigo_sunat">
+                    <tr class="border-t border-slate-100">
+                      <td class="px-3 py-1.5 font-mono text-slate-700" x-text="ci.member_id || '—'"></td>
+                      <td class="px-3 py-1.5 text-slate-600" x-text="ci.producto || '—'"></td>
+                      <td class="px-3 py-1.5 font-mono text-slate-400" x-text="ci.codigo_sunat || '—'"></td>
+                      <td class="px-3 py-1.5 text-center">
+                        <span :class="{
+                          'bg-emerald-100 text-emerald-700 border-emerald-200': ci.color === 'green',
+                          'bg-blue-100 text-blue-700 border-blue-200':          ci.color === 'blue',
+                          'bg-amber-100 text-amber-700 border-amber-200':        ci.color === 'amber',
+                          'bg-red-100 text-red-700 border-red-200':              ci.color === 'red',
+                        }" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border font-medium text-[10px]"
+                           x-text="ci.label"></span>
+                        <div x-show="ci.msg" class="text-[10px] text-slate-400 mt-0.5 text-left" x-text="ci.msg"></div>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </template>
+          </div>
         </td>
       </tr>
       </tbody>
@@ -756,7 +804,46 @@
            const monetary = doc.getElementsByTagNameNS(CAC, 'LegalMonetaryTotal')[0];
            const monto    = parseFloat(g(monetary, 'PayableAmount', CBS)) || 0;
            const esEmpresa = tipo === 'factura' && ruc && ruc.length === 11 && /^\d+$/.test(ruc);
-           return { filename: file.name, numero, tipo, fecha, ruc, receptor, esEmpresa, monto };
+           // Parsear líneas de detalle
+           const hasCreditLine = doc.getElementsByTagNameNS(CAC, 'CreditNoteLine').length > 0;
+           const hasDebitLine  = doc.getElementsByTagNameNS(CAC, 'DebitNoteLine').length > 0;
+           const lineTag = hasCreditLine ? 'CreditNoteLine' : hasDebitLine ? 'DebitNoteLine' : 'InvoiceLine';
+           const xmlItems = [];
+           for (const line of doc.getElementsByTagNameNS(CAC, lineTag)) {
+             const itemEl = line.getElementsByTagNameNS(CAC, 'Item')[0];
+             const desc         = g(itemEl, 'Description', CBS);
+             const siEl         = itemEl ? itemEl.getElementsByTagNameNS(CAC, 'SellersItemIdentification')[0] : null;
+             const codigoSunat  = g(siEl, 'ID', CBS);
+             const lineMonetary = parseFloat(g(line, 'LineExtensionAmount', CBS)) || 0;
+             const memberMatch  = /^(IPIDET-\d+)/i.exec(desc);
+             const memberId     = memberMatch ? memberMatch[1].toUpperCase() : null;
+             xmlItems.push({ desc, codigoSunat, monto: lineMonetary, memberId });
+           }
+           // fallback: si no hay líneas pero sí monto total, crear un item vacío
+           if (xmlItems.length === 0) xmlItems.push({ desc: '', codigoSunat: '', monto, memberId: null });
+           return { filename: file.name, numero, tipo, fecha, ruc, receptor, esEmpresa, monto, xmlItems };
+         },
+         itemFromXml(xi) {
+           const prod = xi.codigoSunat
+             ? this.productos.find(p => p.codigo_sunat && p.codigo_sunat === xi.codigoSunat)
+             : null;
+           const prodByName = !prod && xi.desc
+             ? this.productos.find(p => p.nombre.toLowerCase() === xi.desc.toLowerCase())
+             : null;
+           const matched = prod || prodByName;
+           return {
+             sid: xi.memberId || '', snombre: xi.memberId || '',
+             sSearch: xi.memberId || '', sResults: [],
+             pid:    matched ? matched.id : '',
+             pnombre: matched ? matched.nombre : '',
+             pcode:   matched ? (matched.codigo_sunat || '') : (xi.codigoSunat || ''),
+             monto:   xi.monto || '',
+             pSearchQ: matched ? matched.nombre : '',
+             pSearchRes: [],
+             xmlDesc:   xi.desc,
+             xmlCode:   xi.codigoSunat || '',
+             autoMatched: !!matched,
+           };
          },
          async parsearArchivos() {
            this.previews = [];
@@ -764,8 +851,9 @@
            for (const f of this.archivos) {
              try {
                const p = await this.parseXML(f);
-               p.items    = [];
-               p.expanded = false;
+               p.items    = (p.xmlItems || []).map(xi => this.itemFromXml(xi));
+               if (p.items.length === 0) p.items = [this.itemFromXml({desc:'',codigoSunat:'',monto:0,memberId:null})];
+               p.expanded = p.items.some(it => it.xmlCode || it.xmlDesc || it.sid);
                this.previews.push(p);
              }
              catch(e) { this.previews.push({ filename: f.name, error: e.message, items: [], expanded: false }); }
@@ -789,7 +877,7 @@
            this.previews.splice(i, 1);
          },
          agregarItemXml(p) {
-           p.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '' });
+           p.items.push(this.itemFromXml({desc:'',codigoSunat:'',monto:0,memberId:null}));
          },
          quitarItemXml(p, j) { p.items.splice(j, 1); },
          async buscarSocioXml(item) {
@@ -807,13 +895,34 @@
          cambiarProductoXml(item) {
            const pr = this.productos.find(pr => pr.id === item.pid);
            if (pr) {
-             item.pnombre = pr.nombre;
-             item.pcode   = pr.codigo_sunat || '';
-             if (pr.precio != null) item.monto = pr.precio;
+             item.pnombre    = pr.nombre;
+             item.pcode      = pr.codigo_sunat || '';
+             item.pSearchQ   = pr.nombre;
+             item.autoMatched = false;
+             if (pr.precio != null && !item.monto) item.monto = pr.precio;
            } else {
              item.pnombre = '';
              item.pcode   = '';
+             item.pSearchQ = '';
            }
+           item.pSearchRes = [];
+         },
+         buscarProductoXml(item) {
+           const q = (item.pSearchQ || '').toLowerCase().trim();
+           if (q.length < 1) { item.pSearchRes = []; return; }
+           item.pSearchRes = this.productos.filter(p =>
+             p.nombre.toLowerCase().includes(q) ||
+             (p.codigo_sunat || '').toLowerCase().includes(q)
+           ).slice(0, 8);
+         },
+         elegirProductoXml(item, pr) {
+           item.pid        = pr.id;
+           item.pnombre    = pr.nombre;
+           item.pcode      = pr.codigo_sunat || '';
+           item.pSearchQ   = pr.nombre;
+           item.pSearchRes = [];
+           item.autoMatched = false;
+           if (pr.precio != null && !item.monto) item.monto = pr.precio;
          },
          async importar() {
            if (!this.hayArchivos || this.importando) return;
@@ -1003,45 +1112,77 @@
 
                       <div class="space-y-1.5">
                         <template x-for="(item, j) in p.items" :key="j">
-                          <div class="grid items-center gap-2 bg-white rounded-lg px-2 py-1.5 border border-slate-100"
-                               style="grid-template-columns: 1fr 10rem 5rem 1.5rem">
-
-                            <!-- Socio autocomplete -->
-                            <div class="relative">
-                              <input type="text" x-model="item.sSearch"
-                                     @input.debounce.300ms="buscarSocioXml(item)"
-                                     @blur.debounce.200ms="item.sResults = []"
-                                     placeholder="Buscar socio…"
-                                     class="input w-full text-xs py-1.5">
-                              <div x-show="item.sResults.length > 0"
-                                   class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-40 overflow-y-auto">
-                                <template x-for="s in item.sResults" :key="s.member_id">
-                                  <button type="button" @mousedown.prevent="elegirSocioXml(item, s)"
-                                          class="w-full text-left px-2.5 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0 flex gap-2">
-                                    <span class="font-mono text-slate-400 shrink-0" x-text="s.member_id"></span>
-                                    <span class="truncate" x-text="(s.apellidos || '') + ' ' + (s.nombres || '')"></span>
-                                  </button>
-                                </template>
-                              </div>
+                          <div class="bg-white rounded-lg border border-slate-100 px-2 py-2 space-y-1.5">
+                            <!-- Fila 1: XML source info (read-only reference) -->
+                            <div x-show="item.xmlDesc || item.xmlCode" class="flex items-center gap-2 text-[10px] text-slate-400">
+                              <i class="fa-solid fa-file-code text-[9px] shrink-0"></i>
+                              <span x-show="item.xmlCode" class="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded" x-text="item.xmlCode"></span>
+                              <span x-show="item.xmlDesc" class="truncate italic" x-text="item.xmlDesc"></span>
+                              <span x-show="item.autoMatched"
+                                    class="ml-auto shrink-0 text-emerald-600 flex items-center gap-1">
+                                <i class="fa-solid fa-check-circle text-[9px]"></i> Auto-vinculado
+                              </span>
+                              <span x-show="!item.autoMatched && !item.pid"
+                                    class="ml-auto shrink-0 text-orange-500 flex items-center gap-1">
+                                <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Sin producto
+                              </span>
                             </div>
+                            <!-- Fila 2: Socio + Producto + Monto + X -->
+                            <div class="grid items-start gap-2" style="grid-template-columns: 1fr 1fr 5rem 1.5rem">
 
-                            <!-- Producto -->
-                            <select x-model="item.pid" @change="cambiarProductoXml(item)" class="input w-full text-xs py-1.5">
-                              <option value="">— Producto —</option>
-                              <template x-for="pr in productos" :key="pr.id">
-                                <option :value="pr.id" x-text="pr.nombre"></option>
-                              </template>
-                            </select>
+                              <!-- Socio autocomplete -->
+                              <div class="relative">
+                                <input type="text" x-model="item.sSearch"
+                                       @input.debounce.300ms="buscarSocioXml(item)"
+                                       @blur.debounce.200ms="item.sResults = []"
+                                       placeholder="Buscar socio…"
+                                       class="input w-full text-xs py-1.5">
+                                <div x-show="item.sResults.length > 0"
+                                     class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-40 overflow-y-auto">
+                                  <template x-for="s in item.sResults" :key="s.member_id">
+                                    <button type="button" @mousedown.prevent="elegirSocioXml(item, s)"
+                                            class="w-full text-left px-2.5 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0 flex gap-2">
+                                      <span class="font-mono text-slate-400 shrink-0" x-text="s.member_id"></span>
+                                      <span class="truncate" x-text="(s.apellidos || '') + ' ' + (s.nombres || '')"></span>
+                                    </button>
+                                  </template>
+                                </div>
+                              </div>
 
-                            <!-- Monto -->
-                            <input type="number" step="0.01" x-model="item.monto"
-                                   placeholder="0.00" class="input w-full text-xs py-1.5 text-right font-mono">
+                              <!-- Producto (buscador) -->
+                              <div class="relative">
+                                <input type="text" x-model="item.pSearchQ"
+                                       @input.debounce.200ms="buscarProductoXml(item)"
+                                       @blur.debounce.200ms="item.pSearchRes = []"
+                                       placeholder="Buscar producto…"
+                                       :class="item.pid ? 'border-emerald-300 bg-emerald-50/50' : ''"
+                                       class="input w-full text-xs py-1.5">
+                                <div x-show="item.pSearchRes.length > 0"
+                                     class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto">
+                                  <template x-for="pr in item.pSearchRes" :key="pr.id">
+                                    <button type="button" @mousedown.prevent="elegirProductoXml(item, pr)"
+                                            class="w-full text-left px-2.5 py-1.5 text-xs hover:bg-blue-50 border-b border-slate-100 last:border-0">
+                                      <div class="font-medium text-slate-700" x-text="pr.nombre"></div>
+                                      <div class="flex gap-2 text-[10px] text-slate-400 mt-0.5">
+                                        <span x-show="pr.codigo_sunat" class="font-mono" x-text="pr.codigo_sunat"></span>
+                                        <span x-show="pr.periodo" x-text="pr.periodo"></span>
+                                        <span class="capitalize" x-text="(pr.tipo||'').replace('_',' ')"></span>
+                                      </div>
+                                    </button>
+                                  </template>
+                                </div>
+                              </div>
 
-                            <!-- Quitar -->
-                            <button type="button" @click="quitarItemXml(p, j)"
-                                    class="flex items-center justify-center text-slate-300 hover:text-red-500 p-1 rounded transition-colors">
-                              <i class="fa-solid fa-xmark text-xs"></i>
-                            </button>
+                              <!-- Monto -->
+                              <input type="number" step="0.01" x-model="item.monto"
+                                     placeholder="0.00" class="input w-full text-xs py-1.5 text-right font-mono">
+
+                              <!-- Quitar -->
+                              <button type="button" @click="quitarItemXml(p, j)"
+                                      class="flex items-center justify-center text-slate-300 hover:text-red-500 p-1 rounded transition-colors">
+                                <i class="fa-solid fa-xmark text-xs"></i>
+                              </button>
+                            </div>
                           </div>
                         </template>
                       </div>

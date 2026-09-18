@@ -1314,6 +1314,28 @@ async def comprobante_delete(comprobante_id: str):
     return {"ok": True}
 
 
+@app.post("/comprobantes/{comprobante_id}/sync")
+async def comprobante_sync(comprobante_id: str):
+    from bson import ObjectId as _ObjId
+    comp = pdb.comprobantes_col.find_one({"_id": _ObjId(comprobante_id)})
+    if not comp:
+        raise HTTPException(status_code=404, detail="Comprobante no encontrado")
+    items = comp.get("lineas") or []
+    if not items:
+        return {"ok": True, "cruce_ok": 0, "cruce_alerts": 0, "cruce_items": [],
+                "msg": "Este comprobante no tiene líneas de detalle vinculadas"}
+    cruce = pdb.sync_comprobante_to_payments(
+        items         = items,
+        numero        = comp.get("numero", ""),
+        tipo          = comp.get("tipo", "boleta"),
+        fecha_emision = comp.get("fecha_emision", ""),
+        empresa       = comp.get("empresa", ""),
+    )
+    cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
+    cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
+    return {"ok": True, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
+
+
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
