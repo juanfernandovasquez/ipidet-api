@@ -2191,7 +2191,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 
 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
-    allowed = {"numero", "tipo", "fecha_emision", "fecha_carga", "monto_total",
+    allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "socios", "items", "estado"}
     update = {k: v for k, v in fields.items() if k in allowed}
     if update:

@@ -477,8 +477,8 @@
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de carga</label>
-              <input type="date" x-model="form.fecha_carga" class="input w-full text-sm">
-              <p class="text-[11px] text-slate-400 mt-0.5">Día en que se cargó a la plataforma.</p>
+              <div class="input w-full text-sm bg-slate-50 text-slate-500 select-none cursor-default" x-text="form.fecha_carga || '—'"></div>
+              <p class="text-[11px] text-slate-400 mt-0.5">Se fija automáticamente al crear.</p>
             </div>
           </div>
         </div>
