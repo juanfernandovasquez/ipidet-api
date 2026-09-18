@@ -500,12 +500,25 @@
           <span class="text-xs text-slate-300 ml-1">HTML permitido en el cuerpo</span>
         </div>
 
-        <!-- Cuerpo -->
+        <!-- Cuerpo (editor enriquecido) -->
         <div class="mb-2">
           <label class="block text-xs font-medium text-slate-600 mb-1">Mensaje <span class="text-red-500">*</span></label>
-          <textarea x-model="cuerpo" x-ref="cuerpoTextarea" rows="12"
-            placeholder="Escribe el mensaje aquí…"
-            class="input w-full font-mono text-sm resize-y"></textarea>
+          <div class="relative">
+            <div x-ref="cuerpoEditor"
+                 contenteditable="true"
+                 spellcheck="true"
+                 @input="cuerpo = $el.innerHTML"
+                 @blur="cuerpo = $el.innerHTML"
+                 @keyup="saveSel()"
+                 @mouseup="saveSel()"
+                 class="input w-full text-sm overflow-auto focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 style="min-height:220px; max-height:520px; white-space:pre-wrap; word-break:break-word; line-height:1.65">
+            </div>
+            <div x-show="!cuerpo || !cuerpo.replace(/<[^>]*>/g,'').trim()"
+                 class="absolute top-3 left-3 text-slate-400 text-sm pointer-events-none select-none">
+              Escribe el mensaje aquí…
+            </div>
+          </div>
         </div>
         <p class="text-xs text-slate-400 mb-1">
           Usa <code class="bg-slate-100 px-1 rounded font-mono">{{ '{{nombre}}' }}</code> para personalizar con el nombre de cada destinatario.
@@ -966,6 +979,7 @@ function comunicaciones() {
 
     // Adjuntos
     adjuntos: [],
+    _savedSel: null,
 
     // Imágenes inline
     imagenesInline:       [],
@@ -993,6 +1007,10 @@ function comunicaciones() {
       {% if pre_member %}
       this.manuales.push({ ...{{ pre_member | tojson }}, selected: true });
       {% endif %}
+      this.$nextTick(() => {
+        const el = this.$refs.cuerpoEditor;
+        if (el) el.innerHTML = this.cuerpo || '';
+      });
     },
 
     get seleccionados() {
@@ -1059,6 +1077,10 @@ function comunicaciones() {
       const t = this.plantillasTexto[key];
       this.asunto = t.asunto;
       this.cuerpo = t.cuerpo;
+      this.$nextTick(() => {
+        const el = this.$refs.cuerpoEditor;
+        if (el) el.innerHTML = t.cuerpo || '';
+      });
     },
 
     _periodoParaFiltro() {
@@ -1166,6 +1188,12 @@ function comunicaciones() {
           this.manuales              = [];
           this.empresasDestinatarias = [];
           this.adjuntos              = [];
+          this.imagenesInline        = [];
+          this.cuerpo                = '';
+          this.$nextTick(() => {
+            const ed = this.$refs.cuerpoEditor;
+            if (ed) ed.innerHTML = '';
+          });
         } else {
           this.errorMsg    = data.error || 'Error al enviar.';
           this.confirmando = false;
@@ -1248,16 +1276,51 @@ function comunicaciones() {
       this.insertAtCursor(`<a href="${url}" style="color:#2563eb">${texto}</a>`);
     },
 
-    insertAtCursor(text) {
-      const el = this.$refs.cuerpoTextarea;
-      if (!el) { this.cuerpo += '\n' + text; return; }
-      const start = el.selectionStart;
-      const end   = el.selectionEnd;
-      this.cuerpo = this.cuerpo.slice(0, start) + text + this.cuerpo.slice(end);
-      this.$nextTick(() => {
-        el.selectionStart = el.selectionEnd = start + text.length;
+    saveSel() {
+      const el  = this.$refs.cuerpoEditor;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && el && el.contains(sel.anchorNode)) {
+        this._savedSel = sel.getRangeAt(0).cloneRange();
+      }
+    },
+
+    insertAtCursor(html) {
+      const el  = this.$refs.cuerpoEditor;
+      if (!el) return;
+
+      const sel = window.getSelection();
+      let range;
+
+      // Prefer live selection inside editor; fall back to saved range or end
+      if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
+        range = sel.getRangeAt(0);
+      } else if (this._savedSel) {
+        sel.removeAllRanges();
+        sel.addRange(this._savedSel);
+        range = this._savedSel;
+      } else {
         el.focus();
-      });
+        range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+      range.deleteContents();
+      const frag     = document.createRange().createContextualFragment(html);
+      const lastNode = frag.lastChild;
+      range.insertNode(frag);
+      if (lastNode) {
+        const after = document.createRange();
+        after.setStartAfter(lastNode);
+        after.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(after);
+      }
+
+      this._savedSel = null;
+      this.cuerpo    = el.innerHTML;
     },
 
     // ── Correo de prueba ──────────────────────────────────────────────────────
