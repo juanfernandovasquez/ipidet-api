@@ -166,7 +166,10 @@
         <td class="px-4 py-3 text-xs font-mono {% if c.fecha_carga %}text-slate-400{% else %}text-slate-200{% endif %}">
           {{ c.fecha_carga or '—' }}
         </td>
-        <td class="px-4 py-3 text-slate-600 text-sm">{{ c.empresa or '—' }}</td>
+        <td class="px-4 py-3 text-slate-600 text-sm">
+          {{ c.empresa or '—' }}
+          {% if c.ruc_empresa %}<div class="text-[11px] font-mono text-slate-400 mt-0.5">{{ c.ruc_empresa }}</div>{% endif %}
+        </td>
         <td class="px-4 py-3">
           {% set si = c.socios_info %}
           {% if si %}

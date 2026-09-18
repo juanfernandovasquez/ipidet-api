@@ -1120,50 +1120,104 @@ def get_or_create_payment(member_id: str, periodo: str) -> str:
     return str(result.inserted_id)
 
 
-_TIPOS_PAGO = ("cuota_anual", "cuota_provincia", "fraccionamiento")
+_TIPOS_CUOTA_COMPLETA = ("cuota_anual", "cuota_provincia")
+_TIPOS_FRACCION = ("fraccionamiento",)
+_TIPOS_PAGO = _TIPOS_CUOTA_COMPLETA + _TIPOS_FRACCION
 _ESTADOS_NO_MODIFICAR = ("pagado", "exonerado", "no_aplica")
 
 
 def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                   fecha_emision: str, empresa: str = "") -> int:
-    """Marca como pagados los payments que correspondan a items del comprobante.
-    Solo actúa sobre productos cuya tipo sea cuota_anual, cuota_provincia o fraccionamiento.
-    Devuelve la cantidad de payments actualizados."""
+    """Para cada item con member_id y producto de cuota/fraccionamiento, actualiza el payment.
+    - cuota_anual / cuota_provincia → marca el payment como 'pagado'
+    - fraccionamiento → si el payment está en fraccionamiento, marca la primera cuota pendiente
+    Usa el año de fecha_emision como período de respaldo si el producto no tiene período.
+    Devuelve la cantidad de payments/cuotas actualizados."""
     updated = 0
-    seen = set()  # (member_id, periodo) ya procesados
+    seen: set = set()
+    fallback_periodo = fecha_emision[:4] if fecha_emision and len(fecha_emision) >= 4 else ""
+
     for item in items:
         mid = item.get("member_id")
-        pnombre = item.get("producto_nombre", "")
-        if not mid or not pnombre:
+        pnombre = (item.get("producto_nombre") or "").strip()
+        if not mid:
             continue
-        prod = productos_col.find_one(
-            {"nombre": {"$regex": f"^{_re.escape(pnombre)}$", "$options": "i"}, "activo": True},
-            {"tipo": 1, "periodo": 1},
-        )
-        if not prod:
+
+        tipo_prod = ""
+        periodo = ""
+        if pnombre:
+            prod = productos_col.find_one(
+                {"nombre": {"$regex": f"^{_re.escape(pnombre)}$", "$options": "i"}},
+                {"tipo": 1, "periodo": 1},
+            )
+            if prod:
+                tipo_prod = prod.get("tipo", "")
+                periodo = (prod.get("periodo") or "").strip()
+
+        # Skip producto no relacionado con cobro de cuota (ej: evento)
+        if tipo_prod and tipo_prod not in _TIPOS_PAGO:
             continue
-        tipo_prod = prod.get("tipo", "")
-        periodo = prod.get("periodo", "")
-        if tipo_prod not in _TIPOS_PAGO or not periodo:
+
+        # Si hay nombre de producto pero no se encontró en la BD → no sabemos qué es, saltar
+        if pnombre and not tipo_prod:
             continue
+
+        # Período: usar el del producto, o inferir del año de emisión
+        if not periodo:
+            periodo = fallback_periodo
+        if not periodo:
+            continue
+
         key = (mid, periodo)
         if key in seen:
             continue
         seen.add(key)
+
         payment_id = get_or_create_payment(mid, periodo)
-        pay = payments_col.find_one({"_id": ObjectId(payment_id)}, {"estado": 1})
-        if pay and pay.get("estado") in _ESTADOS_NO_MODIFICAR:
+        pay = payments_col.find_one({"_id": ObjectId(payment_id)}, {"estado": 1, "cuotas": 1})
+        if not pay:
             continue
-        update_payment(
-            payment_id,
-            estado="pagado",
-            fecha_pago=fecha_emision or None,
-            num_comprobante=numero,
-            tipo_comprobante=tipo,
-            fecha_emision_comprobante=fecha_emision or None,
-            empresa=empresa or None,
-        )
-        updated += 1
+        current_estado = pay.get("estado", "")
+        if current_estado in _ESTADOS_NO_MODIFICAR:
+            continue
+
+        if tipo_prod in _TIPOS_CUOTA_COMPLETA or not tipo_prod:
+            # Pago completo de la cuota anual
+            update_payment(
+                payment_id,
+                estado="pagado",
+                fecha_pago=fecha_emision or None,
+                num_comprobante=numero,
+                tipo_comprobante=tipo,
+                fecha_emision_comprobante=fecha_emision or None,
+                empresa=empresa or None,
+            )
+            updated += 1
+        elif tipo_prod in _TIPOS_FRACCION:
+            if current_estado == "fraccionamiento":
+                # Marcar la primera cuota pendiente como pagada
+                for cuota in (pay.get("cuotas") or []):
+                    if cuota.get("estado") == "pendiente":
+                        update_cuota(
+                            payment_id,
+                            numero=cuota["numero"],
+                            estado="pagado",
+                            fecha_pago=fecha_emision or None,
+                            num_comprobante=numero,
+                            tipo_comprobante=tipo,
+                        )
+                        updated += 1
+                        break
+            else:
+                # El payment aún no es fraccionamiento; al menos vinculamos el comprobante
+                update_payment(
+                    payment_id,
+                    estado=current_estado,
+                    num_comprobante=numero,
+                    tipo_comprobante=tipo,
+                    fecha_emision_comprobante=fecha_emision or None,
+                )
+                updated += 1
     return updated
 
 
@@ -2282,12 +2336,25 @@ def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
 
 def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: float,
                         producto_nombre: str, concepto: str, empresa: str,
-                        socios: list, items: list = None) -> str:
+                        socios: list, items: list = None, ruc: str = "") -> str:
     # Derive socios from items if provided
     if items:
         seen = set()
         socios = [it["member_id"] for it in items
                   if it.get("member_id") and it["member_id"] not in seen and not seen.add(it["member_id"])]
+    # Enrich ruc from companies if not provided
+    emp = empresa.strip()
+    ruc_emp = ruc.strip()
+    if emp and not ruc_emp:
+        comp = companies_col.find_one(
+            {"$or": [
+                {"nombre":      {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+                {"razon_social": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+            ]},
+            {"ruc": 1},
+        )
+        if comp:
+            ruc_emp = comp.get("ruc", "")
     doc = {
         "numero":          numero.strip(),
         "tipo":            tipo,
@@ -2296,7 +2363,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "monto_total":     monto_total,
         "producto_nombre": producto_nombre.strip(),
         "concepto":        concepto.strip(),
-        "empresa":         empresa.strip(),
+        "empresa":         emp,
+        "ruc_empresa":     ruc_emp,
         "socios":          socios,
         "items":           items or [],
         "estado":          "emitido",
@@ -2308,14 +2376,79 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
-               "producto_nombre", "concepto", "empresa", "socios", "items", "estado"}
+               "producto_nombre", "concepto", "empresa", "ruc_empresa", "socios", "items", "estado"}
     update = {k: v for k, v in fields.items() if k in allowed}
+    # Enrich ruc when empresa changes
+    if "empresa" in update and not update.get("ruc_empresa"):
+        emp = (update["empresa"] or "").strip()
+        if emp:
+            comp = companies_col.find_one(
+                {"$or": [
+                    {"nombre":      {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+                    {"razon_social": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+                ]},
+                {"ruc": 1},
+            )
+            if comp and comp.get("ruc"):
+                update["ruc_empresa"] = comp["ruc"]
     if update:
         comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": update})
 
 
 def delete_comprobante(comprobante_id: str) -> None:
     comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": {"estado": "anulado"}})
+
+
+def get_comprobantes_por_empresa(empresa: str) -> list:
+    """Comprobantes emitidos a una empresa (búsqueda bidireccional por nombre y RUC)."""
+    emp = empresa.strip()
+    if not emp:
+        return []
+    company = companies_col.find_one(
+        {"$or": [
+            {"nombre":      {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+            {"razon_social": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+        ]},
+        {"nombre": 1, "razon_social": 1, "ruc": 1},
+    )
+    variants = {emp.lower()}
+    ruc = ""
+    if company:
+        for field in ("nombre", "razon_social"):
+            if company.get(field) and company[field].strip():
+                variants.add(company[field].lower().strip())
+        ruc = company.get("ruc", "") or ""
+
+    q: dict = {"estado": {"$ne": "anulado"}}
+    docs = list(comprobantes_col.find(q).sort("fecha_emision", -1))
+
+    def _matches(doc_emp: str, doc_ruc: str) -> bool:
+        if ruc and doc_ruc and ruc == doc_ruc:
+            return True
+        de = (doc_emp or "").lower().strip()
+        return bool(de) and any(de in v or v in de for v in variants)
+
+    docs = [d for d in docs if _matches(d.get("empresa", ""), d.get("ruc_empresa", ""))]
+
+    # Enrich socios
+    all_ids = {mid for d in docs for mid in (d.get("socios") or [])}
+    members_map: dict = {}
+    if all_ids:
+        members_map = {
+            m["member_id"]: f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
+            for m in members_col.find(
+                {"member_id": {"$in": list(all_ids)}},
+                {"member_id": 1, "apellidos": 1, "nombres": 1},
+            )
+        }
+    result = []
+    for d in _clean(docs):
+        d["socios_info"] = [
+            {"member_id": mid, "nombre": members_map.get(mid, mid)}
+            for mid in (d.get("socios") or [])
+        ]
+        result.append(d)
+    return result
 
 
 def get_productos_list() -> list:

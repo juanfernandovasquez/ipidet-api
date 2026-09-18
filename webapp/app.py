@@ -831,6 +831,14 @@ async def api_empresa_facturas(empresa: str = ""):
     return pdb.get_facturas_credito(empresa=empresa.strip())
 
 
+@app.get("/api/empresas/comprobantes")
+async def api_empresa_comprobantes(empresa: str = ""):
+    """Comprobantes emitidos (boletas/facturas) para una empresa."""
+    if not empresa.strip():
+        return []
+    return pdb.get_comprobantes_por_empresa(empresa.strip())
+
+
 # ── API (para uso del bot) ────────────────────────────────────────────────────
 
 @app.get("/api/members")
@@ -1234,6 +1242,7 @@ async def comprobantes_import_xml(
             empresa         = empresa_nombre,
             socios          = socios,
             items           = items,
+            ruc             = ruc or "",
         )
 
         pagos_actualizados = pdb.sync_comprobante_to_payments(
