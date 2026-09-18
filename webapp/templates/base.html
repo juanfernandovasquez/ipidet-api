@@ -127,8 +127,11 @@
         <i class="fa-solid fa-building"></i> Empresas
       </a>
       {% endif %}
-      <a href="/comprobantes" class="sidebar-link {% if '/comprobantes' in request.url.path %}active{% endif %}">
+      <a href="/comprobantes" class="sidebar-link {% if request.url.path == '/comprobantes' %}active{% endif %}">
         <i class="fa-solid fa-receipt"></i> Comprobantes
+      </a>
+      <a href="/comprobantes/preparar" class="sidebar-link {% if request.url.path == '/comprobantes/preparar' %}active{% endif %}">
+        <i class="fa-solid fa-file-pen"></i> Preparar comprobante
       </a>
 
       {% if is_admin or 'billing' in p or 'fraccionamientos' in p or 'finanzas' in p %}

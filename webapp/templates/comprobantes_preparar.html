@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+{% block title %}Preparar Comprobante — IPIDET{% endblock %}
+{% block heading %}Preparar comprobante{% endblock %}
+
+{% block content %}
+<div x-data="preparar()" x-init="init()"
+     class="grid grid-cols-1 xl:grid-cols-5 gap-5">
+
+  <!-- ──────────── Panel izquierdo: Builder ──────────── -->
+  <div class="xl:col-span-3 space-y-4">
+
+    <!-- 1. Tipo y fecha -->
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+        <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">1</span>
+        Tipo de comprobante
+      </h2>
+      <div class="flex gap-3 flex-wrap">
+        <button type="button" @click="form.tipo = 'boleta'"
+                :class="form.tipo === 'boleta' ? 'ring-2 ring-sky-500 bg-sky-50' : 'hover:bg-slate-50'"
+                class="flex-1 min-w-28 border border-slate-200 rounded-xl px-4 py-3 text-left transition-all">
+          <div class="flex items-center gap-2 mb-1">
+            <i class="fa-solid fa-file-lines text-sky-500 text-sm"></i>
+            <span class="font-semibold text-slate-800 text-sm">Boleta</span>
+          </div>
+          <div class="text-[11px] text-slate-500">Persona natural / socio individual</div>
+        </button>
+        <button type="button" @click="form.tipo = 'factura'"
+                :class="form.tipo === 'factura' ? 'ring-2 ring-violet-500 bg-violet-50' : 'hover:bg-slate-50'"
+                class="flex-1 min-w-28 border border-slate-200 rounded-xl px-4 py-3 text-left transition-all">
+          <div class="flex items-center gap-2 mb-1">
+            <i class="fa-solid fa-file-invoice text-violet-500 text-sm"></i>
+            <span class="font-semibold text-slate-800 text-sm">Factura</span>
+          </div>
+          <div class="text-[11px] text-slate-500">Empresa (requiere RUC)</div>
+        </button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mt-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión</label>
+          <input type="date" x-model="form.fecha" class="input w-full text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
+          <select x-model="form.periodo" class="input w-full text-sm">
+            <option value="">— Todos —</option>
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Empresa (solo factura) -->
+    <div x-show="form.tipo === 'factura'" x-cloak class="bg-white rounded-xl border border-slate-200 p-5">
+      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+        <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">2</span>
+        Empresa receptora
+      </h2>
+      <div class="relative">
+        <input type="text" x-model="form.empresa"
+               @input.debounce.300ms="buscarEmpresa()"
+               @keydown.escape="empSugg = []"
+               placeholder="Buscar empresa por nombre o RUC…"
+               autocomplete="off"
+               class="input w-full text-sm">
+        <div x-show="empSugg.length > 0" @mousedown.prevent @click.outside="empSugg = []"
+             class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto">
+          <template x-for="e in empSugg" :key="e._id">
+            <button type="button"
+                    @click="elegirEmpresa(e)"
+                    class="flex items-center justify-between w-full text-left px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0">
+              <div>
+                <div class="font-medium text-slate-800" x-text="e.nombre"></div>
+                <div class="text-xs text-slate-500" x-text="e.razon_social || ''"></div>
+              </div>
+              <span class="text-xs text-slate-400 font-mono ml-3 shrink-0" x-show="e.ruc" x-text="'RUC ' + e.ruc"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+      <div x-show="form.ruc" x-cloak class="mt-2 flex items-center gap-2 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+        <i class="fa-solid fa-building text-[10px]"></i>
+        <span x-text="form.empresa"></span>
+        <span class="font-mono font-bold" x-text="'RUC: ' + form.ruc"></span>
+      </div>
+    </div>
+
+    <!-- 3. Líneas -->
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+          <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold"
+                x-text="form.tipo === 'factura' ? '3' : '2'"></span>
+          Líneas de detalle
+        </h2>
+        <button @click="agregarLinea()" type="button"
+                class="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1 rounded-lg transition-colors border border-blue-200">
+          <i class="fa-solid fa-plus text-[10px]"></i> Agregar línea
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <template x-for="(ln, i) in lineas" :key="i">
+          <div class="border border-slate-200 rounded-xl p-3 space-y-2"
+               :class="ln.pid ? 'border-emerald-200 bg-emerald-50/30' : ''">
+
+            <!-- Número de línea + quitar -->
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold text-slate-400" x-text="'Línea ' + (i+1)"></span>
+              <button @click="lineas.splice(i,1)" type="button" x-show="lineas.length > 1"
+                      class="text-slate-300 hover:text-red-500 text-xs transition-colors">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <!-- Socio -->
+            <div class="relative">
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Socio</label>
+              <input type="text" x-model="ln.sSearch"
+                     @input.debounce.300ms="buscarSocio(ln)"
+                     @blur.debounce.200ms="ln.sResults = []"
+                     placeholder="Buscar por nombre o ID…"
+                     :class="ln.sid ? 'border-blue-300 bg-blue-50/50' : ''"
+                     class="input w-full text-sm">
+              <div x-show="ln.sResults.length > 0"
+                   class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto">
+                <template x-for="s in ln.sResults" :key="s.member_id">
+                  <button type="button" @mousedown.prevent="elegirSocio(ln, s)"
+                          class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-slate-100 last:border-0 flex gap-3">
+                    <span class="font-mono text-slate-400 text-xs shrink-0 pt-0.5" x-text="s.member_id"></span>
+                    <div>
+                      <div class="font-medium text-slate-800 text-sm" x-text="(s.apellidos||'') + ' ' + (s.nombres||'')"></div>
+                      <div class="text-xs text-slate-400" x-text="s.titulo || ''"></div>
+                    </div>
+                  </button>
+                </template>
+              </div>
+              <!-- Chip de socio seleccionado -->
+              <div x-show="ln.sid && !ln.sResults.length" x-cloak
+                   class="mt-1 inline-flex items-center gap-2 text-xs text-blue-700 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full">
+                <i class="fa-solid fa-user text-[9px]"></i>
+                <span x-text="ln.snombre"></span>
+                <span class="font-mono text-blue-400" x-text="ln.sid"></span>
+              </div>
+            </div>
+
+            <!-- Producto + Monto -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Producto</label>
+                <div class="relative">
+                  <input type="text" x-model="ln.pSearchQ"
+                         @input.debounce.200ms="buscarProducto(ln)"
+                         @blur.debounce.200ms="ln.pSearchRes = []"
+                         placeholder="Buscar producto…"
+                         :class="ln.pid ? 'border-emerald-300 bg-emerald-50/50' : ''"
+                         class="input w-full text-sm">
+                  <div x-show="ln.pSearchRes.length > 0"
+                       class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto">
+                    <template x-for="pr in ln.pSearchRes" :key="pr.id">
+                      <button type="button" @mousedown.prevent="elegirProducto(ln, pr)"
+                              class="w-full text-left px-2.5 py-2 hover:bg-blue-50 border-b border-slate-100 last:border-0">
+                        <div class="font-medium text-slate-700 text-sm" x-text="pr.nombre"></div>
+                        <div class="flex gap-2 text-[10px] text-slate-400 mt-0.5">
+                          <span x-show="pr.codigo_sunat" class="font-mono bg-slate-100 px-1 rounded" x-text="pr.codigo_sunat"></span>
+                          <span x-show="pr.periodo" x-text="pr.periodo"></span>
+                          <span class="capitalize" x-text="(pr.tipo||'').replace(/_/g,' ')"></span>
+                        </div>
+                      </button>
+                    </template>
+                  </div>
+                </div>
+                <!-- Chip de producto seleccionado -->
+                <div x-show="ln.pid && !ln.pSearchRes.length" x-cloak
+                     class="mt-1 flex items-center gap-1.5">
+                  <span class="inline-flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                    <i class="fa-solid fa-tag text-[8px]"></i>
+                    <span x-text="ln.pnombre"></span>
+                  </span>
+                  <span x-show="ln.pcode" class="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded" x-text="ln.pcode"></span>
+                </div>
+              </div>
+              <div>
+                <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Monto S/</label>
+                <input type="number" step="0.01" min="0" x-model="ln.monto"
+                       placeholder="0.00"
+                       class="input w-full text-sm font-mono">
+              </div>
+            </div>
+
+          </div>
+        </template>
+      </div>
+
+      <!-- Total -->
+      <div class="flex items-center justify-end mt-4 pt-3 border-t border-slate-100">
+        <span class="text-xs text-slate-500 mr-3">Total</span>
+        <span class="text-lg font-bold text-green-700 font-mono" x-text="'S/ ' + total.toFixed(2)"></span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ──────────── Panel derecho: Preview + Registrar ──────────── -->
+  <div class="xl:col-span-2 space-y-4">
+
+    <!-- Preview visual -->
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+          <i class="fa-solid fa-eye text-slate-400"></i> Vista previa
+        </h2>
+        <button @click="copiarPreview()" type="button"
+                class="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 transition-colors">
+          <i class="fa-solid fa-copy text-[10px]"></i>
+          <span x-text="copiado ? '¡Copiado!' : 'Copiar'"></span>
+        </button>
+      </div>
+
+      <!-- Cuerpo del comprobante -->
+      <div class="p-5 font-mono text-xs text-slate-700 space-y-3" id="preview-content">
+
+        <!-- Header -->
+        <div class="border-b-2 border-slate-800 pb-2">
+          <div class="text-center font-bold text-slate-900 text-sm" x-text="form.tipo === 'factura' ? 'FACTURA DE VENTA' : 'BOLETA DE VENTA'"></div>
+          <div class="text-center text-[11px] text-slate-500 mt-0.5">IPIDET — Fecha: <span x-text="form.fecha || '—'"></span></div>
+        </div>
+
+        <!-- Empresa (solo factura) -->
+        <div x-show="form.tipo === 'factura' && form.empresa" x-cloak class="border-b border-dashed border-slate-300 pb-2">
+          <div class="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Para:</div>
+          <div class="font-bold text-slate-900" x-text="form.empresa || '—'"></div>
+          <div x-show="form.ruc" class="text-slate-600" x-text="'RUC: ' + form.ruc"></div>
+        </div>
+
+        <!-- Líneas -->
+        <div x-show="lineas.some(l => l.sid || l.pid)" x-cloak>
+          <div class="text-[10px] text-slate-400 uppercase tracking-wide mb-2">Detalle:</div>
+          <div class="border border-slate-200 rounded overflow-hidden">
+            <div class="grid text-[10px] font-bold text-slate-500 uppercase tracking-wide bg-slate-50 px-2 py-1 border-b border-slate-200"
+                 style="grid-template-columns: 1.2rem 6rem 1fr 4.5rem">
+              <span>#</span>
+              <span>Código</span>
+              <span>Descripción</span>
+              <span class="text-right">Monto</span>
+            </div>
+            <template x-for="(ln, i) in lineas.filter(l => l.sid || l.pid)" :key="i">
+              <div class="grid items-start px-2 py-1.5 border-b border-slate-100 last:border-0 text-[11px]"
+                   style="grid-template-columns: 1.2rem 6rem 1fr 4.5rem">
+                <span class="text-slate-400" x-text="i+1"></span>
+                <span class="font-mono text-emerald-700 truncate" x-text="ln.pcode || '—'"></span>
+                <div class="min-w-0 pr-1">
+                  <div class="font-medium text-slate-800 truncate" x-text="ln.pnombre || '(sin producto)'"></div>
+                  <div x-show="ln.sid" class="text-slate-500 text-[10px]">
+                    <span x-text="ln.snombre"></span>
+                    <span class="font-mono text-slate-400" x-text="' (' + ln.sid + ')'"></span>
+                  </div>
+                </div>
+                <span class="text-right font-bold text-slate-800" x-text="ln.monto ? 'S/ ' + parseFloat(ln.monto).toFixed(2) : '—'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Total -->
+        <div class="border-t-2 border-slate-800 pt-2 flex items-center justify-between">
+          <span class="font-bold text-slate-600 text-sm">TOTAL</span>
+          <span class="font-bold text-green-700 text-base" x-text="'S/ ' + total.toFixed(2)"></span>
+        </div>
+
+        <!-- Placeholder vacío -->
+        <div x-show="!lineas.some(l => l.sid || l.pid)" x-cloak
+             class="text-center py-6 text-slate-300">
+          <i class="fa-solid fa-file-lines text-3xl block mb-2"></i>
+          <div class="text-[11px]">Agrega socios y productos para ver la vista previa</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Registrar comprobante emitido -->
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-check-circle text-slate-400"></i> Registrar comprobante emitido
+      </h2>
+      <p class="text-xs text-slate-500 mb-4 leading-relaxed">
+        Una vez emitido en SUNAT, ingresa el número del comprobante para registrarlo en el sistema y sincronizar los pagos.
+      </p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">N° Comprobante <span class="text-red-500">*</span></label>
+          <input type="text" x-model="form.numero" placeholder="B001-00001 / F001-00001"
+                 class="input w-full text-sm font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Concepto / Notas</label>
+          <input type="text" x-model="form.concepto" placeholder="Descripción adicional"
+                 class="input w-full text-sm">
+        </div>
+        <button @click="registrar()" :disabled="!canRegistrar || guardando" type="button"
+                class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                :class="(canRegistrar && !guardando)
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+          <i class="fa-solid" :class="guardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+          <span x-text="guardando ? 'Registrando…' : 'Registrar en sistema'"></span>
+        </button>
+      </div>
+
+      <!-- Resultado -->
+      <div x-show="resultado" x-cloak class="mt-4 space-y-2">
+        <div :class="resultado?.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'"
+             class="border rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+          <i class="fa-solid" :class="resultado?.ok ? 'fa-circle-check' : 'fa-circle-xmark'"></i>
+          <span x-text="resultado?.ok ? 'Comprobante registrado correctamente' : (resultado?.detail || 'Error al registrar')"></span>
+        </div>
+        <template x-if="resultado?.cruce_items?.length > 0">
+          <div class="border border-slate-200 rounded-xl overflow-hidden">
+            <div class="px-3 py-2 bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center justify-between">
+              <span>Sincronización de cobranzas</span>
+              <span :class="resultado.cruce_alerts > 0 ? 'text-orange-600' : 'text-emerald-600'"
+                    x-text="resultado.cruce_ok + ' actualizados' + (resultado.cruce_alerts > 0 ? ' · ' + resultado.cruce_alerts + ' alertas' : '')"></span>
+            </div>
+            <table class="w-full text-[11px]">
+              <tbody>
+                <template x-for="ci in resultado.cruce_items" :key="ci.member_id">
+                  <tr class="border-t border-slate-100">
+                    <td class="px-3 py-1.5 font-mono text-slate-600" x-text="ci.member_id || '—'"></td>
+                    <td class="px-3 py-1.5 text-slate-500 truncate" x-text="ci.producto || '—'"></td>
+                    <td class="px-3 py-1.5 text-center">
+                      <span :class="{
+                        'bg-emerald-100 text-emerald-700': ci.color==='green',
+                        'bg-blue-100 text-blue-700':       ci.color==='blue',
+                        'bg-amber-100 text-amber-700':     ci.color==='amber',
+                        'bg-red-100 text-red-700':         ci.color==='red',
+                      }" class="inline-block px-1.5 py-0.5 rounded-full font-medium text-[10px]" x-text="ci.label"></span>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </template>
+        <a x-show="resultado?.ok" href="/comprobantes" x-cloak
+           class="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 transition-colors">
+          <i class="fa-solid fa-arrow-right text-[10px]"></i> Ver en Comprobantes
+        </a>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function preparar() {
+  return {
+    productos: [],
+    form: {
+      tipo: 'boleta',
+      fecha: new Date().toISOString().slice(0, 10),
+      periodo: '2026',
+      empresa: '',
+      ruc: '',
+      numero: '',
+      concepto: '',
+    },
+    lineas: [],
+    empSugg: [],
+    guardando: false,
+    copiado: false,
+    resultado: null,
+
+    get total() {
+      return this.lineas.reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
+    },
+    get canRegistrar() {
+      if (!this.form.numero.trim()) return false;
+      if (!this.form.fecha) return false;
+      if (this.form.tipo === 'factura' && !this.form.empresa.trim()) return false;
+      if (!this.lineas.some(l => l.pid || l.pnombre)) return false;
+      return true;
+    },
+
+    init() {
+      this.productos = JSON.parse(document.getElementById('prep-productos').textContent);
+      this.agregarLinea();
+    },
+
+    agregarLinea() {
+      this.lineas.push({
+        sid: '', snombre: '', sSearch: '', sResults: [],
+        pid: '', pnombre: '', pcode: '', pSearchQ: '', pSearchRes: [],
+        monto: '',
+      });
+    },
+
+    async buscarSocio(ln) {
+      if (ln.sSearch.length < 2) { ln.sResults = []; return; }
+      const r = await fetch('/api/members?search=' + encodeURIComponent(ln.sSearch));
+      const d = await r.json();
+      ln.sResults = (d.members || []).slice(0, 6);
+    },
+    elegirSocio(ln, s) {
+      ln.sid     = s.member_id;
+      ln.snombre = ((s.apellidos || '') + ' ' + (s.nombres || '')).trim();
+      ln.sSearch = ln.snombre;
+      ln.sResults = [];
+    },
+
+    buscarProducto(ln) {
+      const q = (ln.pSearchQ || '').toLowerCase().trim();
+      if (q.length < 1) { ln.pSearchRes = []; return; }
+      ln.pSearchRes = this.productos.filter(p =>
+        p.nombre.toLowerCase().includes(q) ||
+        (p.codigo_sunat || '').toLowerCase().includes(q)
+      ).slice(0, 8);
+    },
+    elegirProducto(ln, pr) {
+      ln.pid        = pr.id;
+      ln.pnombre    = pr.nombre;
+      ln.pcode      = pr.codigo_sunat || '';
+      ln.pSearchQ   = pr.nombre;
+      ln.pSearchRes = [];
+      if (pr.precio && !ln.monto) ln.monto = pr.precio;
+    },
+
+    async buscarEmpresa() {
+      const q = this.form.empresa.trim();
+      if (!q) { this.empSugg = []; return; }
+      const r = await fetch('/api/companies?q=' + encodeURIComponent(q));
+      this.empSugg = await r.json();
+    },
+    elegirEmpresa(e) {
+      this.form.empresa = e.nombre;
+      this.form.ruc     = e.ruc || '';
+      this.empSugg = [];
+    },
+
+    copiarPreview() {
+      const el = document.getElementById('preview-content');
+      const text = el ? el.innerText : '';
+      navigator.clipboard.writeText(text).then(() => {
+        this.copiado = true;
+        setTimeout(() => this.copiado = false, 2000);
+      });
+    },
+
+    async registrar() {
+      if (!this.canRegistrar || this.guardando) return;
+      this.guardando = true;
+      this.resultado = null;
+      const items = this.lineas.filter(l => l.pid || l.pnombre).map(l => ({
+        member_id:       l.sid || null,
+        producto_nombre: l.pnombre,
+        codigo_sunat:    l.pcode || '',
+        monto:           parseFloat(l.monto) || 0,
+      }));
+      try {
+        const r = await fetch('/comprobantes/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            numero:        this.form.numero,
+            tipo:          this.form.tipo,
+            fecha_emision: this.form.fecha,
+            empresa:       this.form.empresa || '',
+            concepto:      this.form.concepto || '',
+            items,
+            monto_total:   this.total,
+          }),
+        });
+        const d = await r.json();
+        this.resultado = d;
+      } catch(e) {
+        this.resultado = { ok: false, detail: 'Error de red: ' + e.message };
+      }
+      this.guardando = false;
+    },
+  };
+}
+</script>
+
+<!-- Datos embebidos -->
+<script id="prep-productos" type="application/json">{{ productos_json | tojson }}</script>
+
+{% endblock %}
