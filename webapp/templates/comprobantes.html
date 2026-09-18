@@ -106,6 +106,7 @@
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">N° Comprobante</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipo</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha emisión</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cargado</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Socios</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Producto</th>
@@ -148,6 +149,9 @@
           {% endif %}
         </td>
         <td class="px-4 py-3 text-slate-500 text-xs font-mono">{{ c.fecha_emision or '—' }}</td>
+        <td class="px-4 py-3 text-xs font-mono {% if c.fecha_carga %}text-slate-400{% else %}text-slate-200{% endif %}">
+          {{ c.fecha_carga or '—' }}
+        </td>
         <td class="px-4 py-3 text-slate-600 text-sm">{{ c.empresa or '—' }}</td>
         <td class="px-4 py-3">
           {% set si = c.socios_info %}
@@ -166,7 +170,7 @@
         <td class="px-4 py-3 text-right" @click.stop>
           <div class="flex items-center justify-end gap-1">
             <button @click="$dispatch('comp-editar', JSON.parse($el.dataset.comp))"
-              data-comp='{{ {"id": c._id, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.lineas, "socios_info": c.socios_info or []} | tojson }}'
+              data-comp='{{ {"id": c._id, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.lineas, "socios_info": c.socios_info or []} | tojson }}'
               class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
               <i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar
             </button>
@@ -181,7 +185,7 @@
       <!-- Fila: detalle expandido -->
       <tr x-show="open" x-cloak class="border-t border-slate-100 bg-slate-50/50">
         <td></td>
-        <td colspan="8" class="px-4 py-4">
+        <td colspan="9" class="px-4 py-4">
           {% if c.lineas %}
           <!-- Líneas de detalle -->
           <table class="w-full text-sm mb-2">
@@ -279,7 +283,7 @@
          editId: null,
          guardando: false,
          form: {
-           numero: '', tipo: 'boleta', fecha_emision: '',
+           numero: '', tipo: 'boleta', fecha_emision: '', fecha_carga: '',
            empresa: '', concepto: '',
            modalidad: 'contado', fecha_vencimiento: '', periodo: '',
            medio_pago: '',
@@ -334,8 +338,8 @@
          },
          resetForm() {
            this.editId = null;
-           this.form = { numero: '', tipo: 'boleta', fecha_emision: '', empresa: '', concepto: '',
-                         modalidad: 'contado', fecha_vencimiento: '', periodo: '', medio_pago: '' };
+           this.form = { numero: '', tipo: 'boleta', fecha_emision: '', fecha_carga: new Date().toISOString().slice(0,10),
+                         empresa: '', concepto: '', modalidad: 'contado', fecha_vencimiento: '', periodo: '', medio_pago: '' };
            this.items = [];
            this.empFormSugg = [];
            this.empFormNueva = false;
@@ -347,6 +351,7 @@
            this.form.tipo            = comp.tipo || 'boleta';
            this.form.fecha_emision   = comp.fecha_emision || '';
            this.form.empresa         = comp.empresa || '';
+           this.form.fecha_carga     = comp.fecha_carga || new Date().toISOString().slice(0,10);
            this.empFormSugg = [];
            this.empFormNueva = false;
            this.form.concepto        = comp.concepto || '';
@@ -447,7 +452,7 @@
               </button>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">N° Comprobante</label>
               <input type="text" x-model="form.numero" placeholder="B001-00001" class="input w-full text-sm">
@@ -455,6 +460,11 @@
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión <span class="text-red-500">*</span></label>
               <input type="date" x-model="form.fecha_emision" class="input w-full text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de carga</label>
+              <input type="date" x-model="form.fecha_carga" class="input w-full text-sm">
+              <p class="text-[11px] text-slate-400 mt-0.5">Día en que se cargó a la plataforma.</p>
             </div>
           </div>
         </div>
@@ -764,12 +774,10 @@
            this.importando = false;
          },
          cerrar() {
-           const reload = this.importados > 0;
            this.archivos = [];
            this.previews = [];
            this.resultados = [];
            document.getElementById('modal-xml').classList.add('hidden');
-           if (reload) location.reload();
          },
        }">
 
@@ -1010,12 +1018,18 @@
           </div>
         </template>
 
-        <!-- Fase C: Importar más -->
+        <!-- Fase C: Importar más + Ver en lista -->
         <template x-if="listo">
-          <button @click="archivos = []; previews = []; resultados = [];"
-            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95 transition-all">
-            <i class="fa-solid fa-rotate-left text-xs"></i> Importar mas
-          </button>
+          <div class="flex items-center gap-2">
+            <button @click="archivos = []; previews = []; resultados = [];"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-slate-300 text-slate-600 hover:bg-slate-100 transition-colors">
+              <i class="fa-solid fa-rotate-left text-xs"></i> Importar mas
+            </button>
+            <button x-show="importados > 0" @click="location.reload()"
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95 transition-all">
+              <i class="fa-solid fa-list text-xs"></i> Ver en lista
+            </button>
+          </div>
         </template>
 
       </div>

@@ -1220,6 +1220,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
         "numero":        data.get("numero", ""),
         "tipo":          data.get("tipo", "boleta"),
         "fecha_emision": data.get("fecha_emision", ""),
+        "fecha_carga":   data.get("fecha_carga", ""),
         "empresa":       empresa,
         "concepto":      data.get("concepto", ""),
         "monto_total":   float(data.get("monto_total") or 0),

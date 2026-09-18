@@ -2165,6 +2165,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "numero":          numero.strip(),
         "tipo":            tipo,
         "fecha_emision":   fecha_emision,
+        "fecha_carga":     datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "monto_total":     monto_total,
         "producto_nombre": producto_nombre.strip(),
         "concepto":        concepto.strip(),
@@ -2179,8 +2180,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 
 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
-    allowed = {"numero", "tipo", "fecha_emision", "monto_total", "producto_nombre",
-               "concepto", "empresa", "socios", "items", "estado"}
+    allowed = {"numero", "tipo", "fecha_emision", "fecha_carga", "monto_total",
+               "producto_nombre", "concepto", "empresa", "socios", "items", "estado"}
     update = {k: v for k, v in fields.items() if k in allowed}
     if update:
         comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": update})
