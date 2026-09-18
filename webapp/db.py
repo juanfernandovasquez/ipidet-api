@@ -1121,54 +1121,87 @@ def get_or_create_payment(member_id: str, periodo: str) -> str:
 
 
 _TIPOS_CUOTA_COMPLETA = ("cuota_anual", "cuota_provincia")
-_TIPOS_FRACCION = ("fraccionamiento",)
-_TIPOS_PAGO = _TIPOS_CUOTA_COMPLETA + _TIPOS_FRACCION
+_TIPOS_FRACCION       = ("fraccionamiento",)
+_TIPOS_PARCIAL        = ("parcial",)
+_TIPOS_PAGO           = _TIPOS_CUOTA_COMPLETA + _TIPOS_FRACCION + _TIPOS_PARCIAL
 _ESTADOS_NO_MODIFICAR = ("pagado", "exonerado", "no_aplica")
+
+_CRUCE_LABELS: dict = {
+    "ok":                  ("Cruzado",              "green"),
+    "ya_pagado":           ("Ya pagado",             "blue"),
+    "no_product":          ("Producto no encontrado","red"),
+    "tipo_no_pago":        ("Tipo no aplica",        "amber"),
+    "sin_periodo":         ("Sin período",            "red"),
+    "sin_cuota_num":       ("Sin N° cuota",           "red"),
+    "estado_incompatible": ("Estado incompatible",    "amber"),
+    "cuota_no_existe":     ("Cuota no existe",        "red"),
+    "error":               ("Error interno",          "red"),
+}
 
 
 def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
-                                  fecha_emision: str, empresa: str = "") -> int:
-    """Para cada item con member_id y producto de cuota/fraccionamiento, actualiza el payment.
-    - cuota_anual / cuota_provincia → marca el payment como 'pagado'
-    - fraccionamiento → si el payment está en fraccionamiento, marca la primera cuota pendiente
-    Usa el año de fecha_emision como período de respaldo si el producto no tiene período.
-    Devuelve la cantidad de payments/cuotas actualizados."""
-    updated = 0
+                                  fecha_emision: str, empresa: str = "") -> list[dict]:
+    """Cruza cada item del comprobante con el payment exacto.
+    Matching sin inferencias: codigo_sunat (o nombre exacto) → producto → tipo + periodo + cuota_numero.
+    Devuelve lista de resultados por item con status/label/msg para mostrar alertas en la UI."""
+    results: list[dict] = []
     seen: set = set()
-    fallback_periodo = fecha_emision[:4] if fecha_emision and len(fecha_emision) >= 4 else ""
+
+    all_prods = list(productos_col.find(
+        {}, {"nombre": 1, "tipo": 1, "periodo": 1, "codigo_sunat": 1, "cuota_numero": 1}
+    ))
+    prod_by_code: dict = {p["codigo_sunat"]: p for p in all_prods if p.get("codigo_sunat")}
+    prod_by_name: dict = {}
+    for p in all_prods:
+        k = (p.get("nombre") or "").lower().strip()
+        if k:
+            prod_by_name[k] = p
+
+    def _res(item: dict, status: str, msg: str) -> dict:
+        label, color = _CRUCE_LABELS.get(status, (status, "slate"))
+        return {
+            "member_id":    item.get("member_id") or "",
+            "producto":     item.get("producto_nombre") or item.get("codigo_sunat") or "—",
+            "codigo_sunat": item.get("codigo_sunat") or "",
+            "status":       status,
+            "label":        label,
+            "color":        color,
+            "msg":          msg,
+        }
 
     for item in items:
         mid = item.get("member_id")
-        pnombre = (item.get("producto_nombre") or "").strip()
         if not mid:
             continue
 
-        tipo_prod = ""
-        periodo = ""
-        if pnombre:
-            prod = productos_col.find_one(
-                {"nombre": {"$regex": f"^{_re.escape(pnombre)}$", "$options": "i"}},
-                {"tipo": 1, "periodo": 1},
-            )
-            if prod:
-                tipo_prod = prod.get("tipo", "")
-                periodo = (prod.get("periodo") or "").strip()
+        pcode   = (item.get("codigo_sunat") or "").strip()
+        pnombre = (item.get("producto_nombre") or "").strip()
+        monto   = float(item.get("monto") or 0)
 
-        # Skip producto no relacionado con cobro de cuota (ej: evento)
-        if tipo_prod and tipo_prod not in _TIPOS_PAGO:
+        prod = prod_by_code.get(pcode) if pcode else None
+        if not prod and pnombre:
+            prod = prod_by_name.get(pnombre.lower())
+
+        if not prod:
+            results.append(_res(item, "no_product",
+                f"'{pcode or pnombre}' no coincide con ningún producto de la plataforma"))
             continue
 
-        # Si hay nombre de producto pero no se encontró en la BD → no sabemos qué es, saltar
-        if pnombre and not tipo_prod:
+        tipo_prod = prod.get("tipo", "")
+        periodo   = (prod.get("periodo") or "").strip()
+        cuota_num = prod.get("cuota_numero")  # int o None
+
+        if tipo_prod not in _TIPOS_PAGO:
+            results.append(_res(item, "tipo_no_pago",
+                f"Tipo '{tipo_prod}' no genera registro de pago"))
             continue
 
-        # Período: usar el del producto, o inferir del año de emisión
         if not periodo:
-            periodo = fallback_periodo
-        if not periodo:
+            results.append(_res(item, "sin_periodo",
+                "El producto no tiene período — configurarlo en la ficha del producto"))
             continue
 
-        key = (mid, periodo)
+        key = (mid, periodo, tipo_prod, cuota_num)
         if key in seen:
             continue
         seen.add(key)
@@ -1176,49 +1209,57 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
         payment_id = get_or_create_payment(mid, periodo)
         pay = payments_col.find_one({"_id": ObjectId(payment_id)}, {"estado": 1, "cuotas": 1})
         if not pay:
+            results.append(_res(item, "error", "No se pudo obtener el registro de pago"))
             continue
         current_estado = pay.get("estado", "")
-        if current_estado in _ESTADOS_NO_MODIFICAR:
-            continue
 
-        if tipo_prod in _TIPOS_CUOTA_COMPLETA or not tipo_prod:
-            # Pago completo de la cuota anual
-            update_payment(
-                payment_id,
-                estado="pagado",
-                fecha_pago=fecha_emision or None,
-                num_comprobante=numero,
-                tipo_comprobante=tipo,
-                fecha_emision_comprobante=fecha_emision or None,
-                empresa=empresa or None,
-            )
-            updated += 1
+        if tipo_prod in _TIPOS_CUOTA_COMPLETA:
+            if current_estado in _ESTADOS_NO_MODIFICAR:
+                results.append(_res(item, "ya_pagado",
+                    f"El pago ya tiene estado '{current_estado}'"))
+                continue
+            update_payment(payment_id, estado="pagado",
+                          fecha_pago=fecha_emision or None,
+                          num_comprobante=numero, tipo_comprobante=tipo,
+                          fecha_emision_comprobante=fecha_emision or None,
+                          empresa=empresa or None)
+            results.append(_res(item, "ok", "Pago marcado como pagado"))
+
         elif tipo_prod in _TIPOS_FRACCION:
-            if current_estado == "fraccionamiento":
-                # Marcar la primera cuota pendiente como pagada
-                for cuota in (pay.get("cuotas") or []):
-                    if cuota.get("estado") == "pendiente":
-                        update_cuota(
-                            payment_id,
-                            numero=cuota["numero"],
-                            estado="pagado",
-                            fecha_pago=fecha_emision or None,
-                            num_comprobante=numero,
-                            tipo_comprobante=tipo,
-                        )
-                        updated += 1
-                        break
-            else:
-                # El payment aún no es fraccionamiento; al menos vinculamos el comprobante
-                update_payment(
-                    payment_id,
-                    estado=current_estado,
-                    num_comprobante=numero,
-                    tipo_comprobante=tipo,
-                    fecha_emision_comprobante=fecha_emision or None,
-                )
-                updated += 1
-    return updated
+            if cuota_num is None:
+                results.append(_res(item, "sin_cuota_num",
+                    "El producto no tiene N° de cuota — configurarlo en la ficha del producto"))
+                continue
+            if current_estado != "fraccionamiento":
+                results.append(_res(item, "estado_incompatible",
+                    f"El pago está en '{current_estado}', no en fraccionamiento"))
+                continue
+            cuotas = pay.get("cuotas") or []
+            target = next((c for c in cuotas if c.get("numero") == cuota_num), None)
+            if not target:
+                results.append(_res(item, "cuota_no_existe",
+                    f"La cuota #{cuota_num} no existe en este pago"))
+                continue
+            if target.get("estado") == "pagado":
+                results.append(_res(item, "ya_pagado",
+                    f"La cuota #{cuota_num} ya estaba pagada"))
+                continue
+            update_cuota(payment_id, numero=cuota_num, estado="pagado",
+                        fecha_pago=fecha_emision or None,
+                        num_comprobante=numero, tipo_comprobante=tipo)
+            results.append(_res(item, "ok", f"Cuota #{cuota_num} marcada como pagada"))
+
+        elif tipo_prod in _TIPOS_PARCIAL:
+            if current_estado in ("exonerado", "no_aplica", "fraccionamiento"):
+                results.append(_res(item, "estado_incompatible",
+                    f"El pago está en '{current_estado}', no aplica pago parcial"))
+                continue
+            add_pago_parcial(payment_id, monto=monto,
+                           fecha_pago=fecha_emision or None,
+                           num_comprobante=numero, tipo_comprobante=tipo)
+            results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado"))
+
+    return results
 
 
 def mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
@@ -2199,17 +2240,19 @@ def get_productos(tipo: str = "", solo_activos: bool = False) -> list:
 
 def create_producto(nombre: str, tipo: str, precio: float | None,
                     periodo: str, descripcion: str,
-                    codigo_wc: str = "", codigo_sunat: str = "") -> str:
+                    codigo_wc: str = "", codigo_sunat: str = "",
+                    cuota_numero: int | None = None) -> str:
     doc = {
-        "nombre":       nombre.strip(),
-        "tipo":         tipo,
-        "precio":       precio,
-        "periodo":      periodo.strip(),
-        "descripcion":  descripcion.strip(),
-        "codigo_wc":    codigo_wc.strip(),
-        "codigo_sunat": codigo_sunat.strip(),
-        "activo":       True,
-        "created_at":   datetime.now(timezone.utc),
+        "nombre":        nombre.strip(),
+        "tipo":          tipo,
+        "precio":        precio,
+        "periodo":       periodo.strip(),
+        "descripcion":   descripcion.strip(),
+        "codigo_wc":     codigo_wc.strip(),
+        "codigo_sunat":  codigo_sunat.strip(),
+        "cuota_numero":  cuota_numero,
+        "activo":        True,
+        "created_at":    datetime.now(timezone.utc),
     }
     return str(productos_col.insert_one(doc).inserted_id)
 
@@ -2217,7 +2260,8 @@ def create_producto(nombre: str, tipo: str, precio: float | None,
 def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | None,
                     periodo: str, descripcion: str, activo: bool,
                     wc_product_id: int | None = None,
-                    codigo_wc: str = "", codigo_sunat: str = "") -> None:
+                    codigo_wc: str = "", codigo_sunat: str = "",
+                    cuota_numero: int | None = None) -> None:
     productos_col.update_one(
         {"_id": ObjectId(producto_id)},
         {"$set": {
@@ -2230,6 +2274,7 @@ def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | No
             "wc_product_id": wc_product_id,
             "codigo_wc":     codigo_wc.strip(),
             "codigo_sunat":  codigo_sunat.strip(),
+            "cuota_numero":  cuota_numero,
         }},
     )
 

@@ -322,7 +322,7 @@
            return this.items.reduce((s, it) => s + (parseFloat(it.monto) || 0), 0);
          },
          agregarItem() {
-           this.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', monto: '' });
+           this.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '' });
          },
          quitarItem(idx) { this.items.splice(idx, 1); },
          async buscarSocio(item) {
@@ -341,10 +341,12 @@
            const p = this.productos.find(p => p.id === item.pid);
            if (p) {
              item.pnombre = p.nombre;
+             item.pcode   = p.codigo_sunat || '';
              if (p.precio != null) item.monto = p.precio;
              if (p.periodo && !this.form.periodo) this.form.periodo = p.periodo;
            } else {
              item.pnombre = '';
+             item.pcode   = '';
            }
          },
          get canGuardar() {
@@ -395,7 +397,8 @@
            if (!this.canGuardar || this.guardando) return;
            this.guardando = true;
            const items = this.items.filter(it => it.pid || it.pnombre).map(it => ({
-             member_id: it.sid || null, producto_nombre: it.pnombre, monto: parseFloat(it.monto) || 0
+             member_id: it.sid || null, producto_nombre: it.pnombre,
+             codigo_sunat: it.pcode || '', monto: parseFloat(it.monto) || 0
            }));
            const url = this.editId
              ? '/comprobantes/' + this.editId + '/update'
@@ -713,13 +716,16 @@
          resultados: [],
          arrastrando: false,
          productos: [],
-         get hayArchivos()  { return this.archivos.length > 0; },
-         get hayPreview()   { return this.previews.length > 0 && !this.listo; },
-         get listo()        { return this.resultados.length > 0; },
-         get importados()   { return this.resultados.filter(r => r.status === 'importado').length; },
-         get duplicados()   { return this.resultados.filter(r => r.status === 'duplicado').length; },
-         get errores()      { return this.resultados.filter(r => r.status === 'error').length; },
-         get empNuevas()    { return this.resultados.filter(r => r.empresa_nueva).length; },
+         expandedCruce: {},
+         get hayArchivos()   { return this.archivos.length > 0; },
+         get hayPreview()    { return this.previews.length > 0 && !this.listo; },
+         get listo()         { return this.resultados.length > 0; },
+         get importados()    { return this.resultados.filter(r => r.status === 'importado').length; },
+         get duplicados()    { return this.resultados.filter(r => r.status === 'duplicado').length; },
+         get errores()       { return this.resultados.filter(r => r.status === 'error').length; },
+         get empNuevas()     { return this.resultados.filter(r => r.empresa_nueva).length; },
+         get cruceOk()       { return this.resultados.reduce((s, r) => s + (r.cruce_ok || 0), 0); },
+         get cruceAlertas()  { return this.resultados.reduce((s, r) => s + (r.cruce_alerts || 0), 0); },
          tipoBadge(tipo) {
            if (tipo === 'factura') return 'bg-violet-100 text-violet-700 border border-violet-200';
            if (tipo === 'boleta')  return 'bg-sky-100 text-sky-700 border border-sky-200';
@@ -783,7 +789,7 @@
            this.previews.splice(i, 1);
          },
          agregarItemXml(p) {
-           p.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', monto: '' });
+           p.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '' });
          },
          quitarItemXml(p, j) { p.items.splice(j, 1); },
          async buscarSocioXml(item) {
@@ -800,8 +806,14 @@
          },
          cambiarProductoXml(item) {
            const pr = this.productos.find(pr => pr.id === item.pid);
-           if (pr) { item.pnombre = pr.nombre; if (pr.precio != null) item.monto = pr.precio; }
-           else item.pnombre = '';
+           if (pr) {
+             item.pnombre = pr.nombre;
+             item.pcode   = pr.codigo_sunat || '';
+             if (pr.precio != null) item.monto = pr.precio;
+           } else {
+             item.pnombre = '';
+             item.pcode   = '';
+           }
          },
          async importar() {
            if (!this.hayArchivos || this.importando) return;
@@ -813,9 +825,10 @@
              const valid = (p.items || []).filter(it => it.pid || it.pnombre);
              if (p.numero && valid.length > 0) {
                items_map[p.numero] = valid.map(it => ({
-                 member_id: it.sid || null,
+                 member_id:       it.sid || null,
                  producto_nombre: it.pnombre,
-                 monto: parseFloat(it.monto) || 0,
+                 codigo_sunat:    it.pcode || '',
+                 monto:           parseFloat(it.monto) || 0,
                }));
              }
            });
@@ -833,6 +846,7 @@
            this.archivos = [];
            this.previews = [];
            this.resultados = [];
+           this.expandedCruce = {};
            document.getElementById('modal-xml').classList.add('hidden');
          },
        }"
@@ -1042,7 +1056,7 @@
 
       <!-- FASE C: Resultados (post-import) -->
       <div x-show="listo" x-cloak>
-        <div class="grid grid-cols-4 gap-3 mb-4">
+        <div class="grid grid-cols-5 gap-3 mb-4">
           <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
             <div class="text-xl font-bold text-emerald-700" x-text="importados"></div>
             <div class="text-[11px] text-emerald-600 mt-0.5">Importados</div>
@@ -1056,8 +1070,12 @@
             <div class="text-[11px] text-red-600 mt-0.5">Errores</div>
           </div>
           <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-            <div class="text-xl font-bold text-blue-700" x-text="empNuevas"></div>
-            <div class="text-[11px] text-blue-600 mt-0.5">Empresas nuevas</div>
+            <div class="text-xl font-bold text-blue-700" x-text="cruceOk"></div>
+            <div class="text-[11px] text-blue-600 mt-0.5">Pagos sincronizados</div>
+          </div>
+          <div class="bg-orange-50 border border-orange-200 rounded-xl p-3 text-center">
+            <div class="text-xl font-bold text-orange-700" x-text="cruceAlertas"></div>
+            <div class="text-[11px] text-orange-600 mt-0.5">Alertas de cruce</div>
           </div>
         </div>
 
@@ -1071,69 +1089,138 @@
                 <th class="text-center px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Socios</th>
                 <th class="text-right px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
                 <th class="px-3 py-2 text-center font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
+                <th class="px-3 py-2 text-center font-semibold text-slate-500 uppercase tracking-wide">Cruce</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
-              <template x-for="r in resultados" :key="r.filename">
-                <tr :class="{
-                  'bg-emerald-50/40': r.status === 'importado',
-                  'bg-amber-50/40':   r.status === 'duplicado',
-                  'bg-red-50/40':     r.status === 'error',
-                }">
-                  <td class="px-3 py-2">
-                    <template x-if="r.tipo">
-                      <span :class="tipoBadge(r.tipo)"
-                            class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                            x-text="tipoLabel(r.tipo)"></span>
-                    </template>
-                    <template x-if="!r.tipo">
-                      <span class="text-slate-400 font-mono text-[10px]" x-text="r.filename"></span>
-                    </template>
-                  </td>
-                  <td class="px-3 py-2 font-mono text-slate-800" x-text="r.numero || '—'"></td>
-                  <td class="px-3 py-2 text-slate-600">
-                    <template x-if="r.status === 'error'">
-                      <span class="text-red-500 italic" x-text="r.msg || '—'"></span>
-                    </template>
-                    <template x-if="r.status !== 'error' && r.empresa">
-                      <span>
-                        <span x-text="r.empresa"></span>
-                        <span x-show="r.empresa_nueva"
-                              class="ml-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">nueva</span>
+            <tbody>
+              <template x-for="(r, ri) in resultados" :key="r.filename">
+                <tbody>
+                  <tr :class="{
+                    'bg-emerald-50/40': r.status === 'importado',
+                    'bg-amber-50/40':   r.status === 'duplicado',
+                    'bg-red-50/40':     r.status === 'error',
+                  }" class="border-t border-slate-100">
+                    <td class="px-3 py-2">
+                      <template x-if="r.tipo">
+                        <span :class="tipoBadge(r.tipo)"
+                              class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                              x-text="tipoLabel(r.tipo)"></span>
+                      </template>
+                      <template x-if="!r.tipo">
+                        <span class="text-slate-400 font-mono text-[10px]" x-text="r.filename"></span>
+                      </template>
+                    </td>
+                    <td class="px-3 py-2 font-mono text-slate-800" x-text="r.numero || '—'"></td>
+                    <td class="px-3 py-2 text-slate-600">
+                      <template x-if="r.status === 'error'">
+                        <span class="text-red-500 italic" x-text="r.msg || '—'"></span>
+                      </template>
+                      <template x-if="r.status !== 'error' && r.empresa">
+                        <span>
+                          <span x-text="r.empresa"></span>
+                          <span x-show="r.empresa_nueva"
+                                class="ml-1 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">nueva</span>
+                        </span>
+                      </template>
+                      <template x-if="r.status !== 'error' && !r.empresa">
+                        <span class="text-slate-400 italic">Persona natural</span>
+                      </template>
+                    </td>
+                    <td class="px-3 py-2 text-center">
+                      <template x-if="r.socios_count > 0">
+                        <span class="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                          <i class="fa-solid fa-users text-[8px]"></i>
+                          <span x-text="r.socios_count"></span>
+                        </span>
+                      </template>
+                      <template x-if="!r.socios_count">
+                        <span class="text-slate-300">—</span>
+                      </template>
+                    </td>
+                    <td class="px-3 py-2 text-right font-mono font-semibold text-slate-700"
+                        x-text="r.monto != null ? 'S/ ' + r.monto.toFixed(2) : '—'"></td>
+                    <td class="px-3 py-2 text-center">
+                      <span x-show="r.status === 'importado'"
+                            class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        <i class="fa-solid fa-check text-[8px]"></i> OK
                       </span>
-                    </template>
-                    <template x-if="r.status !== 'error' && !r.empresa">
-                      <span class="text-slate-400 italic">Persona natural</span>
-                    </template>
-                  </td>
-                  <td class="px-3 py-2 text-center">
-                    <template x-if="r.socios_count > 0">
-                      <span class="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                        <i class="fa-solid fa-users text-[8px]"></i>
-                        <span x-text="r.socios_count"></span>
+                      <span x-show="r.status === 'duplicado'"
+                            class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                        <i class="fa-solid fa-copy text-[8px]"></i> Dup.
                       </span>
-                    </template>
-                    <template x-if="!r.socios_count">
-                      <span class="text-slate-300">—</span>
-                    </template>
-                  </td>
-                  <td class="px-3 py-2 text-right font-mono font-semibold text-slate-700"
-                      x-text="r.monto != null ? 'S/ ' + r.monto.toFixed(2) : '—'"></td>
-                  <td class="px-3 py-2 text-center">
-                    <span x-show="r.status === 'importado'"
-                          class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                      <i class="fa-solid fa-check text-[8px]"></i> OK
-                    </span>
-                    <span x-show="r.status === 'duplicado'"
-                          class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                      <i class="fa-solid fa-copy text-[8px]"></i> Dup.
-                    </span>
-                    <span x-show="r.status === 'error'"
-                          class="inline-flex items-center gap-1 text-[10px] font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-                      <i class="fa-solid fa-xmark text-[8px]"></i> Error
-                    </span>
-                  </td>
-                </tr>
+                      <span x-show="r.status === 'error'"
+                            class="inline-flex items-center gap-1 text-[10px] font-medium text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
+                        <i class="fa-solid fa-xmark text-[8px]"></i> Error
+                      </span>
+                    </td>
+                    <!-- Cruce column -->
+                    <td class="px-3 py-2 text-center">
+                      <template x-if="r.cruce_items && r.cruce_items.length > 0">
+                        <button type="button" @click="expandedCruce[ri] = !expandedCruce[ri]"
+                                :class="r.cruce_alerts > 0
+                                  ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200'
+                                  : 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200'"
+                                class="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors">
+                          <i class="fa-solid fa-link text-[8px]"></i>
+                          <span x-text="r.cruce_ok + '/' + r.cruce_items.length"></span>
+                          <template x-if="r.cruce_alerts > 0">
+                            <span class="inline-flex items-center gap-0.5 text-orange-700">
+                              <i class="fa-solid fa-triangle-exclamation text-[8px]"></i>
+                              <span x-text="r.cruce_alerts"></span>
+                            </span>
+                          </template>
+                        </button>
+                      </template>
+                      <template x-if="!r.cruce_items || r.cruce_items.length === 0">
+                        <span class="text-slate-300 text-[10px]">—</span>
+                      </template>
+                    </td>
+                  </tr>
+                  <!-- Fila expandida cruce_items -->
+                  <tr x-show="expandedCruce[ri]" x-cloak class="border-t border-orange-100">
+                    <td colspan="7" class="px-0 py-0">
+                      <div class="bg-orange-50/30 px-4 py-3 border-b border-orange-100">
+                        <p class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                          <i class="fa-solid fa-link text-[10px]"></i> Detalle de cruce con cobranzas
+                        </p>
+                        <table class="w-full text-[11px]">
+                          <thead>
+                            <tr class="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-200">
+                              <th class="pb-1 pr-3">Socio</th>
+                              <th class="pb-1 pr-3">Producto</th>
+                              <th class="pb-1 pr-3">Código</th>
+                              <th class="pb-1 text-center">Estado cruce</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <template x-for="(ci, ci_i) in (r.cruce_items || [])" :key="ci_i">
+                              <tr class="border-b border-slate-100 last:border-0">
+                                <td class="py-1 pr-3 text-slate-700 font-mono" x-text="ci.member_id || '—'"></td>
+                                <td class="py-1 pr-3 text-slate-600" x-text="ci.producto || '—'"></td>
+                                <td class="py-1 pr-3 font-mono text-slate-400" x-text="ci.codigo_sunat || '—'"></td>
+                                <td class="py-1 text-center">
+                                  <span :class="{
+                                    'bg-emerald-100 text-emerald-700 border-emerald-200': ci.color === 'green',
+                                    'bg-blue-100 text-blue-700 border-blue-200':          ci.color === 'blue',
+                                    'bg-amber-100 text-amber-700 border-amber-200':        ci.color === 'amber',
+                                    'bg-red-100 text-red-700 border-red-200':              ci.color === 'red',
+                                  }" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-medium text-[10px]">
+                                    <template x-if="ci.color === 'green'"><i class="fa-solid fa-check text-[8px]"></i></template>
+                                    <template x-if="ci.color === 'blue'"><i class="fa-solid fa-info text-[8px]"></i></template>
+                                    <template x-if="ci.color === 'amber'"><i class="fa-solid fa-triangle-exclamation text-[8px]"></i></template>
+                                    <template x-if="ci.color === 'red'"><i class="fa-solid fa-xmark text-[8px]"></i></template>
+                                    <span x-text="ci.label"></span>
+                                  </span>
+                                  <div x-show="ci.msg" class="text-[10px] text-slate-400 mt-0.5" x-text="ci.msg"></div>
+                                </td>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
               </template>
             </tbody>
           </table>

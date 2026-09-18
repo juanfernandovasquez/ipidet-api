@@ -1075,7 +1075,8 @@ async def comprobantes_list(
     productos_raw = pdb.get_productos_list()
     productos_json = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"),
-         "tipo": p.get("tipo", ""), "periodo": p.get("periodo", "")}
+         "tipo": p.get("tipo", ""), "periodo": p.get("periodo", ""),
+         "codigo_sunat": p.get("codigo_sunat", "")}
         for p in productos_raw
     ]
     pages    = max(1, (total + 49) // 50)
@@ -1138,13 +1139,15 @@ async def comprobante_add(request: Request):
         socios          = socios,
         items           = items,
     )
-    pdb.sync_comprobante_to_payments(
+    cruce = pdb.sync_comprobante_to_payments(
         items         = items,
         numero        = data.get("numero", ""),
         tipo          = data.get("tipo", "boleta"),
         fecha_emision = data.get("fecha_emision", ""),
         empresa       = empresa,
     )
+    cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
+    cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
     if data.get("es_credito"):
         periodo = data.get("periodo", "").strip()
         pdb.create_factura_credito(
@@ -1157,7 +1160,7 @@ async def comprobante_add(request: Request):
             socios            = socios,
             periodo           = periodo,
         )
-    return {"ok": True, "id": comp_id}
+    return {"ok": True, "id": comp_id, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
 
 
 @app.post("/comprobantes/import-xml")
@@ -1245,24 +1248,28 @@ async def comprobantes_import_xml(
             ruc             = ruc or "",
         )
 
-        pagos_actualizados = pdb.sync_comprobante_to_payments(
+        cruce = pdb.sync_comprobante_to_payments(
             items         = items,
             numero        = numero,
             tipo          = data["tipo"],
             fecha_emision = data["fecha_emision"],
             empresa       = empresa_nombre,
         )
+        cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
+        cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
 
         results.append({
-            "filename":          fname,
-            "numero":            numero,
-            "tipo":              data["tipo"],
-            "status":            "importado",
-            "empresa":           empresa_nombre,
-            "empresa_nueva":     empresa_nueva,
-            "monto":             data["monto_total"],
-            "socios_count":      len(socios),
-            "pagos_actualizados": pagos_actualizados,
+            "filename":      fname,
+            "numero":        numero,
+            "tipo":          data["tipo"],
+            "status":        "importado",
+            "empresa":       empresa_nombre,
+            "empresa_nueva": empresa_nueva,
+            "monto":         data["monto_total"],
+            "socios_count":  len(socios),
+            "cruce_ok":      cruce_ok,
+            "cruce_alerts":  cruce_alerts,
+            "cruce_items":   cruce,
         })
 
     return {"results": results}
@@ -1873,16 +1880,19 @@ async def productos_medios_pago_update(request: Request):
 
 @app.post("/productos/add")
 async def producto_add(
-    nombre:       str = Form(...),
-    tipo:         str = Form(...),
-    precio:       str = Form(""),
-    periodo:      str = Form(""),
-    descripcion:  str = Form(""),
-    codigo_wc:    str = Form(""),
-    codigo_sunat: str = Form(""),
+    nombre:        str = Form(...),
+    tipo:          str = Form(...),
+    precio:        str = Form(""),
+    periodo:       str = Form(""),
+    descripcion:   str = Form(""),
+    codigo_wc:     str = Form(""),
+    codigo_sunat:  str = Form(""),
+    cuota_numero:  str = Form(""),
 ):
-    precio_val = float(precio) if precio.strip() else None
-    pdb.create_producto(nombre, tipo, precio_val, periodo, descripcion, codigo_wc, codigo_sunat)
+    precio_val     = float(precio) if precio.strip() else None
+    cuota_num_val  = int(cuota_numero) if cuota_numero.strip().isdigit() else None
+    pdb.create_producto(nombre, tipo, precio_val, periodo, descripcion,
+                        codigo_wc, codigo_sunat, cuota_num_val)
     return RedirectResponse("/productos", status_code=303)
 
 
@@ -1898,11 +1908,13 @@ async def producto_update(
     wc_product_id: str = Form(""),
     codigo_wc:     str = Form(""),
     codigo_sunat:  str = Form(""),
+    cuota_numero:  str = Form(""),
 ):
-    precio_val = float(precio) if precio.strip() else None
-    wc_id_val  = int(wc_product_id) if wc_product_id.strip().isdigit() else None
+    precio_val    = float(precio) if precio.strip() else None
+    wc_id_val     = int(wc_product_id) if wc_product_id.strip().isdigit() else None
+    cuota_num_val = int(cuota_numero) if cuota_numero.strip().isdigit() else None
     pdb.update_producto(producto_id, nombre, tipo, precio_val, periodo, descripcion,
-                        activo == "on", wc_id_val, codigo_wc, codigo_sunat)
+                        activo == "on", wc_id_val, codigo_wc, codigo_sunat, cuota_num_val)
     return RedirectResponse("/productos", status_code=303)
 
 

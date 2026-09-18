@@ -29,14 +29,15 @@
         <h2 class="text-sm font-semibold text-slate-700 mb-4">
           <i class="fa-solid fa-plus text-slate-400 mr-1.5"></i> Nuevo producto
         </h2>
-        <form method="post" action="/productos/add" class="space-y-3">
+        <form method="post" action="/productos/add" class="space-y-3" x-data="{ newTipo: '' }">
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">Nombre <span class="text-red-500">*</span></label>
             <input name="nombre" type="text" required placeholder="Cuota anual Lima 2026" class="input w-full text-sm">
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">Tipo <span class="text-red-500">*</span></label>
-            <select name="tipo" class="input w-full text-sm">
+            <select name="tipo" class="input w-full text-sm" x-model="newTipo">
+              <option value="">— seleccionar —</option>
               {% for t in tipos %}
               <option value="{{ t }}">{{ t | replace('_',' ') | title }}</option>
               {% endfor %}
@@ -65,6 +66,17 @@
               <label class="block text-xs font-medium text-slate-600 mb-1">Código SUNAT</label>
               <input name="codigo_sunat" type="text" placeholder="CUOTA-2026" class="input w-full text-sm font-mono">
             </div>
+          </div>
+          <!-- N° de cuota — solo para fraccionamiento -->
+          <div x-show="newTipo === 'fraccionamiento'" x-cloak>
+            <label class="block text-xs font-medium text-slate-600 mb-1">
+              N° de cuota <span class="text-red-500">*</span>
+              <span class="text-slate-400 font-normal ml-1">(ej: 1, 2, 3…)</span>
+            </label>
+            <input name="cuota_numero" type="number" min="1" step="1"
+                   placeholder="1"
+                   class="input w-full text-sm font-mono"
+                   :required="newTipo === 'fraccionamiento'">
           </div>
           <button type="submit" class="btn-primary w-full text-sm">
             <i class="fa-solid fa-plus mr-1.5"></i> Agregar producto
@@ -165,7 +177,7 @@
         {% endif %}
 
         <div class="border-b border-slate-100 last:border-0 px-5 py-3 {% if not p.activo %}opacity-50{% endif %}"
-             x-data="{ editing: false }">
+             x-data="{ editing: false, editTipo: '{{ p.tipo }}' }">
 
           <!-- Vista compacta -->
           <div x-show="!editing" class="flex items-center justify-between gap-3">
@@ -182,6 +194,13 @@
                 <span class="text-xs text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded font-mono" title="Código WooCommerce">WC: {{ p.codigo_wc }}</span>
                 {% elif p.get('wc_product_id') %}
                 <span class="text-xs text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-mono">WC #{{ p.wc_product_id }}</span>
+                {% endif %}
+                {% if p.tipo == 'fraccionamiento' and p.get('cuota_numero') %}
+                <span class="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-mono" title="N° de cuota">Cuota #{{ p.cuota_numero }}</span>
+                {% elif p.tipo == 'fraccionamiento' %}
+                <span class="text-xs text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded" title="Falta N° de cuota">
+                  <i class="fa-solid fa-triangle-exclamation mr-0.5"></i>Sin N° cuota
+                </span>
                 {% endif %}
               </div>
               {% if p.descripcion %}
@@ -225,7 +244,7 @@
                 </div>
                 <div>
                   <label class="block text-xs text-slate-500 mb-0.5">Tipo</label>
-                  <select name="tipo" class="input w-full text-sm">
+                  <select name="tipo" class="input w-full text-sm" x-model="editTipo">
                     {% for t in tipos %}
                     <option value="{{ t }}" {% if p.tipo == t %}selected{% endif %}>{{ t | replace('_',' ') | title }}</option>
                     {% endfor %}
@@ -276,6 +295,17 @@
                   <input name="codigo_sunat" type="text"
                          value="{{ p.get('codigo_sunat') or '' }}"
                          placeholder="ej: CUOTA-2026"
+                         class="input w-full text-sm font-mono">
+                </div>
+                <!-- N° de cuota — solo para fraccionamiento -->
+                <div class="col-span-2" x-show="editTipo === 'fraccionamiento'" x-cloak>
+                  <label class="block text-xs text-slate-500 mb-0.5">
+                    N° de cuota <span class="text-red-500">*</span>
+                    <span class="text-slate-400 font-normal ml-1">(ej: 1, 2, 3…)</span>
+                  </label>
+                  <input name="cuota_numero" type="number" min="1" step="1"
+                         value="{{ p.get('cuota_numero') or '' }}"
+                         placeholder="1"
                          class="input w-full text-sm font-mono">
                 </div>
               </div>
