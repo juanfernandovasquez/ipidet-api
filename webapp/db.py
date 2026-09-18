@@ -2109,6 +2109,7 @@ def get_comprobante_stats() -> dict:
 
 def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
                      fecha: str = "",
+                     sort_by: str = "fecha_carga", sort_dir: str = "desc",
                      page: int = 1, per_page: int = 50) -> tuple:
     q: dict = {"estado": {"$ne": "anulado"}}
     if tipo:
@@ -2133,10 +2134,20 @@ def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
         if matching:
             or_conds.append({"socios": {"$in": [m["member_id"] for m in matching]}})
         q["$or"] = or_conds
+    _sort_map = {
+        "numero":       "numero",
+        "tipo":         "tipo",
+        "fecha_emision":"fecha_emision",
+        "fecha_carga":  "fecha_carga",
+        "empresa":      "empresa",
+        "monto":        "monto_total",
+    }
+    _sort_field = _sort_map.get(sort_by, "fecha_carga")
+    _sort_mongo  = -1 if sort_dir == "desc" else 1
     total = comprobantes_col.count_documents(q)
     docs = list(
         comprobantes_col.find(q)
-        .sort("fecha_emision", -1)
+        .sort(_sort_field, _sort_mongo)
         .skip((page - 1) * per_page)
         .limit(per_page)
     )

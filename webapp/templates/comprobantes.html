@@ -7,6 +7,20 @@
 {% endblock %}
 
 {% block content %}
+{% macro sort_th(label, field, align='left') %}
+  {% set next_dir = 'asc' if (sort_by == field and sort_dir == 'desc') else 'desc' if (sort_by == field and sort_dir == 'asc') else 'asc' %}
+  <th class="text-{{ align }} px-4 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
+    <a href="?search={{ search }}&tipo={{ tipo }}&empresa={{ empresa }}&sort_by={{ field }}&sort_dir={{ next_dir }}&page=1"
+       class="inline-flex items-center gap-1 {{ 'text-blue-600' if sort_by == field else 'text-slate-500 hover:text-slate-700' }} transition-colors">
+      {{ label }}
+      {% if sort_by == field %}
+        <i class="fa-solid {{ 'fa-arrow-up' if sort_dir == 'asc' else 'fa-arrow-down' }} text-[9px]"></i>
+      {% else %}
+        <i class="fa-solid fa-sort text-[9px] opacity-20"></i>
+      {% endif %}
+    </a>
+  </th>
+{% endmacro %}
 <!-- Tabs -->
 <div class="flex gap-1 mb-5 border-b border-slate-200 flex-wrap">
   <a href="/billing" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
@@ -103,14 +117,14 @@
       <thead class="bg-slate-50 border-b border-slate-200">
         <tr>
           <th class="w-8 px-3 py-3"></th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">N° Comprobante</th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipo</th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fecha emisión</th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cargado</th>
-          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa</th>
+          {{ sort_th("N° Comprobante", "numero") }}
+          {{ sort_th("Tipo", "tipo") }}
+          {{ sort_th("Fecha emisión", "fecha_emision") }}
+          {{ sort_th("Cargado", "fecha_carga") }}
+          {{ sort_th("Empresa", "empresa") }}
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Socios</th>
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Producto</th>
-          <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+          {{ sort_th("Monto", "monto", align='right') }}
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
@@ -260,13 +274,13 @@
   <span>Página {{ page }} de {{ pages }}</span>
   <div class="flex gap-1">
     {% if page > 1 %}
-    <a href="?search={{ search }}&tipo={{ tipo }}&empresa={{ empresa }}&page={{ page - 1 }}"
+    <a href="?search={{ search }}&tipo={{ tipo }}&empresa={{ empresa }}&sort_by={{ sort_by }}&sort_dir={{ sort_dir }}&page={{ page - 1 }}"
        class="btn-ghost text-xs py-1.5 px-3">
       <i class="fa-solid fa-chevron-left mr-1 text-[10px]"></i> Anterior
     </a>
     {% endif %}
     {% if page < pages %}
-    <a href="?search={{ search }}&tipo={{ tipo }}&empresa={{ empresa }}&page={{ page + 1 }}"
+    <a href="?search={{ search }}&tipo={{ tipo }}&empresa={{ empresa }}&sort_by={{ sort_by }}&sort_dir={{ sort_dir }}&page={{ page + 1 }}"
        class="btn-ghost text-xs py-1.5 px-3">
       Siguiente <i class="fa-solid fa-chevron-right ml-1 text-[10px]"></i>
     </a>

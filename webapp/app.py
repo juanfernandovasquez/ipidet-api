@@ -1048,13 +1048,18 @@ async def billing_ingresos(
 
 @app.get("/comprobantes", response_class=HTMLResponse)
 async def comprobantes_list(
-    request: Request,
-    search:  str = "",
-    tipo:    str = "",
-    empresa: str = "",
-    page:    int = 1,
+    request:  Request,
+    search:   str = "",
+    tipo:     str = "",
+    empresa:  str = "",
+    sort_by:  str = "fecha_carga",
+    sort_dir: str = "desc",
+    page:     int = 1,
 ):
-    docs, total = pdb.get_comprobantes(search=search, tipo=tipo, empresa=empresa, page=page)
+    docs, total = pdb.get_comprobantes(
+        search=search, tipo=tipo, empresa=empresa,
+        sort_by=sort_by, sort_dir=sort_dir, page=page,
+    )
     stats    = pdb.get_comprobante_stats()
     empresas = pdb.get_all_companies()
     productos_raw = pdb.get_productos_list()
@@ -1083,6 +1088,8 @@ async def comprobantes_list(
         search         = search,
         tipo           = tipo,
         empresa        = empresa,
+        sort_by        = sort_by,
+        sort_dir       = sort_dir,
         page           = page,
         pages          = pages,
     ))

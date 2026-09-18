@@ -43,12 +43,12 @@ for i, t in enumerate(tareas, 1):
     else:
         fecha_str = str(fecha)[:10] if fecha else "—"
 
-    badge = {"PENDIENTE": "⏳", "EN_PROCESO": "🔄"}.get(estado, "📌")
+    badge = {"PENDIENTE": "[*]", "EN_PROCESO": "[>]"}.get(estado, "[?]")
     print(f"[{i}] {badge} {estado}  ({fecha_str})")
     print(f"     ID: {t['_id']}")
     print()
     for linea in t.get("texto", "").splitlines():
         print(f"     {linea}")
     print()
-    print(f"{'─'*60}")
+    print("-" * 60)
     print()
