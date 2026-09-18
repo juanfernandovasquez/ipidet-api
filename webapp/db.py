@@ -973,9 +973,28 @@ def delete_company(company_id: str):
 
 
 def get_socios_por_empresa(empresa_nombre: str, periodo: str) -> list:
-    """Socios cuyo payment del período tiene empresa_pagadora == empresa_nombre."""
+    """Socios cuyo payment del período tiene empresa_pagadora == empresa_nombre (bidirectional, case-insensitive)."""
+    emp = empresa_nombre.strip()
+    company = companies_col.find_one(
+        {"nombre": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+        {"nombre": 1, "razon_social": 1},
+    )
+    variants = {emp.lower()}
+    if company:
+        if company.get("nombre"):
+            variants.add(company["nombre"].lower())
+        if company.get("razon_social") and company["razon_social"].strip():
+            variants.add(company["razon_social"].lower().strip())
+
+    # Find matching empresa_pagadora values in payments (bidirectional substring)
+    all_emp_vals = payments_col.distinct("empresa_pagadora", {"periodo": periodo})
+    matching = [v for v in all_emp_vals if v and any(
+        (v.lower() in var or var in v.lower()) for var in variants
+    )]
+    if not matching:
+        return []
     pipeline = [
-        {"$match": {"empresa_pagadora": empresa_nombre, "periodo": periodo}},
+        {"$match": {"empresa_pagadora": {"$in": matching}, "periodo": periodo}},
         {"$lookup": {
             "from": "members",
             "localField": "member_id",
@@ -1099,6 +1118,53 @@ def get_or_create_payment(member_id: str, periodo: str) -> str:
         return str(p["_id"])
     result = payments_col.insert_one({"member_id": member_id, "periodo": periodo, "estado": "pendiente"})
     return str(result.inserted_id)
+
+
+_TIPOS_PAGO = ("cuota_anual", "cuota_provincia", "fraccionamiento")
+_ESTADOS_NO_MODIFICAR = ("pagado", "exonerado", "no_aplica")
+
+
+def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
+                                  fecha_emision: str, empresa: str = "") -> int:
+    """Marca como pagados los payments que correspondan a items del comprobante.
+    Solo actúa sobre productos cuya tipo sea cuota_anual, cuota_provincia o fraccionamiento.
+    Devuelve la cantidad de payments actualizados."""
+    updated = 0
+    seen = set()  # (member_id, periodo) ya procesados
+    for item in items:
+        mid = item.get("member_id")
+        pnombre = item.get("producto_nombre", "")
+        if not mid or not pnombre:
+            continue
+        prod = productos_col.find_one(
+            {"nombre": {"$regex": f"^{_re.escape(pnombre)}$", "$options": "i"}, "activo": True},
+            {"tipo": 1, "periodo": 1},
+        )
+        if not prod:
+            continue
+        tipo_prod = prod.get("tipo", "")
+        periodo = prod.get("periodo", "")
+        if tipo_prod not in _TIPOS_PAGO or not periodo:
+            continue
+        key = (mid, periodo)
+        if key in seen:
+            continue
+        seen.add(key)
+        payment_id = get_or_create_payment(mid, periodo)
+        pay = payments_col.find_one({"_id": ObjectId(payment_id)}, {"estado": 1})
+        if pay and pay.get("estado") in _ESTADOS_NO_MODIFICAR:
+            continue
+        update_payment(
+            payment_id,
+            estado="pagado",
+            fecha_pago=fecha_emision or None,
+            num_comprobante=numero,
+            tipo_comprobante=tipo,
+            fecha_emision_comprobante=fecha_emision or None,
+            empresa=empresa or None,
+        )
+        updated += 1
+    return updated
 
 
 def mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
@@ -1554,11 +1620,28 @@ def _sync_credito_estado(doc: dict) -> str:
 
 def get_facturas_credito(empresa: str = "", estado: str = "") -> list:
     q: dict = {}
-    if empresa:
-        q["empresa"] = {"$regex": _re.escape(empresa.strip()), "$options": "i"}
     if estado:
         q["estado"] = estado
     docs = list(credito_col.find(q).sort("fecha_vencimiento", 1))
+    if empresa:
+        emp = empresa.strip()
+        company = companies_col.find_one(
+            {"$or": [
+                {"nombre":      {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+                {"razon_social": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+            ]},
+            {"nombre": 1, "razon_social": 1},
+        )
+        variants = {emp.lower()}
+        if company:
+            if company.get("nombre"):
+                variants.add(company["nombre"].lower())
+            if company.get("razon_social") and company["razon_social"].strip():
+                variants.add(company["razon_social"].lower().strip())
+        def _matches(de: str) -> bool:
+            de = (de or "").lower().strip()
+            return bool(de) and any(de in v or v in de for v in variants)
+        docs = [d for d in docs if _matches(d.get("empresa", ""))]
     for d in docs:
         d["estado"] = _sync_credito_estado(d)
     docs = _clean(docs)
@@ -1590,8 +1673,20 @@ def create_factura_credito(empresa: str, numero_factura: str, monto: float,
                             fecha_emision: str, fecha_vencimiento: str,
                             concepto: str = "", socios: list | None = None,
                             periodo: str = "") -> str:
+    emp = empresa.strip()
+    if emp:
+        existing = companies_col.find_one(
+            {"$or": [
+                {"nombre":      {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+                {"razon_social": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+            ]},
+            {"nombre": 1},
+        )
+        emp = existing["nombre"] if existing else emp
+        if not existing:
+            add_company(nombre=emp)
     doc = {
-        "empresa": empresa.strip(),
+        "empresa": emp,
         "numero_factura": numero_factura.strip(),
         "monto": monto,
         "fecha_emision": fecha_emision,
@@ -2372,6 +2467,20 @@ def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
                 update[k] = float(v)
             except (ValueError, TypeError):
                 pass
+        elif k == "empresa":
+            emp = str(v).strip()
+            if emp:
+                existing = companies_col.find_one(
+                    {"$or": [
+                        {"nombre":       {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+                        {"razon_social": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
+                    ]},
+                    {"nombre": 1},
+                )
+                emp = existing["nombre"] if existing else emp
+                if not existing:
+                    add_company(nombre=emp)
+            update[k] = emp
         else:
             update[k] = str(v).strip()
     if update:

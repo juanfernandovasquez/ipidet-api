@@ -1130,6 +1130,13 @@ async def comprobante_add(request: Request):
         socios          = socios,
         items           = items,
     )
+    pdb.sync_comprobante_to_payments(
+        items         = items,
+        numero        = data.get("numero", ""),
+        tipo          = data.get("tipo", "boleta"),
+        fecha_emision = data.get("fecha_emision", ""),
+        empresa       = empresa,
+    )
     if data.get("es_credito"):
         periodo = data.get("periodo", "").strip()
         pdb.create_factura_credito(
@@ -1229,15 +1236,24 @@ async def comprobantes_import_xml(
             items           = items,
         )
 
+        pagos_actualizados = pdb.sync_comprobante_to_payments(
+            items         = items,
+            numero        = numero,
+            tipo          = data["tipo"],
+            fecha_emision = data["fecha_emision"],
+            empresa       = empresa_nombre,
+        )
+
         results.append({
-            "filename":      fname,
-            "numero":        numero,
-            "tipo":          data["tipo"],
-            "status":        "importado",
-            "empresa":       empresa_nombre,
-            "empresa_nueva": empresa_nueva,
-            "monto":         data["monto_total"],
-            "socios_count":  len(socios),
+            "filename":          fname,
+            "numero":            numero,
+            "tipo":              data["tipo"],
+            "status":            "importado",
+            "empresa":           empresa_nombre,
+            "empresa_nueva":     empresa_nueva,
+            "monto":             data["monto_total"],
+            "socios_count":      len(socios),
+            "pagos_actualizados": pagos_actualizados,
         })
 
     return {"results": results}
