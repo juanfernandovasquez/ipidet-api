@@ -215,7 +215,7 @@
         <button @click="copiarPreview()" type="button"
                 class="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 transition-colors">
           <i class="fa-solid fa-copy text-[10px]"></i>
-          <span x-text="copiado ? '¡Copiado!' : 'Copiar'"></span>
+          <span x-text="copied === 'preview' ? '¡Copiado!' : 'Copiar todo'"></span>
         </button>
       </div>
 
@@ -236,38 +236,69 @@
         </div>
 
         <!-- Líneas -->
-        <div x-show="lineas.some(l => l.sid || l.pid)" x-cloak>
-          <div class="text-[10px] text-slate-400 uppercase tracking-wide mb-2">Detalle:</div>
-          <div class="border border-slate-200 rounded overflow-hidden">
-            <div class="grid text-[10px] font-bold text-slate-500 uppercase tracking-wide bg-slate-50 px-2 py-1 border-b border-slate-200"
-                 style="grid-template-columns: 1.2rem 6rem 1fr 4.5rem">
-              <span>#</span>
-              <span>Código</span>
-              <span>Descripción</span>
-              <span class="text-right">Monto</span>
-            </div>
-            <template x-for="(ln, i) in lineas.filter(l => l.sid || l.pid)" :key="i">
-              <div class="grid items-start px-2 py-1.5 border-b border-slate-100 last:border-0 text-[11px]"
-                   style="grid-template-columns: 1.2rem 6rem 1fr 4.5rem">
-                <span class="text-slate-400" x-text="i+1"></span>
-                <span class="font-mono text-emerald-700 truncate" x-text="ln.pcode || '—'"></span>
-                <div class="min-w-0 pr-1">
-                  <div class="font-medium text-slate-800 truncate" x-text="ln.pnombre || '(sin producto)'"></div>
-                  <div x-show="ln.sid" class="text-slate-500 text-[10px]">
-                    <span x-text="ln.snombre"></span>
-                    <span class="font-mono text-slate-400" x-text="' (' + ln.sid + ')'"></span>
-                  </div>
-                </div>
-                <span class="text-right font-bold text-slate-800" x-text="ln.monto ? 'S/ ' + parseFloat(ln.monto).toFixed(2) : '—'"></span>
+        <div x-show="lineas.some(l => l.sid || l.pid)" x-cloak class="space-y-2">
+          <div class="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Detalle por línea:</div>
+          <template x-for="(ln, i) in lineas.filter(l => l.sid || l.pid)" :key="i">
+            <div class="border border-slate-200 rounded-lg overflow-hidden">
+              <!-- Cabecera de línea -->
+              <div class="bg-slate-50 border-b border-slate-100 px-3 py-1 flex items-center justify-between">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide" x-text="'Línea ' + (i+1)"></span>
+                <button type="button"
+                        @click="copiar(lineDesc(ln), 'linea-' + i)"
+                        class="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-blue-600 transition-colors px-1.5 py-0.5 rounded hover:bg-blue-50">
+                  <i class="fa-solid fa-copy text-[9px]"></i>
+                  <span x-text="copied === 'linea-' + i ? '¡Copiado!' : 'Copiar línea'"></span>
+                </button>
               </div>
-            </template>
-          </div>
+              <!-- Campos -->
+              <div class="divide-y divide-slate-100">
+                <!-- Código -->
+                <div class="flex items-center justify-between px-3 py-1.5 gap-2">
+                  <span class="text-[10px] text-slate-400 w-20 shrink-0">Código</span>
+                  <span class="font-mono text-emerald-700 text-[11px] flex-1 truncate" x-text="ln.pcode || '—'"></span>
+                  <button type="button" x-show="ln.pcode"
+                          @click="copiar(ln.pcode, 'code-' + i)"
+                          class="text-slate-300 hover:text-blue-500 transition-colors ml-1 shrink-0"
+                          :title="'Copiar código'">
+                    <i class="fa-solid text-[10px]" :class="copied === 'code-' + i ? 'fa-check text-emerald-500' : 'fa-copy'"></i>
+                  </button>
+                </div>
+                <!-- Descripción = IPIDET-XXXX APELLIDOS NOMBRES -->
+                <div class="flex items-center justify-between px-3 py-1.5 gap-2">
+                  <span class="text-[10px] text-slate-400 w-20 shrink-0">Descripción</span>
+                  <span class="text-[11px] text-slate-800 flex-1 font-medium" x-text="lineDesc(ln)"></span>
+                  <button type="button" x-show="ln.sid || ln.snombre"
+                          @click="copiar(lineDesc(ln), 'desc-' + i)"
+                          class="text-slate-300 hover:text-blue-500 transition-colors ml-1 shrink-0">
+                    <i class="fa-solid text-[10px]" :class="copied === 'desc-' + i ? 'fa-check text-emerald-500' : 'fa-copy'"></i>
+                  </button>
+                </div>
+                <!-- Monto -->
+                <div class="flex items-center justify-between px-3 py-1.5 gap-2">
+                  <span class="text-[10px] text-slate-400 w-20 shrink-0">Monto</span>
+                  <span class="font-mono font-bold text-slate-800 text-[11px] flex-1" x-text="ln.monto ? parseFloat(ln.monto).toFixed(2) : '—'"></span>
+                  <button type="button" x-show="ln.monto"
+                          @click="copiar(parseFloat(ln.monto).toFixed(2), 'monto-' + i)"
+                          class="text-slate-300 hover:text-blue-500 transition-colors ml-1 shrink-0">
+                    <i class="fa-solid text-[10px]" :class="copied === 'monto-' + i ? 'fa-check text-emerald-500' : 'fa-copy'"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- Total -->
         <div class="border-t-2 border-slate-800 pt-2 flex items-center justify-between">
           <span class="font-bold text-slate-600 text-sm">TOTAL</span>
-          <span class="font-bold text-green-700 text-base" x-text="'S/ ' + total.toFixed(2)"></span>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-green-700 text-base font-mono" x-text="'S/ ' + total.toFixed(2)"></span>
+            <button type="button" x-show="total > 0"
+                    @click="copiar(total.toFixed(2), 'total')"
+                    class="text-slate-300 hover:text-blue-500 transition-colors">
+              <i class="fa-solid text-[11px]" :class="copied === 'total' ? 'fa-check text-emerald-500' : 'fa-copy'"></i>
+            </button>
+          </div>
         </div>
 
         <!-- Placeholder vacío -->
@@ -369,7 +400,7 @@ function preparar() {
     lineas: [],
     empSugg: [],
     guardando: false,
-    copiado: false,
+    copied: null,
     resultado: null,
 
     get total() {
@@ -438,13 +469,30 @@ function preparar() {
       this.empSugg = [];
     },
 
-    copiarPreview() {
-      const el = document.getElementById('preview-content');
-      const text = el ? el.innerText : '';
-      navigator.clipboard.writeText(text).then(() => {
-        this.copiado = true;
-        setTimeout(() => this.copiado = false, 2000);
+    lineDesc(ln) {
+      if (ln.sid && ln.snombre) return ln.sid + ' ' + ln.snombre;
+      if (ln.sid) return ln.sid;
+      if (ln.snombre) return ln.snombre;
+      return ln.pnombre || '';
+    },
+
+    copiar(texto, clave) {
+      if (!texto) return;
+      navigator.clipboard.writeText(texto).then(() => {
+        this.copied = clave;
+        setTimeout(() => { if (this.copied === clave) this.copied = null; }, 1800);
       });
+    },
+
+    copiarPreview() {
+      const lineasFiltradas = this.lineas.filter(l => l.sid || l.pid);
+      const rows = lineasFiltradas.map((ln, i) =>
+        `Línea ${i+1}\nCódigo: ${ln.pcode || '—'}\nDescripción: ${this.lineDesc(ln)}\nMonto: ${ln.monto ? parseFloat(ln.monto).toFixed(2) : '—'}`
+      );
+      const header = (this.form.tipo === 'factura' ? 'FACTURA' : 'BOLETA') + ' — ' + (this.form.fecha || '') +
+        (this.form.empresa ? '\nEmpresa: ' + this.form.empresa + (this.form.ruc ? ' | RUC: ' + this.form.ruc : '') : '');
+      const texto = [header, ...rows, 'TOTAL: ' + this.total.toFixed(2)].join('\n\n');
+      this.copiar(texto, 'preview');
     },
 
     async registrar() {
