@@ -157,104 +157,93 @@
           <div class="flex items-center gap-1 pt-3 mb-3 border-b border-slate-200">
             <button @click="activeTab = 'facturas'"
                     class="text-xs font-medium px-3 py-1.5 rounded-t-lg border border-b-0 -mb-px transition-colors"
-                    :class="activeTab === 'facturas'
-                      ? 'bg-white border-slate-200 text-blue-700'
-                      : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700'">
-              <i class="fa-solid fa-file-invoice-dollar mr-1 text-[11px]"></i> Facturas de crédito
-              <span x-show="facturas.length > 0"
-                    class="ml-1 bg-blue-100 text-blue-600 text-[10px] rounded-full px-1.5"
-                    x-text="facturas.length"></span>
-            </button>
-            <button @click="activeTab = 'comprobantes'; comprobantes.length === 0 && cargarComprobantes()"
-                    class="text-xs font-medium px-3 py-1.5 rounded-t-lg border border-b-0 -mb-px transition-colors"
-                    :class="activeTab === 'comprobantes'
-                      ? 'bg-white border-slate-200 text-violet-700'
-                      : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700'">
-              <i class="fa-solid fa-file-lines mr-1 text-[11px]"></i> Comprobantes emitidos
-              <span x-show="comprobantes.length > 0"
-                    class="ml-1 bg-violet-100 text-violet-600 text-[10px] rounded-full px-1.5"
-                    x-text="comprobantes.length"></span>
+                    :class="activeTab === 'facturas' ? 'bg-white border-slate-200 text-blue-700' : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700'">
+              <i class="fa-solid fa-file-invoice mr-1 text-[11px]"></i> Facturas
+              <span x-show="documentos.length > 0" class="ml-1 bg-blue-100 text-blue-600 text-[10px] rounded-full px-1.5" x-text="documentos.length"></span>
             </button>
             <button @click="activeTab = 'socios'; socios.length === 0 && cargarSocios()"
                     class="text-xs font-medium px-3 py-1.5 rounded-t-lg border border-b-0 -mb-px transition-colors"
-                    :class="activeTab === 'socios'
-                      ? 'bg-white border-slate-200 text-blue-700'
-                      : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700'">
+                    :class="activeTab === 'socios' ? 'bg-white border-slate-200 text-blue-700' : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700'">
               <i class="fa-solid fa-users mr-1 text-[11px]"></i> Socios
             </button>
           </div>
 
-          <!-- ── Tab Facturas ── -->
+          <!-- ── Tab Facturas unificado ── -->
           <div x-show="activeTab === 'facturas'">
-            <div x-show="loadingFacturas" class="text-xs text-slate-400 py-3">
+            <div x-show="loadingDocs" class="text-xs text-slate-400 py-3">
               <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
             </div>
-            <div x-show="!loadingFacturas && facturas.length === 0" class="text-xs text-slate-400 py-3">
-              No hay facturas de crédito giradas a esta empresa.
+            <div x-show="!loadingDocs && documentos.length === 0" class="text-xs text-slate-400 py-3">
+              No hay facturas registradas para esta empresa.
             </div>
-
-            <div x-show="!loadingFacturas && facturas.length > 0" class="overflow-x-auto">
+            <div x-show="!loadingDocs && documentos.length > 0" class="overflow-x-auto">
               <table class="w-full text-xs">
                 <thead>
                   <tr class="text-slate-500 border-b border-slate-200">
                     <th class="py-1.5 pr-3 text-left font-semibold w-4"></th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">N° Factura</th>
+                    <th class="py-1.5 pr-3 text-left font-semibold">N°</th>
+                    <th class="py-1.5 pr-3 text-left font-semibold">Modalidad</th>
+                    <th class="py-1.5 pr-3 text-left font-semibold">Tipo</th>
                     <th class="py-1.5 pr-3 text-left font-semibold">Emisión</th>
                     <th class="py-1.5 pr-3 text-left font-semibold">Vencimiento</th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">Período</th>
                     <th class="py-1.5 pr-3 text-right font-semibold">Monto</th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">Concepto</th>
+                    <th class="py-1.5 pr-3 text-left font-semibold">Concepto / Producto</th>
                     <th class="py-1.5 pr-3 text-center font-semibold">Estado</th>
-                    <th class="py-1.5 text-right font-semibold">Acciones</th>
                   </tr>
                 </thead>
-
-                <!-- Una tbody por factura para poder expandir socios -->
-                <template x-for="f in facturas" :key="f._id">
+                <template x-for="d in documentos" :key="d._id">
                   <tbody>
-                    <tr class="border-b border-slate-100 hover:bg-slate-100/60 cursor-pointer"
-                        @click="toggleFactura(f._id)">
+                    <tr class="border-b border-slate-100 hover:bg-slate-50/80 cursor-pointer"
+                        @click="docExpand[d._id] = !docExpand[d._id]">
                       <td class="py-2 pl-1 pr-2">
                         <i class="fa-solid fa-chevron-right text-slate-300 transition-transform duration-150"
-                           :class="facturaExpand[f._id] ? 'rotate-90' : ''"></i>
+                           :class="docExpand[d._id] ? 'rotate-90' : ''"></i>
                       </td>
-                      <td class="py-2 pr-3 font-mono font-medium text-slate-700" x-text="f.numero_factura || '—'"></td>
-                      <td class="py-2 pr-3 text-slate-600" x-text="f.fecha_emision || '—'"></td>
-                      <td class="py-2 pr-3 text-slate-600" x-text="f.fecha_vencimiento || '—'"></td>
-                      <td class="py-2 pr-3 text-slate-500" x-text="f.periodo || '—'"></td>
-                      <td class="py-2 pr-3 text-right font-medium text-slate-800"
-                          x-text="'S/ ' + (f.monto ? f.monto.toLocaleString('es-PE', {minimumFractionDigits:2}) : '0.00')"></td>
-                      <td class="py-2 pr-3 text-slate-500 max-w-xs truncate" x-text="f.concepto || '—'"></td>
-                      <td class="py-2 pr-3 text-center">
+                      <td class="py-2 pr-3 font-mono font-medium text-slate-700" x-text="d.numero || '—'"></td>
+                      <td class="py-2 pr-3">
                         <span class="inline-block px-1.5 py-0.5 rounded-full font-medium text-[10px]"
-                          :class="{
-                            'bg-green-100 text-green-700': f.estado === 'cobrado',
-                            'bg-red-100 text-red-700':    f.estado === 'vencido',
-                            'bg-amber-100 text-amber-700': f.estado === 'pendiente',
-                          }"
-                          x-text="f.estado"></span>
+                              :class="d._tipo_doc === 'credito' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'"
+                              x-text="d._tipo_doc === 'credito' ? 'Crédito' : 'Contado'"></span>
                       </td>
-                      <td class="py-2 text-right whitespace-nowrap" @click.stop>
-                        <a :href="'/billing/credito?empresa=' + encodeURIComponent(empresaNombre)"
-                           class="text-blue-600 hover:underline text-[11px] mr-2">
-                          <i class="fa-solid fa-arrow-up-right-from-square text-[10px] mr-0.5"></i> Crédito
-                        </a>
-                        <a :href="'/comprobantes?empresa=' + encodeURIComponent(empresaNombre)"
-                           class="text-violet-600 hover:underline text-[11px]">
-                          <i class="fa-solid fa-file-lines text-[10px] mr-0.5"></i> Comprobantes
-                        </a>
+                      <td class="py-2 pr-3">
+                        <template x-if="d._tipo_doc === 'comprobante'">
+                          <span class="inline-block px-1.5 py-0.5 rounded-full font-medium text-[10px]"
+                                :class="d.tipo === 'boleta' ? 'bg-sky-100 text-sky-700' : 'bg-indigo-100 text-indigo-700'"
+                                x-text="d.tipo || '—'"></span>
+                        </template>
+                        <template x-if="d._tipo_doc === 'credito'">
+                          <span class="text-slate-400">—</span>
+                        </template>
+                      </td>
+                      <td class="py-2 pr-3 text-slate-600" x-text="d.fecha_emision || '—'"></td>
+                      <td class="py-2 pr-3 text-slate-500" :class="d.estado_credito === 'vencido' ? 'text-red-600 font-medium' : ''"
+                          x-text="d.fecha_vencimiento || '—'"></td>
+                      <td class="py-2 pr-3 text-right font-medium text-slate-800"
+                          x-text="'S/ ' + ((d.monto_total || 0).toLocaleString('es-PE', {minimumFractionDigits:2}))"></td>
+                      <td class="py-2 pr-3 text-slate-500 max-w-xs truncate"
+                          x-text="d.concepto || d.producto_nombre || '—'"></td>
+                      <td class="py-2 pr-3 text-center">
+                        <template x-if="d._tipo_doc === 'credito'">
+                          <span class="inline-block px-1.5 py-0.5 rounded-full font-medium text-[10px]"
+                            :class="{
+                              'bg-green-100 text-green-700': d.estado_credito === 'cobrado',
+                              'bg-red-100 text-red-700':     d.estado_credito === 'vencido',
+                              'bg-amber-100 text-amber-700': d.estado_credito === 'pendiente',
+                            }"
+                            x-text="d.estado_credito || '—'"></span>
+                        </template>
+                        <template x-if="d._tipo_doc === 'comprobante'">
+                          <span class="text-slate-300">—</span>
+                        </template>
                       </td>
                     </tr>
-
-                    <!-- Fila de desglose socios -->
-                    <tr x-show="facturaExpand[f._id]" x-cloak>
+                    <!-- Fila expandida: socios vinculados -->
+                    <tr x-show="docExpand[d._id]" x-cloak>
                       <td colspan="9" class="py-2 px-4 bg-slate-50 border-b border-slate-200">
-                        <div x-show="!f.socios || f.socios.length === 0"
-                             class="text-xs text-slate-400 py-1">
-                          Sin socios vinculados.
-                        </div>
-                        <div x-show="f.socios && f.socios.length > 0" class="flex flex-wrap gap-1.5 py-1">
-                          <template x-for="s in f.socios" :key="s.member_id">
+                        <div x-show="(!d.socios || d.socios.length === 0) && (!d.socios_info || d.socios_info.length === 0)"
+                             class="text-xs text-slate-400 py-1">Sin socios vinculados.</div>
+                        <div class="flex flex-wrap gap-1.5 py-1">
+                          <template x-for="s in (d._tipo_doc === 'credito' ? d.socios : d.socios_info) || []" :key="s.member_id">
                             <a :href="'/members/' + s.member_id"
                                class="inline-flex items-center gap-1 text-[11px] px-2 py-1 bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:text-blue-700 transition-colors shadow-sm">
                               <i class="fa-solid fa-user text-slate-300 text-[10px]"></i>
@@ -263,91 +252,23 @@
                             </a>
                           </template>
                         </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </template>
-
-              </table>
-            </div>
-
-            <!-- Links rápidos al pie -->
-            <div x-show="!loadingFacturas && facturas.length > 0"
-                 class="mt-3 flex items-center gap-4 text-xs">
-              <a :href="'/billing/credito?empresa=' + encodeURIComponent(empresaNombre)"
-                 class="text-blue-600 hover:underline">
-                <i class="fa-solid fa-arrow-up-right-from-square text-[10px] mr-1"></i>
-                Gestionar en facturación crédito
-              </a>
-              <a :href="'/comprobantes?empresa=' + encodeURIComponent(empresaNombre)"
-                 class="text-violet-600 hover:underline">
-                <i class="fa-solid fa-file-lines text-[10px] mr-1"></i>
-                Ver comprobantes de esta empresa
-              </a>
-            </div>
-          </div>
-
-          <!-- ── Tab Comprobantes emitidos ── -->
-          <div x-show="activeTab === 'comprobantes'">
-            <div x-show="loadingComprobantes" class="text-xs text-slate-400 py-3">
-              <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
-            </div>
-            <div x-show="!loadingComprobantes && comprobantes.length === 0" class="text-xs text-slate-400 py-3">
-              No hay comprobantes emitidos a esta empresa.
-            </div>
-            <div x-show="!loadingComprobantes && comprobantes.length > 0" class="overflow-x-auto">
-              <table class="w-full text-xs">
-                <thead>
-                  <tr class="text-slate-500 border-b border-slate-200">
-                    <th class="py-1.5 pr-3 text-left font-semibold w-4"></th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">N° Comprobante</th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">Tipo</th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">Emisión</th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">RUC</th>
-                    <th class="py-1.5 pr-3 text-right font-semibold">Monto</th>
-                    <th class="py-1.5 pr-3 text-left font-semibold">Producto</th>
-                  </tr>
-                </thead>
-                <template x-for="c in comprobantes" :key="c._id">
-                  <tbody>
-                    <tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
-                        @click="compExpand[c._id] = !compExpand[c._id]">
-                      <td class="py-2 pl-1 pr-2">
-                        <i class="fa-solid fa-chevron-right text-slate-300 transition-transform duration-150"
-                           :class="compExpand[c._id] ? 'rotate-90' : ''"></i>
-                      </td>
-                      <td class="py-2 pr-3 font-mono font-medium text-violet-700" x-text="c.numero || '—'"></td>
-                      <td class="py-2 pr-3">
-                        <span class="inline-block px-1.5 py-0.5 rounded-full font-medium text-[10px]"
-                              :class="c.tipo === 'boleta' ? 'bg-sky-100 text-sky-700' : 'bg-indigo-100 text-indigo-700'"
-                              x-text="c.tipo || '—'"></span>
-                      </td>
-                      <td class="py-2 pr-3 text-slate-600" x-text="c.fecha_emision || '—'"></td>
-                      <td class="py-2 pr-3 font-mono text-slate-500" x-text="c.ruc_empresa || '—'"></td>
-                      <td class="py-2 pr-3 text-right font-medium text-slate-800"
-                          x-text="'S/ ' + (c.monto_total ? c.monto_total.toLocaleString('es-PE', {minimumFractionDigits:2}) : '0.00')"></td>
-                      <td class="py-2 pr-3 text-slate-500 max-w-xs truncate" x-text="c.producto_nombre || c.concepto || '—'"></td>
-                    </tr>
-                    <tr x-show="compExpand[c._id]" x-cloak>
-                      <td colspan="7" class="py-2 px-4 bg-slate-50 border-b border-slate-200">
-                        <div x-show="!c.socios_info || c.socios_info.length === 0"
-                             class="text-xs text-slate-400 py-1">Sin socios vinculados.</div>
-                        <div x-show="c.socios_info && c.socios_info.length > 0"
-                             class="flex flex-wrap gap-1.5 py-1">
-                          <template x-for="s in c.socios_info" :key="s.member_id">
-                            <a :href="'/members/' + s.member_id"
-                               class="inline-flex items-center gap-1 text-[11px] px-2 py-1 bg-white border border-slate-200 rounded-lg hover:border-violet-400 hover:text-violet-700 transition-colors shadow-sm">
-                              <i class="fa-solid fa-user text-slate-300 text-[10px]"></i>
-                              <span x-text="s.nombre || s.member_id"></span>
-                              <span class="font-mono text-slate-400 text-[10px]" x-text="'· ' + s.member_id"></span>
-                            </a>
-                          </template>
+                        <div x-show="d._tipo_doc === 'credito'" class="mt-1">
+                          <a :href="'/comprobantes?tipo=credito&empresa=' + encodeURIComponent(empresaNombre)"
+                             class="text-xs text-blue-600 hover:underline">
+                            <i class="fa-solid fa-arrow-up-right-from-square text-[9px] mr-1"></i>Gestionar en Comprobantes
+                          </a>
                         </div>
                       </td>
                     </tr>
                   </tbody>
                 </template>
               </table>
+            </div>
+            <div x-show="!loadingDocs && documentos.length > 0" class="mt-3 text-xs">
+              <a :href="'/comprobantes?empresa=' + encodeURIComponent(empresaNombre)"
+                 class="text-blue-600 hover:underline">
+                <i class="fa-solid fa-arrow-up-right-from-square text-[9px] mr-1"></i>Ver todas en Comprobantes
+              </a>
             </div>
           </div>
 
@@ -477,59 +398,61 @@
 <script>
 function empresaRow(nombre) {
   return {
-    editing:              false,
-    expanded:             false,
-    activeTab:            'facturas',
-    sociosPeriodo:        '2026',
-    socios:               [],
-    loadingSocios:        false,
-    facturas:             [],
-    loadingFacturas:      false,
-    facturasLoaded:       false,
-    facturaExpand:        {},
-    comprobantes:         [],
-    loadingComprobantes:  false,
-    comprobantesLoaded:   false,
-    compExpand:           {},
-    empresaNombre:        nombre,
+    editing:       false,
+    expanded:      false,
+    activeTab:     'facturas',
+    sociosPeriodo: '2026',
+    socios:        [],
+    loadingSocios: false,
+    documentos:    [],
+    loadingDocs:   false,
+    docsLoaded:    false,
+    docExpand:     {},
+    empresaNombre: nombre,
 
     toggle() {
       this.expanded = !this.expanded;
-      if (this.expanded && !this.facturasLoaded) {
-        this.cargarFacturas();
-        this.cargarComprobantes();
-      }
+      if (this.expanded && !this.docsLoaded) this.cargarDocumentos();
     },
 
-    toggleFactura(id) {
-      this.facturaExpand[id] = !this.facturaExpand[id];
-    },
-
-    async cargarFacturas() {
-      this.loadingFacturas = true;
-      this.facturas = [];
+    async cargarDocumentos() {
+      this.loadingDocs = true;
+      this.documentos  = [];
       try {
-        const r = await fetch('/api/empresas/facturas?empresa=' + encodeURIComponent(this.empresaNombre));
-        this.facturas = await r.json();
-        this.facturasLoaded = true;
-      } catch {
-        this.facturas = [];
-      } finally {
-        this.loadingFacturas = false;
-      }
-    },
+        const [rF, rC] = await Promise.all([
+          fetch('/api/empresas/facturas?empresa='     + encodeURIComponent(this.empresaNombre)),
+          fetch('/api/empresas/comprobantes?empresa=' + encodeURIComponent(this.empresaNombre)),
+        ]);
+        const facturas     = await rF.json();
+        const comprobantes = await rC.json();
 
-    async cargarComprobantes() {
-      this.loadingComprobantes = true;
-      this.comprobantes = [];
-      try {
-        const r = await fetch('/api/empresas/comprobantes?empresa=' + encodeURIComponent(this.empresaNombre));
-        this.comprobantes = await r.json();
-        this.comprobantesLoaded = true;
+        const normF = facturas.map(f => ({
+          ...f,
+          _tipo_doc:        'credito',
+          numero:            f.numero_factura || '—',
+          monto_total:       f.monto || 0,
+          concepto:          f.concepto || '',
+          producto_nombre:   '',
+          estado_credito:    f.estado || 'pendiente',
+          fecha_vencimiento: f.fecha_vencimiento || '',
+          socios_info:       [],
+        }));
+        const normC = comprobantes.map(c => ({
+          ...c,
+          _tipo_doc:        'comprobante',
+          estado_credito:    null,
+          fecha_vencimiento: '',
+          socios:            [],
+        }));
+
+        const todos = [...normF, ...normC];
+        todos.sort((a, b) => (b.fecha_emision || '').localeCompare(a.fecha_emision || ''));
+        this.documentos = todos;
+        this.docsLoaded  = true;
       } catch {
-        this.comprobantes = [];
+        this.documentos = [];
       } finally {
-        this.loadingComprobantes = false;
+        this.loadingDocs = false;
       }
     },
 

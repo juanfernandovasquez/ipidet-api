@@ -2314,12 +2314,121 @@ def get_comprobante_stats() -> dict:
     este_mes = hoy.strftime("%Y-%m")
     q = {"estado": {"$ne": "anulado"}}
     docs = list(comprobantes_col.find(q, {"tipo": 1, "fecha_emision": 1}))
+    cs = get_credito_stats()
     return {
-        "total":     len(docs),
-        "boletas":   sum(1 for d in docs if d.get("tipo") == "boleta"),
-        "facturas":  sum(1 for d in docs if d.get("tipo") == "factura"),
-        "este_mes":  sum(1 for d in docs if (d.get("fecha_emision") or "").startswith(este_mes)),
+        "total":                len(docs),
+        "boletas":              sum(1 for d in docs if d.get("tipo") == "boleta"),
+        "facturas":             sum(1 for d in docs if d.get("tipo") == "factura"),
+        "este_mes":             sum(1 for d in docs if (d.get("fecha_emision") or "").startswith(este_mes)),
+        "credito_pendiente":    cs["total_pendiente"],
+        "credito_vencido":      cs["total_vencido"],
+        "credito_cobrado":      cs["total_cobrado"],
+        "credito_n_pendientes": cs["n_pendientes"],
+        "credito_n_vencidos":   cs["n_vencidos"],
     }
+
+
+def get_comprobantes_unified(
+    search: str = "", tipo: str = "", empresa: str = "",
+    fecha: str = "", sort_by: str = "fecha_emision", sort_dir: str = "desc",
+    page: int = 1, per_page: int = 50,
+) -> tuple:
+    """Lista unificada de comprobantes (boletas/facturas) + facturas_credito."""
+    include_comp = tipo in ("", "boleta", "factura", "recibo")
+    include_cred = tipo in ("", "credito")
+    member_cache: dict = {}
+
+    def _enrich(doc):
+        info = []
+        for mid in doc.get("socios") or []:
+            if isinstance(mid, dict):
+                mid = mid.get("member_id", "")
+            if mid not in member_cache:
+                m = members_col.find_one({"member_id": mid}, {"nombres": 1, "apellidos": 1})
+                member_cache[mid] = (f"{m.get('apellidos','').strip()} {m.get('nombres','').strip()}".strip() if m else mid)
+            info.append({"member_id": mid, "nombre": member_cache[mid]})
+        doc["socios_info"] = info
+
+    all_docs: list = []
+
+    if include_comp:
+        q: dict = {"estado": {"$ne": "anulado"}}
+        if tipo and tipo not in ("credito",):
+            q["tipo"] = tipo
+        if empresa:
+            q["empresa"] = {"$regex": empresa, "$options": "i"}
+        if fecha:
+            q["fecha_emision"] = fecha
+        if search:
+            or_c: list = [
+                {"numero":          {"$regex": search, "$options": "i"}},
+                {"empresa":         {"$regex": search, "$options": "i"}},
+                {"producto_nombre": {"$regex": search, "$options": "i"}},
+                {"concepto":        {"$regex": search, "$options": "i"}},
+            ]
+            mtch = list(members_col.find(
+                {"$or": [{"nombres": {"$regex": search, "$options": "i"}},
+                         {"apellidos": {"$regex": search, "$options": "i"}}]},
+                {"member_id": 1},
+            ))
+            if mtch:
+                or_c.append({"socios": {"$in": [m["member_id"] for m in mtch]}})
+            q["$or"] = or_c
+        for d in comprobantes_col.find(q):
+            d["_id"] = str(d["_id"])
+            d["_tipo_doc"] = "comprobante"
+            d["monto_total"] = d.get("monto_total") or 0
+            lineas = d.get("items") or []
+            if lineas:
+                pnames = list({it.get("producto_nombre", "") for it in lineas if it.get("producto_nombre")})
+                d["display_producto"] = pnames[0] if len(pnames) == 1 else "Varios"
+            else:
+                d["display_producto"] = d.get("producto_nombre") or "—"
+            d["lineas"] = lineas
+            d["socios_map"] = {}
+            _enrich(d)
+            all_docs.append(d)
+
+    if include_cred:
+        qc: dict = {}
+        if empresa:
+            qc["empresa"] = {"$regex": empresa, "$options": "i"}
+        if fecha:
+            qc["fecha_emision"] = fecha
+        if search:
+            qc["$or"] = [
+                {"numero_factura": {"$regex": search, "$options": "i"}},
+                {"empresa":        {"$regex": search, "$options": "i"}},
+                {"concepto":       {"$regex": search, "$options": "i"}},
+            ]
+        for d in credito_col.find(qc):
+            d["_id"] = str(d["_id"])
+            d["_tipo_doc"] = "credito"
+            d["tipo"] = "credito"
+            d["numero"] = d.get("numero_factura") or ""
+            d["monto_total"] = float(d.get("monto") or 0)
+            d["estado_credito"] = _sync_credito_estado(d)
+            d["display_producto"] = d.get("concepto") or "—"
+            d["lineas"] = []
+            d["fecha_carga"] = d.get("fecha_vencimiento") or ""
+            _enrich(d)
+            d["socios"] = [{"member_id": si["member_id"], "nombre": si["nombre"]} for si in d["socios_info"]]
+            d["socios_map"] = {si["member_id"]: si["nombre"] for si in d["socios_info"]}
+            all_docs.append(d)
+
+    rev = sort_dir == "desc"
+    if sort_by == "monto":
+        all_docs.sort(key=lambda d: d.get("monto_total") or 0, reverse=rev)
+    elif sort_by == "empresa":
+        all_docs.sort(key=lambda d: (d.get("empresa") or "").lower(), reverse=rev)
+    elif sort_by == "numero":
+        all_docs.sort(key=lambda d: d.get("numero") or "", reverse=rev)
+    else:
+        all_docs.sort(key=lambda d: d.get("fecha_emision") or "", reverse=rev)
+
+    total = len(all_docs)
+    start = (page - 1) * per_page
+    return all_docs[start:start + per_page], total
 
 
 def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",

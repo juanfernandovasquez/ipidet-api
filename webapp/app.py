@@ -1073,22 +1073,27 @@ async def comprobantes_preparar(request: Request):
     ))
 
 
+@app.get("/billing/credito")
+async def billing_credito_redirect(request: Request):
+    return RedirectResponse("/comprobantes?tipo=credito", status_code=302)
+
+
 @app.get("/comprobantes", response_class=HTMLResponse)
 async def comprobantes_list(
     request:  Request,
     search:   str = "",
     tipo:     str = "",
     empresa:  str = "",
-    sort_by:  str = "fecha_carga",
+    sort_by:  str = "fecha_emision",
     sort_dir: str = "desc",
     page:     int = 1,
 ):
-    docs, total = pdb.get_comprobantes(
+    docs, total = pdb.get_comprobantes_unified(
         search=search, tipo=tipo, empresa=empresa,
         sort_by=sort_by, sort_dir=sort_dir, page=page,
     )
-    stats    = pdb.get_comprobante_stats()
-    empresas = pdb.get_all_companies()
+    stats         = pdb.get_comprobante_stats()
+    empresas      = pdb.get_all_companies()
     productos_raw = pdb.get_productos_list()
     productos_json = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"),
@@ -1096,15 +1101,7 @@ async def comprobantes_list(
          "codigo_sunat": p.get("codigo_sunat", "")}
         for p in productos_raw
     ]
-    pages    = max(1, (total + 49) // 50)
-    for doc in docs:
-        doc["socios_map"] = {s["member_id"]: s["nombre"] for s in doc.get("socios_info", [])}
-        doc["lineas"] = doc.get("items") or []   # "items" colisiona con dict.items() en Jinja2
-        if doc["lineas"]:
-            prod_names = list({it.get("producto_nombre", "") for it in doc["lineas"] if it.get("producto_nombre")})
-            doc["display_producto"] = prod_names[0] if len(prod_names) == 1 else "Varios productos"
-        else:
-            doc["display_producto"] = doc.get("producto_nombre") or "—"
+    pages = max(1, (total + 49) // 50)
     return templates.TemplateResponse(request, "comprobantes.html", _ctx(
         request,
         comprobantes   = docs,
