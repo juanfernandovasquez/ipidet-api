@@ -129,23 +129,27 @@
 
       {# ── Fila COMPROBANTE (boleta / factura / recibo) ─────────────────────── #}
       {% if c._tipo_doc == 'comprobante' %}
-      <tbody x-data="{
-        open: false, syncing: false, syncResult: null,
+      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
+      <tbody x-data="{syncing: false, syncMsg: '',
+        async sincronizar() {
+          this.syncing = true; this.syncMsg = '';
+          const r = await fetch('/comprobantes/{{ c._id }}/sync', { method: 'POST' });
+          const d = await r.json();
+          this.syncing = false;
+          this.syncMsg = (d.cruce_ok || 0) + ' actualiz.';
+          setTimeout(() => this.syncMsg = '', 4000);
+        },
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
           const r = await fetch('/comprobantes/{{ c._id }}/delete', { method: 'POST' });
           if (r.ok) location.reload();
-        },
-        async sincronizar() {
-          this.syncing = true; this.syncResult = null;
-          const r = await fetch('/comprobantes/{{ c._id }}/sync', { method: 'POST' });
-          const d = await r.json();
-          this.syncResult = d; this.syncing = false; this.open = true;
-        },
+        }
       }">
-      <tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" @click="open = !open">
+      <tr class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer"
+          data-comp='{{ comp_data | tojson }}'
+          onclick="window.dispatchEvent(new CustomEvent('comp-editar', {detail: JSON.parse(this.dataset.comp)}))">
         <td class="px-3 py-3 text-center text-slate-400">
-          <i class="fa-solid text-xs transition-transform duration-150" :class="open ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+          <i class="fa-solid fa-up-right-from-square text-[10px]"></i>
         </td>
         <td class="px-4 py-3 font-mono text-slate-800 text-sm font-semibold">{{ c.numero or '—' }}</td>
         <td class="px-4 py-3">
@@ -178,14 +182,10 @@
           {% if c.monto_total %}S/ {{ "%.2f"|format(c.monto_total) }}{% else %}—{% endif %}
         </td>
         <td class="px-4 py-3"><span class="text-xs text-slate-300">—</span></td>
-        <td class="px-4 py-3 text-right" @click.stop>
+        <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
           <div class="flex items-center justify-end gap-1">
-            <button @click="$dispatch('comp-editar', JSON.parse($el.dataset.comp))"
-              data-comp='{{ {"id": c._id, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.lineas, "socios_info": c.socios_info or []} | tojson }}'
-              class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
-              <i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar
-            </button>
             {% if c.lineas %}
+            <span x-show="syncMsg" x-cloak x-text="syncMsg" class="text-[10px] text-emerald-600 mr-1 font-medium"></span>
             <button @click="sincronizar()" :disabled="syncing"
               class="text-xs text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded hover:bg-emerald-50 transition-colors disabled:opacity-50"
               title="Sincronizar con cobranzas">
@@ -195,69 +195,6 @@
             <button @click="eliminar()" class="text-slate-300 hover:text-red-500 transition-colors p-1">
               <i class="fa-solid fa-trash-can text-xs"></i>
             </button>
-          </div>
-        </td>
-      </tr>
-      <!-- Detalle expandido comprobante -->
-      <tr x-show="open" x-cloak class="border-t border-slate-100 bg-slate-50/50">
-        <td></td>
-        <td colspan="10" class="px-4 py-4">
-          {% if c.lineas %}
-          <table class="w-full text-sm mb-2">
-            <thead><tr class="text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-200">
-              <th class="pb-1.5 pr-4">Socio</th><th class="pb-1.5 pr-4">Producto</th><th class="pb-1.5 text-right">Monto</th>
-            </tr></thead>
-            <tbody>
-              {% for item in c.lineas %}
-              <tr class="border-b border-slate-100 last:border-0">
-                <td class="py-1.5 pr-4 text-slate-700">
-                  {% if item.member_id %}<a href="/members/{{ item.member_id }}" class="text-blue-600 hover:underline">{{ c.socios_map.get(item.member_id, item.member_id) }}</a><span class="text-xs text-slate-400 font-mono ml-1">{{ item.member_id }}</span>
-                  {% else %}<span class="text-slate-400 text-xs italic">—</span>{% endif %}
-                </td>
-                <td class="py-1.5 pr-4 text-slate-600">{{ item.producto_nombre or '—' }}</td>
-                <td class="py-1.5 text-right font-medium text-slate-800">S/ {{ "%.2f"|format(item.monto or 0) }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-            <tfoot><tr>
-              <td colspan="2" class="pt-2 text-xs text-slate-400 text-right pr-4">Total</td>
-              <td class="pt-2 text-right font-bold text-green-700">S/ {{ "%.2f"|format(c.monto_total or 0) }}</td>
-            </tr></tfoot>
-          </table>
-          {% else %}
-          <div class="text-sm text-slate-600 space-y-1">
-            {% if c.producto_nombre %}<div><span class="text-slate-400">Producto:</span> {{ c.producto_nombre }}</div>{% endif %}
-            {% for s in c.socios_info %}<div class="flex items-center gap-2"><span class="text-xs font-mono text-slate-400">{{ s.member_id }}</span><a href="/members/{{ s.member_id }}" class="text-blue-600 hover:underline">{{ s.nombre }}</a></div>{% endfor %}
-          </div>
-          {% endif %}
-          {% if c.concepto %}<p class="text-xs text-slate-400 mt-2"><i class="fa-solid fa-comment-dots mr-1"></i>{{ c.concepto }}</p>{% endif %}
-          <div x-show="syncResult" x-cloak class="mt-3 border border-slate-200 rounded-xl overflow-hidden">
-            <div class="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
-              <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest"><i class="fa-solid fa-rotate mr-1 text-[10px]"></i> Sincronización</span>
-              <div class="flex items-center gap-2 text-[11px]">
-                <span class="text-emerald-700 font-medium" x-text="(syncResult?.cruce_ok || 0) + ' pagos actualizados'"></span>
-                <span x-show="syncResult?.cruce_alerts > 0" class="text-orange-700 font-medium" x-text="syncResult.cruce_alerts + ' alertas'"></span>
-                <span x-show="syncResult?.msg" class="text-slate-500 italic" x-text="syncResult?.msg"></span>
-              </div>
-            </div>
-            <template x-if="syncResult?.cruce_items?.length > 0">
-              <table class="w-full text-[11px]"><thead class="bg-slate-50"><tr class="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
-                <th class="px-3 py-1.5">Socio</th><th class="px-3 py-1.5">Producto</th><th class="px-3 py-1.5">Código</th><th class="px-3 py-1.5 text-center">Estado</th>
-              </tr></thead><tbody>
-                <template x-for="ci in syncResult.cruce_items" :key="ci.member_id + ci.codigo_sunat">
-                  <tr class="border-t border-slate-100">
-                    <td class="px-3 py-1.5 font-mono text-slate-700" x-text="ci.member_id || '—'"></td>
-                    <td class="px-3 py-1.5 text-slate-600" x-text="ci.producto || '—'"></td>
-                    <td class="px-3 py-1.5 font-mono text-slate-400" x-text="ci.codigo_sunat || '—'"></td>
-                    <td class="px-3 py-1.5 text-center">
-                      <span :class="{'bg-emerald-100 text-emerald-700 border-emerald-200':ci.color==='green','bg-blue-100 text-blue-700 border-blue-200':ci.color==='blue','bg-amber-100 text-amber-700 border-amber-200':ci.color==='amber','bg-red-100 text-red-700 border-red-200':ci.color==='red'}"
-                            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border font-medium text-[10px]" x-text="ci.label"></span>
-                      <div x-show="ci.msg" class="text-[10px] text-slate-400 mt-0.5 text-left" x-text="ci.msg"></div>
-                    </td>
-                  </tr>
-                </template>
-              </tbody></table>
-            </template>
           </div>
         </td>
       </tr>
