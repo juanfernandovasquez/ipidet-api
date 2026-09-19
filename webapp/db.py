@@ -550,7 +550,10 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
         fields["comprobante_emitido"] = comprobante_emitido
     if fecha_emision_comprobante is not None:
         fields["fecha_emision_comprobante"] = fecha_emision_comprobante or None
-    payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": fields})
+    payments_col.update_one(
+        {"_id": ObjectId(payment_id)},
+        {"$set": fields, "$unset": {"factura_credito_id": ""}},
+    )
 
 
 def _sync_estado_from_cuotas(payment_id: str):
@@ -1834,7 +1837,7 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
     for member_id in socios:
         p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
         if p:
-            upd: dict = {"estado": new_estado}
+            upd: dict = {"estado": new_estado, "factura_credito_id": factura_id}
             if new_estado == "pagado":
                 upd["fecha_pago"]       = fecha
                 upd["empresa_pagadora"] = empresa
@@ -1868,7 +1871,13 @@ def update_factura_credito_estado(factura_id: str, estado: str,
 
 
 def delete_factura_credito(factura_id: str) -> None:
-    # Revertir payments vinculados con estado "por_cobrar" antes de borrar
+    revert = {"$set": {"estado": "debe", "fecha_pago": None,
+                       "empresa_pagadora": None, "medio_pago": None,
+                       "link_constancia": None},
+              "$unset": {"factura_credito_id": ""}}
+    # Pagos con enlace explícito (nuevo)
+    payments_col.update_many({"factura_credito_id": factura_id}, revert)
+    # Pagos sin enlace explícito, compat con registros anteriores
     f = credito_col.find_one({"_id": ObjectId(factura_id)})
     if f:
         socios_raw = f.get("socios") or []
@@ -1878,10 +1887,9 @@ def delete_factura_credito(factura_id: str) -> None:
             socios = [s for s in socios if s]
             payments_col.update_many(
                 {"member_id": {"$in": socios}, "periodo": periodo,
-                 "estado": {"$in": ["por_cobrar", "pagado"]}},
-                {"$set": {"estado": "debe", "fecha_pago": None,
-                           "empresa_pagadora": None, "medio_pago": None,
-                           "link_constancia": None}},
+                 "estado": {"$in": ["por_cobrar", "pagado"]},
+                 "factura_credito_id": {"$exists": False}},
+                revert,
             )
     credito_col.delete_one({"_id": ObjectId(factura_id)})
 
