@@ -1495,19 +1495,46 @@
       </div>
 
       <!-- 3. Socios vinculados -->
-      <div x-show="socios_info.length > 0">
+      <div>
         <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
           <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">3</span>
-          Socios vinculados (<span x-text="socios_info.length"></span>)
+          Socios vinculados
+          <span class="font-normal normal-case text-slate-500 tracking-normal" x-show="socios_info.length"
+                x-text="'(' + socios_info.length + ')'"></span>
+          <span class="font-normal normal-case text-amber-500 tracking-normal text-[10px]" x-show="socios_info.length === 0">
+            requerido para sincronizar cobranzas
+          </span>
         </p>
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap gap-2 mb-2" x-show="socios_info.length > 0">
           <template x-for="s in socios_info" :key="s.member_id">
-            <a :href="'/members/' + s.member_id" target="_blank"
-               class="inline-flex flex-col bg-slate-50 border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-[11px] px-2.5 py-1.5 rounded-lg transition-colors">
-              <span class="font-medium text-slate-800 text-xs" x-text="s.nombre"></span>
-              <span class="font-mono text-slate-400" x-text="s.member_id"></span>
-            </a>
+            <span class="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200 text-[11px] px-2.5 py-1.5 rounded-lg">
+              <a :href="'/members/' + s.member_id" target="_blank"
+                 class="inline-flex flex-col hover:text-blue-600 transition-colors">
+                <span class="font-medium text-slate-800 text-xs" x-text="s.nombre"></span>
+                <span class="font-mono text-slate-400" x-text="s.member_id"></span>
+              </a>
+              <button type="button" @click="quitarSocio(s.member_id)"
+                      class="text-slate-300 hover:text-red-400 transition-colors ml-1">
+                <i class="fa-solid fa-xmark text-[10px]"></i>
+              </button>
+            </span>
           </template>
+        </div>
+        <div class="relative">
+          <input type="text" x-model="sSearch" @input="buscarSocio()" @keydown.escape="sResults = []"
+                 placeholder="Buscar socio por nombre o código…"
+                 class="input w-full text-sm pr-8">
+          <i class="fa-solid fa-magnifying-glass absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 text-xs pointer-events-none"></i>
+          <div x-show="sResults.length > 0" x-cloak
+               class="absolute z-10 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+            <template x-for="s in sResults" :key="s.member_id">
+              <button type="button" @click="elegirSocio(s)"
+                      class="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-sm border-b border-slate-100 last:border-0">
+                <span class="font-medium text-slate-800" x-text="s.nombre"></span>
+                <span class="font-mono text-slate-400 text-xs" x-text="s.member_id"></span>
+              </button>
+            </template>
+          </div>
         </div>
       </div>
 
@@ -1647,7 +1674,8 @@ function credModal() {
     form: { numero: '', empresa: '', monto: 0, fecha_emision: '', fecha_vencimiento: '',
             concepto: '', periodo: '', estado_credito: 'pendiente',
             fecha_cobro: '', medio_pago: '', link_constancia: '' },
-    socios_info: [], cuotas: [], comentarios: [], comentario: '', enviando: false,
+    socios_info: [], sSearch: '', sResults: [],
+    cuotas: [], comentarios: [], comentario: '', enviando: false,
     addingCuota: false, nuevaCuota: { monto: '', fecha_venc: '' },
 
     abrir(d) {
@@ -1665,7 +1693,9 @@ function credModal() {
         medio_pago:        d.medio_pago        || '',
         link_constancia:   d.link_constancia   || '',
       };
-      this.socios_info = d.socios_info || [];
+      this.socios_info = (d.socios_info || []).map(s => ({...s}));
+      this.sSearch     = '';
+      this.sResults    = [];
       this.cuotas      = (d.cuotas      || []).map(q => ({...q}));
       this.comentarios = (d.comentarios || []).map(c => ({...c}));
       this.comentario  = '';
@@ -1677,6 +1707,27 @@ function credModal() {
 
     cerrar() {
       document.getElementById('modal-cred').classList.add('hidden');
+    },
+
+    async buscarSocio() {
+      const q = this.sSearch.trim();
+      if (q.length < 2) { this.sResults = []; return; }
+      const r = await fetch('/api/members?search=' + encodeURIComponent(q));
+      const d = await r.json();
+      const ids = new Set(this.socios_info.map(s => s.member_id));
+      this.sResults = (d.members || []).filter(s => !ids.has(s.member_id)).slice(0, 6)
+        .map(s => ({ member_id: s.member_id, nombre: ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id }));
+    },
+
+    elegirSocio(s) {
+      if (!this.socios_info.some(x => x.member_id === s.member_id))
+        this.socios_info.push({ member_id: s.member_id, nombre: s.nombre });
+      this.sSearch = '';
+      this.sResults = [];
+    },
+
+    quitarSocio(member_id) {
+      this.socios_info = this.socios_info.filter(s => s.member_id !== member_id);
     },
 
     confirmarEliminar() {
@@ -1701,6 +1752,7 @@ function credModal() {
             fecha_vencimiento: this.form.fecha_vencimiento,
             concepto:          this.form.concepto,
             periodo:           this.form.periodo,
+            socios:            this.socios_info.map(s => s.member_id),
           }),
         });
         if (!r1.ok) return;

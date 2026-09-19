@@ -2792,16 +2792,21 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
 
 def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
     allowed = {"empresa", "numero_factura", "monto", "fecha_emision",
-               "fecha_vencimiento", "concepto", "periodo"}
+               "fecha_vencimiento", "concepto", "periodo", "socios"}
     update: dict = {}
     for k, v in fields.items():
         if k not in allowed or v is None:
             continue
-        if k == "monto":
+        if k == "numero_factura":
+            update["numero"] = str(v).strip()   # el campo en BD se llama "numero"
+        elif k == "monto":
             try:
-                update[k] = float(v)
+                update["monto"] = float(v)
             except (ValueError, TypeError):
                 pass
+        elif k == "socios":
+            if isinstance(v, list):
+                update["socios"] = [str(s) for s in v if s]
         elif k == "empresa":
             emp = str(v).strip()
             if emp:
@@ -2815,7 +2820,7 @@ def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
                 emp = existing["nombre"] if existing else emp
                 if not existing:
                     add_company(nombre=emp)
-            update[k] = emp
+            update["empresa"] = emp
         else:
             update[k] = str(v).strip()
     if update:
