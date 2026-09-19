@@ -2770,7 +2770,8 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
 # ── Factura crédito: edición de campos ────────────────────────────────────────
 
 def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
-    allowed = {"empresa", "numero_factura", "monto", "fecha_emision", "fecha_vencimiento", "concepto"}
+    allowed = {"empresa", "numero_factura", "monto", "fecha_emision",
+               "fecha_vencimiento", "concepto", "periodo"}
     update: dict = {}
     for k, v in fields.items():
         if k not in allowed or v is None:
@@ -2798,6 +2799,7 @@ def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
             update[k] = str(v).strip()
     if update:
         credito_col.update_one({"_id": ObjectId(factura_id)}, {"$set": update})
+        sync_credito_to_cobranzas(factura_id)
 
 
 def get_pendientes_stats() -> dict:

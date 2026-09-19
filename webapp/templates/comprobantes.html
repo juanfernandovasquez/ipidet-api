@@ -310,7 +310,7 @@
         },
       }"
       x-init="editData = JSON.parse($el.dataset.edit); comentarios = JSON.parse($el.dataset.coms); cuotas = JSON.parse($el.dataset.cuotas); fechaCobro = $el.dataset.fechacobro; medioCobro = $el.dataset.mediocobro; linkCobro = $el.dataset.linkcobro;"
-      data-edit='{{ {"numero_factura": c.numero or "", "empresa": c.empresa or "", "monto": c.monto_total or 0, "fecha_emision": c.fecha_emision or "", "fecha_vencimiento": c.fecha_vencimiento or "", "concepto": c.concepto or ""} | tojson }}'
+      data-edit='{{ {"numero_factura": c.numero or "", "empresa": c.empresa or "", "monto": c.monto_total or 0, "fecha_emision": c.fecha_emision or "", "fecha_vencimiento": c.fecha_vencimiento or "", "concepto": c.concepto or "", "periodo": c.periodo or ""} | tojson }}'
       data-coms='{{ coms | tojson }}'
       data-cuotas='{{ cuotas_init | tojson }}'
       data-fechacobro="{{ c.fecha_cobro or '' }}"
@@ -436,6 +436,13 @@
               <input type="date" x-model="editData.fecha_vencimiento" class="input text-sm w-full"></div>
             <div><label class="block text-xs font-medium text-slate-600 mb-1">Concepto</label>
               <input type="text" x-model="editData.concepto" class="input text-sm w-full"></div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Período
+                <span class="text-[10px] text-amber-600 ml-1">requerido para sincronizar cobranzas</span>
+              </label>
+              <input type="text" x-model="editData.periodo" placeholder="2026" class="input text-sm w-full font-mono">
+            </div>
           </div>
           <div class="flex gap-2">
             <button @click="guardarEdicion()" class="btn-primary text-xs py-2"><i class="fa-solid fa-floppy-disk mr-1"></i> Guardar</button>
@@ -459,6 +466,7 @@
                 </button>
               </div>
               {% if c.concepto %}<div><div class="text-xs text-slate-400 mb-0.5">Concepto</div><div class="text-sm text-slate-700">{{ c.concepto }}</div></div>{% endif %}
+              <div><div class="text-xs text-slate-400 mb-0.5">Período cobranzas</div><div class="text-sm font-mono {% if not c.periodo %}text-red-500 font-medium{% else %}text-slate-700{% endif %}">{{ c.periodo or '⚠ No seteado — editar para vincular a cobranzas' }}</div></div>
               {% if c.fecha_cobro %}<div><div class="text-xs text-slate-400 mb-0.5">Cobrado el</div><div class="text-sm font-medium text-green-700">{{ c.fecha_cobro }}</div></div>{% endif %}
               {% if c.medio_pago %}<div><div class="text-xs text-slate-400 mb-0.5">Medio de pago</div><div class="text-sm text-slate-700">{{ c.medio_pago }}</div></div>{% endif %}
               {% if c.link_constancia %}<div><div class="text-xs text-slate-400 mb-0.5">Constancia</div><a href="{{ c.link_constancia }}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline break-all">{{ c.link_constancia }}</a></div>{% endif %}

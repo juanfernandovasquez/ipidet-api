@@ -355,6 +355,7 @@ async def guardar_factura_empresa(request: Request):
             fecha_vencimiento=fecha_vencimiento,
             concepto=concepto,
             socios=member_ids,
+            periodo=periodo,
         )
 
     return {"ok": True, "registrados": len(socios)}
