@@ -925,23 +925,14 @@ async def email_test(to: str = Form(...)):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
-# ── Facturas a crédito ────────────────────────────────────────────────────────
+# ── Facturas a crédito — redirige a comprobantes (vista unificada) ────────────
 
-@app.get("/billing/credito", response_class=HTMLResponse)
+@app.get("/billing/credito")
 async def billing_credito(request: Request, empresa: str = "", estado: str = ""):
-    # Resolver RUC → nombre de empresa si el filtro parece un RUC
-    empresa_filtro = empresa
-    if empresa.strip():
-        nombres = pdb._resolve_empresa_nombres(empresa)
-        if nombres:
-            empresa_filtro = nombres[0]
-    facturas = pdb.get_facturas_credito(empresa_filtro, estado)
-    stats    = pdb.get_credito_stats()
-    empresas = pdb.get_all_companies()
-    return templates.TemplateResponse(request, "credito.html", _ctx(request,
-        facturas=facturas, stats=stats, empresas=empresas,
-        empresa=empresa, estado=estado,
-    ))
+    qs = "?tipo=credito"
+    if empresa:
+        qs += f"&empresa={empresa}"
+    return RedirectResponse(f"/comprobantes{qs}", status_code=302)
 
 @app.post("/billing/credito/nueva")
 async def credito_nueva(
@@ -1071,11 +1062,6 @@ async def comprobantes_preparar(request: Request):
         productos_json = productos_json,
         empresas       = empresas,
     ))
-
-
-@app.get("/billing/credito")
-async def billing_credito_redirect(request: Request):
-    return RedirectResponse("/comprobantes?tipo=credito", status_code=302)
 
 
 @app.get("/comprobantes", response_class=HTMLResponse)

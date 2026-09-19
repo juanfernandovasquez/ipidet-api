@@ -2574,6 +2574,11 @@ def get_comprobantes_por_empresa(empresa: str) -> list:
         ruc = company.get("ruc", "") or ""
 
     q: dict = {"estado": {"$ne": "anulado"}}
+    # Build a scoped query to avoid full-collection scan
+    name_patterns = [{"empresa": {"$regex": v, "$options": "i"}} for v in variants]
+    if ruc:
+        name_patterns.append({"ruc_empresa": ruc})
+    q["$or"] = name_patterns
     docs = list(comprobantes_col.find(q).sort("fecha_emision", -1))
 
     def _matches(doc_emp: str, doc_ruc: str) -> bool:
@@ -2641,7 +2646,12 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
             return False
         return True
 
-    for pmt in payments_col.find({}):
+    pmt_q: dict = {}
+    if periodo:
+        pmt_q["periodo"] = periodo
+    if empresa:
+        pmt_q["empresa_pagadora"] = empresa
+    for pmt in payments_col.find(pmt_q):
         mid      = pmt.get("member_id", "")
         per      = pmt.get("periodo", "")
         emp      = pmt.get("empresa_pagadora") or ""
@@ -2649,11 +2659,6 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
         cuotas   = pmt.get("cuotas", [])
         parciales= pmt.get("pagos_parciales", [])
         medio_p  = pmt.get("medio_pago", "") or ""
-
-        if periodo and per != periodo:
-            continue
-        if empresa and emp != empresa:
-            continue
 
         # 1. Pago completo (sin cuotas ni parciales)
         if not cuotas and not parciales:
