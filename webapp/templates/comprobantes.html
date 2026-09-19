@@ -265,79 +265,13 @@
 
       {# ── Fila CRÉDITO EMPRESA ─────────────────────────────────────────────── #}
       {% else %}
-      {% set coms = c.comentarios if c.comentarios else [] %}
-      {% set cuotas_init = c.cuotas if c.cuotas else [] %}
-      <tbody x-data="{
-        open: false, editandoCred: false,
-        estadoCobro: 'pendiente', fechaCobro: '', medioCobro: '', linkCobro: '',
-        editData: {}, comentario: '', comentarios: [], enviando: false,
-        cuotas: [], addingCuota: false, nuevaCuota: { monto: '', fecha_venc: '' },
-        syncing: false, syncMsg: '',
-        get cuotasPagadas() { return this.cuotas.filter(c => c.estado === 'pagado').length; },
-        async sincronizar() {
-          this.syncing = true; this.syncMsg = '';
-          try {
-            const r = await fetch('/billing/credito/{{ c._id }}/sync', { method: 'POST' });
-            this.syncMsg = r.ok ? '✓ Sincronizado' : '✗ Error';
-          } catch { this.syncMsg = '✗ Error'; }
-          this.syncing = false;
-          if (this.syncMsg === '✓ Sincronizado') setTimeout(() => this.syncMsg = '', 3000);
-        },
-        async guardarTodo() {
-          const r1 = await fetch('/billing/credito/{{ c._id }}/update', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(this.editData)
-          });
-          if (!r1.ok) return;
-          const fd = new FormData();
-          fd.append('estado', this.estadoCobro);
-          fd.append('fecha_cobro', this.fechaCobro);
-          fd.append('medio_pago', this.medioCobro);
-          fd.append('link_constancia', this.linkCobro);
-          const r2 = await fetch('/billing/credito/{{ c._id }}/estado', { method: 'POST', body: fd });
-          if (r2.ok || r2.redirected) location.reload();
-        },
-        async agregarCuota() {
-          const m = parseFloat(this.nuevaCuota.monto); if (!m || m <= 0) return;
-          const r = await fetch('/billing/credito/{{ c._id }}/cuotas/add', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ monto: m, fecha_venc: this.nuevaCuota.fecha_venc }) });
-          const d = await r.json(); if (r.ok) { this.cuotas.push(d.cuota); this.nuevaCuota = { monto:'', fecha_venc:'' }; this.addingCuota = false; }
-        },
-        async marcarCuota(numero, estado) {
-          const fecha_pago = estado === 'pagado' ? new Date().toISOString().slice(0,10) : null;
-          const r = await fetch('/billing/credito/{{ c._id }}/cuotas/' + numero + '/update', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ estado, fecha_pago }) });
-          if (r.ok) { const q = this.cuotas.find(c => c.numero === numero); if (q) { q.estado = estado; q.fecha_pago = fecha_pago; } }
-        },
-        async eliminarCuota(numero) {
-          if (!confirm('¿Eliminar esta cuota?')) return;
-          const r = await fetch('/billing/credito/{{ c._id }}/cuotas/' + numero + '/delete', { method:'POST' });
-          if (r.ok) this.cuotas = this.cuotas.filter(c => c.numero !== numero);
-        },
-        async agregarComentario() {
-          const txt = this.comentario.trim(); if (!txt || this.enviando) return;
-          this.enviando = true;
-          const r = await fetch('/billing/credito/{{ c._id }}/comentarios/add', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ texto: txt }) });
-          const d = await r.json(); if (r.ok) { this.comentarios.push(d.comentario); this.comentario = ''; }
-          this.enviando = false;
-        },
-        async eliminarComentario(idx) {
-          if (!confirm('¿Eliminar este comentario?')) return;
-          const r = await fetch('/billing/credito/{{ c._id }}/comentarios/' + idx + '/delete', { method:'POST' });
-          if (r.ok) this.comentarios.splice(idx, 1);
-        },
-      }"
-      x-init="editData = JSON.parse($el.dataset.edit); comentarios = JSON.parse($el.dataset.coms); cuotas = JSON.parse($el.dataset.cuotas); fechaCobro = $el.dataset.fechacobro; medioCobro = $el.dataset.mediocobro; linkCobro = $el.dataset.linkcobro; estadoCobro = $el.dataset.estadocobro || 'pendiente';"
-      data-edit='{{ {"numero_factura": c.numero or "", "empresa": c.empresa or "", "monto": c.monto_total or 0, "fecha_emision": c.fecha_emision or "", "fecha_vencimiento": c.fecha_vencimiento or "", "concepto": c.concepto or "", "periodo": c.periodo or ""} | tojson }}'
-      data-coms='{{ coms | tojson }}'
-      data-cuotas='{{ cuotas_init | tojson }}'
-      data-fechacobro="{{ c.fecha_cobro or '' }}"
-      data-mediocobro="{{ c.medio_pago or '' }}"
-      data-linkcobro="{{ c.link_constancia or '' }}"
-      data-estadocobro="{{ c.estado_credito or 'pendiente' }}">
-
-      <!-- Fila principal crédito -->
-      <tr class="border-t border-slate-100 hover:bg-amber-50/40 cursor-pointer" @click="open = !open">
-        <td class="px-3 py-3 text-center text-slate-400">
-          <i class="fa-solid text-xs transition-transform duration-150" :class="open ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+      {% set cred_data = {"id": c._id|string, "numero": c.numero or "", "empresa": c.empresa or "", "monto": c.monto_total or 0, "fecha_emision": c.fecha_emision or "", "fecha_vencimiento": c.fecha_vencimiento or "", "concepto": c.concepto or "", "periodo": c.periodo or "", "estado_credito": c.estado_credito or "pendiente", "fecha_cobro": c.fecha_cobro or "", "medio_pago": c.medio_pago or "", "link_constancia": c.link_constancia or "", "socios_info": c.socios_info or [], "cuotas": c.cuotas if c.cuotas else [], "comentarios": c.comentarios if c.comentarios else []} %}
+      <tbody>
+      <tr class="border-t border-slate-100 hover:bg-amber-50/40 cursor-pointer"
+          data-cred='{{ cred_data | tojson }}'
+          onclick="window.dispatchEvent(new CustomEvent('cred-abrir', {detail: JSON.parse(this.dataset.cred)}))">
+        <td class="px-3 py-3 text-center text-amber-300">
+          <i class="fa-solid fa-up-right-from-square text-[10px]"></i>
         </td>
         <td class="px-4 py-3 font-mono text-slate-700 text-sm">{{ c.numero or '—' }}</td>
         <td class="px-4 py-3">
@@ -375,192 +309,12 @@
           </span>
           {% endif %}
         </td>
-        <td class="px-4 py-3 text-right" @click.stop>
-          <div class="flex items-center justify-end gap-1">
-            <button @click="editandoCred = !editandoCred; open = true"
-              class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
-              <i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar
+        <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
+          <form method="post" action="/billing/credito/{{ c._id }}/delete" onsubmit="return confirm('¿Eliminar esta factura?')">
+            <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1">
+              <i class="fa-solid fa-trash-can text-xs"></i>
             </button>
-            <form method="post" action="/billing/credito/{{ c._id }}/delete" onsubmit="return confirm('¿Eliminar esta factura?')">
-              <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1">
-                <i class="fa-solid fa-trash-can text-xs"></i>
-              </button>
-            </form>
-          </div>
-        </td>
-      </tr>
-
-      <!-- Fila: editar factura crédito (unificado) -->
-      <tr x-show="editandoCred" x-cloak class="border-t border-amber-100 bg-amber-50/60">
-        <td></td>
-        <td colspan="10" class="px-4 py-5">
-          <!-- Sección: Datos de la factura -->
-          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Datos de la factura</p>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-            <div><label class="block text-xs font-medium text-slate-600 mb-1">N° Factura</label>
-              <input type="text" x-model="editData.numero_factura" class="input text-sm w-full"></div>
-            <div><label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
-              <input type="text" x-model="editData.empresa" class="input text-sm w-full"></div>
-            <div><label class="block text-xs font-medium text-slate-600 mb-1">Monto (S/)</label>
-              <input type="number" step="0.01" x-model="editData.monto" class="input text-sm w-full"></div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">
-                Período
-                <span class="text-[10px] text-amber-600 ml-1">requerido para sincronizar</span>
-              </label>
-              <input type="text" x-model="editData.periodo" placeholder="2026" class="input text-sm w-full font-mono">
-            </div>
-            <div><label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión</label>
-              <input type="date" x-model="editData.fecha_emision" class="input text-sm w-full"></div>
-            <div><label class="block text-xs font-medium text-slate-600 mb-1">Fecha vencimiento</label>
-              <input type="date" x-model="editData.fecha_vencimiento" class="input text-sm w-full"></div>
-            <div class="md:col-span-2"><label class="block text-xs font-medium text-slate-600 mb-1">Concepto</label>
-              <input type="text" x-model="editData.concepto" class="input text-sm w-full"></div>
-          </div>
-          <!-- Sección: Cobro -->
-          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 border-t border-amber-200 pt-4">Estado de cobro</p>
-          <div class="flex flex-wrap items-end gap-3 mb-4">
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
-              <select x-model="estadoCobro" class="input text-sm">
-                <option value="pendiente">Pendiente</option>
-                <option value="cobrado">Cobrado</option>
-                <option value="vencido">Vencido</option>
-              </select>
-            </div>
-            <div x-show="estadoCobro === 'cobrado'">
-              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de cobro</label>
-              <input type="date" x-model="fechaCobro" class="input text-sm w-40">
-            </div>
-            <div x-show="estadoCobro === 'cobrado'">
-              <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
-              <select x-model="medioCobro" class="input text-sm">
-                <option value="">— Sin especificar —</option>
-                <option>Transferencia bancaria</option>
-                <option>Depósito bancario</option>
-                <option>Efectivo</option>
-                <option>Yape / Plin</option>
-                <option>Niubiz</option>
-                <option>Cheque</option>
-                <option>Otro</option>
-              </select>
-            </div>
-            <div x-show="estadoCobro === 'cobrado'" class="flex-1 min-w-48">
-              <label class="block text-xs font-medium text-slate-600 mb-1">Link constancia</label>
-              <input type="text" x-model="linkCobro" placeholder="URL del correo o archivo adjunto" class="input text-sm w-full">
-            </div>
-          </div>
-          <div class="flex gap-2">
-            <button @click="guardarTodo()" class="btn-primary text-xs py-2">
-              <i class="fa-solid fa-floppy-disk mr-1"></i> Guardar todo
-            </button>
-            <button type="button" @click="editandoCred = false" class="btn-ghost text-xs py-2">Cancelar</button>
-          </div>
-        </td>
-      </tr>
-
-      <!-- Fila: panel de detalle crédito -->
-      <tr x-show="open" x-cloak class="border-t border-slate-100">
-        <td></td>
-        <td colspan="10" class="px-4 pb-5 pt-3 bg-slate-50/60">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
-                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Detalle</h4>
-                <button @click="sincronizar()" :disabled="syncing"
-                        class="text-[11px] text-slate-400 hover:text-blue-600 flex items-center gap-1 px-2 py-0.5 rounded hover:bg-blue-50 transition-colors disabled:opacity-50">
-                  <i class="fa-solid fa-rotate text-[10px]" :class="syncing ? 'animate-spin' : ''"></i>
-                  <span x-text="syncing ? 'Sincronizando…' : syncMsg || 'Sincronizar cobranzas'"></span>
-                </button>
-              </div>
-              {% if c.concepto %}<div><div class="text-xs text-slate-400 mb-0.5">Concepto</div><div class="text-sm text-slate-700">{{ c.concepto }}</div></div>{% endif %}
-              <div><div class="text-xs text-slate-400 mb-0.5">Período cobranzas</div><div class="text-sm font-mono {% if not c.periodo %}text-red-500 font-medium{% else %}text-slate-700{% endif %}">{{ c.periodo or '⚠ No seteado — editar para vincular a cobranzas' }}</div></div>
-              {% if c.fecha_cobro %}<div><div class="text-xs text-slate-400 mb-0.5">Cobrado el</div><div class="text-sm font-medium text-green-700">{{ c.fecha_cobro }}</div></div>{% endif %}
-              {% if c.medio_pago %}<div><div class="text-xs text-slate-400 mb-0.5">Medio de pago</div><div class="text-sm text-slate-700">{{ c.medio_pago }}</div></div>{% endif %}
-              {% if c.link_constancia %}<div><div class="text-xs text-slate-400 mb-0.5">Constancia</div><a href="{{ c.link_constancia }}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline break-all">{{ c.link_constancia }}</a></div>{% endif %}
-              {% if c.socios_info %}
-              <div>
-                <div class="text-xs text-slate-400 mb-1">Socios vinculados ({{ c.socios_info | length }})</div>
-                <div class="flex flex-wrap gap-1.5">
-                  {% for s in c.socios_info %}
-                  <a href="/members/{{ s.member_id }}" class="inline-flex flex-col bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-600 hover:text-blue-700 text-[11px] px-2 py-1 rounded transition-colors">
-                    <span class="font-medium text-slate-800">{{ s.nombre }}</span>
-                    <span class="font-mono text-slate-400">{{ s.member_id }}</span>
-                  </a>
-                  {% endfor %}
-                </div>
-              </div>
-              {% endif %}
-              <!-- Cuotas -->
-              <div class="border-t border-slate-200 pt-3 mt-2">
-                <div class="flex items-center justify-between mb-2">
-                  <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Cuotas <span class="ml-1 text-blue-600" x-show="cuotas.length > 0" x-text="'(' + cuotasPagadas + '/' + cuotas.length + ')'"></span></h4>
-                  <button @click="addingCuota = !addingCuota; open = true" class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-0.5 rounded hover:bg-blue-50">
-                    <i class="fa-solid fa-plus mr-0.5"></i> Agregar cuota
-                  </button>
-                </div>
-                {% if c.estado_credito != 'cobrado' %}
-                <template x-if="cuotas.length > 0 && cuotasPagadas === cuotas.length">
-                  <div class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-800 mb-2">
-                    <i class="fa-solid fa-circle-check text-green-600 flex-shrink-0"></i>
-                    <span class="flex-1">Todas las cuotas cobradas.</span>
-                    <button @click.stop="editando = true; open = true" class="font-medium text-green-700 hover:text-green-900 underline whitespace-nowrap">Marcar como cobrada →</button>
-                  </div>
-                </template>
-                {% endif %}
-                <template x-if="cuotas.length > 0">
-                  <div class="space-y-1.5 mb-2">
-                    <template x-for="q in cuotas" :key="q.numero">
-                      <div class="flex items-center gap-2 text-xs bg-white border border-slate-200 rounded-lg px-3 py-2">
-                        <span class="font-mono text-slate-400 w-5" x-text="q.numero + '.'"></span>
-                        <span class="font-semibold text-slate-800 w-20" x-text="'S/ ' + parseFloat(q.monto || 0).toFixed(2)"></span>
-                        <span class="text-slate-400 flex-1" x-text="q.fecha_venc || '—'"></span>
-                        <template x-if="q.estado === 'pagado'">
-                          <span class="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full text-[10px] font-medium"><i class="fa-solid fa-check text-[9px]"></i><span x-text="q.fecha_pago || 'Pagado'"></span></span>
-                        </template>
-                        <template x-if="q.estado !== 'pagado'">
-                          <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[10px]">Pendiente</span>
-                        </template>
-                        <div class="flex gap-0.5 ml-1">
-                          <template x-if="q.estado !== 'pagado'"><button @click="marcarCuota(q.numero, 'pagado')" class="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-50"><i class="fa-solid fa-check text-[10px]"></i></button></template>
-                          <template x-if="q.estado === 'pagado'"><button @click="marcarCuota(q.numero, 'pendiente')" class="text-slate-400 hover:text-amber-600 p-1 rounded hover:bg-amber-50"><i class="fa-solid fa-rotate-left text-[10px]"></i></button></template>
-                          <button @click="eliminarCuota(q.numero)" class="text-slate-300 hover:text-red-500 p-1 rounded hover:bg-red-50"><i class="fa-solid fa-xmark text-[10px]"></i></button>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                </template>
-                <template x-if="cuotas.length === 0 && !addingCuota"><p class="text-xs text-slate-400 italic mb-2">Sin cuotas registradas.</p></template>
-                <div x-show="addingCuota" x-cloak class="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                  <div class="flex flex-wrap gap-2 items-end">
-                    <div><label class="block text-[10px] font-medium text-slate-500 mb-1">Monto (S/)</label><input type="number" step="0.01" x-model="nuevaCuota.monto" placeholder="0.00" class="input text-xs w-24"></div>
-                    <div><label class="block text-[10px] font-medium text-slate-500 mb-1">Fecha vencimiento</label><input type="date" x-model="nuevaCuota.fecha_venc" class="input text-xs w-36"></div>
-                    <button @click="agregarCuota()" class="btn-primary text-xs py-1.5"><i class="fa-solid fa-plus mr-1"></i> Agregar</button>
-                    <button @click="addingCuota = false; nuevaCuota = { monto:'', fecha_venc:'' }" class="btn-ghost text-xs py-1.5">Cancelar</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <!-- Comentarios -->
-            <div class="space-y-3">
-              <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Seguimiento <span class="ml-1 text-violet-600" x-text="'(' + comentarios.length + ')'"></span></h4>
-              <div class="space-y-2">
-                <template x-if="comentarios.length === 0"><p class="text-xs text-slate-400 italic">Sin comentarios aún.</p></template>
-                <template x-for="(cm, idx) in comentarios" :key="idx">
-                  <div class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm group relative">
-                    <div class="text-slate-700 leading-relaxed pr-6" x-text="cm.texto"></div>
-                    <div class="text-[10px] text-slate-400 mt-1" x-text="cm.fecha"></div>
-                    <button @click="eliminarComentario(idx)" class="absolute top-2 right-2 text-slate-200 hover:text-red-400 opacity-0 group-hover:opacity-100"><i class="fa-solid fa-xmark text-xs"></i></button>
-                  </div>
-                </template>
-              </div>
-              <div class="flex gap-2">
-                <textarea x-model="comentario" rows="2" placeholder="Añadir nota…" class="flex-1 input text-xs resize-none leading-relaxed" @keydown.ctrl.enter.prevent="agregarComentario()"></textarea>
-                <button @click="agregarComentario()" :disabled="enviando || !comentario.trim()" class="btn-primary text-xs px-3 self-end disabled:opacity-40"><i class="fa-solid fa-paper-plane"></i></button>
-              </div>
-              <p class="text-[10px] text-slate-400">Ctrl+Enter para enviar</p>
-            </div>
-          </div>
+          </form>
         </td>
       </tr>
       </tbody>
@@ -1681,5 +1435,475 @@
 
   </div>
 </div>
+
+<!-- Modal: Detalle / Edición Factura Crédito -->
+<div id="modal-cred" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+     x-data="credModal()"
+     @cred-abrir.window="abrir($event.detail)"
+     @keydown.escape.window="cerrar()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" @click.stop>
+
+    <!-- Cabecera -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0"
+             :class="editando ? 'bg-blue-600' : (data.estado_credito === 'cobrado' ? 'bg-green-600' : data.estado_credito === 'vencido' ? 'bg-red-500' : 'bg-amber-500')">
+          <i class="fa-solid text-sm" :class="editando ? 'fa-pen' : 'fa-building-columns'"></i>
+        </div>
+        <div>
+          <h2 class="text-sm font-semibold text-slate-800"
+              x-text="editando ? 'Editar factura' : ('Factura ' + (data.numero || '—'))"></h2>
+          <p class="text-xs text-slate-400 mt-0.5" x-text="data.empresa || 'Sin empresa'"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button x-show="!editando" @click="editando = true"
+                class="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 border border-slate-200 hover:border-blue-200 transition-colors">
+          <i class="fa-solid fa-pen text-[10px]"></i> Editar
+        </button>
+        <button @click="cerrar()"
+                class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-xl leading-none">&times;</button>
+      </div>
+    </div>
+
+    <!-- Cuerpo (scrollable) -->
+    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+      <!-- ── VISTA ── -->
+      <template x-if="!editando">
+        <div class="space-y-6">
+
+          <!-- 1. Datos de la factura -->
+          <div>
+            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">1</span>
+              Datos de la factura
+            </p>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 gap-x-6 gap-y-3">
+              <div><div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">N° Factura</div><div class="text-sm font-medium font-mono text-slate-800" x-text="data.numero || '—'"></div></div>
+              <div><div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Empresa</div><div class="text-sm text-slate-700" x-text="data.empresa || '—'"></div></div>
+              <div><div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Monto</div><div class="text-sm font-semibold text-slate-800" x-text="data.monto ? 'S/ ' + parseFloat(data.monto).toFixed(2) : '—'"></div></div>
+              <div>
+                <div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Período cobranzas</div>
+                <div class="text-sm font-mono" :class="data.periodo ? 'text-slate-800' : 'text-amber-600 font-medium'"
+                     x-text="data.periodo || '⚠ No configurado'"></div>
+              </div>
+              <div><div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Emisión</div><div class="text-sm text-slate-600 font-mono" x-text="data.fecha_emision || '—'"></div></div>
+              <div>
+                <div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Vencimiento</div>
+                <div class="text-sm font-mono" :class="data.estado_credito === 'vencido' ? 'text-red-600 font-medium' : 'text-slate-600'"
+                     x-text="data.fecha_vencimiento || '—'"></div>
+              </div>
+              <div class="col-span-2" x-show="data.concepto">
+                <div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Concepto</div>
+                <div class="text-sm text-slate-700" x-text="data.concepto"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Estado de cobro -->
+          <div>
+            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">2</span>
+              Estado de cobro
+            </p>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 gap-x-6 gap-y-3">
+              <div>
+                <div class="text-[11px] text-slate-400 mb-1 uppercase tracking-wide">Estado</div>
+                <span x-show="data.estado_credito === 'cobrado'"
+                      class="inline-flex items-center gap-1.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-full">
+                  <i class="fa-solid fa-check text-[9px]"></i> Cobrado
+                </span>
+                <span x-show="data.estado_credito === 'vencido'"
+                      class="inline-flex items-center gap-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 px-2.5 py-1 rounded-full">
+                  <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Vencido
+                </span>
+                <span x-show="data.estado_credito === 'pendiente'"
+                      class="inline-flex items-center gap-1.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full">
+                  <i class="fa-solid fa-clock text-[9px]"></i> Pendiente
+                </span>
+              </div>
+              <div x-show="data.fecha_cobro">
+                <div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Cobrado el</div>
+                <div class="text-sm font-medium text-green-700 font-mono" x-text="data.fecha_cobro"></div>
+              </div>
+              <div x-show="data.medio_pago">
+                <div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Medio de pago</div>
+                <div class="text-sm text-slate-700" x-text="data.medio_pago"></div>
+              </div>
+              <div class="col-span-2" x-show="data.link_constancia">
+                <div class="text-[11px] text-slate-400 mb-0.5 uppercase tracking-wide">Constancia</div>
+                <a :href="data.link_constancia" target="_blank" rel="noopener"
+                   class="text-sm text-blue-600 hover:underline break-all" x-text="data.link_constancia"></a>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Socios vinculados -->
+          <div x-show="socios_info.length > 0">
+            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">3</span>
+              Socios vinculados (<span x-text="socios_info.length"></span>)
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <template x-for="s in socios_info" :key="s.member_id">
+                <a :href="'/members/' + s.member_id" target="_blank"
+                   class="inline-flex flex-col bg-slate-50 border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-[11px] px-2.5 py-1.5 rounded-lg transition-colors">
+                  <span class="font-medium text-slate-800 text-xs" x-text="s.nombre"></span>
+                  <span class="font-mono text-slate-400" x-text="s.member_id"></span>
+                </a>
+              </template>
+            </div>
+          </div>
+
+          <!-- 4. Cuotas -->
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">4</span>
+                Cuotas
+                <span class="font-normal normal-case text-blue-600 tracking-normal" x-show="cuotas.length"
+                      x-text="'(' + cuotas.filter(q=>q.estado===\'pagado\').length + \'/\' + cuotas.length + \' pagadas)\'"></span>
+              </p>
+              <button @click="addingCuota = !addingCuota"
+                      class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1 rounded-lg transition-colors">
+                <i class="fa-solid fa-plus text-[10px]"></i> Agregar
+              </button>
+            </div>
+            <template x-if="cuotas.length > 0 && cuotas.filter(q=>q.estado==='pagado').length === cuotas.length && data.estado_credito !== 'cobrado'">
+              <div class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-xs text-green-800 mb-3">
+                <i class="fa-solid fa-circle-check text-green-600 shrink-0"></i>
+                <span class="flex-1">Todas las cuotas cobradas.</span>
+                <button @click="editando = true" class="font-medium text-green-700 hover:text-green-900 underline whitespace-nowrap">
+                  Marcar factura como cobrada →
+                </button>
+              </div>
+            </template>
+            <div x-show="addingCuota" class="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3">
+              <div class="flex flex-wrap gap-2 items-end">
+                <div><label class="block text-[10px] font-medium text-slate-500 mb-1">Monto (S/)</label>
+                  <input type="number" step="0.01" x-model="nuevaCuota.monto" placeholder="0.00" class="input text-xs w-24"></div>
+                <div><label class="block text-[10px] font-medium text-slate-500 mb-1">Vencimiento</label>
+                  <input type="date" x-model="nuevaCuota.fecha_venc" class="input text-xs w-36"></div>
+                <button @click="agregarCuota()" class="btn-primary text-xs py-1.5"><i class="fa-solid fa-plus mr-1"></i> Agregar</button>
+                <button @click="addingCuota = false" class="btn-ghost text-xs py-1.5">Cancelar</button>
+              </div>
+            </div>
+            <div class="space-y-1.5" x-show="cuotas.length > 0">
+              <template x-for="q in cuotas" :key="q.numero">
+                <div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs">
+                  <span class="font-mono text-slate-400 shrink-0" x-text="'#' + q.numero"></span>
+                  <span class="font-semibold text-slate-800 shrink-0" x-text="'S/ ' + parseFloat(q.monto || 0).toFixed(2)"></span>
+                  <span class="text-slate-400 font-mono flex-1" x-text="q.fecha_venc || '—'"></span>
+                  <template x-if="q.estado === 'pagado'">
+                    <span class="inline-flex items-center gap-1 bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-medium">
+                      <i class="fa-solid fa-check text-[9px]"></i>
+                      <span x-text="q.fecha_pago || 'Pagado'"></span>
+                    </span>
+                  </template>
+                  <template x-if="q.estado !== 'pagado'">
+                    <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">Pendiente</span>
+                  </template>
+                  <div class="flex gap-0.5 ml-1">
+                    <template x-if="q.estado !== 'pagado'">
+                      <button @click="marcarCuota(q.numero, 'pagado')"
+                              class="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-50" title="Marcar pagada">
+                        <i class="fa-solid fa-check text-[10px]"></i>
+                      </button>
+                    </template>
+                    <template x-if="q.estado === 'pagado'">
+                      <button @click="marcarCuota(q.numero, 'pendiente')"
+                              class="text-slate-400 hover:text-amber-600 p-1 rounded hover:bg-amber-50" title="Revertir">
+                        <i class="fa-solid fa-rotate-left text-[10px]"></i>
+                      </button>
+                    </template>
+                    <button @click="eliminarCuota(q.numero)"
+                            class="text-slate-300 hover:text-red-500 p-1 rounded hover:bg-red-50">
+                      <i class="fa-solid fa-xmark text-[10px]"></i>
+                    </button>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <p x-show="cuotas.length === 0 && !addingCuota" class="text-xs text-slate-400 italic">Sin cuotas registradas.</p>
+          </div>
+
+          <!-- 5. Comentarios -->
+          <div>
+            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">5</span>
+              Seguimiento
+              <span class="font-normal normal-case text-violet-600 tracking-normal" x-show="comentarios.length"
+                    x-text="'(' + comentarios.length + ')'"></span>
+            </p>
+            <div class="space-y-2 mb-3" x-show="comentarios.length > 0">
+              <template x-for="(cm, idx) in comentarios" :key="idx">
+                <div class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm group relative">
+                  <div class="text-slate-700 leading-relaxed pr-6" x-text="cm.texto"></div>
+                  <div class="text-[10px] text-slate-400 mt-1" x-text="cm.fecha"></div>
+                  <button @click="eliminarComentario(idx)"
+                          class="absolute top-2 right-2 text-slate-200 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                  </button>
+                </div>
+              </template>
+            </div>
+            <p x-show="comentarios.length === 0" class="text-xs text-slate-400 italic mb-3">Sin comentarios aún.</p>
+            <div class="flex gap-2">
+              <input type="text" x-model="comentario" placeholder="Agregar comentario…"
+                     @keydown.enter="agregarComentario()"
+                     class="input text-sm flex-1">
+              <button @click="agregarComentario()" :disabled="!comentario.trim() || enviando"
+                      class="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <i class="fa-solid fa-paper-plane text-[10px]"></i>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </template>
+
+      <!-- ── EDICIÓN ── -->
+      <template x-if="editando">
+        <div class="space-y-6">
+
+          <!-- 1. Datos de la factura -->
+          <div>
+            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">1</span>
+              Datos de la factura
+            </p>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">N° Factura</label>
+                <input type="text" x-model="editData.numero_factura" class="input w-full text-sm">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
+                <input type="text" x-model="editData.empresa" class="input w-full text-sm">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Monto (S/)</label>
+                <input type="number" step="0.01" x-model="editData.monto" class="input w-full text-sm">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">
+                  Período
+                  <span class="text-[10px] text-amber-500 ml-1 font-normal">requerido para sincronizar cobranzas</span>
+                </label>
+                <input type="text" x-model="editData.periodo" placeholder="2026" class="input w-full text-sm font-mono">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión</label>
+                <input type="date" x-model="editData.fecha_emision" class="input w-full text-sm">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Fecha vencimiento</label>
+                <input type="date" x-model="editData.fecha_vencimiento" class="input w-full text-sm">
+              </div>
+              <div class="col-span-2">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Concepto</label>
+                <input type="text" x-model="editData.concepto" class="input w-full text-sm">
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Estado de cobro -->
+          <div>
+            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">2</span>
+              Estado de cobro
+            </p>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-2">Estado</label>
+                <div class="flex rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                  <button type="button" @click="estadoCobro = 'pendiente'"
+                          :class="estadoCobro === 'pendiente' ? 'bg-amber-500 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-amber-50'"
+                          class="flex-1 px-4 py-2.5 transition-all flex items-center justify-center gap-2 text-sm">
+                    <i class="fa-solid fa-clock text-xs"></i> Pendiente
+                  </button>
+                  <button type="button" @click="estadoCobro = 'cobrado'"
+                          :class="estadoCobro === 'cobrado' ? 'bg-green-600 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-green-50'"
+                          class="flex-1 px-4 py-2.5 border-l border-slate-200 transition-all flex items-center justify-center gap-2 text-sm">
+                    <i class="fa-solid fa-check text-xs"></i> Cobrado
+                  </button>
+                  <button type="button" @click="estadoCobro = 'vencido'"
+                          :class="estadoCobro === 'vencido' ? 'bg-red-600 text-white font-semibold' : 'bg-white text-slate-600 hover:bg-red-50'"
+                          class="flex-1 px-4 py-2.5 border-l border-slate-200 transition-all flex items-center justify-center gap-2 text-sm">
+                    <i class="fa-solid fa-triangle-exclamation text-xs"></i> Vencido
+                  </button>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3" x-show="estadoCobro === 'cobrado'">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de cobro <span class="text-red-500">*</span></label>
+                  <input type="date" x-model="fechaCobro" class="input w-full text-sm">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
+                  <select x-model="medioCobro" class="input w-full text-sm">
+                    <option value="">— Sin especificar —</option>
+                    <option>Transferencia bancaria</option>
+                    <option>Depósito bancario</option>
+                    <option>Efectivo</option>
+                    <option>Yape / Plin</option>
+                    <option>Niubiz</option>
+                    <option>Cheque</option>
+                    <option>Otro</option>
+                  </select>
+                </div>
+                <div class="col-span-2">
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Link constancia</label>
+                  <input type="text" x-model="linkCobro" placeholder="URL del correo o archivo adjunto"
+                         class="input w-full text-sm">
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </template>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
+      <div>
+        <button x-show="editando" @click="editando = false"
+                class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors">
+          <i class="fa-solid fa-arrow-left text-xs"></i> Volver
+        </button>
+        <button x-show="!editando" @click="confirmarEliminar()"
+                class="inline-flex items-center gap-1.5 text-sm text-red-400 hover:text-red-600 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors">
+          <i class="fa-solid fa-trash-can text-xs"></i> Eliminar
+        </button>
+      </div>
+      <div class="flex items-center gap-3">
+        <button x-show="!editando" @click="cerrar()"
+                class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors">
+          <i class="fa-solid fa-xmark text-xs"></i> Cerrar
+        </button>
+        <button x-show="editando" @click="guardarTodo()" :disabled="guardando"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+                :class="!guardando ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+          <i class="fa-solid" :class="guardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+          <span x-text="guardando ? 'Guardando…' : 'Guardar cambios'"></span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function credModal() {
+  return {
+    id: '', data: {}, editData: {}, editando: false, guardando: false,
+    estadoCobro: 'pendiente', fechaCobro: '', medioCobro: '', linkCobro: '',
+    socios_info: [], cuotas: [], comentarios: [], comentario: '', enviando: false,
+    addingCuota: false, nuevaCuota: { monto: '', fecha_venc: '' },
+
+    abrir(d) {
+      this.id          = d.id;
+      this.data        = { ...d };
+      this.editData    = { numero_factura: d.numero || '', empresa: d.empresa || '',
+                           monto: d.monto || 0, fecha_emision: d.fecha_emision || '',
+                           fecha_vencimiento: d.fecha_vencimiento || '',
+                           concepto: d.concepto || '', periodo: d.periodo || '' };
+      this.estadoCobro = d.estado_credito || 'pendiente';
+      this.fechaCobro  = d.fecha_cobro    || '';
+      this.medioCobro  = d.medio_pago     || '';
+      this.linkCobro   = d.link_constancia || '';
+      this.socios_info = d.socios_info || [];
+      this.cuotas      = (d.cuotas || []).map(q => ({...q}));
+      this.comentarios = (d.comentarios || []).map(c => ({...c}));
+      this.comentario  = '';
+      this.editando    = false;
+      this.guardando   = false;
+      this.addingCuota = false;
+      this.nuevaCuota  = { monto: '', fecha_venc: '' };
+      document.getElementById('modal-cred').classList.remove('hidden');
+    },
+
+    cerrar() {
+      document.getElementById('modal-cred').classList.add('hidden');
+      this.editando = false;
+    },
+
+    confirmarEliminar() {
+      if (!confirm('¿Eliminar esta factura de crédito?')) return;
+      const form = document.createElement('form');
+      form.method = 'post';
+      form.action = '/billing/credito/' + this.id + '/delete';
+      document.body.appendChild(form);
+      form.submit();
+    },
+
+    async guardarTodo() {
+      this.guardando = true;
+      try {
+        const r1 = await fetch('/billing/credito/' + this.id + '/update', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.editData),
+        });
+        if (!r1.ok) return;
+        const fd = new FormData();
+        fd.append('estado',          this.estadoCobro);
+        fd.append('fecha_cobro',     this.fechaCobro);
+        fd.append('medio_pago',      this.medioCobro);
+        fd.append('link_constancia', this.linkCobro);
+        const r2 = await fetch('/billing/credito/' + this.id + '/estado', { method: 'POST', body: fd });
+        if (r2.ok || r2.redirected) location.reload();
+      } finally { this.guardando = false; }
+    },
+
+    async agregarCuota() {
+      const m = parseFloat(this.nuevaCuota.monto);
+      if (!m || m <= 0) return;
+      const r = await fetch('/billing/credito/' + this.id + '/cuotas/add', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monto: m, fecha_venc: this.nuevaCuota.fecha_venc }),
+      });
+      const d = await r.json();
+      if (r.ok) { this.cuotas.push(d.cuota); this.nuevaCuota = { monto: '', fecha_venc: '' }; this.addingCuota = false; }
+    },
+
+    async marcarCuota(numero, estado) {
+      const fecha_pago = estado === 'pagado' ? new Date().toISOString().slice(0, 10) : null;
+      const r = await fetch('/billing/credito/' + this.id + '/cuotas/' + numero + '/update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado, fecha_pago }),
+      });
+      if (r.ok) { const q = this.cuotas.find(c => c.numero === numero); if (q) { q.estado = estado; q.fecha_pago = fecha_pago; } }
+    },
+
+    async eliminarCuota(numero) {
+      if (!confirm('¿Eliminar esta cuota?')) return;
+      const r = await fetch('/billing/credito/' + this.id + '/cuotas/' + numero + '/delete', { method: 'POST' });
+      if (r.ok) this.cuotas = this.cuotas.filter(c => c.numero !== numero);
+    },
+
+    async agregarComentario() {
+      const txt = this.comentario.trim();
+      if (!txt || this.enviando) return;
+      this.enviando = true;
+      const r = await fetch('/billing/credito/' + this.id + '/comentarios/add', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: txt }),
+      });
+      const d = await r.json();
+      if (r.ok) { this.comentarios.push(d.comentario); this.comentario = ''; }
+      this.enviando = false;
+    },
+
+    async eliminarComentario(idx) {
+      if (!confirm('¿Eliminar este comentario?')) return;
+      const r = await fetch('/billing/credito/' + this.id + '/comentarios/' + idx + '/delete', { method: 'POST' });
+      if (r.ok) this.comentarios.splice(idx, 1);
+    },
+  };
+}
+</script>
 
 {% endblock %}
