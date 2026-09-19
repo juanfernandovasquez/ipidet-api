@@ -642,6 +642,131 @@ async def update_socio_estado_from_billing(
     return RedirectResponse(redirect_to, status_code=303)
 
 
+# ── Billing — JSON API para modal ────────────────────────────────────────────
+
+@app.post("/api/billing/{payment_id}/update")
+async def api_billing_update(payment_id: str, request: Request):
+    data = await request.json()
+    comp_emit = data.get("comprobante_emitido")
+    if isinstance(comp_emit, str):
+        comp_emit = comp_emit == "true"
+    pdb.update_payment(
+        payment_id,
+        estado                    = data.get("estado", "debe"),
+        empresa                   = data.get("empresa") or None,
+        fecha_pago                = data.get("fecha_pago") or None,
+        medio                     = data.get("medio") or None,
+        pagado_por                = None,
+        num_comprobante           = data.get("num_comprobante") or None,
+        tipo_comprobante          = data.get("tipo_comprobante") or None,
+        link_constancia           = data.get("link_constancia") or None,
+        banco_origen              = data.get("banco_origen") or None,
+        comprobante_emitido       = comp_emit,
+        fecha_emision_comprobante = data.get("fecha_emision_comprobante") or None,
+    )
+    estado_socio = data.get("estado_socio")
+    if estado_socio:
+        from bson import ObjectId as _ObjId
+        p = pdb.payments_col.find_one({"_id": _ObjId(payment_id)}, {"member_id": 1})
+        if p and p.get("member_id"):
+            pdb.update_member_estado(p["member_id"], estado_socio)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/billing/{payment_id}/cuotas/objetivo")
+async def api_billing_cuotas_objetivo(payment_id: str, request: Request):
+    data = await request.json()
+    pdb.set_monto_objetivo(payment_id, float(data.get("monto_objetivo", 0) or 0))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/billing/{payment_id}/cuotas/add")
+async def api_billing_cuotas_add(payment_id: str, request: Request):
+    data = await request.json()
+    monto = float(data.get("monto", 0) or 0)
+    if monto <= 0:
+        return JSONResponse({"error": "monto inválido"}, status_code=422)
+    cuota = pdb.add_cuota(payment_id, monto, data.get("fecha_venc") or None)
+    return JSONResponse({"ok": True, "cuota": cuota})
+
+
+@app.post("/api/billing/{payment_id}/cuotas/{numero}/update")
+async def api_billing_cuota_update(payment_id: str, numero: int, request: Request):
+    data = await request.json()
+    monto_raw = data.get("monto")
+    monto_f = float(monto_raw) if monto_raw is not None else None
+    pdb.update_cuota(
+        payment_id, numero,
+        estado           = data.get("estado", "pendiente"),
+        fecha_pago       = data.get("fecha_pago") or None,
+        medio_pago       = data.get("medio") or None,
+        num_comprobante  = data.get("num_comprobante"),
+        tipo_comprobante = data.get("tipo_comprobante"),
+        link_constancia  = data.get("link_constancia"),
+        banco_origen     = data.get("banco_origen"),
+        monto            = monto_f,
+        fecha_venc       = data.get("fecha_venc"),
+    )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/billing/{payment_id}/cuotas/{numero}/delete")
+async def api_billing_cuota_delete(payment_id: str, numero: int):
+    pdb.delete_cuota(payment_id, numero)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/billing/{payment_id}/parciales/init")
+async def api_billing_parciales_init(payment_id: str, request: Request):
+    data = await request.json()
+    monto_total = float(data.get("monto_total", 0) or 0)
+    if monto_total <= 0:
+        return JSONResponse({"error": "monto_total inválido"}, status_code=422)
+    pdb.set_monto_total(payment_id, monto_total)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/billing/{payment_id}/parciales/add")
+async def api_billing_parciales_add(payment_id: str, request: Request):
+    data = await request.json()
+    monto = float(data.get("monto", 0) or 0)
+    if monto <= 0:
+        return JSONResponse({"error": "monto inválido"}, status_code=422)
+    parcial = pdb.add_pago_parcial(
+        payment_id, monto,
+        fecha_pago       = data.get("fecha_pago") or None,
+        medio            = data.get("medio") or None,
+        num_comprobante  = data.get("num_comprobante") or None,
+        tipo_comprobante = data.get("tipo_comprobante") or None,
+        link_constancia  = data.get("link_constancia") or None,
+        banco_origen     = data.get("banco_origen") or None,
+    )
+    return JSONResponse({"ok": True, "parcial": parcial})
+
+
+@app.post("/api/billing/{payment_id}/parciales/{numero}/update")
+async def api_billing_parcial_update(payment_id: str, numero: int, request: Request):
+    data = await request.json()
+    monto_raw = data.get("monto")
+    pdb.update_pago_parcial(
+        payment_id, numero,
+        monto            = float(monto_raw) if monto_raw is not None else None,
+        fecha_pago       = data.get("fecha_pago") or None,
+        medio            = data.get("medio") or None,
+        num_comprobante  = data.get("num_comprobante"),
+        tipo_comprobante = data.get("tipo_comprobante"),
+        link_constancia  = data.get("link_constancia"),
+        banco_origen     = data.get("banco_origen"),
+    )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/billing/{payment_id}/parciales/{numero}/delete")
+async def api_billing_parcial_delete(payment_id: str, numero: int):
+    pdb.delete_pago_parcial(payment_id, numero)
+    return JSONResponse({"ok": True})
+
+
 # ── Marketing ─────────────────────────────────────────────────────────────────
 
 @app.get("/marketing", response_class=HTMLResponse)

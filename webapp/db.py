@@ -591,6 +591,7 @@ def add_cuota(payment_id: str, monto: float, fecha_venc: str = None):
         {"_id": ObjectId(payment_id)},
         {"$push": {"cuotas": cuota}, "$set": {"estado": "fraccionamiento"}},
     )
+    return cuota
 
 
 def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = None,
@@ -654,20 +655,22 @@ def add_pago_parcial(payment_id: str, monto: float, fecha_pago: str = None,
     doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"pagos_parciales": 1})
     parciales = doc.get("pagos_parciales", []) if doc else []
     numero = max((p.get("numero", 0) for p in parciales), default=0) + 1
+    parcial = {
+        "numero":           numero,
+        "monto":            monto,
+        "fecha_pago":       fecha_pago,
+        "medio_pago":       medio,
+        "num_comprobante":  num_comprobante,
+        "tipo_comprobante": tipo_comprobante,
+        "link_constancia":  link_constancia,
+        "banco_origen":     banco_origen,
+    }
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
-        {"$push": {"pagos_parciales": {
-            "numero":           numero,
-            "monto":            monto,
-            "fecha_pago":       fecha_pago,
-            "medio_pago":       medio,
-            "num_comprobante":  num_comprobante,
-            "tipo_comprobante": tipo_comprobante,
-            "link_constancia":  link_constancia,
-            "banco_origen":     banco_origen,
-        }}},
+        {"$push": {"pagos_parciales": parcial}},
     )
     _sync_estado_from_parciales(payment_id)
+    return parcial
 
 
 def update_pago_parcial(payment_id: str, numero: int, monto: float = None,

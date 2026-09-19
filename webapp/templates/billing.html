@@ -89,7 +89,7 @@
   </div>
 
   <!-- Summary badges -->
-  <div class="flex flex-wrap gap-2 mb-4" x-data>
+  <div class="flex flex-wrap gap-2 mb-4">
     {% set summary = namespace(pagado=0, debe=0, fracc=0, parcial=0, exo=0) %}
     {% for p in payments %}
       {% if p.estado == 'pagado' %}{% set summary.pagado = summary.pagado + 1 %}{% endif %}
@@ -123,17 +123,35 @@
       </thead>
       {% for p in payments %}
       {% set sl = status_labels.get(p.estado, ('—','gray')) %}
-      {% set cur_url = "/billing?periodo=" ~ periodo ~ "&estado=" ~ estado ~ "&empresa=" ~ empresa ~ "&search=" ~ search ~ "&comprobante_emitido=" ~ comprobante_emitido ~ "&page=" ~ page %}
-      <tbody x-data='billingRow({{ p.get("empresa_pagadora") | tojson }})'
-             x-init="nc = $el.dataset.nc; tipoComp = $el.dataset.tipoComp; fechaComp = $el.dataset.fechaComp"
-             data-nc="{{ p.get('num_comprobante') or '' }}"
-             data-tipo-comp="{{ p.get('tipo_comprobante') or '' }}"
-             data-fecha-comp="{{ p.get('fecha_emision_comprobante') or '' }}"
-             @comprobante-picked.window="if ($event.detail.formKey === 'billing-{{ p._id }}') { nc = $event.detail.c.numero; tipoComp = $event.detail.c.tipo; fechaComp = $event.detail.c.fecha_emision || ''; }"
-             class="border-b border-slate-100">
-        <tr class="hover:bg-slate-50 transition-colors">
+      {% set pay_data = {
+        "id": p._id | string,
+        "member_id": p.member_id or "",
+        "nombre": p.nombre_completo or "",
+        "email": p.email_principal or "",
+        "centro_trabajo": p.get("centro_trabajo") or "",
+        "estado_socio": p.get("estado_socio") or "activo",
+        "periodo": p.periodo,
+        "estado": p.estado,
+        "empresa_pagadora": p.get("empresa_pagadora") or "",
+        "fecha_pago": p.get("fecha_pago") or "",
+        "medio_pago": p.get("medio_pago") or "",
+        "banco_origen": p.get("banco_origen") or "",
+        "num_comprobante": p.get("num_comprobante") or "",
+        "tipo_comprobante": p.get("tipo_comprobante") or "",
+        "fecha_emision_comprobante": p.get("fecha_emision_comprobante") or "",
+        "link_constancia": p.get("link_constancia") or "",
+        "comprobante_emitido": p.get("comprobante_emitido") or false,
+        "monto_objetivo": p.get("monto_objetivo"),
+        "cuotas": p.get("cuotas") or [],
+        "monto_total": p.get("monto_total"),
+        "pagos_parciales": p.get("pagos_parciales") or [],
+      } %}
+      <tbody class="border-b border-slate-100">
+        <tr class="hover:bg-slate-50 transition-colors cursor-pointer"
+            data-pay='{{ pay_data | tojson }}'
+            onclick="window.dispatchEvent(new CustomEvent('billing-abrir', {detail: JSON.parse(this.dataset.pay)}))">
           <td class="px-4 py-3">
-            <a href="/members/{{ p.get('member_id','') }}" class="font-medium text-blue-700 hover:underline text-xs">{{ p.get('nombre_completo','') }}</a>
+            <a href="/members/{{ p.get('member_id','') }}" class="font-medium text-blue-700 hover:underline text-xs" onclick="event.stopPropagation()">{{ p.get('nombre_completo','') }}</a>
             <div class="text-slate-400 text-xs font-mono">{{ p.get('member_id','') }}</div>
           </td>
           <td class="px-4 py-3 text-slate-500 text-xs">{{ p.get('centro_trabajo','—') }}</td>
@@ -153,7 +171,7 @@
               {% for yr in p.deudas_otros_periodos %}
               <a href="/billing?periodo={{ yr }}&search={{ p.get('member_id','') }}"
                  class="inline-block text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 px-1.5 py-0.5 rounded transition-colors"
-                 title="Ver deuda {{ yr }}">
+                 title="Ver deuda {{ yr }}" onclick="event.stopPropagation()">
                 ⚠ Debe {{ yr }}
               </a>
               {% endfor %}
@@ -172,610 +190,8 @@
               <span class="inline-flex items-center gap-1 text-amber-600"><i class="fa-regular fa-clock"></i> Pendiente</span>
             {% endif %}
           </td>
-          <td class="px-4 py-3 text-right">
-            <button @click="editing = !editing"
-                    class="text-xs font-medium"
-                    :class="editing ? 'text-slate-500 hover:text-slate-700' : 'text-blue-600 hover:text-blue-800'"
-                    x-text="editing ? 'Cerrar ✕' : 'Editar'"></button>
-          </td>
-        </tr>
-
-        <!-- Inline edit row -->
-        <tr x-show="editing" x-cloak class="bg-blue-50 border-b border-blue-100">
-          <td colspan="9" class="px-4 py-3">
-
-            <!-- Formulario principal del pago -->
-            <form method="post" action="/billing/{{ p._id }}/update" class="flex flex-wrap gap-3 items-end">
-              <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
-                <select name="estado" class="input text-xs py-1">
-                  {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("por_cobrar","Por cobrar"),("exonerado","Exonerado"),("no_aplica","N/A"),("pendiente","Pendiente"),("retirar","Retirar"),("en_revision","En revisión"),("revisar","Revisar")] %}
-                  <option value="{{ val }}" {% if p.estado == val %}selected{% endif %}>{{ lbl }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de pago</label>
-                <input name="fecha_pago" type="date" value="{{ p.get('fecha_pago','') }}" class="input text-xs py-1">
-              </div>
-              <div class="contents">
-                <div>
-                  <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante</label>
-                  <div class="flex items-center gap-1">
-                    <input name="num_comprobante" x-model="nc" placeholder="F001-000123" class="input text-xs py-1 w-32">
-                    <button type="button" @click="$store.picker.abrir('billing-{{ p._id }}')"
-                            title="Buscar comprobante"
-                            class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 rounded px-1.5 py-1 hover:bg-blue-50 transition-colors">
-                      <i class="fa-solid fa-magnifying-glass"></i>
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-slate-600 mb-1">
-                    Tipo doc. <span x-show="nc" x-cloak class="text-red-500">*</span>
-                  </label>
-                  <select name="tipo_comprobante" x-model="tipoComp" :required="!!nc" class="input text-xs py-1">
-                    <option value="">— Sin tipo —</option>
-                    <option value="boleta">Boleta</option>
-                    <option value="factura">Factura</option>
-                    <option value="recibo">Recibo</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-xs font-medium text-slate-600 mb-1">
-                    Fecha emisión SUNAT <span x-show="nc" x-cloak class="text-red-500">*</span>
-                  </label>
-                  <input name="fecha_emision_comprobante" type="date"
-                    x-model="fechaComp"
-                    :required="!!nc" class="input text-xs py-1 w-36">
-                </div>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Link constancia</label>
-                <div class="flex items-center gap-1">
-                  <input name="link_constancia" value="{{ p.get('link_constancia','') }}" placeholder="https://…" class="input text-xs py-1 w-48">
-                  {% if p.get('link_constancia') %}
-                  <button type="button" title="Copiar link"
-                          @click="navigator.clipboard.writeText('{{ p.link_constancia }}'); copied = true; setTimeout(() => copied = false, 1500)"
-                          class="text-slate-400 hover:text-blue-600 transition-colors">
-                    <i x-show="!copied" class="fa-regular fa-copy text-sm"></i>
-                    <i x-show="copied" x-cloak class="fa-solid fa-check text-sm text-green-500"></i>
-                  </button>
-                  {% endif %}
-                </div>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
-                <select name="medio" class="input text-xs py-1">
-                  <option value="">— Medio —</option>
-                  {% for m in medios_pago %}
-                  <option value="{{ m }}" {% if p.get('medio_pago') == m %}selected{% endif %}>{{ m }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Banco origen</label>
-                <select name="banco_origen" class="input text-xs py-1">
-                  <option value="">— Banco —</option>
-                  {% for b in bancos %}
-                  <option value="{{ b }}" {% if p.get('banco_origen') == b %}selected{% endif %}>{{ b }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">¿Quién pagó?</label>
-                <select class="input text-xs py-1" @change="tipoPagador = $el.value">
-                  <option value="socio" :selected="tipoPagador === 'socio'">El mismo socio</option>
-                  <option value="empresa" :selected="tipoPagador === 'empresa'">Empresa empleadora</option>
-                </select>
-              </div>
-              <div x-show="tipoPagador === 'empresa'" x-cloak class="relative">
-                <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
-                <input x-model="empresaVal"
-                       @input.debounce.300ms="fetchCompanies()"
-                       @focus="if (empresaVal && empresaVal.length > 0) fetchCompanies()"
-                       @keydown.escape="showSuggestions = false"
-                       placeholder="Buscar empresa…"
-                       class="input text-xs py-1 w-40"
-                       autocomplete="off">
-                <div x-show="showSuggestions && companySuggestions.length > 0"
-                     @click.outside="showSuggestions = false"
-                     class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-48">
-                  <template x-for="c in companySuggestions" :key="c._id">
-                    <button type="button"
-                            @click="empresaVal = c.nombre; showSuggestions = false"
-                            class="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-100 last:border-0">
-                      <div class="font-medium" x-text="c.nombre"></div>
-                      <div class="text-slate-400" x-show="c.ruc" x-text="'RUC: ' + c.ruc"></div>
-                    </button>
-                  </template>
-                </div>
-              </div>
-              <input type="hidden" name="empresa" :value="tipoPagador === 'empresa' ? empresaVal : ''">
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">Comprobante emitido</label>
-                <select name="comprobante_emitido" class="input text-xs py-1">
-                  <option value="false" {% if not p.get('comprobante_emitido') %}selected{% endif %}>Pendiente de emitir</option>
-                  <option value="true" {% if p.get('comprobante_emitido') %}selected{% endif %}>Emitido</option>
-                </select>
-              </div>
-              <div class="flex gap-2 pb-0.5">
-                <button type="submit" class="btn-primary text-xs py-1.5 px-3">Guardar</button>
-                <button type="button" @click="editing = false" class="btn-ghost text-xs py-1.5">Cancelar</button>
-              </div>
-              {% if p.get('member_id') %}
-              <a href="/members/{{ p.member_id }}" class="text-xs text-slate-400 hover:text-blue-600 self-end pb-1.5">Ver socio →</a>
-              {% endif %}
-            </form>
-
-            <!-- Estado del socio (separado del pago) -->
-            {% if p.get('member_id') %}
-            <form method="post" action="/billing/{{ p._id }}/socio/estado" class="flex items-center gap-2 mt-2 pt-2 border-t border-blue-100">
-              <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-              <span class="text-xs text-slate-500 font-medium">Estado del socio:</span>
-              <select name="estado_socio" class="input text-xs py-1">
-                <option value="activo" {% if p.get('estado_socio') == 'activo' %}selected{% endif %}>Activo</option>
-                <option value="retirar" {% if p.get('estado_socio') == 'retirar' %}selected{% endif %}>Retirar</option>
-              </select>
-              <button type="submit" class="btn-ghost text-xs py-1 px-2">Actualizar</button>
-              <span class="text-xs text-slate-400">
-                (actual:
-                <span class="font-medium {% if p.get('estado_socio') == 'activo' %}text-green-600{% else %}text-red-500{% endif %}">
-                  {{ p.get('estado_socio', 'activo') }}
-                </span>)
-              </span>
-            </form>
-            {% endif %}
-
-            <!-- Sección de cuotas -->
-            <div class="mt-3 pt-3 border-t border-blue-200">
-              <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
-                <span class="text-xs font-semibold text-slate-600">
-                  Cuotas de fraccionamiento
-                  {% if p.cuotas_total > 0 %}
-                    <span class="ml-2 font-normal text-slate-400">{{ p.cuotas_pagadas }}/{{ p.cuotas_total }} pagadas</span>
-                  {% endif %}
-                </span>
-                {% if p.get('monto_objetivo') %}
-                  <span class="text-xs text-slate-500">
-                    Suma cuotas: <strong>S/ {{ p.suma_cuotas }}</strong> / <strong>S/ {{ p.monto_objetivo }}</strong>
-                  </span>
-                  {% if p.gap_cuotas and p.gap_cuotas > 0 %}
-                  <span class="inline-flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                    <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Faltan S/ {{ p.gap_cuotas }} en cuotas
-                  </span>
-                  {% elif p.cuotas_total > 0 and p.cuotas_pagadas == p.cuotas_total %}
-                  <span class="inline-flex items-center gap-1 text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                    <i class="fa-solid fa-check text-[10px]"></i> Monto completo
-                  </span>
-                  {% endif %}
-                {% endif %}
-              </div>
-
-              <!-- Configurar monto objetivo -->
-              <form method="post" action="/billing/{{ p._id }}/cuotas/objetivo" class="flex items-end gap-2 mb-3">
-                <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                <div>
-                  <label class="block text-xs text-slate-500 mb-0.5">Total anual esperado (S/)</label>
-                  <input name="monto_objetivo" type="number" step="0.01" min="0"
-                         value="{{ p.get('monto_objetivo','') }}" placeholder="780.00"
-                         class="input text-xs py-1 w-28">
-                </div>
-                <button type="submit" class="btn-ghost text-xs py-1.5 border border-slate-300">
-                  {{ 'Actualizar total' if p.get('monto_objetivo') else 'Fijar total esperado' }}
-                </button>
-              </form>
-
-              {% if p.get('cuotas') %}
-              <table class="w-full text-xs mb-3">
-                <thead>
-                  <tr class="text-slate-400 border-b border-slate-200">
-                    <th class="text-left py-1 pr-3 font-medium">N°</th>
-                    <th class="text-left py-1 pr-3 font-medium">Monto</th>
-                    <th class="text-left py-1 pr-3 font-medium">Vencimiento</th>
-                    <th class="text-left py-1 pr-3 font-medium">Estado</th>
-                    <th class="text-left py-1 pr-3 font-medium">Fecha pago</th>
-                    <th class="text-left py-1 pr-3 font-medium">Tipo doc.</th>
-                    <th class="text-left py-1 pr-3 font-medium">N° comp.</th>
-                    <th class="text-left py-1 pr-3 font-medium">Medio</th>
-                    <th class="text-left py-1 pr-3 font-medium">Banco</th>
-                    <th class="text-left py-1 pr-3 font-medium">Link</th>
-                    <th class="text-left py-1 font-medium">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for cuota in p.get('cuotas', []) %}
-                  <tr class="border-b border-slate-100">
-                    <td class="py-1.5 pr-3 text-slate-600">{{ cuota.numero }}</td>
-                    <td class="py-1.5 pr-3 font-medium">S/ {{ cuota.monto }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500">{{ cuota.get('fecha_venc') or '—' }}</td>
-                    <td class="py-1.5 pr-3">
-                      <span class="badge badge-{{ 'green' if cuota.estado == 'pagado' else 'yellow' }}">
-                        {{ 'Pagado' if cuota.estado == 'pagado' else 'Pendiente' }}
-                      </span>
-                    </td>
-                    <td class="py-1.5 pr-3 text-slate-500">{{ cuota.get('fecha_pago') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500 text-xs">
-                      {{ {'boleta':'Boleta','factura':'Factura','recibo':'Recibo'}.get(cuota.get('tipo_comprobante',''), '—') }}
-                    </td>
-                    <td class="py-1.5 pr-3 text-slate-500 font-mono text-xs">{{ cuota.get('num_comprobante') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500 text-xs">{{ cuota.get('medio_pago') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500 text-xs">{{ cuota.get('banco_origen') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-xs" x-data="{ copiedC{{ loop.index }}: false }">
-                      {% if cuota.get('link_constancia') %}
-                      <div class="flex items-center gap-1">
-                        <a href="{{ cuota.link_constancia }}" target="_blank" rel="noopener" class="text-blue-500 hover:underline">🔗 Ver</a>
-                        <button type="button" title="Copiar link"
-                                @click="navigator.clipboard.writeText('{{ cuota.link_constancia }}'); copiedC{{ loop.index }} = true; setTimeout(() => copiedC{{ loop.index }} = false, 1500)"
-                                class="text-slate-400 hover:text-blue-600">
-                          <i x-show="!copiedC{{ loop.index }}" class="fa-regular fa-copy"></i>
-                          <i x-show="copiedC{{ loop.index }}" x-cloak class="fa-solid fa-check text-green-500"></i>
-                        </button>
-                      </div>
-                      {% else %}—{% endif %}
-                    </td>
-                    <td class="py-1.5">
-                      <div class="flex flex-col gap-1.5">
-                        {% if cuota.estado != 'pagado' %}
-                        <div x-data="{ editandoDatos: false }">
-                          <div class="flex items-center gap-2 mb-1">
-                            <button type="button" @click="editandoDatos = !editandoDatos"
-                                    class="text-xs font-medium"
-                                    :class="editandoDatos ? 'text-slate-400' : 'text-violet-600 hover:text-violet-800'"
-                                    x-text="editandoDatos ? 'Cancelar' : '✎ Editar cuota'"></button>
-                          </div>
-                          <div x-show="editandoDatos" x-cloak class="mb-2 p-2 bg-violet-50 rounded border border-violet-200">
-                            <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
-                              <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                              <input type="hidden" name="estado" value="pendiente">
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
-                                <input name="monto" type="number" step="0.01" min="0" value="{{ cuota.monto }}" class="input text-xs py-0.5 w-24" required>
-                              </div>
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-0.5">Vencimiento</label>
-                                <input name="fecha_venc" type="date" value="{{ cuota.get('fecha_venc','') }}" class="input text-xs py-0.5 w-32">
-                              </div>
-                              <button type="submit" class="text-violet-600 hover:text-violet-800 font-semibold text-xs">✓ Guardar</button>
-                            </form>
-                          </div>
-                        </div>
-                        <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
-                          <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                          <input type="hidden" name="estado" value="pagado">
-                          <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28">
-                          <!-- Selector de comprobante -->
-                          <div x-data="{
-                            formKey: 'pay-{{ p._id }}-{{ cuota.numero }}',
-                            numComp: '', tipoComp: ''
-                          }"
-                          @comprobante-picked.window="if ($event.detail.formKey === formKey) { numComp = $event.detail.c.numero; tipoComp = $event.detail.c.tipo; }"
-                          class="flex items-center gap-1 flex-wrap">
-                            <select name="tipo_comprobante" x-model="tipoComp" class="input text-xs py-0.5">
-                              <option value="">Tipo</option>
-                              <option value="boleta">Boleta</option>
-                              <option value="factura">Factura</option>
-                              <option value="recibo">Recibo</option>
-                            </select>
-                            <input name="num_comprobante" x-model="numComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
-                            <button type="button"
-                                    @click="$store.picker.abrir(formKey)"
-                                    class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
-                              <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
-                            </button>
-                            <button type="button" x-show="numComp" @click="numComp=''; tipoComp=''"
-                                    class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
-                              <i class="fa-solid fa-xmark"></i>
-                            </button>
-                          </div>
-                          <select name="medio" class="input text-xs py-0.5">
-                            <option value="">Medio</option>
-                            {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
-                          </select>
-                          <select name="banco_origen" class="input text-xs py-0.5">
-                            <option value="">Banco</option>
-                            {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
-                          </select>
-                          <input name="link_constancia" placeholder="Link constancia" class="input text-xs py-0.5 w-32">
-                          <button type="submit" class="text-green-600 hover:text-green-800 font-semibold text-xs">✓ Pagar</button>
-                        </form>
-                        {% else %}
-                        <div x-data="{ editingCuota: false }">
-                          <div class="flex gap-2">
-                            <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="inline">
-                              <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                              <input type="hidden" name="estado" value="pendiente">
-                              <input type="hidden" name="fecha_pago" value="">
-                              <button type="submit" class="text-amber-500 hover:text-amber-700 text-xs">↩ Deshacer</button>
-                            </form>
-                            <button type="button" @click="editingCuota = !editingCuota"
-                                    class="text-xs font-medium"
-                                    :class="editingCuota ? 'text-slate-400' : 'text-blue-500 hover:text-blue-700'"
-                                    x-text="editingCuota ? 'Cancelar' : 'Editar comprobante'"></button>
-                          </div>
-                          <div x-show="editingCuota" x-cloak class="mt-2">
-                            <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
-                              <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                              <input type="hidden" name="estado" value="pagado">
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-0.5">Fecha pago</label>
-                                <input name="fecha_pago" type="date" value="{{ cuota.get('fecha_pago','') }}" class="input text-xs py-0.5 w-28">
-                              </div>
-                              <!-- Selector de comprobante -->
-                              <div x-data="{ formKey: 'edit-{{ p._id }}-{{ cuota.numero }}', numComp: '', tipoComp: '' }"
-                              x-init="numComp = $el.dataset.numComp; tipoComp = $el.dataset.tipoComp"
-                              data-num-comp="{{ cuota.get('num_comprobante') or '' }}"
-                              data-tipo-comp="{{ cuota.get('tipo_comprobante') or '' }}"
-                              @comprobante-picked.window="if ($event.detail.formKey === formKey) { numComp = $event.detail.c.numero; tipoComp = $event.detail.c.tipo; }"
-                              class="flex flex-col gap-0.5">
-                                <div>
-                                  <label class="block text-xs text-slate-500 mb-0.5">Comprobante</label>
-                                  <div class="flex items-center gap-1 flex-wrap">
-                                    <select name="tipo_comprobante" x-model="tipoComp" class="input text-xs py-0.5">
-                                      <option value="">Sin tipo</option>
-                                      <option value="boleta">Boleta</option>
-                                      <option value="factura">Factura</option>
-                                      <option value="recibo">Recibo</option>
-                                    </select>
-                                    <input name="num_comprobante" x-model="numComp" placeholder="F001-000123" class="input text-xs py-0.5 w-28">
-                                    <button type="button"
-                                            @click="$store.picker.abrir(formKey)"
-                                            class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
-                                      <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
-                                    </button>
-                                    <button type="button" x-show="numComp" @click="numComp=''; tipoComp=''"
-                                            class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
-                                      <i class="fa-solid fa-xmark"></i>
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
-                                <select name="medio" class="input text-xs py-0.5">
-                                  <option value="">— Medio —</option>
-                                  {% for m in medios_pago %}
-                                  <option value="{{ m }}" {% if cuota.get('medio_pago') == m %}selected{% endif %}>{{ m }}</option>
-                                  {% endfor %}
-                                </select>
-                              </div>
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
-                                <select name="banco_origen" class="input text-xs py-0.5">
-                                  <option value="">— Banco —</option>
-                                  {% for b in bancos %}
-                                  <option value="{{ b }}" {% if cuota.get('banco_origen') == b %}selected{% endif %}>{{ b }}</option>
-                                  {% endfor %}
-                                </select>
-                              </div>
-                              <div>
-                                <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
-                                <input name="link_constancia" value="{{ cuota.get('link_constancia','') }}" placeholder="https://…" class="input text-xs py-0.5 w-32">
-                              </div>
-                              <button type="submit" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">✓ Guardar</button>
-                            </form>
-                          </div>
-                        </div>
-                        {% endif %}
-                        <form method="post" action="/billing/{{ p._id }}/cuotas/{{ cuota.numero }}/delete" class="inline">
-                          <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                          <button type="submit" class="text-red-400 hover:text-red-600 text-xs">× Eliminar</button>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-              {% endif %}
-
-              <!-- Agregar cuota pendiente -->
-              <div class="mt-1">
-                <p class="text-xs text-slate-400 mb-1.5">Crea cuotas pendientes para programar el calendario de pagos. Para marcarlas como pagadas, usa el botón ✓ en la tabla.</p>
-                <form method="post" action="/billing/{{ p._id }}/cuotas/add" class="flex flex-wrap gap-2 items-end">
-                  <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
-                    <input name="monto" type="number" step="0.01" min="0" placeholder="150.00" class="input text-xs py-1 w-24" required>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Fecha de vencimiento</label>
-                    <input name="fecha_venc" type="date" class="input text-xs py-1 w-36">
-                  </div>
-                  <button type="submit" class="btn-ghost text-xs py-1.5 border border-slate-300">+ Agregar cuota pendiente</button>
-                </form>
-              </div>
-            </div>
-
-            <!-- Pagos parciales -->
-            <div class="mt-3 pt-3 border-t border-blue-200">
-              <div class="text-xs font-semibold text-slate-600 mb-2">
-                Pagos parciales
-                {% if p.get('monto_total') %}
-                  <span class="ml-2 font-normal text-slate-400">
-                    S/ {{ p.monto_pagado|int }} pagado · S/ {{ p.monto_pendiente|int if p.monto_pendiente else 0 }} pendiente de S/ {{ p.monto_total|int }} total
-                  </span>
-                {% endif %}
-              </div>
-
-              {% if p.get('monto_total') %}
-              <div class="w-full bg-slate-200 rounded-full h-1.5 mb-3">
-                {% set raw_pct = ((p.monto_pagado / p.monto_total) * 100) | int %}
-                {% set pct = [raw_pct, 100] | min %}
-                <div class="bg-blue-500 h-1.5 rounded-full" style="width: {{ pct }}%"></div>
-              </div>
-              {% endif %}
-
-              {% if p.get('pagos_parciales') %}
-              <table class="w-full text-xs mb-3">
-                <thead>
-                  <tr class="text-slate-400 border-b border-slate-200">
-                    <th class="text-left py-1 pr-3 font-medium">N°</th>
-                    <th class="text-left py-1 pr-3 font-medium">Monto</th>
-                    <th class="text-left py-1 pr-3 font-medium">Fecha</th>
-                    <th class="text-left py-1 pr-3 font-medium">Medio</th>
-                    <th class="text-left py-1 pr-3 font-medium">Banco</th>
-                    <th class="text-left py-1 pr-3 font-medium">Tipo doc.</th>
-                    <th class="text-left py-1 pr-3 font-medium">N° comp.</th>
-                    <th class="text-left py-1 pr-3 font-medium">Link</th>
-                    <th class="text-left py-1 font-medium">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for pp in p.pagos_parciales %}
-                  <tr x-data="{ editingPP: false, copiedPP{{ loop.index }}: false }" class="border-b border-slate-100">
-                    <td class="py-1.5 pr-3 text-slate-600">{{ pp.numero }}</td>
-                    <td class="py-1.5 pr-3 font-medium text-blue-700">S/ {{ pp.monto }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500">{{ pp.get('fecha_pago') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500">{{ pp.get('medio_pago') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500 text-xs">{{ pp.get('banco_origen') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500 text-xs">
-                      {{ {'boleta':'Boleta','factura':'Factura','recibo':'Recibo'}.get(pp.get('tipo_comprobante',''), '—') }}
-                    </td>
-                    <td class="py-1.5 pr-3 text-slate-500 font-mono text-xs">{{ pp.get('num_comprobante') or '—' }}</td>
-                    <td class="py-1.5 pr-3 text-xs">
-                      {% if pp.get('link_constancia') %}
-                      <div class="flex items-center gap-1">
-                        <a href="{{ pp.link_constancia }}" target="_blank" rel="noopener" class="text-blue-500 hover:underline">🔗 Ver</a>
-                        <button type="button" title="Copiar link"
-                                @click="navigator.clipboard.writeText('{{ pp.link_constancia }}'); copiedPP{{ loop.index }} = true; setTimeout(() => copiedPP{{ loop.index }} = false, 1500)"
-                                class="text-slate-400 hover:text-blue-600">
-                          <i x-show="!copiedPP{{ loop.index }}" class="fa-regular fa-copy"></i>
-                          <i x-show="copiedPP{{ loop.index }}" x-cloak class="fa-solid fa-check text-green-500"></i>
-                        </button>
-                      </div>
-                      {% else %}—{% endif %}
-                    </td>
-                    <td class="py-1.5">
-                      <div class="flex gap-2">
-                        <button type="button" @click="editingPP = !editingPP"
-                                class="text-xs font-medium"
-                                :class="editingPP ? 'text-slate-400' : 'text-blue-500 hover:text-blue-700'"
-                                x-text="editingPP ? 'Cancelar' : 'Editar'"></button>
-                        <form method="post" action="/billing/{{ p._id }}/parciales/{{ pp.numero }}/delete" class="inline">
-                          <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                          <button type="submit" class="text-red-400 hover:text-red-600 text-xs">× Eliminar</button>
-                        </form>
-                      </div>
-                      <!-- Fila de edición inline -->
-                      <div x-show="editingPP" x-cloak class="mt-2">
-                        <form method="post" action="/billing/{{ p._id }}/parciales/{{ pp.numero }}/update" class="flex flex-wrap gap-1 items-end">
-                          <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-0.5">Monto</label>
-                            <input name="monto" type="number" step="0.01" min="0.01" value="{{ pp.monto }}" class="input text-xs py-0.5 w-20" required>
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-0.5">Fecha</label>
-                            <input name="fecha_pago" type="date" value="{{ pp.get('fecha_pago','') }}" class="input text-xs py-0.5 w-28">
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
-                            <select name="medio" class="input text-xs py-0.5">
-                              <option value="">— Medio —</option>
-                              {% for m in medios_pago %}
-                              <option value="{{ m }}" {% if pp.get('medio_pago') == m %}selected{% endif %}>{{ m }}</option>
-                              {% endfor %}
-                            </select>
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
-                            <select name="banco_origen" class="input text-xs py-0.5">
-                              <option value="">— Banco —</option>
-                              {% for b in bancos %}
-                              <option value="{{ b }}" {% if pp.get('banco_origen') == b %}selected{% endif %}>{{ b }}</option>
-                              {% endfor %}
-                            </select>
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
-                            <select name="tipo_comprobante" class="input text-xs py-0.5">
-                              <option value="">Sin tipo</option>
-                              <option value="boleta" {% if pp.get('tipo_comprobante') == 'boleta' %}selected{% endif %}>Boleta</option>
-                              <option value="factura" {% if pp.get('tipo_comprobante') == 'factura' %}selected{% endif %}>Factura</option>
-                              <option value="recibo" {% if pp.get('tipo_comprobante') == 'recibo' %}selected{% endif %}>Recibo</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-0.5">N° comp.</label>
-                            <input name="num_comprobante" value="{{ pp.get('num_comprobante','') }}" placeholder="F001-000123" class="input text-xs py-0.5 w-24">
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-500 mb-0.5">Link</label>
-                            <input name="link_constancia" value="{{ pp.get('link_constancia','') }}" placeholder="https://…" class="input text-xs py-0.5 w-32">
-                          </div>
-                          <button type="submit" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">✓ Guardar</button>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-              {% endif %}
-
-              <div class="flex flex-wrap gap-3 items-end">
-                <form method="post" action="/billing/{{ p._id }}/parciales/init" class="flex items-end gap-2">
-                  <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Total a pagar (S/)</label>
-                    <input name="monto_total" type="number" step="0.01" min="0"
-                           value="{{ p.get('monto_total','') }}" placeholder="780.00"
-                           class="input text-xs py-1 w-28" required>
-                  </div>
-                  <button type="submit" class="btn-ghost text-xs py-1.5 border border-slate-300">
-                    {{ 'Actualizar total' if p.get('monto_total') else 'Configurar total' }}
-                  </button>
-                </form>
-
-                <form method="post" action="/billing/{{ p._id }}/parciales/add" class="flex flex-wrap items-end gap-2">
-                  <input type="hidden" name="redirect_to" value="{{ cur_url }}">
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
-                    <input name="monto" type="number" step="0.01" min="0.01" placeholder="220.00"
-                           class="input text-xs py-1 w-24" required>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Fecha</label>
-                    <input name="fecha_pago" type="date" class="input text-xs py-1 w-32">
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
-                    <select name="medio" class="input text-xs py-1">
-                      <option value="">— Medio —</option>
-                      {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
-                    <select name="banco_origen" class="input text-xs py-1">
-                      <option value="">— Banco —</option>
-                      {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
-                    <select name="tipo_comprobante" class="input text-xs py-1">
-                      <option value="">— Sin tipo —</option>
-                      <option value="boleta">Boleta</option>
-                      <option value="factura">Factura</option>
-                      <option value="recibo">Recibo</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">N° comp.</label>
-                    <input name="num_comprobante" placeholder="F001-000123" class="input text-xs py-1 w-28">
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
-                    <input name="link_constancia" placeholder="https://…" class="input text-xs py-1 w-40">
-                  </div>
-                  <button type="submit" class="btn-ghost text-xs py-1.5 border border-blue-300 text-blue-600">+ Registrar pago</button>
-                </form>
-              </div>
-            </div>
-
+          <td class="px-4 py-3 text-right text-slate-300">
+            <i class="fa-solid fa-up-right-from-square text-xs"></i>
           </td>
         </tr>
       </tbody>
@@ -809,24 +225,795 @@
 
 </div>
 
+<!-- ── Modal de edición de pago ─────────────────────────────────────────── -->
+<div id="modal-billing" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+     x-data="billingModal()"
+     @keydown.escape.window="cerrar()"
+     @billing-abrir.window="abrir($event.detail)"
+     @comprobante-picked.window="onPickerResult($event.detail)">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" @click.stop>
+
+    <!-- Header -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shrink-0">
+          <i class="fa-solid fa-money-bill-wave text-sm"></i>
+        </div>
+        <div>
+          <h2 class="text-sm font-semibold text-slate-800" x-text="nombre || 'Editar pago'"></h2>
+          <p class="text-xs text-slate-400 mt-0.5">
+            <span class="font-mono" x-text="member_id"></span>
+            <span x-show="periodo" class="ml-1.5">· <span x-text="periodo"></span></span>
+          </p>
+        </div>
+      </div>
+      <button @click="cerrar()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-xl leading-none">&times;</button>
+    </div>
+
+    <!-- Body -->
+    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+      <!-- 1. Estado del pago -->
+      <div>
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">1</span>
+          Estado del pago
+        </p>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+              <select x-model="form.estado" class="input text-sm w-full">
+                <option value="pagado">Pagado</option>
+                <option value="debe">Debe</option>
+                <option value="fraccionamiento">Fraccionamiento</option>
+                <option value="parcial">Parcial</option>
+                <option value="por_cobrar">Por cobrar</option>
+                <option value="exonerado">Exonerado</option>
+                <option value="no_aplica">N/A</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="retirar">Retirar</option>
+                <option value="en_revision">En revisión</option>
+                <option value="revisar">Revisar</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de pago</label>
+              <input type="date" x-model="form.fecha_pago" class="input text-sm w-full">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Comprobante emitido</label>
+              <select x-model="form.comprobante_emitido" class="input text-sm w-full">
+                <option value="false">Pendiente de emitir</option>
+                <option value="true">Emitido</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">N° comprobante</label>
+              <div class="flex items-center gap-1">
+                <input type="text" x-model="form.nc" placeholder="F001-000123" class="input text-sm flex-1 min-w-0">
+                <button type="button" @click="$store.picker.abrir('billing-modal-main')"
+                        title="Buscar en comprobantes"
+                        class="shrink-0 text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-2 py-2 hover:bg-blue-50 transition-colors">
+                  <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                </button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Tipo documento</label>
+              <select x-model="form.tipoComp" class="input text-sm w-full">
+                <option value="">— Sin tipo —</option>
+                <option value="boleta">Boleta</option>
+                <option value="factura">Factura</option>
+                <option value="recibo">Recibo</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión SUNAT</label>
+              <input type="date" x-model="form.fechaComp" class="input text-sm w-full">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
+              <select x-model="form.medio" class="input text-sm w-full">
+                <option value="">— Medio —</option>
+                {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Banco origen</label>
+              <select x-model="form.banco_origen" class="input text-sm w-full">
+                <option value="">— Banco —</option>
+                {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-span-full sm:col-span-2">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Link constancia de pago</label>
+              <input type="text" x-model="form.link_constancia" placeholder="https://…" class="input text-sm w-full">
+            </div>
+          </div>
+          <!-- ¿Quién pagó? -->
+          <div class="pt-3 border-t border-slate-200 flex flex-wrap items-end gap-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">¿Quién pagó?</label>
+              <select x-model="form.tipoPagador" class="input text-sm">
+                <option value="socio">El mismo socio</option>
+                <option value="empresa">Empresa empleadora</option>
+              </select>
+            </div>
+            <div x-show="form.tipoPagador === 'empresa'" x-cloak class="relative">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
+              <input x-model="form.empresa"
+                     @input.debounce.300ms="fetchCompanies()"
+                     @focus="if (form.empresa) fetchCompanies()"
+                     @keydown.escape="showSuggestions = false"
+                     placeholder="Buscar empresa…" class="input text-sm w-52" autocomplete="off">
+              <div x-show="showSuggestions && companySuggestions.length > 0"
+                   @click.outside="showSuggestions = false"
+                   class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-56 max-h-48 overflow-y-auto">
+                <template x-for="c in companySuggestions" :key="c._id">
+                  <button type="button" @click="form.empresa = c.nombre; showSuggestions = false"
+                          class="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                    <div class="font-medium" x-text="c.nombre"></div>
+                    <div class="text-slate-400 text-[10px]" x-show="c.ruc" x-text="'RUC: ' + c.ruc"></div>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Estado del socio -->
+      <div x-show="member_id">
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">2</span>
+          Estado del socio
+        </p>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-wrap items-center gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+            <select x-model="estado_socio" class="input text-sm">
+              <option value="activo">Activo</option>
+              <option value="retirar">Retirar</option>
+            </select>
+          </div>
+          <p class="text-xs text-slate-400 self-end pb-1.5">Se guarda con el botón Guardar estado</p>
+          <a :href="'/members/' + member_id" target="_blank"
+             class="self-end pb-1.5 text-xs text-blue-600 hover:underline inline-flex items-center gap-1">
+            Ver ficha <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+          </a>
+        </div>
+      </div>
+
+      <!-- 3. Cuotas de fraccionamiento -->
+      <div>
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">3</span>
+          Cuotas de fraccionamiento
+          <template x-if="cuotas.length > 0">
+            <span class="normal-case font-normal text-[10px] text-slate-500">
+              — <span x-text="cuotasPagadas"></span>/<span x-text="cuotas.length"></span> pagadas
+              <span x-show="monto_objetivo"> · S/ <span x-text="sumaCuotas.toFixed(2)"></span> / S/ <span x-text="parseFloat(monto_objetivo || 0).toFixed(2)"></span></span>
+            </span>
+          </template>
+        </p>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <!-- Monto objetivo -->
+          <div class="flex flex-wrap items-end gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Total anual esperado (S/)</label>
+              <input type="number" step="0.01" min="0" x-model="monto_objetivo" placeholder="780.00" class="input text-sm w-32">
+            </div>
+            <button type="button" @click="setObjetivo()"
+                    class="btn-ghost text-xs py-1.5 border border-slate-300 mb-0.5">
+              <span x-text="monto_objetivo ? 'Actualizar total' : 'Fijar total'"></span>
+            </button>
+          </div>
+
+          <!-- Cuotas list -->
+          <template x-if="cuotas.length > 0">
+            <div class="space-y-1.5">
+              <template x-for="q in cuotas" :key="q.numero">
+                <div class="border border-slate-200 rounded-lg bg-white overflow-hidden">
+                  <!-- View -->
+                  <div x-show="editCuota !== q.numero"
+                       class="flex items-center gap-3 px-3 py-2.5 text-xs flex-wrap">
+                    <span class="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 shrink-0 text-[10px]" x-text="q.numero"></span>
+                    <span class="font-semibold text-blue-700 w-16 shrink-0" x-text="'S/ ' + q.monto"></span>
+                    <span :class="q.estado === 'pagado' ? 'badge badge-green' : 'badge badge-yellow'"
+                          x-text="q.estado === 'pagado' ? 'Pagado' : 'Pendiente'"></span>
+                    <span class="text-slate-400" x-show="q.fecha_venc" x-text="'Vence: ' + q.fecha_venc"></span>
+                    <span class="text-slate-500" x-show="q.fecha_pago" x-text="'Pago: ' + q.fecha_pago"></span>
+                    <span class="text-slate-400 font-mono" x-show="q.num_comprobante" x-text="q.num_comprobante"></span>
+                    <span class="text-slate-400" x-show="q.medio_pago" x-text="q.medio_pago"></span>
+                    <div class="flex gap-2 ml-auto shrink-0">
+                      <button type="button" @click="startEditCuota(q)"
+                              class="text-slate-400 hover:text-blue-600 transition-colors p-1" title="Editar cuota">
+                        <i class="fa-solid fa-pencil text-[10px]"></i>
+                      </button>
+                      <button type="button" @click="deleteCuota(q.numero)"
+                              class="text-slate-300 hover:text-red-500 transition-colors p-1" title="Eliminar cuota">
+                        <i class="fa-solid fa-trash text-[10px]"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Edit -->
+                  <div x-show="editCuota === q.numero" class="bg-blue-50 border-t border-blue-200 p-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                        <input type="number" step="0.01" x-model="editCuotaData.monto" class="input text-xs py-1 w-full">
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Vencimiento</label>
+                        <input type="date" x-model="editCuotaData.fecha_venc" class="input text-xs py-1 w-full">
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Estado</label>
+                        <select x-model="editCuotaData.estado" class="input text-xs py-1 w-full">
+                          <option value="pendiente">Pendiente</option>
+                          <option value="pagado">Pagado</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Fecha pago</label>
+                        <input type="date" x-model="editCuotaData.fecha_pago" class="input text-xs py-1 w-full">
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
+                        <select x-model="editCuotaData.tipo_comprobante" class="input text-xs py-1 w-full">
+                          <option value="">Sin tipo</option>
+                          <option value="boleta">Boleta</option>
+                          <option value="factura">Factura</option>
+                          <option value="recibo">Recibo</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">N° comprobante</label>
+                        <div class="flex gap-1">
+                          <input type="text" x-model="editCuotaData.num_comprobante" placeholder="F001-000123" class="input text-xs py-1 flex-1 min-w-0">
+                          <button type="button" @click="$store.picker.abrir('billing-modal-cuota-' + editCuota)"
+                                  class="shrink-0 text-blue-600 border border-blue-200 rounded px-1.5 py-0.5 hover:bg-blue-100 transition-colors">
+                            <i class="fa-solid fa-magnifying-glass text-[10px]"></i>
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
+                        <select x-model="editCuotaData.medio" class="input text-xs py-1 w-full">
+                          <option value="">— Medio —</option>
+                          {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
+                        <select x-model="editCuotaData.banco_origen" class="input text-xs py-1 w-full">
+                          <option value="">— Banco —</option>
+                          {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+                        </select>
+                      </div>
+                      <div class="col-span-full">
+                        <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
+                        <input type="text" x-model="editCuotaData.link_constancia" placeholder="https://…" class="input text-xs py-1 w-full">
+                      </div>
+                    </div>
+                    <div class="flex gap-2">
+                      <button type="button" @click="saveCuota(editCuota)"
+                              class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-100 border border-blue-200 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition-colors">
+                        <i class="fa-solid fa-floppy-disk text-[10px]"></i> Guardar cuota
+                      </button>
+                      <button type="button" @click="editCuota = -1"
+                              class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-200 transition-colors">
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- Add cuota -->
+          <div>
+            <div x-show="!showAddCuota">
+              <button type="button" @click="showAddCuota = true"
+                      class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 bg-white border border-slate-300 hover:border-slate-400 px-3 py-1.5 rounded-lg transition-colors">
+                <i class="fa-solid fa-plus text-[10px]"></i> Agregar cuota pendiente
+              </button>
+            </div>
+            <div x-show="showAddCuota" x-cloak class="border border-slate-300 bg-white rounded-xl p-3">
+              <div class="flex flex-wrap gap-3 items-end">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                  <input type="number" step="0.01" min="0.01" x-model="nuevaCuota.monto" placeholder="260.00" class="input text-xs py-1 w-24">
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Fecha de vencimiento</label>
+                  <input type="date" x-model="nuevaCuota.fecha_venc" class="input text-xs py-1 w-36">
+                </div>
+                <button type="button" @click="addCuota()"
+                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors">
+                  <i class="fa-solid fa-plus text-[10px]"></i> Agregar
+                </button>
+                <button type="button" @click="showAddCuota = false; nuevaCuota = {monto: '', fecha_venc: ''}"
+                        class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Pagos parciales -->
+      <div>
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[9px] font-bold shrink-0">4</span>
+          Pagos parciales
+          <template x-if="monto_total">
+            <span class="normal-case font-normal text-[10px] text-slate-500">
+              — S/ <span x-text="montoPagado.toFixed(2)"></span> de S/ <span x-text="parseFloat(monto_total).toFixed(2)"></span>
+              <span x-show="montoPendiente > 0"> · falta S/ <span x-text="montoPendiente.toFixed(2)"></span></span>
+            </span>
+          </template>
+        </p>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <!-- Total config -->
+          <div class="flex flex-wrap items-end gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Total a pagar (S/)</label>
+              <input type="number" step="0.01" min="0" x-model="monto_total" placeholder="780.00" class="input text-sm w-32">
+            </div>
+            <button type="button" @click="initParcial()"
+                    class="btn-ghost text-xs py-1.5 border border-slate-300 mb-0.5">
+              <span x-text="monto_total ? 'Actualizar total' : 'Configurar total'"></span>
+            </button>
+          </div>
+
+          <!-- Progress bar -->
+          <div x-show="monto_total && pagos_parciales.length > 0">
+            <div class="w-full bg-slate-200 rounded-full h-1.5">
+              <div class="bg-blue-500 h-1.5 rounded-full transition-all duration-300"
+                   :style="'width: ' + Math.min(100, Math.round((montoPagado / (parseFloat(monto_total) || 1)) * 100)) + '%'"></div>
+            </div>
+          </div>
+
+          <!-- Parciales list -->
+          <template x-if="pagos_parciales.length > 0">
+            <div class="space-y-1.5">
+              <template x-for="pp in pagos_parciales" :key="pp.numero">
+                <div class="border border-slate-200 rounded-lg bg-white overflow-hidden">
+                  <!-- View -->
+                  <div x-show="editParcial !== pp.numero"
+                       class="flex items-center gap-3 px-3 py-2.5 text-xs flex-wrap">
+                    <span class="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 shrink-0 text-[10px]" x-text="pp.numero"></span>
+                    <span class="font-semibold text-blue-700 w-16 shrink-0" x-text="'S/ ' + pp.monto"></span>
+                    <span class="text-slate-500" x-show="pp.fecha_pago" x-text="pp.fecha_pago"></span>
+                    <span class="text-slate-400" x-show="pp.medio_pago" x-text="pp.medio_pago"></span>
+                    <span class="text-slate-400 font-mono" x-show="pp.num_comprobante" x-text="pp.num_comprobante"></span>
+                    <span class="text-slate-400" x-show="pp.tipo_comprobante" x-text="pp.tipo_comprobante"></span>
+                    <div class="flex gap-2 ml-auto shrink-0">
+                      <button type="button" @click="startEditParcial(pp)"
+                              class="text-slate-400 hover:text-blue-600 transition-colors p-1" title="Editar pago">
+                        <i class="fa-solid fa-pencil text-[10px]"></i>
+                      </button>
+                      <button type="button" @click="deleteParcial(pp.numero)"
+                              class="text-slate-300 hover:text-red-500 transition-colors p-1" title="Eliminar pago">
+                        <i class="fa-solid fa-trash text-[10px]"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Edit -->
+                  <div x-show="editParcial === pp.numero" class="bg-blue-50 border-t border-blue-200 p-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                        <input type="number" step="0.01" x-model="editParcialData.monto" class="input text-xs py-1 w-full">
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Fecha pago</label>
+                        <input type="date" x-model="editParcialData.fecha_pago" class="input text-xs py-1 w-full">
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
+                        <select x-model="editParcialData.medio" class="input text-xs py-1 w-full">
+                          <option value="">— Medio —</option>
+                          {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
+                        <select x-model="editParcialData.banco_origen" class="input text-xs py-1 w-full">
+                          <option value="">— Banco —</option>
+                          {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
+                        <select x-model="editParcialData.tipo_comprobante" class="input text-xs py-1 w-full">
+                          <option value="">Sin tipo</option>
+                          <option value="boleta">Boleta</option>
+                          <option value="factura">Factura</option>
+                          <option value="recibo">Recibo</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">N° comprobante</label>
+                        <input type="text" x-model="editParcialData.num_comprobante" placeholder="F001-000123" class="input text-xs py-1 w-full">
+                      </div>
+                      <div class="col-span-full">
+                        <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
+                        <input type="text" x-model="editParcialData.link_constancia" placeholder="https://…" class="input text-xs py-1 w-full">
+                      </div>
+                    </div>
+                    <div class="flex gap-2">
+                      <button type="button" @click="saveParcial(editParcial)"
+                              class="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-100 border border-blue-200 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition-colors">
+                        <i class="fa-solid fa-floppy-disk text-[10px]"></i> Guardar
+                      </button>
+                      <button type="button" @click="editParcial = -1"
+                              class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-200 transition-colors">
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <!-- Add parcial -->
+          <div>
+            <div x-show="!showAddParcial">
+              <button type="button" @click="showAddParcial = true"
+                      class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 bg-white border border-slate-300 hover:border-slate-400 px-3 py-1.5 rounded-lg transition-colors">
+                <i class="fa-solid fa-plus text-[10px]"></i> Registrar pago
+              </button>
+            </div>
+            <div x-show="showAddParcial" x-cloak class="border border-slate-300 bg-white rounded-xl p-3">
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
+                  <input type="number" step="0.01" min="0.01" x-model="nuevoParcial.monto" placeholder="220.00" class="input text-xs py-1 w-full">
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Fecha</label>
+                  <input type="date" x-model="nuevoParcial.fecha_pago" class="input text-xs py-1 w-full">
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Medio</label>
+                  <select x-model="nuevoParcial.medio" class="input text-xs py-1 w-full">
+                    <option value="">— Medio —</option>
+                    {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Banco</label>
+                  <select x-model="nuevoParcial.banco_origen" class="input text-xs py-1 w-full">
+                    <option value="">— Banco —</option>
+                    {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Tipo doc.</label>
+                  <select x-model="nuevoParcial.tipo_comprobante" class="input text-xs py-1 w-full">
+                    <option value="">— Sin tipo —</option>
+                    <option value="boleta">Boleta</option>
+                    <option value="factura">Factura</option>
+                    <option value="recibo">Recibo</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">N° comprobante</label>
+                  <input type="text" x-model="nuevoParcial.num_comprobante" placeholder="F001-000123" class="input text-xs py-1 w-full">
+                </div>
+                <div class="col-span-full">
+                  <label class="block text-xs text-slate-500 mb-0.5">Link constancia</label>
+                  <input type="text" x-model="nuevoParcial.link_constancia" placeholder="https://…" class="input text-xs py-1 w-full">
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button type="button" @click="addParcial()"
+                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors">
+                  <i class="fa-solid fa-plus text-[10px]"></i> Registrar pago
+                </button>
+                <button type="button" @click="showAddParcial = false; resetNuevoParcial()"
+                        class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /body -->
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl shrink-0">
+      <button @click="cerrar()"
+              class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors">
+        <i class="fa-solid fa-xmark text-xs"></i> Cancelar
+      </button>
+      <button @click="guardar()" :disabled="guardando"
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+              :class="!guardando ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm hover:shadow-md active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+        <i class="fa-solid" :class="guardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+        <span x-text="guardando ? 'Guardando…' : 'Guardar estado'"></span>
+      </button>
+    </div>
+
+  </div>
+</div>
+
 <script>
-function billingRow(initialEmpresa) {
+function billingModal() {
   return {
-    editing: false,
-    tipoPagador: initialEmpresa ? 'empresa' : 'socio',
-    empresaVal: initialEmpresa || '',
-    copied: false,
-    nc: '',
-    tipoComp: '',
-    fechaComp: '',
-    companySuggestions: [],
-    showSuggestions: false,
-    fetchCompanies() {
-      if (!this.empresaVal || this.empresaVal.length < 1) { this.showSuggestions = false; return; }
-      fetch('/api/companies?q=' + encodeURIComponent(this.empresaVal))
-        .then(r => r.json())
-        .then(d => { this.companySuggestions = d; this.showSuggestions = d.length > 0; });
-    }
+    id: '', guardando: false,
+    nombre: '', member_id: '', periodo: '', email: '', centro_trabajo: '',
+    estado_socio: 'activo',
+    form: {
+      estado: '', fecha_pago: '', nc: '', tipoComp: '', fechaComp: '',
+      link_constancia: '', medio: '', banco_origen: '',
+      tipoPagador: 'socio', empresa: '', comprobante_emitido: 'false',
+    },
+    cuotas: [], monto_objetivo: null,
+    editCuota: -1,
+    editCuotaData: {},
+    showAddCuota: false,
+    nuevaCuota: { monto: '', fecha_venc: '' },
+    pagos_parciales: [], monto_total: null,
+    editParcial: -1,
+    editParcialData: {},
+    showAddParcial: false,
+    nuevoParcial: { monto: '', fecha_pago: '', medio: '', banco_origen: '', tipo_comprobante: '', num_comprobante: '', link_constancia: '' },
+    companySuggestions: [], showSuggestions: false,
+
+    get sumaCuotas() { return this.cuotas.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0); },
+    get cuotasPagadas() { return this.cuotas.filter(c => c.estado === 'pagado').length; },
+    get montoPagado() { return this.pagos_parciales.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0); },
+    get montoPendiente() { return Math.max(0, (parseFloat(this.monto_total) || 0) - this.montoPagado); },
+
+    abrir(d) {
+      this.id              = d.id;
+      this.member_id       = d.member_id || '';
+      this.nombre          = d.nombre || '';
+      this.periodo         = d.periodo || '';
+      this.email           = d.email || '';
+      this.centro_trabajo  = d.centro_trabajo || '';
+      this.estado_socio    = d.estado_socio || 'activo';
+      this.form = {
+        estado:               d.estado || 'debe',
+        fecha_pago:           d.fecha_pago || '',
+        nc:                   d.num_comprobante || '',
+        tipoComp:             d.tipo_comprobante || '',
+        fechaComp:            d.fecha_emision_comprobante || '',
+        link_constancia:      d.link_constancia || '',
+        medio:                d.medio_pago || '',
+        banco_origen:         d.banco_origen || '',
+        tipoPagador:          d.empresa_pagadora ? 'empresa' : 'socio',
+        empresa:              d.empresa_pagadora || '',
+        comprobante_emitido:  d.comprobante_emitido ? 'true' : 'false',
+      };
+      this.cuotas          = (d.cuotas || []).map(c => Object.assign({}, c));
+      this.monto_objetivo  = d.monto_objetivo || null;
+      this.pagos_parciales = (d.pagos_parciales || []).map(p => Object.assign({}, p));
+      this.monto_total     = d.monto_total || null;
+      this.editCuota       = -1;
+      this.editParcial     = -1;
+      this.showAddCuota    = false;
+      this.showAddParcial  = false;
+      this.nuevaCuota      = { monto: '', fecha_venc: '' };
+      this.resetNuevoParcial();
+      this.companySuggestions = [];
+      this.showSuggestions    = false;
+      document.getElementById('modal-billing').classList.remove('hidden');
+    },
+    cerrar() { document.getElementById('modal-billing').classList.add('hidden'); },
+
+    onPickerResult(detail) {
+      if (detail.formKey === 'billing-modal-main') {
+        this.form.nc      = detail.c.numero || '';
+        this.form.tipoComp = detail.c.tipo || '';
+        this.form.fechaComp = detail.c.fecha_emision || '';
+      } else if (this.editCuota >= 0 && detail.formKey === 'billing-modal-cuota-' + this.editCuota) {
+        this.editCuotaData.num_comprobante  = detail.c.numero || '';
+        this.editCuotaData.tipo_comprobante = detail.c.tipo || '';
+      }
+    },
+
+    async guardar() {
+      this.guardando = true;
+      try {
+        const r = await fetch('/api/billing/' + this.id + '/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            estado:                    this.form.estado,
+            fecha_pago:                this.form.fecha_pago || null,
+            num_comprobante:           this.form.nc || null,
+            tipo_comprobante:          this.form.tipoComp || null,
+            fecha_emision_comprobante: this.form.fechaComp || null,
+            link_constancia:           this.form.link_constancia || null,
+            medio:                     this.form.medio || null,
+            banco_origen:              this.form.banco_origen || null,
+            empresa:                   this.form.tipoPagador === 'empresa' ? (this.form.empresa || null) : null,
+            comprobante_emitido:       this.form.comprobante_emitido === 'true',
+            estado_socio:              this.estado_socio,
+          }),
+        });
+        if (r.ok) { this.cerrar(); location.reload(); }
+      } finally { this.guardando = false; }
+    },
+
+    async fetchCompanies() {
+      const q = (this.form.empresa || '').trim();
+      if (!q) { this.showSuggestions = false; return; }
+      const r = await fetch('/api/companies?q=' + encodeURIComponent(q));
+      const d = await r.json();
+      this.companySuggestions = d;
+      this.showSuggestions    = d.length > 0;
+    },
+
+    /* ── Cuotas ── */
+    startEditCuota(q) {
+      this.editCuota = q.numero;
+      this.editCuotaData = {
+        monto:           q.monto,
+        fecha_venc:      q.fecha_venc || '',
+        fecha_pago:      q.fecha_pago || '',
+        estado:          q.estado || 'pendiente',
+        tipo_comprobante: q.tipo_comprobante || '',
+        num_comprobante:  q.num_comprobante || '',
+        medio:           q.medio_pago || '',
+        banco_origen:    q.banco_origen || '',
+        link_constancia: q.link_constancia || '',
+      };
+    },
+    async saveCuota(numero) {
+      const d = this.editCuotaData;
+      const r = await fetch('/api/billing/' + this.id + '/cuotas/' + numero + '/update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monto:           parseFloat(d.monto) || null,
+          fecha_venc:      d.fecha_venc || null,
+          fecha_pago:      d.fecha_pago || null,
+          estado:          d.estado,
+          tipo_comprobante: d.tipo_comprobante || null,
+          num_comprobante:  d.num_comprobante || null,
+          medio:           d.medio || null,
+          banco_origen:    d.banco_origen || null,
+          link_constancia: d.link_constancia || null,
+        }),
+      });
+      if (r.ok) {
+        const idx = this.cuotas.findIndex(c => c.numero === numero);
+        if (idx >= 0) {
+          this.cuotas[idx] = Object.assign({}, this.cuotas[idx], {
+            monto:           d.monto,
+            fecha_venc:      d.fecha_venc || null,
+            fecha_pago:      d.estado === 'pagado' ? (d.fecha_pago || null) : null,
+            estado:          d.estado,
+            tipo_comprobante: d.tipo_comprobante || null,
+            num_comprobante:  d.num_comprobante || null,
+            medio_pago:      d.medio || null,
+            banco_origen:    d.banco_origen || null,
+            link_constancia: d.link_constancia || null,
+          });
+        }
+        this.editCuota = -1;
+      }
+    },
+    async deleteCuota(numero) {
+      if (!confirm('¿Eliminar esta cuota?')) return;
+      const r = await fetch('/api/billing/' + this.id + '/cuotas/' + numero + '/delete', { method: 'POST' });
+      if (r.ok) this.cuotas = this.cuotas.filter(c => c.numero !== numero);
+    },
+    async addCuota() {
+      const monto = parseFloat(this.nuevaCuota.monto);
+      if (!monto || monto <= 0) return;
+      const r = await fetch('/api/billing/' + this.id + '/cuotas/add', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monto, fecha_venc: this.nuevaCuota.fecha_venc || null }),
+      });
+      const d = await r.json();
+      if (d.cuota) {
+        this.cuotas.push(Object.assign({}, d.cuota));
+        this.form.estado  = 'fraccionamiento';
+        this.nuevaCuota   = { monto: '', fecha_venc: '' };
+        this.showAddCuota = false;
+      }
+    },
+    async setObjetivo() {
+      const monto = parseFloat(this.monto_objetivo);
+      if (!monto || monto <= 0) return;
+      await fetch('/api/billing/' + this.id + '/cuotas/objetivo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monto_objetivo: monto }),
+      });
+    },
+
+    /* ── Parciales ── */
+    resetNuevoParcial() {
+      this.nuevoParcial = { monto: '', fecha_pago: '', medio: '', banco_origen: '', tipo_comprobante: '', num_comprobante: '', link_constancia: '' };
+    },
+    startEditParcial(pp) {
+      this.editParcial = pp.numero;
+      this.editParcialData = {
+        monto:           pp.monto,
+        fecha_pago:      pp.fecha_pago || '',
+        medio:           pp.medio_pago || '',
+        banco_origen:    pp.banco_origen || '',
+        tipo_comprobante: pp.tipo_comprobante || '',
+        num_comprobante:  pp.num_comprobante || '',
+        link_constancia:  pp.link_constancia || '',
+      };
+    },
+    async saveParcial(numero) {
+      const d = this.editParcialData;
+      const r = await fetch('/api/billing/' + this.id + '/parciales/' + numero + '/update', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monto:           parseFloat(d.monto) || null,
+          fecha_pago:      d.fecha_pago || null,
+          medio:           d.medio || null,
+          banco_origen:    d.banco_origen || null,
+          tipo_comprobante: d.tipo_comprobante || null,
+          num_comprobante:  d.num_comprobante || null,
+          link_constancia:  d.link_constancia || null,
+        }),
+      });
+      if (r.ok) {
+        const idx = this.pagos_parciales.findIndex(p => p.numero === numero);
+        if (idx >= 0) {
+          this.pagos_parciales[idx] = Object.assign({}, this.pagos_parciales[idx], {
+            monto:           d.monto,
+            fecha_pago:      d.fecha_pago || null,
+            medio_pago:      d.medio || null,
+            banco_origen:    d.banco_origen || null,
+            tipo_comprobante: d.tipo_comprobante || null,
+            num_comprobante:  d.num_comprobante || null,
+            link_constancia:  d.link_constancia || null,
+          });
+        }
+        this.editParcial = -1;
+      }
+    },
+    async deleteParcial(numero) {
+      if (!confirm('¿Eliminar este pago?')) return;
+      const r = await fetch('/api/billing/' + this.id + '/parciales/' + numero + '/delete', { method: 'POST' });
+      if (r.ok) this.pagos_parciales = this.pagos_parciales.filter(p => p.numero !== numero);
+    },
+    async addParcial() {
+      const monto = parseFloat(this.nuevoParcial.monto);
+      if (!monto || monto <= 0) return;
+      const r = await fetch('/api/billing/' + this.id + '/parciales/add', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monto,
+          fecha_pago:      this.nuevoParcial.fecha_pago || null,
+          medio:           this.nuevoParcial.medio || null,
+          banco_origen:    this.nuevoParcial.banco_origen || null,
+          tipo_comprobante: this.nuevoParcial.tipo_comprobante || null,
+          num_comprobante:  this.nuevoParcial.num_comprobante || null,
+          link_constancia:  this.nuevoParcial.link_constancia || null,
+        }),
+      });
+      const d = await r.json();
+      if (d.parcial) {
+        this.pagos_parciales.push(Object.assign({}, d.parcial));
+        this.resetNuevoParcial();
+        this.showAddParcial = false;
+      }
+    },
+    async initParcial() {
+      const monto = parseFloat(this.monto_total);
+      if (!monto || monto <= 0) return;
+      await fetch('/api/billing/' + this.id + '/parciales/init', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monto_total: monto }),
+      });
+    },
   };
 }
 </script>
