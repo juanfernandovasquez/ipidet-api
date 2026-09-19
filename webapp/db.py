@@ -1877,8 +1877,11 @@ def delete_factura_credito(factura_id: str) -> None:
             socios = [s if isinstance(s, str) else s.get("member_id", "") for s in socios_raw]
             socios = [s for s in socios if s]
             payments_col.update_many(
-                {"member_id": {"$in": socios}, "periodo": periodo, "estado": "por_cobrar"},
-                {"$set": {"estado": "debe", "fecha_pago": None, "empresa_pagadora": None}},
+                {"member_id": {"$in": socios}, "periodo": periodo,
+                 "estado": {"$in": ["por_cobrar", "pagado"]}},
+                {"$set": {"estado": "debe", "fecha_pago": None,
+                           "empresa_pagadora": None, "medio_pago": None,
+                           "link_constancia": None}},
             )
     credito_col.delete_one({"_id": ObjectId(factura_id)})
 
