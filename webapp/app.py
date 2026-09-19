@@ -936,27 +936,38 @@ async def billing_credito(request: Request, empresa: str = "", estado: str = "")
 
 @app.post("/billing/credito/nueva")
 async def credito_nueva(
-    empresa: str         = Form(...),
-    numero_factura: str  = Form(...),
-    monto: float         = Form(...),
-    fecha_emision: str   = Form(...),
+    request: Request,
+    empresa: str           = Form(...),
+    numero_factura: str    = Form(...),
+    monto: float           = Form(...),
+    fecha_emision: str     = Form(...),
     fecha_vencimiento: str = Form(...),
-    concepto: str        = Form(""),
+    concepto: str          = Form(""),
 ):
     pdb.create_factura_credito(empresa, numero_factura, monto,
                                 fecha_emision, fecha_vencimiento, concepto)
-    return RedirectResponse("/billing/credito", status_code=303)
+    ref = request.headers.get("referer", "/comprobantes?tipo=credito")
+    return RedirectResponse(ref, status_code=303)
 
 @app.post("/billing/credito/{factura_id}/estado")
-async def credito_estado(factura_id: str, estado: str = Form(...),
-                          fecha_cobro: str = Form("")):
-    pdb.update_factura_credito_estado(factura_id, estado, fecha_cobro)
-    return RedirectResponse("/billing/credito", status_code=303)
+async def credito_estado(
+    request: Request,
+    factura_id: str,
+    estado: str          = Form(...),
+    fecha_cobro: str     = Form(""),
+    medio_pago: str      = Form(""),
+    link_constancia: str = Form(""),
+):
+    pdb.update_factura_credito_estado(factura_id, estado, fecha_cobro,
+                                       medio_pago, link_constancia)
+    ref = request.headers.get("referer", "/comprobantes?tipo=credito")
+    return RedirectResponse(ref, status_code=303)
 
 @app.post("/billing/credito/{factura_id}/delete")
-async def credito_delete(factura_id: str):
+async def credito_delete(request: Request, factura_id: str):
     pdb.delete_factura_credito(factura_id)
-    return RedirectResponse("/billing/credito", status_code=303)
+    ref = request.headers.get("referer", "/comprobantes?tipo=credito")
+    return RedirectResponse(ref, status_code=303)
 
 
 @app.post("/billing/credito/{factura_id}/comentarios/add")

@@ -262,7 +262,8 @@
       {% set coms = c.comentarios if c.comentarios else [] %}
       {% set cuotas_init = c.cuotas if c.cuotas else [] %}
       <tbody x-data="{
-        open: false, editando: false, editandoFactura: false, fechaCobro: '',
+        open: false, editando: false, editandoFactura: false,
+        estadoCobro: 'cobrado', fechaCobro: '', medioCobro: '', linkCobro: '',
         editData: {}, comentario: '', comentarios: [], enviando: false,
         cuotas: [], addingCuota: false, nuevaCuota: { monto: '', fecha_venc: '' },
         get cuotasPagadas() { return this.cuotas.filter(c => c.estado === 'pagado').length; },
@@ -298,10 +299,13 @@
           if (r.ok) this.comentarios.splice(idx, 1);
         },
       }"
-      x-init="editData = JSON.parse($el.dataset.edit); comentarios = JSON.parse($el.dataset.coms); cuotas = JSON.parse($el.dataset.cuotas);"
+      x-init="editData = JSON.parse($el.dataset.edit); comentarios = JSON.parse($el.dataset.coms); cuotas = JSON.parse($el.dataset.cuotas); fechaCobro = $el.dataset.fechacobro; medioCobro = $el.dataset.mediocobro; linkCobro = $el.dataset.linkcobro;"
       data-edit='{{ {"numero_factura": c.numero or "", "empresa": c.empresa or "", "monto": c.monto_total or 0, "fecha_emision": c.fecha_emision or "", "fecha_vencimiento": c.fecha_vencimiento or "", "concepto": c.concepto or ""} | tojson }}'
       data-coms='{{ coms | tojson }}'
-      data-cuotas='{{ cuotas_init | tojson }}'>
+      data-cuotas='{{ cuotas_init | tojson }}'
+      data-fechacobro="{{ c.fecha_cobro or '' }}"
+      data-mediocobro="{{ c.medio_pago or '' }}"
+      data-linkcobro="{{ c.link_constancia or '' }}">
 
       <!-- Fila principal crédito -->
       <tr class="border-t border-slate-100 hover:bg-amber-50/40 cursor-pointer" @click="open = !open">
@@ -345,12 +349,10 @@
               class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors">
               <i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar
             </button>
-            {% if c.estado_credito != 'cobrado' %}
             <button @click="editando = !editando; open = true"
-              class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors">
-              Cobrar
+              class="text-xs font-medium px-2 py-1 rounded transition-colors {% if c.estado_credito == 'cobrado' %}text-green-600 hover:text-green-800 hover:bg-green-50{% else %}text-blue-600 hover:text-blue-800 hover:bg-blue-50{% endif %}">
+              {% if c.estado_credito == 'cobrado' %}<i class="fa-solid fa-pen text-[10px] mr-1"></i> Editar cobro{% else %}Cobrar{% endif %}
             </button>
-            {% endif %}
             <form method="post" action="/billing/credito/{{ c._id }}/delete" onsubmit="return confirm('¿Eliminar esta factura?')">
               <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1">
                 <i class="fa-solid fa-trash-can text-xs"></i>
@@ -360,18 +362,47 @@
         </td>
       </tr>
 
-      <!-- Fila: marcar cobrado -->
-      <tr x-show="editando" x-cloak class="border-t border-blue-100 bg-blue-50">
+      <!-- Fila: registrar / editar cobro -->
+      <tr x-show="editando" x-cloak class="border-t border-blue-100 bg-blue-50/60">
         <td></td>
-        <td colspan="9" class="px-4 py-3">
+        <td colspan="9" class="px-4 py-4">
           <form method="post" action="/billing/credito/{{ c._id }}/estado" class="flex flex-wrap items-end gap-3">
-            <input type="hidden" name="estado" value="cobrado">
             <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de cobro</label>
-              <input type="date" name="fecha_cobro" x-model="fechaCobro" class="input text-sm w-40" required>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+              <select name="estado" x-model="estadoCobro" class="input text-sm">
+                <option value="cobrado">Cobrado</option>
+                <option value="pendiente">Revertir a pendiente</option>
+              </select>
+            </div>
+            <div x-show="estadoCobro === 'cobrado'">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de cobro <span class="text-red-400">*</span></label>
+              <input type="date" name="fecha_cobro" x-model="fechaCobro" class="input text-sm w-40"
+                     :required="estadoCobro === 'cobrado'">
+            </div>
+            <div x-show="estadoCobro === 'cobrado'">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
+              <select name="medio_pago" x-model="medioCobro" class="input text-sm">
+                <option value="">— Sin especificar —</option>
+                <option>Transferencia bancaria</option>
+                <option>Depósito bancario</option>
+                <option>Efectivo</option>
+                <option>Yape / Plin</option>
+                <option>Niubiz</option>
+                <option>Cheque</option>
+                <option>Otro</option>
+              </select>
+            </div>
+            <div x-show="estadoCobro === 'cobrado'" class="flex-1 min-w-48">
+              <label class="block text-xs font-medium text-slate-600 mb-1">Link constancia</label>
+              <input type="text" name="link_constancia" x-model="linkCobro"
+                     placeholder="URL del correo o archivo adjunto"
+                     class="input text-sm w-full">
             </div>
             <div class="flex gap-2 self-end">
-              <button type="submit" class="btn-primary text-xs py-2"><i class="fa-solid fa-check mr-1"></i> Confirmar cobro</button>
+              <button type="submit" class="btn-primary text-xs py-2">
+                <i class="fa-solid fa-check mr-1"></i>
+                <span x-text="estadoCobro === 'cobrado' ? 'Guardar cobro' : 'Revertir'"></span>
+              </button>
               <button type="button" @click="editando = false" class="btn-ghost text-xs py-2">Cancelar</button>
             </div>
           </form>
@@ -412,6 +443,8 @@
               <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Detalle</h4>
               {% if c.concepto %}<div><div class="text-xs text-slate-400 mb-0.5">Concepto</div><div class="text-sm text-slate-700">{{ c.concepto }}</div></div>{% endif %}
               {% if c.fecha_cobro %}<div><div class="text-xs text-slate-400 mb-0.5">Cobrado el</div><div class="text-sm font-medium text-green-700">{{ c.fecha_cobro }}</div></div>{% endif %}
+              {% if c.medio_pago %}<div><div class="text-xs text-slate-400 mb-0.5">Medio de pago</div><div class="text-sm text-slate-700">{{ c.medio_pago }}</div></div>{% endif %}
+              {% if c.link_constancia %}<div><div class="text-xs text-slate-400 mb-0.5">Constancia</div><a href="{{ c.link_constancia }}" target="_blank" rel="noopener" class="text-sm text-blue-600 hover:underline break-all">{{ c.link_constancia }}</a></div>{% endif %}
               {% if c.socios_info %}
               <div>
                 <div class="text-xs text-slate-400 mb-1">Socios vinculados ({{ c.socios_info | length }})</div>

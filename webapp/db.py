@@ -1828,10 +1828,20 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
 
 
 def update_factura_credito_estado(factura_id: str, estado: str,
-                                   fecha_cobro: str = "") -> None:
+                                   fecha_cobro: str = "",
+                                   medio_pago: str = "",
+                                   link_constancia: str = "") -> None:
     fields: dict = {"estado": estado}
-    if estado == "cobrado" and fecha_cobro:
-        fields["fecha_cobro"] = fecha_cobro
+    if estado == "cobrado":
+        if fecha_cobro:
+            fields["fecha_cobro"] = fecha_cobro
+        fields["medio_pago"]      = medio_pago or None
+        fields["link_constancia"] = link_constancia or None
+    else:
+        # Revertir: limpiar datos de cobro
+        fields["fecha_cobro"]     = None
+        fields["medio_pago"]      = None
+        fields["link_constancia"] = None
     credito_col.update_one({"_id": ObjectId(factura_id)}, {"$set": fields})
     sync_credito_to_cobranzas(factura_id)
 
