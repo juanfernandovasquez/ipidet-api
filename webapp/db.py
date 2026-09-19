@@ -1803,13 +1803,21 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
     f = credito_col.find_one({"_id": ObjectId(factura_id)})
     if not f:
         return
-    socios = f.get("socios") or []
-    periodo = f.get("periodo") or ""
-    if not socios or not periodo:
+    socios_raw = f.get("socios") or []
+    periodo    = f.get("periodo") or ""
+    if not socios_raw or not periodo:
         return
+
+    # Normalizar: socios puede ser lista de strings o lista de {member_id, nombre}
+    socios = [
+        s if isinstance(s, str) else s.get("member_id", "")
+        for s in socios_raw
+    ]
+    socios = [s for s in socios if s]
 
     cuotas = f.get("cuotas") or []
     estado = f.get("estado", "pendiente")
+    empresa = f.get("empresa") or None
 
     if estado == "cobrado" or (cuotas and all(c.get("estado") == "pagado" for c in cuotas)):
         new_estado = "pagado"
@@ -1821,9 +1829,12 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
     for member_id in socios:
         p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
         if p:
-            upd = {"estado": new_estado}
-            if new_estado == "pagado" and fecha:
-                upd["fecha_pago"] = fecha
+            upd: dict = {"estado": new_estado}
+            if new_estado == "pagado":
+                upd["fecha_pago"]       = fecha
+                upd["empresa_pagadora"] = empresa
+            else:
+                upd["fecha_pago"]       = None
             payments_col.update_one({"_id": p["_id"]}, {"$set": upd})
 
 

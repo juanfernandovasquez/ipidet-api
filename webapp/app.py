@@ -1018,6 +1018,13 @@ async def credito_update_fields(factura_id: str, request: Request):
     return {"ok": True}
 
 
+@app.post("/billing/credito/{factura_id}/sync")
+async def credito_sync(factura_id: str):
+    """Fuerza re-sincronización del estado de cobranzas desde la factura de crédito."""
+    pdb.sync_credito_to_cobranzas(factura_id)
+    return {"ok": True}
+
+
 # ── Ingresos (flujo de caja) ──────────────────────────────────────────────────
 
 @app.get("/billing/ingresos", response_class=HTMLResponse)

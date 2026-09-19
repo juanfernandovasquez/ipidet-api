@@ -266,7 +266,17 @@
         estadoCobro: 'cobrado', fechaCobro: '', medioCobro: '', linkCobro: '',
         editData: {}, comentario: '', comentarios: [], enviando: false,
         cuotas: [], addingCuota: false, nuevaCuota: { monto: '', fecha_venc: '' },
+        syncing: false, syncMsg: '',
         get cuotasPagadas() { return this.cuotas.filter(c => c.estado === 'pagado').length; },
+        async sincronizar() {
+          this.syncing = true; this.syncMsg = '';
+          try {
+            const r = await fetch('/billing/credito/{{ c._id }}/sync', { method: 'POST' });
+            this.syncMsg = r.ok ? '✓ Sincronizado' : '✗ Error';
+          } catch { this.syncMsg = '✗ Error'; }
+          this.syncing = false;
+          if (this.syncMsg === '✓ Sincronizado') setTimeout(() => this.syncMsg = '', 3000);
+        },
         async guardarEdicion() {
           const r = await fetch('/billing/credito/{{ c._id }}/update', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(this.editData) });
           if (r.ok) location.reload();
@@ -440,7 +450,14 @@
         <td colspan="9" class="px-4 pb-5 pt-3 bg-slate-50/60">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="space-y-3">
-              <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Detalle</h4>
+              <div class="flex items-center justify-between">
+                <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Detalle</h4>
+                <button @click="sincronizar()" :disabled="syncing"
+                        class="text-[11px] text-slate-400 hover:text-blue-600 flex items-center gap-1 px-2 py-0.5 rounded hover:bg-blue-50 transition-colors disabled:opacity-50">
+                  <i class="fa-solid fa-rotate text-[10px]" :class="syncing ? 'animate-spin' : ''"></i>
+                  <span x-text="syncing ? 'Sincronizando…' : syncMsg || 'Sincronizar cobranzas'"></span>
+                </button>
+              </div>
               {% if c.concepto %}<div><div class="text-xs text-slate-400 mb-0.5">Concepto</div><div class="text-sm text-slate-700">{{ c.concepto }}</div></div>{% endif %}
               {% if c.fecha_cobro %}<div><div class="text-xs text-slate-400 mb-0.5">Cobrado el</div><div class="text-sm font-medium text-green-700">{{ c.fecha_cobro }}</div></div>{% endif %}
               {% if c.medio_pago %}<div><div class="text-xs text-slate-400 mb-0.5">Medio de pago</div><div class="text-sm text-slate-700">{{ c.medio_pago }}</div></div>{% endif %}
