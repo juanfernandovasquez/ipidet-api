@@ -1817,7 +1817,9 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
 
     cuotas = f.get("cuotas") or []
     estado = f.get("estado", "pendiente")
-    empresa = f.get("empresa") or None
+    empresa     = f.get("empresa") or None
+    medio_pago  = f.get("medio_pago") or None
+    link_const  = f.get("link_constancia") or None
 
     if estado == "cobrado" or (cuotas and all(c.get("estado") == "pagado" for c in cuotas)):
         new_estado = "pagado"
@@ -1833,8 +1835,13 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
             if new_estado == "pagado":
                 upd["fecha_pago"]       = fecha
                 upd["empresa_pagadora"] = empresa
+                upd["medio_pago"]       = medio_pago
+                upd["link_constancia"]  = link_const
             else:
                 upd["fecha_pago"]       = None
+                upd["empresa_pagadora"] = None
+                upd["medio_pago"]       = None
+                upd["link_constancia"]  = None
             payments_col.update_one({"_id": p["_id"]}, {"$set": upd})
 
 
@@ -1858,6 +1865,18 @@ def update_factura_credito_estado(factura_id: str, estado: str,
 
 
 def delete_factura_credito(factura_id: str) -> None:
+    # Revertir payments vinculados con estado "por_cobrar" antes de borrar
+    f = credito_col.find_one({"_id": ObjectId(factura_id)})
+    if f:
+        socios_raw = f.get("socios") or []
+        periodo    = f.get("periodo") or ""
+        if socios_raw and periodo:
+            socios = [s if isinstance(s, str) else s.get("member_id", "") for s in socios_raw]
+            socios = [s for s in socios if s]
+            payments_col.update_many(
+                {"member_id": {"$in": socios}, "periodo": periodo, "estado": "por_cobrar"},
+                {"$set": {"estado": "debe", "fecha_pago": None, "empresa_pagadora": None}},
+            )
     credito_col.delete_one({"_id": ObjectId(factura_id)})
 
 
@@ -1917,6 +1936,7 @@ def delete_cuota_credito(factura_id: str, numero: int) -> None:
         {"_id": ObjectId(factura_id)},
         {"$pull": {"cuotas": {"numero": numero}}},
     )
+    sync_credito_to_cobranzas(factura_id)
 
 
 def get_credito_stats() -> dict:
@@ -2356,7 +2376,8 @@ def get_comprobantes_unified(
 ) -> tuple:
     """Lista unificada de comprobantes (boletas/facturas) + facturas_credito."""
     include_comp = tipo in ("", "boleta", "factura", "recibo")
-    include_cred = tipo in ("", "credito")
+    # credito docs always render as "Factura" in the tipo-doc column
+    include_cred = tipo in ("", "credito", "factura")
     member_cache: dict = {}
 
     def _enrich(doc):
