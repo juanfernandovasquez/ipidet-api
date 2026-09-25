@@ -109,6 +109,23 @@ def get_upcoming_cuotas(days_ahead: int) -> list[dict]:
     return result
 
 
+def get_pending_proofs(page: int = 1, per_page: int = 25) -> tuple[list, int]:
+    total = billing_pending_proofs.count_documents({"status": "pending"})
+    docs = list(
+        billing_pending_proofs.find({"status": "pending"})
+        .sort("created_at", -1)
+        .skip((page - 1) * per_page)
+        .limit(per_page)
+    )
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return docs, total
+
+
+def count_pending_proofs() -> int:
+    return billing_pending_proofs.count_documents({"status": "pending"})
+
+
 def get_overdue_cuotas() -> list[dict]:
     from datetime import date
     today_str = date.today().isoformat()

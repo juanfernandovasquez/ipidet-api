@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Cola de Emails — IPIDET{% endblock %}
+
+{% block content %}
+<div class="p-6 max-w-4xl mx-auto">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800">Cola de Emails</h1>
+      {% set total = total_approvals + total_proofs %}
+      <p class="text-slate-500 text-sm mt-1">
+        {% if total == 0 %}Sin pendientes{% else %}{{ total }} elemento{{ 's' if total != 1 else '' }} pendiente{{ 's' if total != 1 else '' }}{% endif %}
+      </p>
+    </div>
+  </div>
+
+  <!-- Flash messages -->
+  {% if request.query_params.get('ok') == 'sent' %}
+  <div class="mb-5 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
+    <i class="fa-solid fa-circle-check"></i> Respuesta enviada correctamente.
+  </div>
+  {% elif request.query_params.get('ok') == 'linked' %}
+  <div class="mb-5 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
+    <i class="fa-solid fa-circle-check"></i> Pago vinculado correctamente.
+  </div>
+  {% elif request.query_params.get('error') %}
+  <div class="mb-5 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+    <i class="fa-solid fa-triangle-exclamation"></i> No se encontró el elemento solicitado.
+  </div>
+  {% endif %}
+
+  <!-- Estado vacío -->
+  {% if total_approvals == 0 and total_proofs == 0 %}
+  <div class="bg-white rounded-xl border border-slate-200 p-14 text-center">
+    <i class="fa-solid fa-inbox text-4xl text-slate-300 mb-3 block"></i>
+    <p class="text-slate-600 font-semibold">Todo al día</p>
+    <p class="text-slate-400 text-sm mt-1">El agente no tiene emails pendientes de atención.</p>
+  </div>
+  {% endif %}
+
+  <!-- ── Respuestas del agente ──────────────────────────────────────────── -->
+  {% if approvals %}
+  <section class="mb-8">
+    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+      Respuestas del agente
+      <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">{{ total_approvals }}</span>
+    </h2>
+
+    <div class="space-y-3">
+      {% for item in approvals %}
+      {% set e = item.email_data %}
+      {% if item.get('kind') == 'admin_forward' %}
+        {% set kind = 'admin' %}
+      {% elif item.get('faq_id') %}
+        {% set kind = 'faq' %}
+      {% elif item.get('event_id') %}
+        {% set kind = 'evento' %}
+      {% elif item.get('is_clarification') %}
+        {% set kind = 'aclaracion' %}
+      {% else %}
+        {% set kind = 'otro' %}
+      {% endif %}
+
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+           x-data="{ open: false }">
+
+        <!-- Header (clickeable) -->
+        <div class="px-5 py-4 flex items-start gap-3 cursor-pointer select-none hover:bg-slate-50 transition-colors"
+             @click="open = !open">
+          <div class="flex-shrink-0 pt-0.5">
+            {% if kind == 'faq' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+              <i class="fa-solid fa-circle-question text-[9px]"></i> FAQ
+            </span>
+            {% elif kind == 'admin' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
+              <i class="fa-solid fa-user-tie text-[9px]"></i> Admin
+            </span>
+            {% elif kind == 'evento' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+              <i class="fa-solid fa-calendar text-[9px]"></i> Evento
+            </span>
+            {% elif kind == 'aclaracion' %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">
+              <i class="fa-solid fa-question text-[9px]"></i> Aclaración
+            </span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
+              <i class="fa-solid fa-envelope text-[9px]"></i> Otro
+            </span>
+            {% endif %}
+          </div>
+
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-semibold text-slate-800 truncate max-w-xs">{{ e.get('from', '') }}</span>
+              {% if item.get('created_at') %}
+              <span class="text-xs text-slate-400">{{ item.created_at.strftime('%d/%m/%Y %H:%M') }}</span>
+              {% endif %}
+            </div>
+            <div class="text-sm text-slate-600 mt-0.5 truncate">{{ e.get('subject', '(sin asunto)') }}</div>
+          </div>
+
+          <i class="fa-solid fa-chevron-down text-slate-400 flex-shrink-0 mt-1 transition-transform duration-200"
+             :class="open ? 'rotate-180' : ''"></i>
+        </div>
+
+        <!-- Cuerpo del email -->
+        <div x-show="open" x-transition.opacity class="px-5 py-3 border-t border-slate-100 bg-slate-50">
+          <pre class="text-xs text-slate-600 whitespace-pre-wrap font-sans max-h-52 overflow-y-auto leading-relaxed">{{ e.get('body', '(sin contenido)') }}</pre>
+        </div>
+
+        <!-- Zona de acción: send form + dismiss form (al mismo nivel, no anidados) -->
+        <div class="px-5 py-4 border-t border-slate-200">
+          <form method="post" action="/inbox/{{ item.approval_id }}/send"
+                id="send-{{ item.approval_id }}">
+            {% if item.response_text %}
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Respuesta del agente</label>
+            <textarea name="response_text" rows="6"
+              class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y bg-white">{{ item.response_text }}</textarea>
+            {% else %}
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Respuesta manual</label>
+            <textarea name="response_text" rows="5" placeholder="Escribe la respuesta..."
+              class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y bg-white"></textarea>
+            {% endif %}
+          </form>
+          <!-- Dismiss form separado (sin anidar) -->
+          <form method="post" action="/inbox/{{ item.approval_id }}/dismiss"
+                id="dismiss-{{ item.approval_id }}"
+                onsubmit="return confirm('¿Descartar este email sin responder?')"></form>
+          <!-- Botones -->
+          <div class="flex items-center justify-end gap-2 mt-3">
+            <button type="submit" form="dismiss-{{ item.approval_id }}"
+              class="text-sm text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+              Descartar
+            </button>
+            <button type="submit" form="send-{{ item.approval_id }}"
+              class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5">
+              <i class="fa-solid fa-paper-plane text-xs"></i> Enviar respuesta
+            </button>
+          </div>
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- ── Constancias de pago ─────────────────────────────────────────────── -->
+  {% if proofs %}
+  <section>
+    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+      Constancias de pago
+      <span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">{{ total_proofs }}</span>
+    </h2>
+
+    <div class="space-y-3">
+      {% for proof in proofs %}
+      {% set e = proof.email_data %}
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+           x-data="{ open: false }">
+
+        <!-- Header -->
+        <div class="px-5 py-4 flex items-start gap-3 cursor-pointer select-none hover:bg-slate-50 transition-colors"
+             @click="open = !open">
+          <div class="flex-shrink-0 pt-0.5">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+              <i class="fa-solid fa-money-check-dollar text-[9px]"></i> Pago
+            </span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-semibold text-slate-800 truncate max-w-xs">{{ e.get('from', '') }}</span>
+              {% if proof.get('created_at') %}
+              <span class="text-xs text-slate-400">{{ proof.created_at.strftime('%d/%m/%Y %H:%M') }}</span>
+              {% endif %}
+            </div>
+            <div class="text-sm text-slate-600 mt-0.5 truncate">{{ e.get('subject', '(sin asunto)') }}</div>
+            {% if proof.get('_member_nombre') %}
+            <div class="text-xs text-emerald-700 mt-0.5 flex items-center gap-1">
+              <i class="fa-solid fa-user-check"></i>
+              {{ proof.id_socio }} — {{ proof._member_nombre }}
+            </div>
+            {% else %}
+            <div class="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
+              <i class="fa-solid fa-user-question"></i> Socio no identificado automáticamente
+            </div>
+            {% endif %}
+          </div>
+          <i class="fa-solid fa-chevron-down text-slate-400 flex-shrink-0 mt-1 transition-transform duration-200"
+             :class="open ? 'rotate-180' : ''"></i>
+        </div>
+
+        <!-- Cuerpo del email -->
+        <div x-show="open" x-transition.opacity class="px-5 py-3 border-t border-slate-100 bg-slate-50">
+          <pre class="text-xs text-slate-600 whitespace-pre-wrap font-sans max-h-52 overflow-y-auto leading-relaxed">{{ e.get('body', '(sin contenido)') }}</pre>
+        </div>
+
+        <!-- Zona de acción: vincular + dismiss (sin anidar) -->
+        <div class="px-5 py-4 border-t border-slate-200">
+          <form method="post" action="/inbox/proof/{{ proof.approval_id }}/vincular"
+                id="vincular-{{ proof.approval_id }}">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1 font-medium">ID Socio <span class="text-red-500">*</span></label>
+                <input type="text" name="member_id" required
+                  value="{{ proof.get('id_socio') or '' }}" placeholder="IPIDET-0xxx"
+                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1 font-medium">Período <span class="text-red-500">*</span></label>
+                <input type="text" name="periodo" required value="2026" placeholder="2026"
+                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1 font-medium">Fecha de pago</label>
+                <input type="date" name="fecha_pago"
+                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1 font-medium">Medio</label>
+                <select name="medio_pago"
+                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
+                  <option value="">— Medio —</option>
+                  {% for m in medios_pago %}
+                  <option value="{{ m }}">{{ m }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </form>
+          <!-- Dismiss form separado -->
+          <form method="post" action="/inbox/proof/{{ proof.approval_id }}/dismiss"
+                id="dismiss-proof-{{ proof.approval_id }}"
+                onsubmit="return confirm('¿Descartar esta constancia?')"></form>
+          <!-- Botones + nota -->
+          <div class="flex items-center justify-between mt-3 flex-wrap gap-2">
+            <p class="text-xs text-slate-400">
+              <i class="fa-solid fa-circle-info mr-1"></i>
+              Busca el ID en <a href="/members" target="_blank" class="text-blue-600 hover:underline">Socios</a> si no lo recuerdas.
+            </p>
+            <div class="flex items-center gap-2">
+              <button type="submit" form="dismiss-proof-{{ proof.approval_id }}"
+                class="text-sm text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                Descartar
+              </button>
+              <button type="submit" form="vincular-{{ proof.approval_id }}"
+                class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5">
+                <i class="fa-solid fa-link text-xs"></i> Vincular pago
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+</div>
+{% endblock %}

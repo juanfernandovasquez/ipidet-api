@@ -273,3 +273,22 @@ def unblock_sender(pattern: str):
 
 def list_blocked_senders() -> list:
     return list(blocked_senders.find({}, {"_id": 0, "pattern": 1}))
+
+
+# ── Inbox web ─────────────────────────────────────────────────────────────────
+
+def get_inbox_items(page: int = 1, per_page: int = 25) -> tuple[list, int]:
+    total = pending_approvals.count_documents({"status": "pending"})
+    docs = list(
+        pending_approvals.find({"status": "pending"})
+        .sort("created_at", -1)
+        .skip((page - 1) * per_page)
+        .limit(per_page)
+    )
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return docs, total
+
+
+def count_inbox_items() -> int:
+    return pending_approvals.count_documents({"status": "pending"})

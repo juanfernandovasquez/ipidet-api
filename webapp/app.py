@@ -17,7 +17,9 @@ import webapp.portal_router as portal_routes
 import webapp.auth as auth
 import webapp.mailer as mailer
 import webapp.scheduler as scheduler
-from config.settings import SECRET_KEY
+from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD
+from knowledge_base import db as kb_db
+from billing import db as billing_db
 
 app = FastAPI(title="IPIDET Admin")
 
@@ -108,6 +110,10 @@ STATUS_LABELS = {
 }
 
 def _ctx(request: Request, **kwargs):
+    try:
+        inbox_count = kb_db.count_inbox_items() + billing_db.count_pending_proofs()
+    except Exception:
+        inbox_count = 0
     return {
         "status_labels": STATUS_LABELS,
         "medios_pago": pdb.get_medios_pago(),
@@ -116,6 +122,7 @@ def _ctx(request: Request, **kwargs):
         "current_user_role":    request.session.get("user_role", ""),
         "current_user_permisos":request.session.get("user_permisos", []),
         "secciones": auth.SECCIONES,
+        "inbox_count": inbox_count,
         **kwargs,
     }
 
@@ -837,13 +844,53 @@ async def fraccionamientos(
 ):
     from datetime import date as _date_cls
     docs, total, stats = pdb.get_fraccionamientos(periodo, alerta, search, page)
+    productos_raw = pdb.get_productos(solo_activos=True)
+    productos_list = [
+        {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio")}
+        for p in productos_raw
+    ]
     return templates.TemplateResponse(request, "fraccionamientos.html", _ctx(request,
         fraccionamientos=docs, total=total, stats=stats,
         periodo=periodo, alerta=alerta, search=search,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
         today=_date_cls.today().isoformat(),
+        productos_list=productos_list,
     ))
+
+
+@app.post("/fraccionamientos/{payment_id}/cuotas/{cuota_n}/emitir-comprobante")
+async def frac_emitir_comprobante(
+    payment_id: str,
+    cuota_n: int,
+    tipo: str = Form(...),
+    numero: str = Form(...),
+    fecha_emision: str = Form(""),
+    redirect_to: str = Form("/fraccionamientos"),
+):
+    from bson import ObjectId
+    from datetime import date as _date_cls
+    pmt = pdb.payments_col.find_one({"_id": ObjectId(payment_id)})
+    if not pmt:
+        return RedirectResponse(redirect_to, status_code=303)
+    cuota = next((c for c in pmt.get("cuotas", []) if c["numero"] == cuota_n), None)
+    if not cuota:
+        return RedirectResponse(redirect_to, status_code=303)
+    fecha = fecha_emision.strip() or _date_cls.today().isoformat()
+    periodo = pmt.get("periodo", "")
+    pdb.create_comprobante(
+        numero=numero.strip(),
+        tipo=tipo,
+        fecha_emision=fecha,
+        monto_total=float(cuota.get("monto", 0)),
+        producto_nombre="Cuota de fraccionamiento",
+        concepto=f"Cuota {cuota_n} — Fraccionamiento {periodo}",
+        empresa=pmt.get("empresa_pagadora", "") or "",
+        socios=[pmt.get("member_id", "")],
+    )
+    pdb.update_cuota(payment_id, cuota_n, estado="pagado",
+                     num_comprobante=numero.strip(), tipo_comprobante=tipo)
+    return RedirectResponse(redirect_to, status_code=303)
 
 
 # ── FAQs ──────────────────────────────────────────────────────────────────────
@@ -2442,3 +2489,77 @@ async def admin_delete_user(request: Request, user_id: str):
         return RedirectResponse("/", status_code=302)
     auth.delete_user(user_id)
     return RedirectResponse("/admin/users", status_code=303)
+
+
+# ── Cola de emails (inbox del agente) ────────────────────────────────────────
+
+@app.get("/inbox", response_class=HTMLResponse)
+async def inbox_page(request: Request, page: int = 1):
+    approvals, total_a = kb_db.get_inbox_items(page)
+    proofs, total_p = billing_db.get_pending_proofs(page)
+    # Enriquecer constancias con nombre del socio identificado
+    for proof in proofs:
+        if proof.get("id_socio"):
+            m = pdb.get_member(proof["id_socio"])
+            if m:
+                proof["_member_nombre"] = f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
+    return templates.TemplateResponse(request, "inbox.html", _ctx(request,
+        approvals=approvals,
+        proofs=proofs,
+        total_approvals=total_a,
+        total_proofs=total_p,
+        page=page,
+    ))
+
+
+@app.post("/inbox/{approval_id}/send")
+async def inbox_send(
+    approval_id: str,
+    response_text: str = Form(...),
+):
+    from gmail.client import GmailClient
+    item = kb_db.pending_approvals.find_one({"approval_id": approval_id, "status": "pending"})
+    if not item:
+        return RedirectResponse("/inbox?error=not_found", status_code=303)
+    if GMAIL_ADDRESS and GMAIL_APP_PASSWORD:
+        gmail = GmailClient(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        e = item["email_data"]
+        gmail.send_reply(
+            thread_id=e["thread_id"],
+            to=e["from"],
+            subject=e["subject"],
+            body=response_text,
+        )
+    kb_db.update_approval_status(approval_id, "sent_web")
+    return RedirectResponse("/inbox?ok=sent", status_code=303)
+
+
+@app.post("/inbox/{approval_id}/dismiss")
+async def inbox_dismiss(approval_id: str):
+    kb_db.update_approval_status(approval_id, "rejected")
+    return RedirectResponse("/inbox", status_code=303)
+
+
+@app.post("/inbox/proof/{proof_id}/vincular")
+async def inbox_proof_vincular(
+    proof_id: str,
+    member_id: str = Form(...),
+    periodo: str = Form(...),
+    fecha_pago: str = Form(""),
+    medio_pago: str = Form(""),
+):
+    from datetime import date as _date
+    proof = billing_db.billing_pending_proofs.find_one({"approval_id": proof_id, "status": "pending"})
+    if not proof or not member_id.strip() or not periodo.strip():
+        return RedirectResponse("/inbox", status_code=303)
+    payment_id = pdb.get_or_create_payment(member_id.strip(), periodo.strip())
+    fecha = fecha_pago.strip() or _date.today().isoformat()
+    pdb.update_payment(payment_id, estado="pagado", fecha_pago=fecha, medio=medio_pago or None)
+    billing_db.update_proof_status(proof_id, "resolved")
+    return RedirectResponse("/inbox?ok=linked", status_code=303)
+
+
+@app.post("/inbox/proof/{proof_id}/dismiss")
+async def inbox_proof_dismiss(proof_id: str):
+    billing_db.update_proof_status(proof_id, "dismissed")
+    return RedirectResponse("/inbox", status_code=303)
