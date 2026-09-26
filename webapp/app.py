@@ -380,8 +380,42 @@ async def emitir_comprobante(
     periodo: str          = Form("2026"),
     search: str           = Form(""),
 ):
+    from bson import ObjectId as _OId
+    from datetime import date as _date_cls
     num = num_comprobante.strip()
     pdb.emitir_comprobante(payment_id, tipo, numero, num, tipo_comprobante, fecha_emision)
+    # Also create a formal comprobante record if number was provided and doesn't already exist
+    if num and not pdb.comprobantes_col.find_one({"numero": num}):
+        try:
+            pmt = pdb.payments_col.find_one({"_id": _OId(payment_id)})
+            if pmt:
+                mid  = pmt.get("member_id", "")
+                emp  = pmt.get("empresa_pagadora", "") or ""
+                per  = pmt.get("periodo", periodo)
+                monto_val, prod_name, concepto = None, "Cuota anual", f"Período {per}"
+                if tipo == "principal":
+                    monto_val = pmt.get("monto") or pmt.get("monto_total")
+                elif tipo == "cuota":
+                    c = next((c for c in pmt.get("cuotas", []) if c.get("numero") == numero), None)
+                    if c:
+                        monto_val  = c.get("monto")
+                        prod_name  = c.get("producto_nombre") or "Cuota de fraccionamiento"
+                        concepto   = f"Cuota {numero} — Fraccionamiento {per}"
+                elif tipo == "parcial":
+                    pp = next((p for p in pmt.get("pagos_parciales", []) if p.get("numero") == numero), None)
+                    if pp:
+                        monto_val = pp.get("monto")
+                        concepto  = f"Pago parcial {numero} — {per}"
+                if monto_val:
+                    fe = fecha_emision.strip() or _date_cls.today().isoformat()
+                    pdb.create_comprobante(
+                        numero=num, tipo=tipo_comprobante or "boleta",
+                        fecha_emision=fe, monto_total=float(monto_val),
+                        producto_nombre=prod_name, concepto=concepto,
+                        empresa=emp, socios=[mid] if mid else [],
+                    )
+        except Exception:
+            pass  # never block the billing flow
     if enviar_email == "on":
         pay = pdb.get_payment_with_member(payment_id)
         if pay and pay.get("email_principal"):
@@ -413,12 +447,18 @@ async def billing(
     page: int = 1,
 ):
     docs, total = pdb.get_payments(periodo, estado, empresa, search, page, comprobante_emitido=comprobante_emitido)
+    productos_raw = pdb.get_productos(solo_activos=True)
+    productos_list = [
+        {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio")}
+        for p in productos_raw
+    ]
     return templates.TemplateResponse(request, "billing.html", _ctx(request,
         payments=docs, total=total,
         periodo=periodo, estado=estado, empresa=empresa, search=search,
         comprobante_emitido=comprobante_emitido,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
+        productos_list=productos_list,
     ))
 
 
@@ -539,9 +579,11 @@ async def add_cuota(
     payment_id: str,
     monto: float = Form(...),
     fecha_venc: str = Form(""),
+    producto_nombre: str = Form(""),
     redirect_to: str = Form("/billing"),
 ):
-    pdb.add_cuota(payment_id, monto, fecha_venc or None)
+    pdb.add_cuota(payment_id, monto, fecha_venc or None,
+                  producto_nombre=producto_nombre.strip() or None)
     return RedirectResponse(redirect_to, status_code=303)
 
 
@@ -693,7 +735,8 @@ async def api_billing_cuotas_add(payment_id: str, request: Request):
     monto = float(data.get("monto", 0) or 0)
     if monto <= 0:
         return JSONResponse({"error": "monto inválido"}, status_code=422)
-    cuota = pdb.add_cuota(payment_id, monto, data.get("fecha_venc") or None)
+    cuota = pdb.add_cuota(payment_id, monto, data.get("fecha_venc") or None,
+                          producto_nombre=data.get("producto_nombre") or None)
     return JSONResponse({"ok": True, "cuota": cuota})
 
 
@@ -959,12 +1002,13 @@ async def frac_emitir_comprobante(
         return RedirectResponse(redirect_to, status_code=303)
     fecha = fecha_emision.strip() or _date_cls.today().isoformat()
     periodo = pmt.get("periodo", "")
+    prod_name = cuota.get("producto_nombre") or "Cuota de fraccionamiento"
     pdb.create_comprobante(
         numero=numero.strip(),
         tipo=tipo,
         fecha_emision=fecha,
         monto_total=float(cuota.get("monto", 0)),
-        producto_nombre="Cuota de fraccionamiento",
+        producto_nombre=prod_name,
         concepto=f"Cuota {cuota_n} — Fraccionamiento {periodo}",
         empresa=pmt.get("empresa_pagadora", "") or "",
         socios=[pmt.get("member_id", "")],

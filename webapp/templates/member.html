@@ -281,7 +281,11 @@
           <span class="font-semibold text-slate-700 text-sm w-10 flex-shrink-0">{{ p.periodo }}</span>
           <div class="flex-1 min-w-0">
             {% if p.estado == 'fraccionamiento' and cuotas_total_count > 0 %}
-              <span class="badge badge-amber">Fracc. {{ cuotas_pagadas_count }}/{{ cuotas_total_count }}</span>
+              <a href="/fraccionamientos?search={{ p.get('member_id','') }}&periodo={{ p.periodo }}"
+                 class="badge badge-amber hover:bg-amber-200 transition-colors">
+                Fracc. {{ cuotas_pagadas_count }}/{{ cuotas_total_count }}
+                <i class="fa-solid fa-arrow-up-right-from-square text-[8px] ml-0.5"></i>
+              </a>
             {% elif p.estado == 'parcial' and p.get('monto_total') %}
               <span class="badge badge-blue">Parcial S/{{ monto_pagado_sum | int }}/{{ p.monto_total | int }}</span>
             {% else %}

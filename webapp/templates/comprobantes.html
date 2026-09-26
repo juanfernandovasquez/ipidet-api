@@ -176,7 +176,7 @@
         <td class="px-4 py-3 text-xs font-mono text-slate-300">—</td>
         <td class="px-4 py-3 text-slate-600 text-sm">{{ c.empresa or '—' }}</td>
         <td class="px-4 py-3 text-sm text-slate-700">
-          {% set si = c.socios_info %}{% if si %}{{ si[:2] | map(attribute='nombre') | join(', ') }}{% if si | length > 2 %}<span class="text-slate-400 text-xs"> +{{ si | length - 2 }}</span>{% endif %}{% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}
+          {% set si = c.socios_info %}{% if si %}{% for s in si[:2] %}<a href="/members/{{ s.member_id }}" class="hover:text-blue-600 hover:underline">{{ s.nombre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if si | length > 2 %}<span class="text-slate-400 text-xs">, +{{ si | length - 2 }} más</span>{% endif %}{% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}
         </td>
         <td class="px-4 py-3 text-right font-semibold text-slate-800">
           {% if c.monto_total %}S/ {{ "%.2f"|format(c.monto_total) }}{% else %}—{% endif %}

@@ -426,7 +426,14 @@
                     <span class="text-slate-500" x-show="q.fecha_pago" x-text="'Pago: ' + q.fecha_pago"></span>
                     <span class="text-slate-400 font-mono" x-show="q.num_comprobante" x-text="q.num_comprobante"></span>
                     <span class="text-slate-400" x-show="q.medio_pago" x-text="q.medio_pago"></span>
-                    <div class="flex gap-2 ml-auto shrink-0">
+                    <div class="flex gap-2 ml-auto shrink-0 items-center">
+                      <template x-if="q.estado === 'pagado' && !q.num_comprobante">
+                        <button type="button"
+                                @click="emitirCuota = (emitirCuota === q.numero ? -1 : q.numero)"
+                                class="text-[10px] font-medium border rounded px-1.5 py-0.5 transition-colors"
+                                :class="emitirCuota === q.numero ? 'text-slate-400 border-slate-200 bg-white' : 'text-emerald-600 border-emerald-200 hover:bg-emerald-50'"
+                                x-text="emitirCuota === q.numero ? '✕' : '+ Comp.'"></button>
+                      </template>
                       <button type="button" @click="startEditCuota(q)"
                               class="text-slate-400 hover:text-blue-600 transition-colors p-1" title="Editar cuota">
                         <i class="fa-solid fa-pencil text-[10px]"></i>
@@ -434,6 +441,30 @@
                       <button type="button" @click="deleteCuota(q.numero)"
                               class="text-slate-300 hover:text-red-500 transition-colors p-1" title="Eliminar cuota">
                         <i class="fa-solid fa-trash text-[10px]"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <!-- Emitir comprobante inline -->
+                  <div x-show="emitirCuota === q.numero" x-cloak class="bg-emerald-50 border-t border-emerald-200 p-3">
+                    <div class="flex flex-wrap gap-2 items-end">
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Tipo</label>
+                        <select x-model="emitirCuotaTipo" class="input text-xs py-0.5">
+                          <option value="boleta">Boleta</option>
+                          <option value="factura">Factura</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">N° comprobante</label>
+                        <input type="text" x-model="emitirCuotaNum" placeholder="B001-000001" class="input text-xs py-0.5 w-28">
+                      </div>
+                      <div>
+                        <label class="block text-xs text-slate-500 mb-0.5">Fecha emisión</label>
+                        <input type="date" x-model="emitirCuotaFecha" class="input text-xs py-0.5 w-32">
+                      </div>
+                      <button type="button" @click="doEmitirCuota()"
+                              class="text-emerald-700 hover:text-emerald-900 border border-emerald-300 bg-white font-semibold text-xs px-2 py-1 rounded-lg transition-colors">
+                        ✓ Crear
                       </button>
                     </div>
                   </div>
@@ -523,6 +554,18 @@
             </div>
             <div x-show="showAddCuota" x-cloak class="border border-slate-300 bg-white rounded-xl p-3">
               <div class="flex flex-wrap gap-3 items-end">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-0.5">Producto (opcional)</label>
+                  <select @change="const p = $event.target.options[$event.target.selectedIndex]; nuevaCuota.producto_nombre = p.dataset.nombre || ''; if (p.dataset.precio) nuevaCuota.monto = p.dataset.precio;"
+                          class="input text-xs py-1">
+                    <option value="" data-nombre="" data-precio="">— Seleccionar —</option>
+                    {% for p in productos_list %}
+                    <option value="{{ p.id }}" data-nombre="{{ p.nombre }}" data-precio="{{ p.precio or '' }}">
+                      {{ p.nombre }}{% if p.precio %} — S/{{ p.precio }}{% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
                 <div>
                   <label class="block text-xs text-slate-500 mb-0.5">Monto (S/)</label>
                   <input type="number" step="0.01" min="0.01" x-model="nuevaCuota.monto" placeholder="260.00" class="input text-xs py-1 w-24">
@@ -761,7 +804,8 @@ function billingModal() {
     editCuota: -1,
     editCuotaData: {},
     showAddCuota: false,
-    nuevaCuota: { monto: '', fecha_venc: '' },
+    nuevaCuota: { monto: '', fecha_venc: '', producto_nombre: '' },
+    emitirCuota: -1, emitirCuotaTipo: 'boleta', emitirCuotaNum: '', emitirCuotaFecha: '',
     pagos_parciales: [], monto_total: null,
     editParcial: -1,
     editParcialData: {},
@@ -914,14 +958,35 @@ function billingModal() {
       if (!monto || monto <= 0) return;
       const r = await fetch('/api/billing/' + this.id + '/cuotas/add', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ monto, fecha_venc: this.nuevaCuota.fecha_venc || null }),
+        body: JSON.stringify({
+          monto,
+          fecha_venc:      this.nuevaCuota.fecha_venc || null,
+          producto_nombre: this.nuevaCuota.producto_nombre || null,
+        }),
       });
       const d = await r.json();
       if (d.cuota) {
         this.cuotas.push(Object.assign({}, d.cuota));
         this.form.estado  = 'fraccionamiento';
-        this.nuevaCuota   = { monto: '', fecha_venc: '' };
+        this.nuevaCuota   = { monto: '', fecha_venc: '', producto_nombre: '' };
         this.showAddCuota = false;
+      }
+    },
+    async doEmitirCuota() {
+      const num = this.emitirCuotaNum.trim();
+      if (!num) return;
+      const fd = new FormData();
+      fd.append('tipo', this.emitirCuotaTipo);
+      fd.append('numero', num);
+      fd.append('fecha_emision', this.emitirCuotaFecha || '');
+      fd.append('redirect_to', '/billing');
+      const r = await fetch('/fraccionamientos/' + this.id + '/cuotas/' + this.emitirCuota + '/emitir-comprobante', {
+        method: 'POST', body: fd,
+      });
+      if (r.ok || r.redirected) {
+        const q = this.cuotas.find(c => c.numero === this.emitirCuota);
+        if (q) { q.num_comprobante = num; q.tipo_comprobante = this.emitirCuotaTipo; }
+        this.emitirCuota = -1; this.emitirCuotaNum = ''; this.emitirCuotaFecha = '';
       }
     },
     async setObjetivo() {

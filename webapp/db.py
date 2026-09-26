@@ -579,16 +579,18 @@ def set_monto_objetivo(payment_id: str, monto_objetivo: float) -> None:
     )
 
 
-def add_cuota(payment_id: str, monto: float, fecha_venc: str = None):
+def add_cuota(payment_id: str, monto: float, fecha_venc: str = None,
+              producto_nombre: str = None):
     doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"cuotas": 1})
     cuotas = doc.get("cuotas", []) if doc else []
     numero = max((c.get("numero", 0) for c in cuotas), default=0) + 1
     cuota = {
-        "numero":    numero,
-        "monto":     monto,
-        "fecha_venc": fecha_venc or None,
-        "fecha_pago": None,
-        "estado":    "pendiente",
+        "numero":          numero,
+        "monto":           monto,
+        "fecha_venc":      fecha_venc or None,
+        "fecha_pago":      None,
+        "estado":          "pendiente",
+        "producto_nombre": producto_nombre or None,
     }
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
@@ -606,11 +608,12 @@ def add_cuotas_batch(payment_id: str, cuotas: list) -> list:
     for c in cuotas:
         max_num += 1
         new_cuotas.append({
-            "numero":     max_num,
-            "monto":      float(c["monto"]),
-            "fecha_venc": c.get("fecha_venc") or None,
-            "fecha_pago": None,
-            "estado":     "pendiente",
+            "numero":          max_num,
+            "monto":           float(c["monto"]),
+            "fecha_venc":      c.get("fecha_venc") or None,
+            "fecha_pago":      None,
+            "estado":          "pendiente",
+            "producto_nombre": c.get("producto_nombre") or None,
         })
     if new_cuotas:
         payments_col.update_one(
