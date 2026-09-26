@@ -525,10 +525,19 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
                    num_comprobante: str = None, tipo_comprobante: str = None,
                    link_constancia: str = None, banco_origen: str = None,
                    comprobante_emitido: bool = None,
-                   fecha_emision_comprobante: str = None):
+                   fecha_emision_comprobante: str = None,
+                   comprobante_id: str = None):
     fields = {"estado": estado}
     if empresa is not None:
         fields["empresa_pagadora"] = empresa or None
+        if empresa:
+            emp_doc = companies_col.find_one(
+                {"nombre": {"$regex": f"^{_re.escape(empresa)}$", "$options": "i"}},
+                {"_id": 1},
+            )
+            fields["empresa_id"] = str(emp_doc["_id"]) if emp_doc else None
+        else:
+            fields["empresa_id"] = None
     if fecha_pago is not None:
         fields["fecha_pago"] = fecha_pago or None
     if medio is not None:
@@ -550,6 +559,8 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
         fields["comprobante_emitido"] = comprobante_emitido
     if fecha_emision_comprobante is not None:
         fields["fecha_emision_comprobante"] = fecha_emision_comprobante or None
+    if comprobante_id is not None:
+        fields["comprobante_id"] = comprobante_id or None
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
         {"$set": fields, "$unset": {"factura_credito_id": ""}},
@@ -630,7 +641,7 @@ def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = No
                  medio_pago: str = None, num_comprobante: str = None,
                  tipo_comprobante: str = None, link_constancia: str = None,
                  banco_origen: str = None, monto: float = None,
-                 fecha_venc: str = None):
+                 fecha_venc: str = None, comprobante_id: str = None):
     set_fields = {
         "cuotas.$[el].estado":    estado,
         "cuotas.$[el].fecha_pago": fecha_pago or None,
@@ -649,6 +660,8 @@ def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = No
         set_fields["cuotas.$[el].link_constancia"] = link_constancia or None
     if banco_origen is not None:
         set_fields["cuotas.$[el].banco_origen"] = banco_origen or None
+    if comprobante_id is not None:
+        set_fields["cuotas.$[el].comprobante_id"] = comprobante_id or None
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
         {"$set": set_fields},
@@ -685,7 +698,7 @@ def set_monto_total(payment_id: str, monto_total: float):
 def add_pago_parcial(payment_id: str, monto: float, fecha_pago: str = None,
                      medio: str = None, num_comprobante: str = None,
                      tipo_comprobante: str = None, link_constancia: str = None,
-                     banco_origen: str = None):
+                     banco_origen: str = None, comprobante_id: str = None):
     doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"pagos_parciales": 1})
     parciales = doc.get("pagos_parciales", []) if doc else []
     numero = max((p.get("numero", 0) for p in parciales), default=0) + 1
@@ -698,6 +711,7 @@ def add_pago_parcial(payment_id: str, monto: float, fecha_pago: str = None,
         "tipo_comprobante": tipo_comprobante,
         "link_constancia":  link_constancia,
         "banco_origen":     banco_origen,
+        "comprobante_id":   comprobante_id or None,
     }
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
@@ -710,7 +724,8 @@ def add_pago_parcial(payment_id: str, monto: float, fecha_pago: str = None,
 def update_pago_parcial(payment_id: str, numero: int, monto: float = None,
                         fecha_pago: str = None, medio: str = None,
                         num_comprobante: str = None, tipo_comprobante: str = None,
-                        link_constancia: str = None, banco_origen: str = None):
+                        link_constancia: str = None, banco_origen: str = None,
+                        comprobante_id: str = None):
     set_fields = {}
     if monto is not None:
         set_fields["pagos_parciales.$[el].monto"] = monto
@@ -726,6 +741,8 @@ def update_pago_parcial(payment_id: str, numero: int, monto: float = None,
         set_fields["pagos_parciales.$[el].link_constancia"] = link_constancia or None
     if banco_origen is not None:
         set_fields["pagos_parciales.$[el].banco_origen"] = banco_origen or None
+    if comprobante_id is not None:
+        set_fields["pagos_parciales.$[el].comprobante_id"] = comprobante_id or None
     if set_fields:
         payments_col.update_one(
             {"_id": ObjectId(payment_id)},
@@ -1122,29 +1139,39 @@ def get_comprobantes_pendientes(periodo: str = "2026", search: str = "") -> list
 
 def emitir_comprobante(payment_id: str, tipo: str, numero: int | None,
                        num_comprobante: str, tipo_comprobante: str,
-                       fecha_emision: str = ""):
+                       fecha_emision: str = "", comprobante_id: str = None):
     pid = ObjectId(payment_id)
     fe = fecha_emision.strip() or None
+    cid = comprobante_id or None
     if tipo == "principal":
-        payments_col.update_one({"_id": pid}, {"$set": {
+        upd = {
             "num_comprobante": num_comprobante,
             "tipo_comprobante": tipo_comprobante or None,
             "fecha_emision_comprobante": fe,
             "comprobante_emitido": True,
-        }})
+        }
+        if cid:
+            upd["comprobante_id"] = cid
+        payments_col.update_one({"_id": pid}, {"$set": upd})
     elif tipo == "cuota":
+        upd = {"cuotas.$.num_comprobante": num_comprobante,
+               "cuotas.$.tipo_comprobante": tipo_comprobante or None,
+               "cuotas.$.fecha_emision_comprobante": fe}
+        if cid:
+            upd["cuotas.$.comprobante_id"] = cid
         payments_col.update_one(
             {"_id": pid, "cuotas.numero": numero},
-            {"$set": {"cuotas.$.num_comprobante": num_comprobante,
-                      "cuotas.$.tipo_comprobante": tipo_comprobante or None,
-                      "cuotas.$.fecha_emision_comprobante": fe}},
+            {"$set": upd},
         )
     elif tipo == "parcial":
+        upd = {"pagos_parciales.$.num_comprobante": num_comprobante,
+               "pagos_parciales.$.tipo_comprobante": tipo_comprobante or None,
+               "pagos_parciales.$.fecha_emision_comprobante": fe}
+        if cid:
+            upd["pagos_parciales.$.comprobante_id"] = cid
         payments_col.update_one(
             {"_id": pid, "pagos_parciales.numero": numero},
-            {"$set": {"pagos_parciales.$.num_comprobante": num_comprobante,
-                      "pagos_parciales.$.tipo_comprobante": tipo_comprobante or None,
-                      "pagos_parciales.$.fecha_emision_comprobante": fe}},
+            {"$set": upd},
         )
 
 
@@ -1177,22 +1204,31 @@ _CRUCE_LABELS: dict = {
 
 
 def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
-                                  fecha_emision: str, empresa: str = "") -> list[dict]:
+                                  fecha_emision: str, empresa: str = "",
+                                  comprobante_id: str = None) -> list[dict]:
     """Cruza cada item del comprobante con el payment exacto.
-    Matching sin inferencias: codigo_sunat (o nombre exacto) → producto → tipo + periodo + cuota_numero.
-    Devuelve lista de resultados por item con status/label/msg para mostrar alertas en la UI."""
+    Fast path: si el item tiene payment_id + tipo_pago, usa FK directa.
+    Slow path (legacy): codigo_sunat / nombre exacto → producto → tipo + periodo + cuota_numero."""
     results: list[dict] = []
     seen: set = set()
 
-    all_prods = list(productos_col.find(
-        {}, {"nombre": 1, "tipo": 1, "periodo": 1, "codigo_sunat": 1, "cuota_numero": 1}
-    ))
-    prod_by_code: dict = {p["codigo_sunat"]: p for p in all_prods if p.get("codigo_sunat")}
+    _prods_loaded = False
+    prod_by_code: dict = {}
     prod_by_name: dict = {}
-    for p in all_prods:
-        k = (p.get("nombre") or "").lower().strip()
-        if k:
-            prod_by_name[k] = p
+
+    def _load_prods():
+        nonlocal _prods_loaded, prod_by_code, prod_by_name
+        if _prods_loaded:
+            return
+        all_prods = list(productos_col.find(
+            {}, {"nombre": 1, "tipo": 1, "periodo": 1, "codigo_sunat": 1, "cuota_numero": 1}
+        ))
+        prod_by_code.update({p["codigo_sunat"]: p for p in all_prods if p.get("codigo_sunat")})
+        for p in all_prods:
+            k = (p.get("nombre") or "").lower().strip()
+            if k:
+                prod_by_name[k] = p
+        _prods_loaded = True
 
     def _res(item: dict, status: str, msg: str) -> dict:
         label, color = _CRUCE_LABELS.get(status, (status, "slate"))
@@ -1211,9 +1247,67 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
         if not mid:
             continue
 
+        monto        = float(item.get("monto") or 0)
+        direct_pid   = item.get("payment_id")
+        direct_tipo  = item.get("tipo_pago")
+        direct_cuota = item.get("cuota_numero")
+
+        # ── FAST PATH: FK directa ────────────────────────────────────────────
+        if direct_pid and direct_tipo:
+            key = (direct_pid, direct_tipo, direct_cuota)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                pay = payments_col.find_one({"_id": ObjectId(direct_pid)}, {"estado": 1, "cuotas": 1})
+            except Exception:
+                results.append(_res(item, "error", "payment_id inválido (FK directa)"))
+                continue
+            if not pay:
+                results.append(_res(item, "error", "Payment no encontrado (FK directa)"))
+                continue
+
+            if direct_tipo == "principal":
+                if pay.get("estado") in _ESTADOS_NO_MODIFICAR:
+                    results.append(_res(item, "ya_pagado", f"Ya tiene estado '{pay.get('estado')}'"))
+                    continue
+                update_payment(direct_pid, estado="pagado",
+                               fecha_pago=fecha_emision or None,
+                               num_comprobante=numero, tipo_comprobante=tipo,
+                               fecha_emision_comprobante=fecha_emision or None,
+                               empresa=empresa or None,
+                               comprobante_id=comprobante_id)
+                results.append(_res(item, "ok", "Pago marcado como pagado (FK directa)"))
+
+            elif direct_tipo == "cuota":
+                cuotas = pay.get("cuotas") or []
+                target = next((c for c in cuotas if c.get("numero") == direct_cuota), None)
+                if not target:
+                    results.append(_res(item, "cuota_no_existe",
+                        f"Cuota #{direct_cuota} no existe (FK directa)"))
+                    continue
+                if target.get("estado") == "pagado":
+                    results.append(_res(item, "ya_pagado",
+                        f"Cuota #{direct_cuota} ya estaba pagada"))
+                    continue
+                update_cuota(direct_pid, direct_cuota, estado="pagado",
+                             fecha_pago=fecha_emision or None,
+                             num_comprobante=numero, tipo_comprobante=tipo,
+                             comprobante_id=comprobante_id)
+                results.append(_res(item, "ok", f"Cuota #{direct_cuota} marcada como pagada (FK directa)"))
+
+            elif direct_tipo == "parcial":
+                add_pago_parcial(direct_pid, monto=monto,
+                                 fecha_pago=fecha_emision or None,
+                                 num_comprobante=numero, tipo_comprobante=tipo,
+                                 comprobante_id=comprobante_id)
+                results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado (FK directa)"))
+            continue
+
+        # ── SLOW PATH: inferencia por producto (legacy/manual) ───────────────
+        _load_prods()
         pcode   = (item.get("codigo_sunat") or "").strip()
         pnombre = (item.get("producto_nombre") or "").strip()
-        monto   = float(item.get("monto") or 0)
 
         prod = prod_by_code.get(pcode) if pcode else None
         if not prod and pnombre:
@@ -1226,7 +1320,7 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
 
         tipo_prod = prod.get("tipo", "")
         periodo   = (prod.get("periodo") or "").strip()
-        cuota_num = prod.get("cuota_numero")  # int o None
+        cuota_num = prod.get("cuota_numero")
 
         if tipo_prod not in _TIPOS_PAGO:
             results.append(_res(item, "tipo_no_pago",
@@ -1259,7 +1353,8 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                           fecha_pago=fecha_emision or None,
                           num_comprobante=numero, tipo_comprobante=tipo,
                           fecha_emision_comprobante=fecha_emision or None,
-                          empresa=empresa or None)
+                          empresa=empresa or None,
+                          comprobante_id=comprobante_id)
             results.append(_res(item, "ok", "Pago marcado como pagado"))
 
         elif tipo_prod in _TIPOS_FRACCION:
@@ -1283,7 +1378,8 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                 continue
             update_cuota(payment_id, numero=cuota_num, estado="pagado",
                         fecha_pago=fecha_emision or None,
-                        num_comprobante=numero, tipo_comprobante=tipo)
+                        num_comprobante=numero, tipo_comprobante=tipo,
+                        comprobante_id=comprobante_id)
             results.append(_res(item, "ok", f"Cuota #{cuota_num} marcada como pagada"))
 
         elif tipo_prod in _TIPOS_PARCIAL:
@@ -1293,7 +1389,8 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                 continue
             add_pago_parcial(payment_id, monto=monto,
                            fecha_pago=fecha_emision or None,
-                           num_comprobante=numero, tipo_comprobante=tipo)
+                           num_comprobante=numero, tipo_comprobante=tipo,
+                           comprobante_id=comprobante_id)
             results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado"))
 
     return results
@@ -2583,10 +2680,10 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         seen = set()
         socios = [it["member_id"] for it in items
                   if it.get("member_id") and it["member_id"] not in seen and not seen.add(it["member_id"])]
-    # Enrich ruc from companies if not provided
     emp = empresa.strip()
     ruc_emp = ruc.strip()
-    if emp and not ruc_emp:
+    empresa_id = None
+    if emp:
         comp = companies_col.find_one(
             {"$or": [
                 {"nombre":      {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
@@ -2595,7 +2692,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
             {"ruc": 1},
         )
         if comp:
-            ruc_emp = comp.get("ruc", "")
+            ruc_emp = ruc_emp or comp.get("ruc", "")
+            empresa_id = str(comp["_id"])
     doc = {
         "numero":          numero.strip(),
         "tipo":            tipo,
@@ -2605,6 +2703,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "producto_nombre": producto_nombre.strip(),
         "concepto":        concepto.strip(),
         "empresa":         emp,
+        "empresa_id":      empresa_id,
         "ruc_empresa":     ruc_emp,
         "socios":          socios,
         "items":           items or [],
@@ -2617,10 +2716,10 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
-               "producto_nombre", "concepto", "empresa", "ruc_empresa", "socios", "items", "estado"}
+               "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
+               "socios", "items", "estado"}
     update = {k: v for k, v in fields.items() if k in allowed}
-    # Enrich ruc when empresa changes
-    if "empresa" in update and not update.get("ruc_empresa"):
+    if "empresa" in update:
         emp = (update["empresa"] or "").strip()
         if emp:
             comp = companies_col.find_one(
@@ -2628,10 +2727,16 @@ def update_comprobante(comprobante_id: str, fields: dict) -> None:
                     {"nombre":      {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
                     {"razon_social": {"$regex": f"^{_re.escape(emp)}$", "$options": "i"}},
                 ]},
-                {"ruc": 1},
+                {"_id": 1, "ruc": 1},
             )
-            if comp and comp.get("ruc"):
-                update["ruc_empresa"] = comp["ruc"]
+            if comp:
+                if not update.get("ruc_empresa"):
+                    update["ruc_empresa"] = comp.get("ruc", "")
+                update["empresa_id"] = str(comp["_id"])
+            else:
+                update["empresa_id"] = None
+        else:
+            update["empresa_id"] = None
     if update:
         comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": update})
 

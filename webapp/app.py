@@ -383,8 +383,8 @@ async def emitir_comprobante(
     from bson import ObjectId as _OId
     from datetime import date as _date_cls
     num = num_comprobante.strip()
-    pdb.emitir_comprobante(payment_id, tipo, numero, num, tipo_comprobante, fecha_emision)
-    # Also create a formal comprobante record if number was provided and doesn't already exist
+    comp_id = None
+    # Create formal comprobante first so we can store the FK
     if num and not pdb.comprobantes_col.find_one({"numero": num}):
         try:
             pmt = pdb.payments_col.find_one({"_id": _OId(payment_id)})
@@ -408,14 +408,26 @@ async def emitir_comprobante(
                         concepto  = f"Pago parcial {numero} — {per}"
                 if monto_val:
                     fe = fecha_emision.strip() or _date_cls.today().isoformat()
-                    pdb.create_comprobante(
+                    cuota_num = numero if tipo == "cuota" else None
+                    comp_id = pdb.create_comprobante(
                         numero=num, tipo=tipo_comprobante or "boleta",
                         fecha_emision=fe, monto_total=float(monto_val),
                         producto_nombre=prod_name, concepto=concepto,
                         empresa=emp, socios=[mid] if mid else [],
+                        items=[{
+                            "member_id":       mid,
+                            "producto_nombre": prod_name,
+                            "monto":           float(monto_val),
+                            "payment_id":      payment_id,
+                            "tipo_pago":       tipo,
+                            "cuota_numero":    cuota_num,
+                        }] if mid else [],
                     )
         except Exception:
             pass  # never block the billing flow
+    # Mark the payment with the comprobante reference (now including FK comprobante_id)
+    pdb.emitir_comprobante(payment_id, tipo, numero, num, tipo_comprobante,
+                           fecha_emision, comprobante_id=comp_id)
     if enviar_email == "on":
         pay = pdb.get_payment_with_member(payment_id)
         if pay and pay.get("email_principal"):
@@ -1003,18 +1015,30 @@ async def frac_emitir_comprobante(
     fecha = fecha_emision.strip() or _date_cls.today().isoformat()
     periodo = pmt.get("periodo", "")
     prod_name = cuota.get("producto_nombre") or "Cuota de fraccionamiento"
-    pdb.create_comprobante(
+    mid = pmt.get("member_id", "")
+    monto_val = float(cuota.get("monto", 0))
+    emp = pmt.get("empresa_pagadora", "") or ""
+    comp_id = pdb.create_comprobante(
         numero=numero.strip(),
         tipo=tipo,
         fecha_emision=fecha,
-        monto_total=float(cuota.get("monto", 0)),
+        monto_total=monto_val,
         producto_nombre=prod_name,
         concepto=f"Cuota {cuota_n} — Fraccionamiento {periodo}",
-        empresa=pmt.get("empresa_pagadora", "") or "",
-        socios=[pmt.get("member_id", "")],
+        empresa=emp,
+        socios=[mid] if mid else [],
+        items=[{
+            "member_id":       mid,
+            "producto_nombre": prod_name,
+            "monto":           monto_val,
+            "payment_id":      payment_id,
+            "tipo_pago":       "cuota",
+            "cuota_numero":    cuota_n,
+        }] if mid else [],
     )
     pdb.update_cuota(payment_id, cuota_n, estado="pagado",
-                     num_comprobante=numero.strip(), tipo_comprobante=tipo)
+                     num_comprobante=numero.strip(), tipo_comprobante=tipo,
+                     comprobante_id=comp_id)
     return RedirectResponse(redirect_to, status_code=303)
 
 
@@ -1621,6 +1645,15 @@ async def comprobante_update(comprobante_id: str, request: Request):
     else:
         fields["producto_nombre"] = data.get("producto_nombre", "")
     pdb.update_comprobante(comprobante_id, fields)
+    # Auto-sync: propagate changes to payments whenever items are present
+    if items:
+        pdb.sync_comprobante_to_payments(
+            items=items,
+            numero=fields["numero"],
+            tipo=fields["tipo"],
+            fecha_emision=fields["fecha_emision"],
+            empresa=empresa,
+        )
     return {"ok": True}
 
 

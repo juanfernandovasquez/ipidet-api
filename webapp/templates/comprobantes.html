@@ -130,15 +130,7 @@
       {# ── Fila COMPROBANTE (boleta / factura / recibo) ─────────────────────── #}
       {% if c._tipo_doc == 'comprobante' %}
       {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
-      <tbody x-data="{syncing: false, syncMsg: '',
-        async sincronizar() {
-          this.syncing = true; this.syncMsg = '';
-          const r = await fetch('/comprobantes/{{ c._id }}/sync', { method: 'POST' });
-          const d = await r.json();
-          this.syncing = false;
-          this.syncMsg = (d.cruce_ok || 0) + ' actualiz.';
-          setTimeout(() => this.syncMsg = '', 4000);
-        },
+      <tbody x-data="{
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
           const r = await fetch('/comprobantes/{{ c._id }}/delete', { method: 'POST' });
@@ -184,14 +176,6 @@
         <td class="px-4 py-3"><span class="text-xs text-slate-300">—</span></td>
         <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
           <div class="flex items-center justify-end gap-1">
-            {% if c.lineas %}
-            <span x-show="syncMsg" x-cloak x-text="syncMsg" class="text-[10px] text-emerald-600 mr-1 font-medium"></span>
-            <button @click="sincronizar()" :disabled="syncing"
-              class="text-xs text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded hover:bg-emerald-50 transition-colors disabled:opacity-50"
-              title="Sincronizar con cobranzas">
-              <i class="fa-solid text-[10px]" :class="syncing ? 'fa-circle-notch fa-spin' : 'fa-rotate'"></i>
-            </button>
-            {% endif %}
             <button @click="eliminar()" class="text-slate-300 hover:text-red-500 transition-colors p-1">
               <i class="fa-solid fa-trash-can text-xs"></i>
             </button>
