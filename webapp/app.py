@@ -859,6 +859,87 @@ async def fraccionamientos(
     ))
 
 
+@app.post("/fraccionamientos/nuevo")
+async def fraccionamiento_nuevo(
+    request: Request,
+    member_id: str = Form(...),
+    periodo: str = Form(...),
+    empresa: str = Form(""),
+    monto_objetivo: str = Form(""),
+    monto_cuota: str = Form(""),
+    num_cuotas: int = Form(0),
+    fecha_primera: str = Form(""),
+    frecuencia_meses: int = Form(1),
+):
+    import calendar as _cal
+    from datetime import date as _date_cls
+    _ = request  # noqa: used for auth middleware
+    member_id = member_id.strip()
+    periodo = periodo.strip()
+    if not member_id or not periodo:
+        return RedirectResponse(f"/fraccionamientos?periodo={periodo}", status_code=303)
+    payment_id = pdb.get_or_create_payment(member_id, periodo)
+    empresa_val = empresa.strip() or None
+    pdb.update_payment(payment_id, estado="fraccionamiento", empresa=empresa_val)
+    try:
+        monto_obj_f = float(monto_objetivo.strip()) if monto_objetivo.strip() else None
+    except ValueError:
+        monto_obj_f = None
+    if monto_obj_f and monto_obj_f > 0:
+        pdb.set_monto_objetivo(payment_id, monto_obj_f)
+    try:
+        monto_c = float(monto_cuota.strip()) if monto_cuota.strip() else None
+    except ValueError:
+        monto_c = None
+    if monto_c and monto_c > 0 and num_cuotas > 0:
+        try:
+            fp = _date_cls.fromisoformat(fecha_primera.strip()) if fecha_primera.strip() else _date_cls.today()
+        except ValueError:
+            fp = _date_cls.today()
+        cuotas = []
+        d = fp
+        for _ in range(num_cuotas):
+            cuotas.append({"monto": monto_c, "fecha_venc": d.isoformat()})
+            m = d.month + frecuencia_meses - 1
+            y = d.year + m // 12
+            m = m % 12 + 1
+            day = min(d.day, _cal.monthrange(y, m)[1])
+            d = _date_cls(y, m, day)
+        pdb.add_cuotas_batch(payment_id, cuotas)
+    return RedirectResponse(
+        f"/fraccionamientos?periodo={periodo}&search={member_id}",
+        status_code=303,
+    )
+
+
+@app.post("/fraccionamientos/{payment_id}/cuotas/generar")
+async def frac_generar_calendario(
+    payment_id: str,
+    monto_cuota: float = Form(...),
+    num_cuotas: int = Form(...),
+    fecha_primera: str = Form(""),
+    frecuencia_meses: int = Form(1),
+    redirect_to: str = Form("/fraccionamientos"),
+):
+    import calendar as _cal
+    from datetime import date as _date_cls
+    try:
+        fp = _date_cls.fromisoformat(fecha_primera.strip()) if fecha_primera.strip() else _date_cls.today()
+    except ValueError:
+        fp = _date_cls.today()
+    cuotas = []
+    d = fp
+    for _ in range(num_cuotas):
+        cuotas.append({"monto": monto_cuota, "fecha_venc": d.isoformat()})
+        m = d.month + frecuencia_meses - 1
+        y = d.year + m // 12
+        m = m % 12 + 1
+        day = min(d.day, _cal.monthrange(y, m)[1])
+        d = _date_cls(y, m, day)
+    pdb.add_cuotas_batch(payment_id, cuotas)
+    return RedirectResponse(redirect_to, status_code=303)
+
+
 @app.post("/fraccionamientos/{payment_id}/cuotas/{cuota_n}/emitir-comprobante")
 async def frac_emitir_comprobante(
     payment_id: str,

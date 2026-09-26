@@ -597,6 +597,32 @@ def add_cuota(payment_id: str, monto: float, fecha_venc: str = None):
     return cuota
 
 
+def add_cuotas_batch(payment_id: str, cuotas: list) -> list:
+    """Add multiple cuotas at once. cuotas = [{monto, fecha_venc}]"""
+    doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"cuotas": 1})
+    existing = doc.get("cuotas", []) if doc else []
+    max_num = max((c.get("numero", 0) for c in existing), default=0)
+    new_cuotas = []
+    for c in cuotas:
+        max_num += 1
+        new_cuotas.append({
+            "numero":     max_num,
+            "monto":      float(c["monto"]),
+            "fecha_venc": c.get("fecha_venc") or None,
+            "fecha_pago": None,
+            "estado":     "pendiente",
+        })
+    if new_cuotas:
+        payments_col.update_one(
+            {"_id": ObjectId(payment_id)},
+            {
+                "$push": {"cuotas": {"$each": new_cuotas}},
+                "$set":  {"estado": "fraccionamiento"},
+            },
+        )
+    return new_cuotas
+
+
 def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = None,
                  medio_pago: str = None, num_comprobante: str = None,
                  tipo_comprobante: str = None, link_constancia: str = None,
@@ -633,12 +659,14 @@ def delete_cuota(payment_id: str, numero: int):
         {"_id": ObjectId(payment_id)},
         {"$pull": {"cuotas": {"numero": numero}}},
     )
-    # Al eliminar una cuota, forzar "fraccionamiento" para que el pago siga visible.
-    # El auto-upgrade a "pagado" solo ocurre cuando se marca una cuota como pagada.
-    payments_col.update_one(
-        {"_id": ObjectId(payment_id)},
-        {"$set": {"estado": "fraccionamiento"}},
-    )
+    doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"cuotas": 1})
+    if doc is not None:
+        if not doc.get("cuotas"):
+            # Last cuota deleted — revert to "debe"
+            payments_col.update_one(
+                {"_id": ObjectId(payment_id)},
+                {"$set": {"estado": "debe"}},
+            )
 
 
 # ── Pagos parciales ───────────────────────────────────────────────────────────
