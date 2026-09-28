@@ -2,7 +2,7 @@ import io
 import re
 import base64 as _b64
 from markupsafe import Markup, escape
-from fastapi import FastAPI, Request, Form, Query, UploadFile, File
+from fastapi import FastAPI, Request, Form, Query, UploadFile, File, HTTPException
 from typing import List
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -1747,18 +1747,17 @@ async def comunicaciones_preview(request: Request):
 
 
 @app.get("/api/comunicaciones/excluidos")
-async def get_excluidos(current_user=Depends(get_current_user)):
+async def get_excluidos(request: Request):
     return pdb.get_excluidos_comunicaciones()
 
 
 @app.post("/api/comunicaciones/excluidos/toggle")
-async def toggle_excluido(request: Request, current_user=Depends(get_current_user)):
+async def toggle_excluido(request: Request):
     data = await request.json()
     member_id = data.get("member_id", "").strip()
     excluir   = bool(data.get("excluir", True))
     if not member_id:
-        from fastapi import HTTPException
-        raise HTTPException(400, "member_id requerido")
+        raise HTTPException(status_code=400, detail="member_id requerido")
     pdb.toggle_excluir_comunicaciones(member_id, excluir)
     return {"ok": True, "member_id": member_id, "excluir": excluir}
 
