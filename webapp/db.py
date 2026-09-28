@@ -308,6 +308,32 @@ def update_member_estado(member_id: str, estado: str):
     )
 
 
+def toggle_excluir_comunicaciones(member_id: str, excluir: bool):
+    members_col.update_one(
+        {"member_id": member_id},
+        {"$set": {"excluir_comunicaciones": excluir}},
+    )
+
+
+def get_excluidos_comunicaciones() -> list:
+    docs = list(members_col.find(
+        {"excluir_comunicaciones": True},
+        {"member_id": 1, "apellidos": 1, "nombres": 1, "emails": 1},
+    ))
+    result = []
+    for m in docs:
+        email = next(
+            (e["email"] for e in m.get("emails", []) if e.get("principal")),
+            next((e["email"] for e in m.get("emails", [])), ""),
+        )
+        result.append({
+            "member_id": m["member_id"],
+            "nombre": f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
+            "email": email,
+        })
+    return sorted(result, key=lambda x: x["nombre"])
+
+
 def update_member_tipo_socio(member_id: str, tipo_socio: str):
     if tipo_socio not in ("ordinario", "filial"):
         return
@@ -1566,7 +1592,11 @@ def get_comunicacion_destinatarios(
     excluir_keywords: str = "",
 ) -> list:
     """Socios activos con email habilitado que coincidan con los filtros."""
-    q: dict = {"estado": "activo", "emails": {"$elemMatch": {"estado": "habilitado"}}}
+    q: dict = {
+        "estado": "activo",
+        "emails": {"$elemMatch": {"estado": "habilitado"}},
+        "excluir_comunicaciones": {"$ne": True},
+    }
     if titulo:
         q["titulo"] = titulo
     if ubicacion:

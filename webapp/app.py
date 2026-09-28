@@ -1746,6 +1746,23 @@ async def comunicaciones_preview(request: Request):
     return {"total": len(destinatarios), "destinatarios": destinatarios}
 
 
+@app.get("/api/comunicaciones/excluidos")
+async def get_excluidos(current_user=Depends(get_current_user)):
+    return pdb.get_excluidos_comunicaciones()
+
+
+@app.post("/api/comunicaciones/excluidos/toggle")
+async def toggle_excluido(request: Request, current_user=Depends(get_current_user)):
+    data = await request.json()
+    member_id = data.get("member_id", "").strip()
+    excluir   = bool(data.get("excluir", True))
+    if not member_id:
+        from fastapi import HTTPException
+        raise HTTPException(400, "member_id requerido")
+    pdb.toggle_excluir_comunicaciones(member_id, excluir)
+    return {"ok": True, "member_id": member_id, "excluir": excluir}
+
+
 def _process_inline_images(html: str, imagenesInline: list) -> tuple[str, list]:
     """
     Sustituye data: URLs de imágenes inline por referencias CID.

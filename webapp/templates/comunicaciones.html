@@ -239,6 +239,82 @@
           <i class="fa-solid fa-spinner fa-spin mr-1.5" x-show="previewing" x-cloak></i>
           <span x-text="previewing ? 'Buscando…' : 'Ver destinatarios'"></span>
         </button>
+
+        <!-- Resumen destinatarios del filtro -->
+        <div x-show="showPreview" x-cloak class="mt-3">
+          <button type="button" @click="abrirModalDest()"
+                  class="w-full flex items-center justify-between px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors">
+            <div class="flex items-center gap-2 text-sm font-medium text-blue-800">
+              <i class="fa-solid fa-users text-blue-400"></i>
+              <span x-text="seleccionados.length + ' seleccionado(s) de ' + destinatarios.length"></span>
+            </div>
+            <span class="text-xs text-blue-500 font-medium">Ver / editar <i class="fa-solid fa-arrow-right ml-1"></i></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Excluidos permanentes -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <button type="button" @click="showExcluidosPanel = !showExcluidosPanel"
+                class="flex items-center justify-between w-full text-left">
+          <h2 class="text-sm font-semibold text-slate-700">
+            <i class="fa-solid fa-user-slash text-red-400 mr-1.5"></i> Excluidos permanentes
+            <span x-show="excluidos.length > 0"
+                  class="ml-2 inline-flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5"
+                  x-text="excluidos.length"></span>
+          </h2>
+          <i class="fa-solid text-slate-400 text-xs"
+             :class="showExcluidosPanel ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+        </button>
+
+        <div x-show="showExcluidosPanel" x-cloak class="mt-3 space-y-3">
+          <p class="text-xs text-slate-400">Socios excluidos de <strong>todas</strong> las comunicaciones. No aparecerán en ningún envío masivo.</p>
+
+          <!-- Buscar para agregar -->
+          <div class="relative">
+            <input x-model="busqExcluido"
+                   @input.debounce.300ms="buscarParaExcluir()"
+                   @keydown.escape="sugExcluidos = []"
+                   placeholder="Buscar socio para excluir…"
+                   class="input w-full text-sm" autocomplete="off">
+            <div x-show="sugExcluidos.length > 0"
+                 @click.outside="sugExcluidos = []"
+                 @mousedown.prevent
+                 class="absolute z-50 bg-white border border-slate-200 rounded-lg shadow-lg mt-0.5 w-full">
+              <template x-for="m in sugExcluidos" :key="m.member_id">
+                <button type="button"
+                        @click="agregarExcluido(m)"
+                        class="flex items-center justify-between w-full text-left px-3 py-2 text-sm hover:bg-red-50 border-b border-slate-100 last:border-0">
+                  <div>
+                    <div class="font-medium text-slate-800" x-text="m.nombre"></div>
+                    <div class="text-xs text-slate-400 font-mono" x-text="m.email"></div>
+                  </div>
+                  <i class="fa-solid fa-ban text-red-400 text-xs flex-shrink-0 ml-2"></i>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- Lista de excluidos -->
+          <div x-show="excluidos.length === 0" class="text-center py-3 text-xs text-slate-400">
+            <i class="fa-solid fa-check-circle text-green-400 mr-1"></i> Ningún socio excluido
+          </div>
+          <div x-show="excluidos.length > 0" class="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+            <template x-for="e in excluidos" :key="e.member_id">
+              <div class="flex items-center justify-between p-2 bg-red-50 border border-red-100 rounded-lg">
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs font-medium text-slate-800 truncate" x-text="e.nombre"></div>
+                  <div class="text-xs text-slate-400 truncate font-mono" x-text="e.email"></div>
+                </div>
+                <button @click="quitarExcluido(e.member_id)"
+                        title="Quitar de excluidos"
+                        class="ml-2 flex-shrink-0 text-slate-400 hover:text-red-600 transition-colors">
+                  <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
       </div>
 
       <!-- Agregar destinatario individual -->
@@ -335,52 +411,6 @@
         </div>
       </div>
 
-      <!-- Resultado del preview -->
-      <div x-show="showPreview" x-cloak class="bg-white rounded-xl border border-slate-200 p-5">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-slate-700">
-            Destinatarios
-            <span class="ml-2 inline-flex items-center justify-center bg-blue-600 text-white text-xs font-bold rounded-full w-6 h-6"
-                  x-text="seleccionados.length"></span>
-          </h3>
-          <div class="flex gap-2 text-xs">
-            <button @click="seleccionarTodos(true)" class="text-blue-600 hover:underline">Todos</button>
-            <span class="text-slate-300">|</span>
-            <button @click="seleccionarTodos(false)" class="text-slate-500 hover:underline">Ninguno</button>
-          </div>
-        </div>
-
-        <div x-show="destinatarios.length === 0" class="text-center py-6 text-slate-400 text-sm">
-          <i class="fa-solid fa-circle-info mr-1"></i> No hay socios con esos filtros.
-        </div>
-
-        <div x-show="destinatarios.length > 0" class="space-y-1 max-h-72 overflow-y-auto pr-1">
-          <template x-for="d in destinatarios" :key="d.member_id">
-            <label class="flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 cursor-pointer group">
-              <input type="checkbox" x-model="d.selected" class="rounded accent-blue-600 flex-shrink-0">
-              <div class="min-w-0 flex-1">
-                <div class="text-xs font-medium text-slate-800 truncate" x-text="d.nombre"></div>
-                <div class="text-xs text-slate-400 truncate" x-text="d.email"></div>
-              </div>
-              <span x-show="d.estado_pago"
-                    class="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium"
-                :class="{
-                  'bg-red-50 text-red-600': d.estado_pago === 'debe',
-                  'bg-green-50 text-green-600': d.estado_pago === 'pagado',
-                  'bg-amber-50 text-amber-600': d.estado_pago === 'fraccionamiento',
-                  'bg-purple-50 text-purple-600': d.estado_pago === 'parcial',
-                  'bg-slate-100 text-slate-500': !['debe','pagado','fraccionamiento','parcial'].includes(d.estado_pago),
-                }"
-                x-text="d.estado_pago"></span>
-              <button @click.prevent.stop="verSocio(d.member_id)"
-                      title="Ver detalle"
-                      class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-600 flex-shrink-0 ml-0.5 transition-opacity">
-                <i class="fa-solid fa-circle-info text-xs"></i>
-              </button>
-            </label>
-          </template>
-        </div>
-      </div>
     </div>
 
     <!-- ── Panel derecho: Redactar ── -->
@@ -808,6 +838,121 @@
     </div>
   </div>
 
+  <!-- Modal destinatarios -->
+  <div x-show="showDestModal" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center p-4"
+       @keydown.escape.window="showDestModal = false">
+    <div class="absolute inset-0 bg-black/50" @click="showDestModal = false"></div>
+    <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col" style="max-height:88vh">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
+        <div>
+          <h2 class="font-semibold text-slate-800">
+            Destinatarios
+            <span class="ml-2 inline-flex items-center justify-center bg-blue-600 text-white text-xs font-bold rounded-full w-6 h-6"
+                  x-text="seleccionados.length"></span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5"
+             x-text="seleccionados.length + ' seleccionados de ' + destinatarios.length + ' encontrados'"></p>
+        </div>
+        <button @click="showDestModal = false" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <!-- Toolbar: buscar + ordenar -->
+      <div class="px-6 py-3 border-b border-slate-100 flex-shrink-0 space-y-2">
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input x-model="destSearch"
+                   type="text"
+                   placeholder="Buscar por nombre o email…"
+                   class="input w-full pl-8 text-sm py-1.5">
+          </div>
+          <button @click="seleccionarTodos(true)" class="text-xs text-blue-600 hover:underline whitespace-nowrap">Todos</button>
+          <span class="text-slate-300">|</span>
+          <button @click="seleccionarTodos(false)" class="text-xs text-slate-500 hover:underline whitespace-nowrap">Ninguno</button>
+        </div>
+        <!-- Ordenar -->
+        <div class="flex items-center gap-2 text-xs text-slate-500">
+          <span class="font-medium">Ordenar:</span>
+          <button @click="destSort = 'nombre'"
+                  :class="destSort === 'nombre' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                  class="px-2.5 py-1 rounded-full transition-colors">
+            <i class="fa-solid fa-arrow-down-a-z mr-1"></i> Nombre
+          </button>
+          <button @click="destSort = 'estado'"
+                  :class="destSort === 'estado' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                  class="px-2.5 py-1 rounded-full transition-colors">
+            <i class="fa-solid fa-tag mr-1"></i> Estado de pago
+          </button>
+          <button @click="destSortAsc = !destSortAsc"
+                  class="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors ml-auto">
+            <i class="fa-solid" :class="destSortAsc ? 'fa-sort-up' : 'fa-sort-down'"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista -->
+      <div x-show="destinatarios.length === 0" class="flex-1 flex items-center justify-center text-slate-400 text-sm">
+        <div class="text-center py-10">
+          <i class="fa-solid fa-circle-info text-2xl mb-2 block"></i>
+          No hay socios con esos filtros.
+        </div>
+      </div>
+
+      <div x-show="destinatarios.length > 0" class="flex-1 overflow-y-auto px-4 py-2">
+        <div x-show="destFiltrados.length === 0 && destSearch" class="text-center py-8 text-slate-400 text-sm">
+          <i class="fa-solid fa-magnifying-glass mr-1"></i> Sin resultados para "<span x-text="destSearch"></span>"
+        </div>
+        <template x-for="d in destFiltrados" :key="d.member_id">
+          <label class="flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-slate-50 cursor-pointer group border-b border-slate-50 last:border-0">
+            <input type="checkbox" x-model="d.selected" class="rounded accent-blue-600 flex-shrink-0 w-4 h-4">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-medium text-slate-800 truncate" x-text="d.nombre"></div>
+              <div class="text-xs text-slate-400 truncate font-mono" x-text="d.email"></div>
+            </div>
+            <span x-show="d.estado_pago"
+                  class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium"
+              :class="{
+                'bg-red-50 text-red-600': d.estado_pago === 'debe',
+                'bg-green-50 text-green-600': d.estado_pago === 'pagado',
+                'bg-amber-50 text-amber-600': d.estado_pago === 'fraccionamiento',
+                'bg-purple-50 text-purple-600': d.estado_pago === 'parcial',
+                'bg-slate-100 text-slate-500': !['debe','pagado','fraccionamiento','parcial'].includes(d.estado_pago),
+              }"
+              x-text="d.estado_pago"></span>
+            <button @click.prevent.stop="verSocio(d.member_id)"
+                    title="Ver detalle"
+                    class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-600 flex-shrink-0 transition-opacity">
+              <i class="fa-solid fa-circle-info text-xs"></i>
+            </button>
+            <button @click.prevent.stop="excluirDesdeModal(d)"
+                    title="Excluir permanentemente"
+                    class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 flex-shrink-0 transition-opacity">
+              <i class="fa-solid fa-ban text-xs"></i>
+            </button>
+          </label>
+        </template>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-4 border-t border-slate-200 flex-shrink-0 flex items-center justify-between bg-slate-50 rounded-b-2xl">
+        <span class="text-xs text-slate-500">
+          <span x-text="seleccionados.length"></span> seleccionados
+          <span x-show="destSearch" x-cloak>
+            · <span x-text="destFiltrados.length"></span> mostrados de <span x-text="destinatarios.length"></span>
+          </span>
+        </span>
+        <button @click="showDestModal = false" class="btn-primary text-sm">
+          <i class="fa-solid fa-check mr-1.5"></i> Listo
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal detalle de socio -->
   <div x-show="showSocioModal" x-cloak
        class="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1003,7 +1148,42 @@ function comunicaciones() {
     programando:          false,
     programarError:       '',
 
+    // Modal destinatarios
+    showDestModal: false,
+    destSearch:    '',
+    destSort:      'nombre',
+    destSortAsc:   true,
+
+    // Excluidos permanentes
+    excluidos:        [],
+    showExcluidosPanel: false,
+    busqExcluido:     '',
+    sugExcluidos:     [],
+
+    get destFiltrados() {
+      let lista = [...this.destinatarios];
+      const q   = this.destSearch.trim().toLowerCase();
+      if (q) {
+        lista = lista.filter(d =>
+          d.nombre.toLowerCase().includes(q) || d.email.toLowerCase().includes(q)
+        );
+      }
+      lista.sort((a, b) => {
+        let va, vb;
+        if (this.destSort === 'estado') {
+          va = a.estado_pago || '';
+          vb = b.estado_pago || '';
+        } else {
+          va = a.nombre;
+          vb = b.nombre;
+        }
+        return this.destSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+      return lista;
+    },
+
     init() {
+      this.cargarExcluidos();
       {% if pre_member %}
       this.manuales.push({ ...{{ pre_member | tojson }}, selected: true });
       {% endif %}
@@ -1385,6 +1565,67 @@ function comunicaciones() {
 
     quitarEmpresa(id) {
       this.empresasDestinatarias = this.empresasDestinatarias.filter(e => e._id !== id);
+    },
+
+    // ── Modal destinatarios ───────────────────────────────────────────────────
+
+    abrirModalDest() {
+      this.destSearch  = '';
+      this.destSort    = 'nombre';
+      this.destSortAsc = true;
+      this.showDestModal = true;
+    },
+
+    async excluirDesdeModal(d) {
+      await this.agregarExcluido(d);
+      // Desmarcar y quitar de la lista de destinatarios
+      const idx = this.destinatarios.findIndex(x => x.member_id === d.member_id);
+      if (idx !== -1) this.destinatarios.splice(idx, 1);
+    },
+
+    // ── Excluidos permanentes ─────────────────────────────────────────────────
+
+    async cargarExcluidos() {
+      try {
+        const r = await fetch('/api/comunicaciones/excluidos');
+        this.excluidos = await r.json();
+      } catch {}
+    },
+
+    async buscarParaExcluir() {
+      const q = this.busqExcluido.trim();
+      if (q.length < 2) { this.sugExcluidos = []; return; }
+      const r = await fetch('/api/comunicaciones/buscar-miembro?q=' + encodeURIComponent(q));
+      const todos = await r.json();
+      // Filtrar los que ya están excluidos
+      const exIds = new Set(this.excluidos.map(e => e.member_id));
+      this.sugExcluidos = todos.filter(m => !exIds.has(m.member_id));
+    },
+
+    async agregarExcluido(m) {
+      const ya = this.excluidos.some(e => e.member_id === m.member_id);
+      if (ya) { this.busqExcluido = ''; this.sugExcluidos = []; return; }
+      await fetch('/api/comunicaciones/excluidos/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_id: m.member_id, excluir: true }),
+      });
+      this.excluidos.push({ member_id: m.member_id, nombre: m.nombre, email: m.email });
+      this.excluidos.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      // Desmarcar en lista de destinatarios si aparece
+      const enFiltro = this.destinatarios.find(d => d.member_id === m.member_id);
+      if (enFiltro) enFiltro.selected = false;
+      this.busqExcluido = '';
+      this.sugExcluidos = [];
+    },
+
+    async quitarExcluido(member_id) {
+      await fetch('/api/comunicaciones/excluidos/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_id, excluir: false }),
+      });
+      this.excluidos = this.excluidos.filter(e => e.member_id !== member_id);
     },
 
     // ── Modal detalle de socio ────────────────────────────────────────────────

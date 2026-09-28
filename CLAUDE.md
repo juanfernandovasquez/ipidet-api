@@ -36,6 +36,9 @@ python main.py
 
 # Importar padrón desde Excel a MongoDB  ⚠️ DESTRUCTIVO — ver sección 15
 python import_padron.py
+
+# Backfill de FKs en documentos históricos (idempotente, seguro correr varias veces)
+python migrate_fks.py
 ```
 
 El servidor de producción corre en Render.com (auto-deploy desde GitHub `main`). El archivo `passenger_wsgi.py` es para entornos cPanel/Passenger y no se usa en Render.
@@ -104,6 +107,28 @@ data-id="{{ p._id | string }}"
 
 Toda conexión a MongoDB Atlas requiere `tlsCAFile=certifi.where()`. Sin esto falla con error de certificado SSL. Aplica a `webapp/db.py`, `webapp/auth.py`, y cualquier cliente nuevo que se agregue.
 
+### R7 — FKs en colecciones: siempre pasar `comprobante_id` y `empresa_id`
+
+Los campos de texto `num_comprobante` y `empresa_pagadora` tienen ahora un campo FK paralelo (`comprobante_id` y `empresa_id`) que apunta al `_id` del documento relacionado. Al escribir en estas funciones, siempre pasar el FK cuando se conoce:
+
+```python
+# ✓ Correcto — FK directa
+pdb.update_payment(payment_id, estado="pagado",
+                   num_comprobante="B001-001", comprobante_id=comp_id,
+                   empresa="EY")  # empresa_id se resuelve automáticamente
+
+pdb.update_cuota(payment_id, numero=1, estado="pagado",
+                 num_comprobante="B001-001", comprobante_id=comp_id)
+
+# ✗ Evitar — solo texto, sin FK
+pdb.update_payment(payment_id, estado="pagado", num_comprobante="B001-001")
+```
+
+- `empresa_id` se auto-resuelve dentro de `update_payment` y `create_comprobante` cuando se pasa `empresa`.
+- `comprobante_id` debe pasarse explícitamente desde la ruta que acaba de crear el comprobante.
+- Documentos legacy sin FK funcionan mediante el slow path de `sync_comprobante_to_payments` (por nombre de producto).
+- Si hay documentos históricos sin FK, correr `python migrate_fks.py`.
+
 ---
 
 ## 3. Archivos más frecuentemente modificados {#frecuentes}
@@ -113,8 +138,9 @@ El 90 % de las tareas toca estos archivos:
 | Archivo | Qué contiene |
 |---------|-------------|
 | `webapp/app.py` | Todas las rutas FastAPI (~60 rutas) |
-| `webapp/db.py` | Todas las queries MongoDB para la web (~2200 líneas) |
+| `webapp/db.py` | Todas las queries MongoDB para la web (~2300 líneas) |
 | `webapp/templates/billing.html` | Vista de cobranzas: la más compleja, con cuotas y parciales |
+| `webapp/templates/fraccionamientos.html` | Vista de fraccionamientos: creación, calendario, emitir comprobante |
 | `webapp/templates/base.html` | Layout, sidebar, modal picker global |
 | `webapp/templates/member.html` | Detalle de socio |
 | `webapp/templates/credito.html` | Facturas empresa en crédito |
@@ -133,6 +159,8 @@ El 90 % de las tareas toca estos archivos:
 | Nuevo campo en comprobantes | `webapp/db.py` (create_comprobante, update_comprobante) → `comprobantes.html` → `base.html` (modal picker si aplica) |
 | Cambiar filtros de cobranzas | `webapp/db.py` (get_payments) → `webapp/app.py` (ruta GET /billing) → `billing.html` |
 | Nueva integración WooCommerce | `webapp/portal_db.py` + `webapp/portal_router.py` → `webapp/app.py` (webhook route) |
+| Crear/emitir comprobante desde payment | Crear comprobante primero → pasar `comp_id` a `emitir_comprobante()` / `update_cuota()` — ver R7 |
+| Nuevo fraccionamiento | `webapp/app.py` (`POST /fraccionamientos/nuevo`) → `fraccionamientos.html` (modal) |
 
 ---
 
@@ -185,6 +213,7 @@ webapp/
   templates/         — Ver sección 9
 
 admin.py             — Script de administración CLI (utilidades)
+migrate_fks.py       — Backfill de FKs en documentos históricos (idempotente)
 telegram_main.py     — Punto de entrada del bot de Telegram (independiente)
 debug_imap.py        — Herramienta de diagnóstico IMAP
 launcher.py          — Lanzador de procesos
@@ -375,11 +404,13 @@ member_id               string    FK → members.member_id
 periodo                 string    "2025" | "2026"
 estado                  string    ver sección 7.2 para estados válidos y transiciones
 empresa_pagadora        string | null    "EY" | "BDO" | "PWC" | "KPMG" | "PPU"
+empresa_id              string | null    FK → companies._id  (auto-resuelto al setear empresa_pagadora)
 pagado_por              string | null    texto libre o "WC#<order_id>" si vino de WooCommerce
 fecha_pago              string | null    "YYYY-MM-DD"
 medio_pago              string | null    ver MEDIOS_PAGO en webapp/db.py
 banco_origen            string | null    ver BANCOS en webapp/db.py
-num_comprobante         string | null    referencia a comprobantes.numero (ver sección 7.5)
+num_comprobante         string | null    número del comprobante (texto display)
+comprobante_id          string | null    FK → comprobantes._id  (ver R7)
 tipo_comprobante        string | null    "boleta" | "factura" | "recibo"
 fecha_emision_comprobante string | null  "YYYY-MM-DD"
 link_constancia         string | null    URL al correo o documento de constancia del pago
@@ -396,8 +427,10 @@ cuotas             [{
                      estado:           "pendiente" | "pagado"
                      medio_pago:       string | null
                      num_comprobante:  string | null
+                     comprobante_id:   string | null   FK → comprobantes._id
                      tipo_comprobante: string | null
                      link_constancia:  string | null
+                     producto_nombre:  string | null   nombre del producto asociado
                    }]
 
 # Solo si estado == "parcial"
@@ -408,6 +441,7 @@ pagos_parciales    [{
                      fecha_pago:       string | null
                      medio_pago:       string | null
                      num_comprobante:  string | null
+                     comprobante_id:   string | null   FK → comprobantes._id
                      tipo_comprobante: string | null
                      link_constancia:  string | null
                    }]
@@ -423,20 +457,38 @@ pagos_parciales    [{
 ### 7.5 Colección `comprobantes`
 
 Comprobantes de pago emitidos por IPIDET (boletas/facturas) — documentos tributarios entregados al socio o empresa.
-`payments.num_comprobante` referencia el campo `numero` de esta colección. El modal `$store.picker` busca en esta colección. → ver también sección 6 (modal picker).
+`payments.comprobante_id` apunta al `_id` de esta colección (FK directa). `payments.num_comprobante` mantiene el número como texto para display. El modal `$store.picker` busca en esta colección. → ver también sección 6 (modal picker).
 
 ```
 numero           string    "B001-000123" — número del comprobante
-tipo             string    "boleta" | "factura"
+tipo             string    "boleta" | "factura" | "recibo"
 fecha_emision    string    "YYYY-MM-DD"
+fecha_carga      string    "YYYY-MM-DD" — fecha en que se registró en la plataforma
 monto_total      float
-producto_nombre  string    nombre del producto/servicio facturado
+producto_nombre  string    nombre del producto/servicio facturado (denormalizado)
 concepto         string    descripción libre
 empresa          string    razón social si es a empresa; vacío si es persona natural
-socios           [string]  lista de member_id asociados al comprobante
+empresa_id       string | null    FK → companies._id  (auto-resuelto al crear/editar)
+ruc_empresa      string    RUC de la empresa (denormalizado desde companies)
+socios           [string]  lista de member_id (denormalizado desde items)
+items            [{        líneas de detalle del comprobante
+                   member_id:    string | null   FK → members.member_id
+                   producto_nombre: string
+                   monto:        float
+                   payment_id:   string | null   FK → payments._id  (ver R7)
+                   tipo_pago:    string | null   "principal" | "cuota" | "parcial"
+                   cuota_numero: int | null      número de cuota si tipo_pago == "cuota"
+                   codigo_sunat: string | null   código SUNAT del producto
+                 }]
 estado           string    "emitido" | "anulado"  (soft delete: nunca borrar físicamente)
 created_at       datetime
 ```
+
+**Comportamiento de sync (`sync_comprobante_to_payments`):**
+- **Fast path**: si `items[].payment_id` + `items[].tipo_pago` están presentes → FK directa, O(1).
+- **Slow path** (legacy): si faltan → inferencia por `codigo_sunat` / `producto_nombre` → producto → período → payment.
+- Se llama automáticamente al crear (`/comprobantes/add`, `/comprobantes/import-xml`) y al editar (`/comprobantes/{id}/update`).
+- **No hay botón "Sincronizar" en la UI** — el sync es siempre automático.
 
 ### 7.6 Colección `companies`
 
@@ -698,6 +750,9 @@ Templates no productivos (mockup): `finanzas_mockup.html`.
 | `GET` | `/api/facturacion/pendientes` | JSON con pagos pendientes de comprobante |
 | `GET` | `/api/facturacion/socio-info` | JSON con info del socio para modal de facturación |
 | `GET` | `/fraccionamientos` | Vista de fraccionamientos activos; filtros: periodo, alerta, search |
+| `POST` | `/fraccionamientos/nuevo` | Crea fraccionamiento + cuotas en batch desde el wizard del modal |
+| `POST` | `/fraccionamientos/{id}/cuotas/generar` | Genera calendario de cuotas automático para un fraccionamiento existente |
+| `POST` | `/fraccionamientos/{id}/cuotas/{n}/emitir-comprobante` | Crea comprobante formal + marca cuota como pagada (atómico) |
 
 #### Comprobantes
 
@@ -874,7 +929,9 @@ get_payments_export(...) → docs[]  # sin paginación
 update_payment(payment_id: str, estado: str, empresa=None, fecha_pago=None,
                medio=None, pagado_por=None, num_comprobante=None,
                tipo_comprobante=None, link_constancia=None, banco_origen=None,
-               comprobante_emitido=None, fecha_emision_comprobante=None)
+               comprobante_emitido=None, fecha_emision_comprobante=None,
+               comprobante_id=None)   # ← FK a comprobantes._id (ver R7)
+               # auto-resuelve empresa_id cuando se pasa empresa
 set_monto_objetivo(payment_id: str, monto_objetivo: float)
 get_or_create_payment(member_id: str, periodo: str) → str  # devuelve payment_id
 ```
@@ -884,9 +941,13 @@ get_or_create_payment(member_id: str, periodo: str) → str  # devuelve payment_
 ```python
 # Llama _sync_estado_from_cuotas() internamente — no llamarla por separado
 add_cuota(payment_id: str, monto: float, fecha_venc: str = None)
+add_cuotas_batch(payment_id: str, cuotas: list) → list
+  # cuotas = [{"monto": float, "fecha_venc": str|None, "producto_nombre": str|None}, ...]
+  # Agrega múltiples cuotas de una vez y llama _sync una sola vez al final
 update_cuota(payment_id: str, numero: int, estado: str, fecha_pago=None,
              medio_pago=None, num_comprobante=None, tipo_comprobante=None,
-             link_constancia=None, banco_origen=None, monto=None, fecha_venc=None)
+             link_constancia=None, banco_origen=None, monto=None, fecha_venc=None,
+             comprobante_id=None)   # ← FK a comprobantes._id (ver R7)
 delete_cuota(payment_id: str, numero: int)
 ```
 
@@ -897,10 +958,12 @@ delete_cuota(payment_id: str, numero: int)
 set_monto_total(payment_id: str, monto_total: float)
 add_pago_parcial(payment_id: str, monto: float, fecha_pago=None, medio=None,
                  num_comprobante=None, tipo_comprobante=None,
-                 link_constancia=None, banco_origen=None)
+                 link_constancia=None, banco_origen=None,
+                 comprobante_id=None)   # ← FK a comprobantes._id (ver R7)
 update_pago_parcial(payment_id: str, numero: int, monto=None, fecha_pago=None,
                     medio=None, num_comprobante=None, tipo_comprobante=None,
-                    link_constancia=None, banco_origen=None)
+                    link_constancia=None, banco_origen=None,
+                    comprobante_id=None)   # ← FK a comprobantes._id (ver R7)
 delete_pago_parcial(payment_id: str, numero: int)
 ```
 
@@ -910,7 +973,9 @@ delete_pago_parcial(payment_id: str, numero: int)
 get_comprobantes_pendientes(periodo: str, search: str = "") → docs[]
 emitir_comprobante(payment_id: str, tipo: str,  # tipo: "principal"|"cuota"|"parcial"
                    numero: int | None, num_comprobante: str,
-                   tipo_comprobante: str, fecha_emision: str = "")
+                   tipo_comprobante: str, fecha_emision: str = "",
+                   comprobante_id: str = None)   # ← FK a comprobantes._id (ver R7)
+  # ORDEN REQUERIDO: crear comprobante primero → pasar comp_id → llamar emitir_comprobante
 emitir_comprobante_batch(items: list, num_comprobante: str,
                          tipo_comprobante: str, fecha_emision: str)
 mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
@@ -923,10 +988,20 @@ mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
 get_comprobantes(search="", tipo="", empresa="", fecha="", page=1) → (docs[], total)
 create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: float,
                    producto_nombre: str, concepto: str, empresa: str,
-                   socios: list) → str  # devuelve comprobante_id
+                   socios: list, items: list = None, ruc: str = "") → str
+  # items[]: [{member_id, producto_nombre, monto, payment_id, tipo_pago, cuota_numero}]
+  # auto-resuelve empresa_id desde companies; llama sync_comprobante_to_payments() si items
 update_comprobante(comprobante_id: str, fields: dict)
   # fields permitidos: numero, tipo, fecha_emision, monto_total,
-  #   producto_nombre, concepto, empresa, socios, estado
+  #   producto_nombre, concepto, empresa, empresa_id, socios, estado
+  # auto-resuelve empresa_id si se pasa "empresa"
+  # llama sync_comprobante_to_payments() automáticamente si hay items
+sync_comprobante_to_payments(items: list, numero: str, tipo: str,
+                              fecha_emision: str, empresa: str = "",
+                              comprobante_id: str = None) → list[dict]
+  # Fast path: item.payment_id + item.tipo_pago → FK directa, O(1)
+  # Slow path: inferencia por codigo_sunat/producto_nombre → producto → período → payment
+  # Llamada automáticamente por create_comprobante y update_comprobante
 delete_comprobante(comprobante_id: str)  # soft delete: estado="anulado"
 get_comprobante_stats() → dict
 ```
@@ -1121,7 +1196,13 @@ Normalización que aplica:
 - **Soft delete en FAQs:** `active: false` desactiva sin borrar, para mantener historial de aprendizaje del agente.
 - **Soft delete en comprobantes:** `estado: "anulado"` en lugar de borrar físicamente.
 - **`wp_user_id` en members:** Vincula el socio con su usuario de WordPress. Se auto-asigna cuando WooCommerce envía un pedido con `customer_id` reconocido. También se puede setear manualmente desde `/sync-usuarios`.
-- **`payments.num_comprobante` vs colección `comprobantes`:** `num_comprobante` en payments es el número de comprobante recibido (texto libre o referencia). La colección `comprobantes` es el registro formal de los comprobantes que IPIDET emite. El modal picker vincula ambos. → ver sección 7.5.
+- **`payments.num_comprobante` vs `payments.comprobante_id`:** `num_comprobante` es el número de texto para display (legacy, mantenido por compatibilidad). `comprobante_id` es la FK ObjectId a `comprobantes._id` — úsalo para joins. Ambos se escriben juntos. → ver R7 y sección 7.5.
+- **FK pattern — comprobantes ↔ payments ↔ companies:** Todas las relaciones entre colecciones usan ObjectId FKs (`comprobante_id`, `empresa_id`, `payment_id`) almacenados como strings. Los campos de texto (`empresa_pagadora`, `num_comprobante`) se mantienen como fallback de display pero no deben usarse como join key.
+- **Auto-resolución de `empresa_id`:** `update_payment` y `create_comprobante` resuelven `empresa_id` automáticamente cuando se pasa `empresa` (nombre). El llamador no necesita pasar `empresa_id` explícitamente.
+- **`comprobante_id` debe pasarse explícitamente:** A diferencia de `empresa_id`, `comprobante_id` no se puede auto-resolver en el momento de escribir el pago (el comprobante se crea en la misma request). Orden obligatorio: (1) crear comprobante con `create_comprobante()` → obtener `comp_id`, (2) pasar `comp_id` a `emitir_comprobante()` o `update_cuota()`. → ver R7.
+- **`sync_comprobante_to_payments` — fast vs slow path:** Si `items[].payment_id` + `items[].tipo_pago` presentes → FK directa O(1). Si no → inferencia por nombre de producto (frágil, solo para documentos históricos). El fast path es el único camino correcto para documentos nuevos.
+- **Auto-sync en `update_comprobante`:** Editar un comprobante propaga los cambios a los `payments` vinculados automáticamente. No hay botón "Sincronizar" en la UI.
+- **`migrate_fks.py` para datos históricos:** Backfill idempotente de todos los campos FK en documentos pre-existentes. Corre solo cuando hay datos sin migrar; no toca estados ni montos.
 - **`sync_credito_to_cobranzas`:** Se llama automáticamente desde `create_factura_credito` y `update_factura_credito_estado`. Sincroniza el estado de `payments` de los socios vinculados a la factura de crédito.
 - **`certifi` en Atlas:** → ver R6.
 - **Paginación por defecto:** `per_page=50` en `get_members`; `page_size=50` implícito en la mayoría de endpoints paginados. El parámetro se llama `page` (1-indexed).
