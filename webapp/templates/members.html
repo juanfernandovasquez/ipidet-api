@@ -96,7 +96,7 @@
             </div>
           </th>
 
-          {# Email — filtro estado email #}
+          {# Email principal — filtro estado email #}
           <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
             <button type="button" @click="open=!open"
               class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
@@ -119,6 +119,11 @@
               </button>
               {% endfor %}
             </div>
+          </th>
+
+          {# Email secundario #}
+          <th class="px-4 py-3">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Email alt.</span>
           </th>
 
           {# DNI #}
@@ -211,7 +216,7 @@
             {% endif %}
           </td>
 
-          {# Email #}
+          {# Email principal #}
           <td class="px-4 py-3 text-xs max-w-[220px]"
               data-email="{{ email_principal.email if email_principal else '' }}">
             {% if email_principal %}
@@ -229,16 +234,25 @@
                    class="fa-solid transition-colors"></i>
               </button>
             </div>
-            {% for e in m.emails %}
-              {% if not e.get('principal') and e.get('email') %}
-              <div class="text-[10px] text-slate-400 mt-0.5 truncate flex items-center gap-0.5">
-                {% if e.get('estado') == 'rebotado' %}<i class="fa-solid fa-triangle-exclamation text-red-400 text-[9px] shrink-0"></i>{% endif %}
-                {{ e.email }}
-              </div>
-              {% endif %}
-            {% endfor %}
             {% else %}
             <span class="text-slate-300 italic text-[11px]">sin email</span>
+            {% endif %}
+          </td>
+
+          {# Email secundario #}
+          <td class="px-4 py-3 text-xs max-w-[200px]">
+            {% set alt_emails = m.emails | rejectattr('principal', 'equalto', true) | selectattr('email') | list %}
+            {% if alt_emails %}
+              {% for e in alt_emails %}
+              <div class="flex items-center gap-1 {% if not loop.first %}mt-0.5{% endif %}">
+                {% if e.get('estado') == 'rebotado' %}
+                  <i class="fa-solid fa-triangle-exclamation text-red-400 text-[9px] shrink-0"></i>
+                {% endif %}
+                <span class="text-slate-500 truncate">{{ e.email }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+            <span class="text-slate-300">—</span>
             {% endif %}
           </td>
 
@@ -279,7 +293,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="7" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="8" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
             No se encontraron socios con estos filtros.
           </td>
