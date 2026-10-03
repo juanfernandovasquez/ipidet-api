@@ -163,43 +163,69 @@
             </a>
           </th>
 
-          {# ── Lugar de trabajo, Fecha nac., Estado, acción: sin sort/filter ── #}
+          {# ── Lugar de trabajo, Fecha nac., Estado: sin sort/filter ── #}
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Lugar de trabajo</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Fecha nac.</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
-          <th class="px-4 py-3"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
         {% for m in members %}
-        {# --- helpers de email --- #}
-        {% set email_principal   = m.emails | selectattr("principal", "equalto", true)  | list | first | default(none) %}
-        {% set email_secundario  = m.emails | rejectattr("principal", "equalto", true)  | list | first | default(none) %}
-        <tr class="hover:bg-slate-50 transition-colors">
+        {% set email_principal  = m.emails | selectattr("principal", "equalto", true) | list | first | default(none) %}
+        {% set email_secundario = m.emails | rejectattr("principal", "equalto", true) | list | first | default(none) %}
+        <tr x-data="{
+              copied: null,
+              copy(text, key) {
+                navigator.clipboard.writeText(text || '').then(() => {
+                  this.copied = key;
+                  setTimeout(() => this.copied = null, 1500);
+                });
+              }
+            }" class="hover:bg-slate-50 transition-colors">
 
           {# ID #}
-          <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ m.member_id }}</td>
-
-          {# Nombre #}
           <td class="px-4 py-3">
-            <a href="/members/{{ m.member_id }}" class="hover:text-blue-600 transition-colors">
-              <div class="font-medium text-slate-800">{{ m.apellidos }}</div>
-              <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
-            </a>
+            <div class="flex items-center gap-1">
+              <span class="font-mono text-xs text-slate-500">{{ m.member_id }}</span>
+              <button type="button" @click="copy('{{ m.member_id }}', 'id')" title="Copiar ID">
+                <i class="fa-solid text-[10px] transition-colors"
+                   :class="copied === 'id' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
+              </button>
+            </div>
+          </td>
+
+          {# Nombre — link al detalle + copiar nombre completo #}
+          <td class="px-4 py-3"
+              data-nombre="{{ m.apellidos }} {{ m.nombres }}">
+            <div class="flex items-start gap-1">
+              <a href="/members/{{ m.member_id }}" class="hover:text-blue-600 transition-colors flex-1 min-w-0">
+                <div class="font-medium text-slate-800 text-sm">{{ m.apellidos }}</div>
+                <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
+              </a>
+              <button type="button" @click="copy($el.closest('td').dataset.nombre, 'nombre')" title="Copiar nombre" class="mt-0.5 shrink-0">
+                <i class="fa-solid text-[10px] transition-colors"
+                   :class="copied === 'nombre' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
+              </button>
+            </div>
           </td>
 
           {# Email principal #}
-          <td class="px-4 py-3 text-xs max-w-[220px]">
+          <td class="px-4 py-3 text-xs max-w-[220px]"
+              data-email="{{ email_principal.email if email_principal else '' }}">
             {% if email_principal %}
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1">
                 {% if email_principal.estado == "habilitado" %}
-                  <i class="fa-solid fa-circle-check text-emerald-500 shrink-0" title="Habilitado"></i>
+                  <i class="fa-solid fa-circle-check text-emerald-500 shrink-0 text-[10px]" title="Habilitado"></i>
                 {% elif email_principal.estado == "rebotado" %}
-                  <i class="fa-solid fa-circle-xmark text-red-400 shrink-0" title="Rebotado"></i>
+                  <i class="fa-solid fa-circle-xmark text-red-400 shrink-0 text-[10px]" title="Rebotado"></i>
                 {% else %}
-                  <i class="fa-solid fa-circle-xmark text-amber-400 shrink-0" title="Inhabilitado"></i>
+                  <i class="fa-solid fa-circle-xmark text-amber-400 shrink-0 text-[10px]" title="Inhabilitado"></i>
                 {% endif %}
                 <span class="text-slate-600 truncate">{{ email_principal.email }}</span>
+                <button type="button" @click="copy($el.closest('td').dataset.email, 'ep')" title="Copiar email" class="shrink-0">
+                  <i class="fa-solid text-[10px] transition-colors"
+                     :class="copied === 'ep' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
+                </button>
               </div>
             {% else %}
               <span class="text-slate-300 italic text-[11px]">sin email</span>
@@ -207,17 +233,22 @@
           </td>
 
           {# Email secundario #}
-          <td class="px-4 py-3 text-xs max-w-[220px]">
+          <td class="px-4 py-3 text-xs max-w-[220px]"
+              data-email="{{ email_secundario.email if email_secundario else '' }}">
             {% if email_secundario %}
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1">
                 {% if email_secundario.estado == "habilitado" %}
-                  <i class="fa-solid fa-circle-check text-emerald-500 shrink-0" title="Habilitado"></i>
+                  <i class="fa-solid fa-circle-check text-emerald-500 shrink-0 text-[10px]" title="Habilitado"></i>
                 {% elif email_secundario.estado == "rebotado" %}
-                  <i class="fa-solid fa-circle-xmark text-red-400 shrink-0" title="Rebotado"></i>
+                  <i class="fa-solid fa-circle-xmark text-red-400 shrink-0 text-[10px]" title="Rebotado"></i>
                 {% else %}
-                  <i class="fa-solid fa-circle-xmark text-amber-400 shrink-0" title="Inhabilitado"></i>
+                  <i class="fa-solid fa-circle-xmark text-amber-400 shrink-0 text-[10px]" title="Inhabilitado"></i>
                 {% endif %}
                 <span class="text-slate-600 truncate">{{ email_secundario.email }}</span>
+                <button type="button" @click="copy($el.closest('td').dataset.email, 'es')" title="Copiar email" class="shrink-0">
+                  <i class="fa-solid text-[10px] transition-colors"
+                     :class="copied === 'es' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
+                </button>
               </div>
             {% else %}
               <span class="text-slate-300">—</span>
@@ -225,20 +256,36 @@
           </td>
 
           {# DNI #}
-          <td class="px-4 py-3 font-mono text-xs text-slate-600">
-            {{ m.dni or '<span class="text-slate-300">—</span>' | safe }}
+          <td class="px-4 py-3 text-xs"
+              data-dni="{{ m.dni or '' }}">
+            {% if m.dni %}
+              <div class="flex items-center gap-1">
+                <span class="font-mono text-slate-600">{{ m.dni }}</span>
+                <button type="button" @click="copy($el.closest('td').dataset.dni, 'dni')" title="Copiar DNI">
+                  <i class="fa-solid text-[10px] transition-colors"
+                     :class="copied === 'dni' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
+                </button>
+              </div>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
           </td>
 
           {# Celular #}
-          <td class="px-4 py-3 text-xs">
+          <td class="px-4 py-3 text-xs"
+              data-cel="{{ m.celular or '' }}">
             {% if m.celular %}
-              <div class="flex items-center gap-1.5">
-                <i class="fa-solid fa-circle-check text-emerald-500 shrink-0" title="Disponible"></i>
+              <div class="flex items-center gap-1">
+                <i class="fa-solid fa-circle-check text-emerald-500 shrink-0 text-[10px]" title="Disponible"></i>
                 <span class="text-slate-600 font-mono">{{ m.celular }}</span>
+                <button type="button" @click="copy($el.closest('td').dataset.cel, 'cel')" title="Copiar celular">
+                  <i class="fa-solid text-[10px] transition-colors"
+                     :class="copied === 'cel' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
+                </button>
               </div>
             {% else %}
-              <div class="flex items-center gap-1.5">
-                <i class="fa-solid fa-circle-minus text-slate-300 shrink-0" title="Sin celular"></i>
+              <div class="flex items-center gap-1">
+                <i class="fa-solid fa-circle-minus text-slate-300 shrink-0 text-[10px]"></i>
                 <span class="text-slate-300">—</span>
               </div>
             {% endif %}
@@ -269,14 +316,10 @@
             {% endif %}
           </td>
 
-          {# Acción #}
-          <td class="px-4 py-3 text-right">
-            <a href="/members/{{ m.member_id }}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Ver →</a>
-          </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="10" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="9" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
             No se encontraron socios con estos filtros.
           </td>
