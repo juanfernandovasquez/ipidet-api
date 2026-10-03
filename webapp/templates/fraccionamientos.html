@@ -320,38 +320,46 @@
         </p>
 
         {% if f.get('cuotas') %}
-        <div class="border border-slate-200 rounded-xl overflow-hidden mb-4">
-          <table class="w-full text-xs">
-            <thead>
-              <tr class="bg-slate-50 border-b border-slate-200">
-                <th class="text-left px-3 py-2 font-semibold text-slate-500">N° / Código</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500">Monto</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500">Vencimiento</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500">Estado</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500">Pago / Medio</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500">Comprobante</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-500">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for cuota in f.cuotas %}
-              {% set es_vencida = cuota.estado != 'pagado' and cuota.get('fecha_venc') and cuota.fecha_venc < today %}
-              <tr class="border-b border-slate-100 last:border-0 {% if es_vencida %}bg-red-50{% endif %}">
+        <div class="space-y-2 mb-4">
+          {% for cuota in f.cuotas %}
+          {% set es_vencida = cuota.estado != 'pagado' and cuota.get('fecha_venc') and cuota.fecha_venc < today %}
+          <div class="border rounded-xl overflow-hidden
+                      {% if cuota.estado == 'pagado' %}border-green-200
+                      {% elif es_vencida %}border-red-200
+                      {% else %}border-slate-200{% endif %}"
+               x-data="{ registrandoPago: false, editandoDatos: false, editingCuota: false, emitiendo: false,
+                 payNumComp: '', payTipoComp: '', payCompId: '',
+                 editNumComp: '{{ cuota.get('num_comprobante','') | replace("'", "\\'") }}',
+                 editTipoComp: '{{ cuota.get('tipo_comprobante','') }}',
+                 editCompId: '' }"
+               @comprobante-picked.window="
+                 if ($event.detail.formKey === 'pay-{{ f._id }}-{{ cuota.numero }}') {
+                   payNumComp = $event.detail.c.numero;
+                   payTipoComp = $event.detail.c.tipo;
+                   payCompId = $event.detail.c._id || '';
+                 }
+                 if ($event.detail.formKey === 'edit-{{ f._id }}-{{ cuota.numero }}') {
+                   editNumComp = $event.detail.c.numero;
+                   editTipoComp = $event.detail.c.tipo;
+                   editCompId = $event.detail.c._id || '';
+                 }">
 
-                <td class="px-3 py-2.5">
-                  <div class="font-bold text-slate-700">#{{ cuota.numero }}</div>
-                  {% if cuota.get('codigo_cuota') %}
-                  <div class="text-[10px] font-mono text-slate-400 select-all mt-0.5 cursor-text">{{ cuota.codigo_cuota }}</div>
-                  {% endif %}
-                </td>
+            <!-- Card header: number avatar + status + amount + date -->
+            <div class="flex items-center gap-3 px-4 py-3
+                        {% if cuota.estado == 'pagado' %}bg-green-50
+                        {% elif es_vencida %}bg-red-50
+                        {% else %}bg-white{% endif %}">
+              <!-- Number avatar -->
+              <div class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm
+                          {% if cuota.estado == 'pagado' %}bg-green-100 text-green-700
+                          {% elif es_vencida %}bg-red-100 text-red-700
+                          {% else %}bg-violet-100 text-violet-700{% endif %}">
+                #{{ cuota.numero }}
+              </div>
 
-                <td class="px-3 py-2.5 font-semibold text-slate-800">S/ {{ cuota.monto }}</td>
-
-                <td class="px-3 py-2.5 {% if es_vencida %}text-red-600 font-semibold{% else %}text-slate-500{% endif %}">
-                  {{ cuota.get('fecha_venc') or '—' }}
-                </td>
-
-                <td class="px-3 py-2.5">
+              <!-- Status badge + code + vencimiento -->
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
                   {% if cuota.estado == 'pagado' %}
                     <span class="badge badge-green">✓ Pagado</span>
                   {% elif es_vencida %}
@@ -359,192 +367,294 @@
                   {% else %}
                     <span class="badge badge-yellow">Pendiente</span>
                   {% endif %}
-                </td>
-
-                <td class="px-3 py-2.5 text-slate-500">
-                  {{ cuota.get('fecha_pago') or '—' }}
-                  {% if cuota.get('medio_pago') %}
-                  <div class="text-[10px] text-slate-400">{{ cuota.medio_pago }}{% if cuota.get('banco_origen') %} · {{ cuota.banco_origen }}{% endif %}</div>
+                  {% if cuota.get('fecha_venc') %}
+                  <span class="text-xs {% if es_vencida %}text-red-600 font-semibold{% else %}text-slate-400{% endif %}">
+                    Vence {{ cuota.fecha_venc }}
+                  </span>
                   {% endif %}
-                </td>
+                </div>
+                {% if cuota.get('codigo_cuota') %}
+                <div class="text-[10px] font-mono text-slate-400 mt-0.5 select-all">{{ cuota.codigo_cuota }}</div>
+                {% endif %}
+              </div>
 
-                <td class="px-3 py-2.5 font-mono">
-                  {% if cuota.get('num_comprobante') %}
-                  <a href="/comprobantes?search={{ cuota.num_comprobante }}" target="_blank"
-                     class="text-blue-600 hover:text-blue-800 hover:underline text-xs">{{ cuota.num_comprobante }}</a>
-                  {% if cuota.get('tipo_comprobante') %}
-                  <div class="text-[10px] text-slate-400">{{ cuota.tipo_comprobante }}</div>
-                  {% endif %}
-                  {% else %}
-                  <span class="text-slate-300 text-xs">—</span>
-                  {% endif %}
-                </td>
+              <!-- Amount -->
+              <div class="shrink-0 font-bold text-base
+                          {% if cuota.estado == 'pagado' %}text-green-700
+                          {% elif es_vencida %}text-red-700
+                          {% else %}text-slate-800{% endif %}">
+                S/ {{ cuota.monto }}
+              </div>
+            </div>
 
-                <!-- Acciones por cuota -->
-                <td class="px-3 py-2.5"
-                    x-data="{ editingCuota: false, editandoDatos: false, emitiendo: false,
-                      payNumComp: '', payTipoComp: '', payCompId: '',
-                      editNumComp: '', editTipoComp: '', editCompId: '' }"
-                    x-init="editNumComp = $el.dataset.numComp; editTipoComp = $el.dataset.tipoComp"
-                    data-num-comp="{{ cuota.get('num_comprobante') or '' }}"
-                    data-tipo-comp="{{ cuota.get('tipo_comprobante') or '' }}"
-                    @comprobante-picked.window="
-                      if ($event.detail.formKey === 'pay-{{ f._id }}-{{ cuota.numero }}') {
-                        payNumComp = $event.detail.c.numero;
-                        payTipoComp = $event.detail.c.tipo;
-                        payCompId = $event.detail.c._id || '';
-                      }
-                      if ($event.detail.formKey === 'edit-{{ f._id }}-{{ cuota.numero }}') {
-                        editNumComp = $event.detail.c.numero;
-                        editTipoComp = $event.detail.c.tipo;
-                        editCompId = $event.detail.c._id || '';
-                      }">
+            <!-- Paid info bar (only for paid cuotas) -->
+            {% if cuota.estado == 'pagado' and (cuota.get('fecha_pago') or cuota.get('medio_pago') or cuota.get('num_comprobante')) %}
+            <div class="px-4 py-2 border-t border-green-100 bg-white flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600">
+              {% if cuota.get('fecha_pago') %}
+              <span><span class="text-slate-400">Fecha pago:</span> {{ cuota.fecha_pago }}</span>
+              {% endif %}
+              {% if cuota.get('medio_pago') %}
+              <span><span class="text-slate-400">Medio:</span> {{ cuota.medio_pago }}{% if cuota.get('banco_origen') %} · {{ cuota.banco_origen }}{% endif %}</span>
+              {% endif %}
+              {% if cuota.get('num_comprobante') %}
+              <span>
+                <span class="text-slate-400">Comp.:</span>
+                <a href="/comprobantes?search={{ cuota.num_comprobante }}" target="_blank"
+                   class="text-blue-600 hover:underline font-mono ml-0.5">{{ cuota.num_comprobante }}</a>
+                {% if cuota.get('tipo_comprobante') %}<span class="text-slate-400 ml-0.5">({{ cuota.tipo_comprobante }})</span>{% endif %}
+              </span>
+              {% endif %}
+            </div>
+            {% endif %}
 
-                  {% if cuota.estado != 'pagado' %}
-                  <!-- Editar datos de cuota -->
-                  <div class="mb-1">
-                    <button type="button" @click="editandoDatos = !editandoDatos"
-                            class="text-xs font-medium"
-                            :class="editandoDatos ? 'text-slate-400' : 'text-violet-600 hover:text-violet-800'"
-                            x-text="editandoDatos ? 'Cancelar' : '✎ Editar cuota'"></button>
+            <!-- Action buttons bar -->
+            <div class="px-4 py-2 border-t flex items-center gap-2 flex-wrap
+                        {% if cuota.estado == 'pagado' %}border-green-100 bg-green-50/60
+                        {% elif es_vencida %}border-red-100 bg-red-50/60
+                        {% else %}border-slate-100 bg-slate-50{% endif %}">
+
+              {% if cuota.estado != 'pagado' %}
+              <button type="button"
+                      @click="registrandoPago = !registrandoPago; editandoDatos = false"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                             {% if es_vencida %}bg-red-600 hover:bg-red-700 text-white{% else %}bg-green-600 hover:bg-green-700 text-white{% endif %}">
+                <i class="fa-solid fa-check text-[10px]"></i>
+                <span x-text="registrandoPago ? 'Cancelar' : 'Registrar pago'"></span>
+              </button>
+              <button type="button"
+                      @click="editandoDatos = !editandoDatos; registrandoPago = false"
+                      class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors
+                             text-violet-600 border-violet-200 hover:bg-violet-50">
+                <i class="fa-solid fa-pen text-[9px]"></i>
+                <span x-text="editandoDatos ? 'Cancelar' : 'Editar cuota'"></span>
+              </button>
+
+              {% else %}
+              <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="inline">
+                <input type="hidden" name="redirect_to" value="{{ rf }}">
+                <input type="hidden" name="estado" value="pendiente">
+                <input type="hidden" name="fecha_pago" value="">
+                <button type="submit"
+                        class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-amber-200 text-amber-600 hover:bg-amber-50 transition-colors">
+                  <i class="fa-solid fa-rotate-left text-[9px]"></i> Deshacer pago
+                </button>
+              </form>
+              <button type="button"
+                      @click="editingCuota = !editingCuota; emitiendo = false"
+                      class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors">
+                <i class="fa-solid fa-file-pen text-[9px]"></i>
+                <span x-text="editingCuota ? 'Cancelar' : 'Editar comprobante'"></span>
+              </button>
+              {% if not cuota.get('num_comprobante') %}
+              <button type="button"
+                      @click="emitiendo = !emitiendo; editingCuota = false"
+                      class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200 text-emerald-600 hover:bg-emerald-50 transition-colors">
+                <i class="fa-solid fa-receipt text-[9px]"></i>
+                <span x-text="emitiendo ? 'Cancelar' : 'Emitir comprobante'"></span>
+              </button>
+              {% endif %}
+              {% endif %}
+
+              <!-- Danger: delete (pushed right) -->
+              <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/delete" class="inline ml-auto">
+                <input type="hidden" name="redirect_to" value="{{ rf }}">
+                <button type="submit"
+                        class="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-red-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                  <i class="fa-solid fa-trash-can text-[9px]"></i> Eliminar
+                </button>
+              </form>
+            </div>
+
+            <!-- Expandable: Register payment form -->
+            <div x-show="registrandoPago" x-cloak class="border-t border-slate-200 px-4 py-4 bg-white">
+              <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Registrar pago — cuota #{{ cuota.numero }}</p>
+              <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update">
+                <input type="hidden" name="redirect_to" value="{{ rf }}">
+                <input type="hidden" name="estado" value="pagado">
+                <input type="hidden" name="comprobante_id" :value="payCompId">
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-500 mb-1">Fecha de pago <span class="text-red-500">*</span></label>
+                    <input name="fecha_pago" type="date" class="input text-xs py-1.5 w-full" required>
                   </div>
-                  <div x-show="editandoDatos" x-cloak class="mb-2 p-2 bg-violet-50 rounded border border-violet-200">
-                    <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-end">
-                      <input type="hidden" name="redirect_to" value="{{ rf }}">
-                      <input type="hidden" name="estado" value="pendiente">
-                      <div>
-                        <label class="block text-[10px] text-slate-500 mb-0.5">Monto (S/)</label>
-                        <input name="monto" type="number" step="0.01" min="0" value="{{ cuota.monto }}" class="input text-xs py-0.5 w-24" required>
-                      </div>
-                      <div>
-                        <label class="block text-[10px] text-slate-500 mb-0.5">Vencimiento</label>
-                        <input name="fecha_venc" type="date" value="{{ cuota.get('fecha_venc','') }}" class="input text-xs py-0.5 w-32">
-                      </div>
-                      <button type="submit" class="text-violet-600 hover:text-violet-800 font-semibold text-xs">✓ Guardar</button>
-                    </form>
-                  </div>
-                  <!-- Registrar pago -->
-                  <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
-                    <input type="hidden" name="redirect_to" value="{{ rf }}">
-                    <input type="hidden" name="estado" value="pagado">
-                    <input type="hidden" name="comprobante_id" :value="payCompId">
-                    <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28">
-                    <select name="medio" class="input text-xs py-0.5">
-                      <option value="">Medio</option>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-500 mb-1">Medio de pago</label>
+                    <select name="medio" class="input text-xs py-1.5 w-full">
+                      <option value="">— Seleccionar —</option>
                       {% for mp in medios_pago %}<option value="{{ mp }}">{{ mp }}</option>{% endfor %}
                     </select>
-                    <select name="banco_origen" class="input text-xs py-0.5">
-                      <option value="">Banco</option>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-500 mb-1">Banco origen</label>
+                    <select name="banco_origen" class="input text-xs py-1.5 w-full">
+                      <option value="">— Seleccionar —</option>
                       {% for b in bancos %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
                     </select>
-                    <select name="tipo_comprobante" x-model="payTipoComp" class="input text-xs py-0.5">
-                      <option value="">Tipo comp.</option>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-500 mb-1">Tipo comprobante</label>
+                    <select name="tipo_comprobante" x-model="payTipoComp" class="input text-xs py-1.5 w-full">
+                      <option value="">— Seleccionar —</option>
                       <option value="boleta">Boleta</option>
                       <option value="factura">Factura</option>
                       <option value="recibo">Recibo</option>
                     </select>
-                    <input name="num_comprobante" x-model="payNumComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
-                    <button type="button"
-                            @click="$store.picker.abrir('pay-{{ f._id }}-{{ cuota.numero }}')"
-                            class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
-                      <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
-                    </button>
-                    <button type="button" x-show="payNumComp" @click="payNumComp=''; payTipoComp=''"
-                            class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
-                      <i class="fa-solid fa-xmark"></i>
-                    </button>
-                    <input name="link_constancia" placeholder="URL constancia" class="input text-xs py-0.5 w-32">
-                    <button type="submit" class="text-green-600 hover:text-green-800 font-semibold text-xs">✓ Pagar</button>
-                  </form>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-500 mb-1">N° comprobante</label>
+                    <div class="flex gap-1">
+                      <input name="num_comprobante" x-model="payNumComp" placeholder="B001-000001" class="input text-xs py-1.5 flex-1 min-w-0">
+                      <button type="button"
+                              @click="$store.picker.abrir('pay-{{ f._id }}-{{ cuota.numero }}')"
+                              class="shrink-0 w-8 flex items-center justify-center rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors" title="Buscar">
+                        <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-500 mb-1">URL constancia</label>
+                    <input name="link_constancia" placeholder="https://…" class="input text-xs py-1.5 w-full">
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
+                    <i class="fa-solid fa-check text-[10px]"></i> Registrar pago
+                  </button>
+                  <button type="button" @click="registrandoPago = false"
+                          class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs transition-colors">
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
 
-                  {% else %}
-                  <!-- Cuota pagada: opciones -->
-                  <div class="flex flex-wrap gap-2 items-center">
-                    <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="inline">
-                      <input type="hidden" name="redirect_to" value="{{ rf }}">
-                      <input type="hidden" name="estado" value="pendiente">
-                      <input type="hidden" name="fecha_pago" value="">
-                      <button type="submit" class="text-amber-500 hover:text-amber-700 text-xs">↩ Deshacer</button>
-                    </form>
-                    <button type="button" @click="editingCuota = !editingCuota"
-                            class="text-xs" :class="editingCuota ? 'text-slate-400' : 'text-blue-500 hover:text-blue-700'"
-                            x-text="editingCuota ? 'Cancelar' : 'Editar comp.'"></button>
-                    {% if not cuota.get('num_comprobante') %}
-                    <button type="button" @click="emitiendo = !emitiendo"
-                            class="text-xs" :class="emitiendo ? 'text-slate-400' : 'text-emerald-600 hover:text-emerald-800'"
-                            x-text="emitiendo ? 'Cancelar' : '+ Emitir comp.'"></button>
-                    {% endif %}
+            <!-- Expandable: Edit cuota data (monto + fecha venc) -->
+            <div x-show="editandoDatos" x-cloak class="border-t border-violet-200 px-4 py-4 bg-violet-50">
+              <p class="text-[10px] font-bold text-violet-500 uppercase tracking-wider mb-3">Editar datos de cuota</p>
+              <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update">
+                <input type="hidden" name="redirect_to" value="{{ rf }}">
+                <input type="hidden" name="estado" value="pendiente">
+                <div class="flex flex-wrap gap-3 mb-3">
+                  <div>
+                    <label class="block text-[11px] font-medium text-violet-600 mb-1">Monto (S/) <span class="text-red-500">*</span></label>
+                    <input name="monto" type="number" step="0.01" min="0" value="{{ cuota.monto }}" class="input text-xs py-1.5 w-28" required>
                   </div>
-                  <!-- Emitir comprobante -->
-                  <div x-show="emitiendo" x-cloak class="mt-1 p-2 bg-emerald-50 rounded border border-emerald-200">
-                    <form method="post" action="/fraccionamientos/{{ f._id }}/cuotas/{{ cuota.numero }}/emitir-comprobante"
-                          class="flex flex-wrap gap-1 items-end">
-                      <input type="hidden" name="redirect_to" value="{{ rf }}">
-                      <div>
-                        <label class="block text-[10px] text-slate-500 mb-0.5">Tipo</label>
-                        <select name="tipo" class="input text-xs py-0.5" required>
-                          <option value="boleta">Boleta</option>
-                          <option value="factura">Factura</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label class="block text-[10px] text-slate-500 mb-0.5">N° comprobante</label>
-                        <input name="numero" type="text" placeholder="B001-000001" required class="input text-xs py-0.5 w-28">
-                      </div>
-                      <div>
-                        <label class="block text-[10px] text-slate-500 mb-0.5">Fecha emisión</label>
-                        <input name="fecha_emision" type="date" class="input text-xs py-0.5 w-32">
-                      </div>
-                      <button type="submit" class="text-emerald-700 hover:text-emerald-900 font-semibold text-xs">✓ Crear</button>
-                    </form>
+                  <div>
+                    <label class="block text-[11px] font-medium text-violet-600 mb-1">Fecha vencimiento</label>
+                    <input name="fecha_venc" type="date" value="{{ cuota.get('fecha_venc','') }}" class="input text-xs py-1.5 w-36">
                   </div>
-                  <!-- Editar comprobante ya asignado -->
-                  <div x-show="editingCuota" x-cloak class="mt-1">
-                    <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
-                      <input type="hidden" name="redirect_to" value="{{ rf }}">
-                      <input type="hidden" name="estado" value="pagado">
-                      <input type="hidden" name="comprobante_id" :value="editCompId">
-                      <input name="fecha_pago" type="date" value="{{ cuota.get('fecha_pago','') }}" class="input text-xs py-0.5 w-28">
-                      <select name="medio" class="input text-xs py-0.5">
-                        <option value="">Medio</option>
-                        {% for mp in medios_pago %}<option value="{{ mp }}" {% if cuota.get('medio_pago')==mp %}selected{% endif %}>{{ mp }}</option>{% endfor %}
-                      </select>
-                      <select name="banco_origen" class="input text-xs py-0.5">
-                        <option value="">Banco</option>
-                        {% for b in bancos %}<option value="{{ b }}" {% if cuota.get('banco_origen')==b %}selected{% endif %}>{{ b }}</option>{% endfor %}
-                      </select>
-                      <select name="tipo_comprobante" x-model="editTipoComp" class="input text-xs py-0.5">
-                        <option value="">Tipo comp.</option>
-                        <option value="boleta">Boleta</option>
-                        <option value="factura">Factura</option>
-                        <option value="recibo">Recibo</option>
-                      </select>
-                      <input name="num_comprobante" x-model="editNumComp" placeholder="N° comp." class="input text-xs py-0.5 w-28">
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors">
+                    <i class="fa-solid fa-check text-[10px]"></i> Guardar cambios
+                  </button>
+                  <button type="button" @click="editandoDatos = false"
+                          class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs transition-colors">
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Expandable: Emit comprobante (paid, no comprobante yet) -->
+            <div x-show="emitiendo" x-cloak class="border-t border-emerald-200 px-4 py-4 bg-emerald-50">
+              <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-3">Emitir comprobante — cuota #{{ cuota.numero }}</p>
+              <form method="post" action="/fraccionamientos/{{ f._id }}/cuotas/{{ cuota.numero }}/emitir-comprobante">
+                <input type="hidden" name="redirect_to" value="{{ rf }}">
+                <div class="flex flex-wrap gap-3 mb-3">
+                  <div>
+                    <label class="block text-[11px] font-medium text-emerald-700 mb-1">Tipo <span class="text-red-500">*</span></label>
+                    <select name="tipo" class="input text-xs py-1.5" required>
+                      <option value="boleta">Boleta</option>
+                      <option value="factura">Factura</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-emerald-700 mb-1">N° comprobante <span class="text-red-500">*</span></label>
+                    <input name="numero" type="text" placeholder="B001-000001" required class="input text-xs py-1.5 w-32">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-emerald-700 mb-1">Fecha emisión</label>
+                    <input name="fecha_emision" type="date" class="input text-xs py-1.5 w-36">
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors">
+                    <i class="fa-solid fa-receipt text-[10px]"></i> Crear comprobante
+                  </button>
+                  <button type="button" @click="emitiendo = false"
+                          class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs transition-colors">
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Expandable: Edit existing comprobante -->
+            <div x-show="editingCuota" x-cloak class="border-t border-blue-200 px-4 py-4 bg-blue-50">
+              <p class="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-3">Editar comprobante vinculado</p>
+              <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update">
+                <input type="hidden" name="redirect_to" value="{{ rf }}">
+                <input type="hidden" name="estado" value="pagado">
+                <input type="hidden" name="comprobante_id" :value="editCompId">
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                  <div>
+                    <label class="block text-[11px] font-medium text-blue-600 mb-1">Fecha de pago</label>
+                    <input name="fecha_pago" type="date" value="{{ cuota.get('fecha_pago','') }}" class="input text-xs py-1.5 w-full">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-blue-600 mb-1">Medio de pago</label>
+                    <select name="medio" class="input text-xs py-1.5 w-full">
+                      <option value="">— Seleccionar —</option>
+                      {% for mp in medios_pago %}<option value="{{ mp }}" {% if cuota.get('medio_pago')==mp %}selected{% endif %}>{{ mp }}</option>{% endfor %}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-blue-600 mb-1">Banco origen</label>
+                    <select name="banco_origen" class="input text-xs py-1.5 w-full">
+                      <option value="">— Seleccionar —</option>
+                      {% for b in bancos %}<option value="{{ b }}" {% if cuota.get('banco_origen')==b %}selected{% endif %}>{{ b }}</option>{% endfor %}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-blue-600 mb-1">Tipo comprobante</label>
+                    <select name="tipo_comprobante" x-model="editTipoComp" class="input text-xs py-1.5 w-full">
+                      <option value="">— Seleccionar —</option>
+                      <option value="boleta">Boleta</option>
+                      <option value="factura">Factura</option>
+                      <option value="recibo">Recibo</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-blue-600 mb-1">N° comprobante</label>
+                    <div class="flex gap-1">
+                      <input name="num_comprobante" x-model="editNumComp" placeholder="B001-000001" class="input text-xs py-1.5 flex-1 min-w-0">
                       <button type="button"
                               @click="$store.picker.abrir('edit-{{ f._id }}-{{ cuota.numero }}')"
-                              class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
-                        <i class="fa-solid fa-magnifying-glass mr-1"></i>Buscar
+                              class="shrink-0 w-8 flex items-center justify-center rounded-lg border border-blue-200 bg-white hover:bg-blue-50 text-blue-600 transition-colors" title="Buscar">
+                        <i class="fa-solid fa-magnifying-glass text-xs"></i>
                       </button>
-                      <button type="button" x-show="editNumComp" @click="editNumComp=''; editTipoComp=''"
-                              class="text-slate-400 hover:text-red-500 text-xs" title="Limpiar">
-                        <i class="fa-solid fa-xmark"></i>
-                      </button>
-                      <input name="link_constancia" value="{{ cuota.get('link_constancia','') }}" placeholder="URL constancia" class="input text-xs py-0.5 w-32">
-                      <button type="submit" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">✓ Guardar</button>
-                    </form>
+                    </div>
                   </div>
-                  {% endif %}
+                  <div>
+                    <label class="block text-[11px] font-medium text-blue-600 mb-1">URL constancia</label>
+                    <input name="link_constancia" value="{{ cuota.get('link_constancia','') }}" placeholder="https://…" class="input text-xs py-1.5 w-full">
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors">
+                    <i class="fa-solid fa-check text-[10px]"></i> Guardar cambios
+                  </button>
+                  <button type="button" @click="editingCuota = false"
+                          class="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs transition-colors">
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
 
-                  <!-- Eliminar cuota -->
-                  <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/delete" class="mt-1">
-                    <input type="hidden" name="redirect_to" value="{{ rf }}">
-                    <button type="submit" class="text-red-300 hover:text-red-500 text-xs">× Eliminar</button>
-                  </form>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+          </div>
+          {% endfor %}
         </div>
         {% else %}
         <p class="text-slate-400 text-xs mb-4">Sin cuotas registradas aún.</p>
