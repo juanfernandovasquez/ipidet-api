@@ -1183,9 +1183,11 @@ async def frac_emitir_comprobante(
             "cuota_numero":    cuota_n,
         }] if mid else [],
     )
+    # Preserve existing fecha_pago — only fall back to emission date if unset
+    existing_fp = cuota.get("fecha_pago") or None
     pdb.update_cuota(payment_id, cuota_n, estado="pagado",
                      num_comprobante=numero.strip(), tipo_comprobante=tipo,
-                     fecha_pago=fecha, comprobante_id=comp_id)
+                     fecha_pago=existing_fp, comprobante_id=comp_id)
     return RedirectResponse(redirect_to, status_code=303)
 
 
