@@ -296,10 +296,11 @@
             <span class="truncate block">{{ m.centro_trabajo or '<span class="text-slate-300">—</span>' | safe }}</span>
           </td>
 
-          {# Fecha de nacimiento #}
+          {# Fecha de nacimiento — _clean() convierte datetime a ISO string "YYYY-MM-DD..." #}
           <td class="px-4 py-3 text-xs text-slate-600 font-mono">
             {% if m.fecha_nacimiento %}
-              {{ m.fecha_nacimiento.strftime('%d/%m/%Y') }}
+              {% set fn = m.fecha_nacimiento[:10].split('-') %}
+              {{ fn[2] }}/{{ fn[1] }}/{{ fn[0] }}
             {% else %}
               <span class="text-slate-300">—</span>
             {% endif %}
