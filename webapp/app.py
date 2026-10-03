@@ -135,6 +135,7 @@ async def _startup():
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
+    asyncio.get_event_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1834,7 +1835,7 @@ async def comprobantes_import_xml(
                 monto_total   = xml_monto,
                 ruc           = ruc if ruc and len(ruc) == 11 else None,
             )
-            items = pre_match.get("items") or data["items"]
+            items = list(pre_match.get("items") or data["items"])
             # Auto-cruce items from XML if pre-match has no items
             if not items:
                 items = data["items"]
@@ -1842,6 +1843,7 @@ async def comprobantes_import_xml(
                     cs = it.get("codigo_sunat", "")
                     if cs and cs in prods_sunat:
                         it["producto_nombre"] = prods_sunat[cs]["nombre"]
+            _resolve_payment_ids(items)
             socios = list({it["member_id"] for it in items if it.get("member_id")})
             cruce = pdb.sync_comprobante_to_payments(
                 items          = items,
@@ -1891,6 +1893,7 @@ async def comprobantes_import_xml(
                 cs = it.get("codigo_sunat", "")
                 if cs and cs in prods_sunat:
                     it["producto_nombre"] = prods_sunat[cs]["nombre"]
+        _resolve_payment_ids(items)
 
         descs = [it["producto_nombre"] for it in items if it.get("producto_nombre")]
         prod_nombre = descs[0] if len(descs) == 1 else (", ".join(sorted(set(descs))) if descs else "")

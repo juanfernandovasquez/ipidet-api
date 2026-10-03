@@ -3113,6 +3113,67 @@ def get_comprobante_by_id(comprobante_id: str) -> dict | None:
     return doc
 
 
+def backfill_comprobantes_payment_ids() -> dict:
+    """
+    Startup migration: for each non-anulado comprobante whose items have member_id
+    but no payment_id, resolves payment_id via producto_nombre → productos → periodo
+    → payments, persists the resolved items, and syncs payments.
+    Idempotent — only touches items that are still missing payment_id.
+    """
+    fixed_comps = 0
+    fixed_items = 0
+    cursor = comprobantes_col.find(
+        {"estado": {"$ne": "anulado"},
+         "items": {"$elemMatch": {"member_id": {"$exists": True, "$ne": None, "$ne": ""},
+                                  "payment_id": {"$exists": False}}}}
+    )
+    for comp in cursor:
+        items = list(comp.get("items") or [])
+        changed = False
+        for item in items:
+            if item.get("payment_id") or not item.get("member_id"):
+                continue
+            prod = None
+            prod_id = item.get("producto_id")
+            if prod_id:
+                try:
+                    prod = productos_col.find_one({"_id": ObjectId(prod_id)})
+                except Exception:
+                    pass
+            if not prod and item.get("producto_nombre"):
+                prod = productos_col.find_one(
+                    {"nombre": {"$regex": f"^{_re.escape(item['producto_nombre'].strip())}$",
+                                "$options": "i"}}
+                )
+            if not prod:
+                continue
+            if prod.get("tipo") in ("cuota_anual", "cuota_provincia") and prod.get("periodo"):
+                pmt = payments_col.find_one(
+                    {"member_id": item["member_id"], "periodo": prod["periodo"]}
+                )
+                if pmt:
+                    item["payment_id"]  = str(pmt["_id"])
+                    item["tipo_pago"]   = "principal"
+                    item["producto_id"] = str(prod["_id"])
+                    changed = True
+                    fixed_items += 1
+        if changed:
+            comp_id = str(comp["_id"])
+            comprobantes_col.update_one(
+                {"_id": comp["_id"]}, {"$set": {"items": items}}
+            )
+            sync_comprobante_to_payments(
+                items=items,
+                numero=comp.get("numero", ""),
+                tipo=comp.get("tipo", "boleta"),
+                fecha_emision=comp.get("fecha_emision", ""),
+                empresa=comp.get("empresa", ""),
+                comprobante_id=comp_id,
+            )
+            fixed_comps += 1
+    return {"fixed_comprobantes": fixed_comps, "fixed_items": fixed_items}
+
+
 def get_pre_comprobantes(tipo: str = None) -> list:
     """Comprobantes pre-registrados (borradores sin número de SUNAT)."""
     q: dict = {"estado": "pre_registrado"}
