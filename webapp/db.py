@@ -95,13 +95,24 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
                 ubicacion: str = "", wp: str = "", page: int = 1, per_page: int = 50):
     query = {}
     if search:
-        query["$or"] = [
-            {"apellidos": {"$regex": search, "$options": "i"}},
-            {"nombres":   {"$regex": search, "$options": "i"}},
-            {"emails.email": {"$regex": search, "$options": "i"}},
-            {"member_id": {"$regex": search, "$options": "i"}},
-            {"dni": {"$regex": search, "$options": "i"}},
-        ]
+        words = [w for w in search.split() if len(w) >= 2]
+        if len(words) > 1:
+            # Búsqueda multi-palabra: cada palabra debe aparecer en apellidos o nombres
+            query["$and"] = [
+                {"$or": [
+                    {"apellidos": {"$regex": w, "$options": "i"}},
+                    {"nombres":   {"$regex": w, "$options": "i"}},
+                ]}
+                for w in words
+            ]
+        else:
+            query["$or"] = [
+                {"apellidos":   {"$regex": search, "$options": "i"}},
+                {"nombres":     {"$regex": search, "$options": "i"}},
+                {"emails.email": {"$regex": search, "$options": "i"}},
+                {"member_id":   {"$regex": search, "$options": "i"}},
+                {"dni":         {"$regex": search, "$options": "i"}},
+            ]
     if estado:
         query["estado"] = estado
     if ubicacion:
