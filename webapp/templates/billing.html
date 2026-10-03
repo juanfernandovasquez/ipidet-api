@@ -3,7 +3,7 @@
 {% block heading %}Cobranzas{% endblock %}
 
 {% block header_actions %}
-<span class="text-sm text-slate-500">{{ total }} registro{% if total != 1 %}s{% endif %}</span>
+<span class="text-sm text-slate-500">{{ total }} socio{% if total != 1 %}s{% endif %}</span>
 {% endblock %}
 
 {% block content %}
@@ -32,16 +32,7 @@
                x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
       </div>
       <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
-        <select name="periodo" class="input" @change="$refs.filterForm.submit()">
-          <option value="" {% if not periodo %}selected{% endif %}>Todos los años</option>
-          {% for yr in ["2027","2026","2025","2024"] %}
-          <option value="{{ yr }}" {% if periodo == yr %}selected{% endif %}>{{ yr }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Estado 2026</label>
         <select name="estado" class="input" @change="$refs.filterForm.submit()">
           <option value="">Todos</option>
           {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("exonerado","Exonerado"),("retirar","Retirar"),("en_revision","En revisión"),("revisar","Revisar"),("pendiente","Pendiente"),("no_aplica","N/A")] %}
@@ -63,46 +54,50 @@
         </select>
       </div>
       <button type="submit" class="sr-only">Filtrar</button>
-      {% if search or estado or empresa or comprobante_emitido or periodo != "2026" %}
+      {% if search or estado or empresa or comprobante_emitido %}
       <a href="/billing" class="btn-ghost">Limpiar</a>
       {% endif %}
-      <a href="/billing/export?periodo={{ periodo }}&estado={{ estado }}&empresa={{ empresa }}&search={{ search }}"
+      <a href="/billing/export?estado={{ estado }}&empresa={{ empresa }}&search={{ search }}"
          class="btn-ghost flex items-center gap-1.5 text-green-700 hover:text-green-900 hover:bg-green-50">
-        <i class="fa-solid fa-file-excel"></i> Exportar Excel
+        <i class="fa-solid fa-file-excel"></i> Excel
       </a>
     </form>
-    {% if periodo %}
     <div class="mt-3 pt-3 border-t border-slate-100 flex items-center gap-3">
+      {% for yr in ["2026","2025"] %}
       <form method="post" action="/billing/generar-periodo"
-            onsubmit="return confirm('¿Generar registros de cobranza {{ periodo }} para todos los socios activos sin registro ese año? Esto es seguro: no modifica registros existentes.')">
-        <input type="hidden" name="periodo" value="{{ periodo }}">
-        <input type="hidden" name="redirect_to" value="/billing?periodo={{ periodo }}&estado={{ estado }}&empresa={{ empresa }}&search={{ search }}">
+            onsubmit="return confirm('¿Generar registros de cobranza {{ yr }} para todos los socios activos sin registro ese año?')">
+        <input type="hidden" name="periodo" value="{{ yr }}">
+        <input type="hidden" name="redirect_to" value="/billing">
         <button type="submit"
                 class="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700 bg-violet-50 border border-violet-200 hover:bg-violet-100 px-3 py-1.5 rounded-lg transition-colors">
           <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
-          Generar cobros {{ periodo }} para socios sin registro
+          Generar {{ yr }}
         </button>
       </form>
+      {% endfor %}
       <span class="text-xs text-slate-400">Solo crea registros faltantes — no modifica los existentes.</span>
     </div>
-    {% endif %}
   </div>
 
-  <!-- Summary badges -->
+  <!-- Summary badges (2026) -->
   <div class="flex flex-wrap gap-2 mb-4">
-    {% set summary = namespace(pagado=0, debe=0, fracc=0, parcial=0, exo=0) %}
-    {% for p in payments %}
-      {% if p.estado == 'pagado' %}{% set summary.pagado = summary.pagado + 1 %}{% endif %}
-      {% if p.estado == 'debe' %}{% set summary.debe = summary.debe + 1 %}{% endif %}
-      {% if p.estado == 'fraccionamiento' %}{% set summary.fracc = summary.fracc + 1 %}{% endif %}
-      {% if p.estado == 'parcial' %}{% set summary.parcial = summary.parcial + 1 %}{% endif %}
-      {% if p.estado == 'exonerado' %}{% set summary.exo = summary.exo + 1 %}{% endif %}
+    {% set s = namespace(pagado=0, debe=0, fracc=0, parcial=0, exo=0) %}
+    {% for row in payments %}
+      {% set p26 = row.pago_2026 %}
+      {% if p26 %}
+        {% if p26.estado == 'pagado' %}{% set s.pagado = s.pagado + 1 %}{% endif %}
+        {% if p26.estado == 'debe' %}{% set s.debe = s.debe + 1 %}{% endif %}
+        {% if p26.estado == 'fraccionamiento' %}{% set s.fracc = s.fracc + 1 %}{% endif %}
+        {% if p26.estado == 'parcial' %}{% set s.parcial = s.parcial + 1 %}{% endif %}
+        {% if p26.estado == 'exonerado' %}{% set s.exo = s.exo + 1 %}{% endif %}
+      {% endif %}
     {% endfor %}
-    <span class="badge badge-green">Pagados: {{ summary.pagado }}</span>
-    <span class="badge badge-red">Deben: {{ summary.debe }}</span>
-    <span class="badge badge-amber">Fraccionamiento: {{ summary.fracc }}</span>
-    <span class="badge badge-blue">Parciales: {{ summary.parcial }}</span>
-    <span class="badge badge-gray">Exonerados: {{ summary.exo }}</span>
+    <span class="text-xs text-slate-400 self-center">2026 →</span>
+    <span class="badge badge-green">Pagados: {{ s.pagado }}</span>
+    <span class="badge badge-red">Deben: {{ s.debe }}</span>
+    <span class="badge badge-amber">Fraccionamiento: {{ s.fracc }}</span>
+    <span class="badge badge-blue">Parciales: {{ s.parcial }}</span>
+    <span class="badge badge-gray">Exonerados: {{ s.exo }}</span>
   </div>
 
   <!-- Table -->
@@ -111,23 +106,19 @@
       <thead>
         <tr class="bg-slate-50 border-b border-slate-200 text-left">
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Socio</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Centro de trabajo</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Período</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Empresa pag.</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Fecha pago</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Comprobante</th>
-          <th class="px-4 py-3"></th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider w-44">2025</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider w-44">2026</th>
         </tr>
       </thead>
-      {% for p in payments %}
-      {% set sl = status_labels.get(p.estado, ('—','gray')) %}
-      {% set pay_data = {
+
+      {% for row in payments %}
+      {# ── Build pay_data dicts for each year ── #}
+      {% macro pay_dict(p) %}{% if p %}{{ {
         "id": p._id | string,
         "member_id": p.member_id or "",
-        "nombre": p.nombre_completo or "",
-        "email": p.email_principal or "",
+        "nombre": p.get("nombre_completo") or "",
+        "email": p.get("email_principal") or "",
         "centro_trabajo": p.get("centro_trabajo") or "",
         "estado_socio": p.get("estado_socio") or "activo",
         "periodo": p.periodo,
@@ -145,60 +136,99 @@
         "cuotas": p.get("cuotas") or [],
         "monto_total": p.get("monto_total"),
         "pagos_parciales": p.get("pagos_parciales") or [],
-      } %}
+      } | tojson }}{% endif %}{% endmacro %}
+
+      {% set p25 = row.pago_2025 %}
+      {% set p26 = row.pago_2026 %}
+
       <tbody class="border-b border-slate-100">
-        <tr class="hover:bg-slate-50 transition-colors cursor-pointer"
-            data-pay='{{ pay_data | tojson }}'
-            onclick="window.dispatchEvent(new CustomEvent('billing-abrir', {detail: JSON.parse(this.dataset.pay)}))">
+        <tr class="hover:bg-slate-50/50 transition-colors">
+
+          {# Socio #}
           <td class="px-4 py-3">
-            <a href="/members/{{ p.get('member_id','') }}" class="font-medium text-blue-700 hover:underline text-xs" onclick="event.stopPropagation()">{{ p.get('nombre_completo','') }}</a>
-            <div class="text-slate-400 text-xs font-mono">{{ p.get('member_id','') }}</div>
-          </td>
-          <td class="px-4 py-3 text-slate-500 text-xs">{{ p.get('centro_trabajo','—') }}</td>
-          <td class="px-4 py-3 text-slate-500 text-xs">{{ p.get('email_principal','—') }}</td>
-          <td class="px-4 py-3 text-slate-600 font-semibold">{{ p.periodo }}</td>
-          <td class="px-4 py-3">
-            {% if p.estado == 'fraccionamiento' and p.cuotas_total > 0 %}
-              <span class="badge badge-amber">Fracc. {{ p.cuotas_pagadas }}/{{ p.cuotas_total }}</span>
-            {% elif p.estado == 'parcial' %}
-              {% set mt = p.get('monto_total') or 0 %}
-              <span class="badge badge-blue">Parcial{% if mt %} S/{{ p.monto_pagado|int }}/{{ mt|int }}{% endif %}</span>
-            {% else %}
-              <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
+            <a href="/members/{{ row.member_id }}"
+               class="font-medium text-blue-700 hover:underline text-xs">{{ row.nombre_completo }}</a>
+            <div class="text-slate-400 text-[11px] font-mono mt-0.5">{{ row.member_id }}</div>
+            {% if row.centro_trabajo %}
+            <div class="text-slate-400 text-[11px] mt-0.5 truncate max-w-[200px]">{{ row.centro_trabajo }}</div>
             {% endif %}
-            {% if p.get('deudas_otros_periodos') %}
-            <div class="mt-1 flex flex-wrap gap-1">
-              {% for yr in p.deudas_otros_periodos %}
-              <a href="/billing?periodo={{ yr }}&search={{ p.get('member_id','') }}"
-                 class="inline-block text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 px-1.5 py-0.5 rounded transition-colors"
-                 title="Ver deuda {{ yr }}" onclick="event.stopPropagation()">
-                ⚠ Debe {{ yr }}
-              </a>
-              {% endfor %}
+          </td>
+
+          {# Email #}
+          <td class="px-4 py-3 text-xs text-slate-500 max-w-[200px]">
+            <span class="truncate block">{{ row.email_principal or '—' }}</span>
+          </td>
+
+          {# 2025 #}
+          {% if p25 %}
+          {% set sl25 = status_labels.get(p25.estado, ('—','gray')) %}
+          <td class="px-3 py-3 cursor-pointer hover:bg-blue-50/60 transition-colors"
+              data-pay='{{ pay_dict(p25) }}'
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir', {detail: JSON.parse(this.dataset.pay)}))">
+            <div class="space-y-1">
+              {% if p25.estado == 'fraccionamiento' and p25.cuotas_total > 0 %}
+                <span class="badge badge-amber">Fracc. {{ p25.cuotas_pagadas }}/{{ p25.cuotas_total }}</span>
+              {% elif p25.estado == 'parcial' %}
+                {% set mt25 = p25.get('monto_total') or 0 %}
+                <span class="badge badge-blue">Parcial{% if mt25 %} S/{{ p25.monto_pagado|int }}/{{ mt25|int }}{% endif %}</span>
+              {% else %}
+                <span class="badge badge-{{ sl25[1] }}">{{ sl25[0] }}</span>
+              {% endif %}
+              {% if p25.get('empresa_pagadora') %}
+              <div class="text-[11px] text-slate-500">{{ p25.empresa_pagadora }}</div>
+              {% endif %}
+              {% if p25.get('fecha_pago') %}
+              <div class="text-[11px] text-slate-400">{{ p25.fecha_pago }}</div>
+              {% endif %}
+              {% if p25.get('comprobante_emitido') %}
+              <div class="text-[11px] text-emerald-600 flex items-center gap-0.5">
+                <i class="fa-solid fa-circle-check text-[10px]"></i> Comp. emitido
+              </div>
+              {% endif %}
             </div>
-            {% endif %}
           </td>
-          <td class="px-4 py-3 text-slate-500 text-xs">
-            <div>{{ p.get('empresa_pagadora') or '—' }}</div>
-            {% if p.get('pagado_por') %}<div class="text-slate-400">{{ p.pagado_por }}</div>{% endif %}
+          {% else %}
+          <td class="px-3 py-3 text-center text-slate-200 text-lg">—</td>
+          {% endif %}
+
+          {# 2026 #}
+          {% if p26 %}
+          {% set sl26 = status_labels.get(p26.estado, ('—','gray')) %}
+          <td class="px-3 py-3 cursor-pointer hover:bg-blue-50/60 transition-colors"
+              data-pay='{{ pay_dict(p26) }}'
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir', {detail: JSON.parse(this.dataset.pay)}))">
+            <div class="space-y-1">
+              {% if p26.estado == 'fraccionamiento' and p26.cuotas_total > 0 %}
+                <span class="badge badge-amber">Fracc. {{ p26.cuotas_pagadas }}/{{ p26.cuotas_total }}</span>
+              {% elif p26.estado == 'parcial' %}
+                {% set mt26 = p26.get('monto_total') or 0 %}
+                <span class="badge badge-blue">Parcial{% if mt26 %} S/{{ p26.monto_pagado|int }}/{{ mt26|int }}{% endif %}</span>
+              {% else %}
+                <span class="badge badge-{{ sl26[1] }}">{{ sl26[0] }}</span>
+              {% endif %}
+              {% if p26.get('empresa_pagadora') %}
+              <div class="text-[11px] text-slate-500">{{ p26.empresa_pagadora }}</div>
+              {% endif %}
+              {% if p26.get('fecha_pago') %}
+              <div class="text-[11px] text-slate-400">{{ p26.fecha_pago }}</div>
+              {% endif %}
+              {% if p26.get('comprobante_emitido') %}
+              <div class="text-[11px] text-emerald-600 flex items-center gap-0.5">
+                <i class="fa-solid fa-circle-check text-[10px]"></i> Comp. emitido
+              </div>
+              {% endif %}
+            </div>
           </td>
-          <td class="px-4 py-3 text-slate-500 text-xs">{{ p.get('fecha_pago') or '—' }}</td>
-          <td class="px-4 py-3 text-xs">
-            {% if p.get('comprobante_emitido') %}
-              <span class="inline-flex items-center gap-1 text-green-700 font-medium"><i class="fa-solid fa-circle-check"></i> Emitido</span>
-            {% else %}
-              <span class="inline-flex items-center gap-1 text-amber-600"><i class="fa-regular fa-clock"></i> Pendiente</span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-3 text-right text-slate-300">
-            <i class="fa-solid fa-up-right-from-square text-xs"></i>
-          </td>
+          {% else %}
+          <td class="px-3 py-3 text-center text-slate-200 text-lg">—</td>
+          {% endif %}
+
         </tr>
       </tbody>
       {% else %}
       <tbody>
         <tr>
-          <td colspan="9" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="4" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-money-bill-wave text-2xl mb-2 block text-slate-300"></i>
             No se encontraron registros con estos filtros.
           </td>
@@ -213,10 +243,10 @@
       <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }}</span>
       <div class="flex gap-2">
         {% if page > 1 %}
-        <a href="?periodo={{ periodo }}&estado={{ estado }}&empresa={{ empresa }}&search={{ search }}&comprobante_emitido={{ comprobante_emitido }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
+        <a href="?estado={{ estado }}&empresa={{ empresa }}&search={{ search }}&comprobante_emitido={{ comprobante_emitido }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
         {% endif %}
         {% if page < total_pages %}
-        <a href="?periodo={{ periodo }}&estado={{ estado }}&empresa={{ empresa }}&search={{ search }}&comprobante_emitido={{ comprobante_emitido }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
+        <a href="?estado={{ estado }}&empresa={{ empresa }}&search={{ search }}&comprobante_emitido={{ comprobante_emitido }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
         {% endif %}
       </div>
     </div>

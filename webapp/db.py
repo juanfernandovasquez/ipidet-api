@@ -105,7 +105,8 @@ def _push_or(query: dict, or_conditions: list) -> None:
 def get_members(search: str = "", estado: str = "", pago: str = "",
                 ubicacion: str = "", wp: str = "", page: int = 1, per_page: int = 50,
                 sort: str = "nombre", sort_dir: str = "asc",
-                email_est: str = "", tiene_dni: str = "", tiene_celular: str = ""):
+                email_est: str = "", tiene_dni: str = "", tiene_celular: str = "",
+                tipo_socio: str = ""):
     from pymongo import ASCENDING, DESCENDING
     query = {}
     if search:
@@ -146,11 +147,18 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
         else:
             return [], 0
 
-    # Filtros de cabecera de tabla
+    if tipo_socio:
+        query["tipo_socio"] = tipo_socio
+
+    # Filtros de email
     if email_est == "habilitado":
         query["emails"] = {"$elemMatch": {"principal": True, "estado": "habilitado"}}
     elif email_est == "problema":
         query["emails"] = {"$elemMatch": {"principal": True, "estado": {"$in": ["rebotado", "inhabilitado"]}}}
+    elif email_est == "rebotado":
+        query["emails"] = {"$elemMatch": {"estado": "rebotado"}}
+    elif email_est == "sin_email":
+        _push_or(query, [{"emails": {"$exists": False}}, {"emails": {"$size": 0}}])
 
     if tiene_dni == "si":
         query["dni"] = {"$exists": True, "$nin": [None, ""]}
@@ -562,6 +570,124 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
         d["deudas_otros_periodos"] = sorted(deuda_map.get(d["member_id"], []))
 
     return [_clean(d) for d in docs], total
+
+
+def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
+                         comprobante_emitido: str = "", page: int = 1, per_page: int = 50):
+    """Una fila por socio, con pago_2025 y pago_2026 anidados."""
+    YEARS = ["2025", "2026"]
+
+    # 1. Fetch all 2025+2026 payments (empresa filter applied here)
+    pay_match: dict = {"periodo": {"$in": YEARS}}
+    if empresa:
+        nombres = _resolve_empresa_nombres(empresa)
+        if nombres:
+            pay_match["empresa_pagadora"] = {"$in": nombres}
+        else:
+            pay_match["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
+
+    all_pays = list(payments_col.find(pay_match))
+
+    # 2. Group by member_id
+    by_mid: dict = {}
+    for p in all_pays:
+        mid = p["member_id"]
+        yr  = p["periodo"]
+        if mid not in by_mid:
+            by_mid[mid] = {"pago_2025": None, "pago_2026": None}
+        by_mid[mid][f"pago_{yr}"] = p
+
+    # 3. Apply 2026 estado filter
+    if estado:
+        by_mid = {mid: v for mid, v in by_mid.items()
+                  if v["pago_2026"] and v["pago_2026"].get("estado") == estado}
+
+    # 4. Apply 2026 comprobante_emitido filter
+    if comprobante_emitido == "emitido":
+        by_mid = {mid: v for mid, v in by_mid.items()
+                  if v["pago_2026"] and v["pago_2026"].get("comprobante_emitido")}
+    elif comprobante_emitido == "pendiente":
+        by_mid = {mid: v for mid, v in by_mid.items()
+                  if v["pago_2026"] and not v["pago_2026"].get("comprobante_emitido")}
+
+    # 5. Fetch member info, applying search filter
+    member_ids = list(by_mid.keys())
+    member_query: dict = {"member_id": {"$in": member_ids}}
+    if search:
+        rx = {"$regex": search, "$options": "i"}
+        member_query["$and"] = [
+            {"member_id": {"$in": member_ids}},
+            {"$or": [
+                {"apellidos":      rx},
+                {"nombres":        rx},
+                {"member_id":      rx},
+                {"emails.email":   rx},
+                {"centro_trabajo": rx},
+            ]},
+        ]
+        del member_query["member_id"]
+
+    members_map = {d["member_id"]: d for d in members_col.find(member_query)}
+
+    # Also search in empresa_pagadora field of payments
+    if search:
+        rx = {"$regex": search, "$options": "i"}
+        extra_mids = {p["member_id"] for p in payments_col.find(
+            {"member_id": {"$in": member_ids},
+             "periodo": {"$in": YEARS},
+             "$or": [{"empresa_pagadora": rx}, {"pagado_por": rx}]},
+            {"member_id": 1}
+        )}
+        extra_members = {d["member_id"]: d for d in members_col.find(
+            {"member_id": {"$in": list(extra_mids)}}
+        )}
+        members_map.update(extra_members)
+
+    def _enrich_pay(p: dict, mi: dict) -> dict:
+        p = _clean(p)
+        p["nombre_completo"] = f"{mi.get('apellidos','')} {mi.get('nombres','')}".strip()
+        p["email_principal"] = next(
+            (e["email"] for e in mi.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
+            next((e["email"] for e in mi.get("emails", []) if e.get("principal")), "")
+        )
+        p["centro_trabajo"] = mi.get("centro_trabajo", "")
+        p["estado_socio"]   = mi.get("estado", "activo")
+        cuotas   = p.get("cuotas") or []
+        parciales = p.get("pagos_parciales") or []
+        p["cuotas_total"]   = len(cuotas)
+        p["cuotas_pagadas"] = sum(1 for c in cuotas if c.get("estado") == "pagado")
+        p["monto_pagado"]   = sum(c.get("monto", 0) for c in parciales)
+        monto_total = p.get("monto_total") or 0
+        p["monto_pendiente"] = round(max(0.0, monto_total - p["monto_pagado"]), 2) if monto_total else None
+        return p
+
+    # 6. Build result rows (only members that passed search)
+    rows = []
+    for mid, pays in by_mid.items():
+        mi = members_map.get(mid)
+        if mi is None:
+            continue
+        ep = next(
+            (e["email"] for e in mi.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
+            next((e["email"] for e in mi.get("emails", []) if e.get("principal")), "")
+        )
+        row = {
+            "member_id":      mid,
+            "nombre_completo": f"{mi.get('apellidos','')} {mi.get('nombres','')}".strip(),
+            "email_principal": ep,
+            "centro_trabajo":  mi.get("centro_trabajo", ""),
+            "estado_socio":    mi.get("estado", "activo"),
+            "pago_2025": _enrich_pay(pays["pago_2025"], mi) if pays["pago_2025"] else None,
+            "pago_2026": _enrich_pay(pays["pago_2026"], mi) if pays["pago_2026"] else None,
+        }
+        rows.append(row)
+
+    # 7. Sort by apellidos
+    rows.sort(key=lambda r: r.get("nombre_completo", ""))
+
+    total = len(rows)
+    skip  = (page - 1) * per_page
+    return rows[skip:skip + per_page], total
 
 
 def get_payment_with_member(payment_id: str) -> dict | None:

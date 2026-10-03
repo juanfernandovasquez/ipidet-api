@@ -167,26 +167,26 @@ async def members_list(
     estado:        str = "",
     pago:          str = "",
     ubicacion:     str = "",
-    wp:            str = "",
+    tipo_socio:    str = "",
+    email_est:     str = "",
     page:          int = 1,
     sort:          str = "nombre",
     sort_dir:      str = "asc",
-    email_est:     str = "",
-    tiene_dni:     str = "",
-    tiene_celular: str = "",
 ):
     docs, total = pdb.get_members(
-        search, estado, pago, ubicacion, wp, page,
+        search, estado, pago, ubicacion, page=page,
         sort=sort, sort_dir=sort_dir,
-        email_est=email_est, tiene_dni=tiene_dni, tiene_celular=tiene_celular,
+        email_est=email_est, tipo_socio=tipo_socio,
     )
     return templates.TemplateResponse(request, "members.html", _ctx(request,
         members=docs, total=total,
-        search=search, estado=estado, pago=pago, ubicacion=ubicacion, wp=wp,
+        search=search, estado=estado, pago=pago, ubicacion=ubicacion,
+        tipo_socio=tipo_socio, email_est=email_est,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
         sort=sort, sort_dir=sort_dir,
-        email_est=email_est, tiene_dni=tiene_dni, tiene_celular=tiene_celular,
+        ubicaciones=pdb.get_member_ubicaciones(),
+        titulos=pdb.get_member_titulos(),
     ))
 
 
@@ -479,22 +479,21 @@ async def emitir_comprobante(
 @app.get("/billing", response_class=HTMLResponse)
 async def billing(
     request: Request,
-    periodo: str = "2026",
     estado: str = "",
     empresa: str = "",
     search: str = "",
     comprobante_emitido: str = "",
     page: int = 1,
 ):
-    docs, total = pdb.get_payments(periodo, estado, empresa, search, page, comprobante_emitido=comprobante_emitido)
+    rows, total = pdb.get_payments_grouped(estado, empresa, search, comprobante_emitido, page)
     productos_raw = pdb.get_productos(solo_activos=True)
     productos_list = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio")}
         for p in productos_raw
     ]
     return templates.TemplateResponse(request, "billing.html", _ctx(request,
-        payments=docs, total=total,
-        periodo=periodo, estado=estado, empresa=empresa, search=search,
+        payments=rows, total=total,
+        estado=estado, empresa=empresa, search=search,
         comprobante_emitido=comprobante_emitido,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
