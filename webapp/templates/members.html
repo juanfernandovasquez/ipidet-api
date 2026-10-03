@@ -245,8 +245,12 @@
             {% if alt_emails %}
               {% for e in alt_emails %}
               <div class="flex items-center gap-1 {% if not loop.first %}mt-0.5{% endif %}">
-                {% if e.get('estado') == 'rebotado' %}
-                  <i class="fa-solid fa-triangle-exclamation text-red-400 text-[9px] shrink-0"></i>
+                {% if e.get('estado') == 'habilitado' %}
+                  <i class="fa-solid fa-circle-check text-emerald-400 text-[10px] shrink-0" title="Habilitado"></i>
+                {% elif e.get('estado') == 'rebotado' %}
+                  <i class="fa-solid fa-circle-xmark text-red-400 text-[10px] shrink-0" title="Rebotado"></i>
+                {% else %}
+                  <i class="fa-solid fa-circle-minus text-amber-400 text-[10px] shrink-0" title="Inhabilitado"></i>
                 {% endif %}
                 <span class="text-slate-500 truncate">{{ e.email }}</span>
               </div>
