@@ -1628,12 +1628,6 @@ def _resolve_payment_ids(items: list) -> None:
                 prod = pdb.productos_col.find_one({"_id": _OId(item["producto_id"])})
             except Exception:
                 pass
-        if not prod and item.get("producto_nombre"):
-            import re as _re
-            nombre_esc = _re.escape(item["producto_nombre"].strip())
-            prod = pdb.productos_col.find_one(
-                {"nombre": {"$regex": f"^{nombre_esc}$", "$options": "i"}}
-            )
         if not prod:
             continue
         if prod.get("tipo") in ("cuota_anual", "cuota_provincia") and prod.get("periodo"):
