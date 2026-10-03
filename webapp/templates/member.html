@@ -155,41 +155,74 @@
       {% if member.emails %}
       <div class="space-y-2">
         {% for em in member.emails %}
-        <div class="flex items-center justify-between p-3 rounded-lg border {% if em.estado == 'habilitado' %}border-green-200 bg-green-50{% else %}border-slate-200 bg-slate-50{% endif %}">
-          <div class="flex items-center gap-3">
-            <i class="fa-solid {% if em.estado == 'habilitado' %}fa-circle-check text-green-500{% else %}fa-circle-xmark text-slate-400{% endif %}"></i>
-            <div>
-              <div class="text-sm font-medium {% if em.estado == 'inhabilitado' %}line-through text-slate-400{% else %}text-slate-800{% endif %}">{{ em.email }}</div>
-              <div class="text-xs text-slate-400">
-                {{ "Principal" if em.get('principal') else "Secundario" }} ·
-                {% if em.estado == 'habilitado' %}<span class="text-green-600">Habilitado</span>{% else %}<span class="text-red-500">Inhabilitado</span>{% endif %}
-                {% if em.get('bounce_type') %}
-                  · <span class="{% if em.bounce_type == 'hard' %}text-red-600 font-medium{% else %}text-amber-600{% endif %}">
-                    <i class="fa-solid fa-triangle-exclamation text-[10px]"></i>
-                    Rebote {{ em.bounce_type }}{% if em.get('bounce_at') %} {{ em.bounce_at[:10] }}{% endif %}
-                  </span>
-                {% endif %}
+        <div x-data="{ editing: false }"
+             class="rounded-lg border {% if em.estado == 'habilitado' %}border-green-200 bg-green-50{% else %}border-slate-200 bg-slate-50{% endif %}">
+
+          {# Fila normal #}
+          <div x-show="!editing" class="flex items-center justify-between p-3">
+            <div class="flex items-center gap-3">
+              <i class="fa-solid {% if em.estado == 'habilitado' %}fa-circle-check text-green-500{% else %}fa-circle-xmark text-slate-400{% endif %}"></i>
+              <div>
+                <div class="text-sm font-medium {% if em.estado == 'inhabilitado' %}line-through text-slate-400{% else %}text-slate-800{% endif %}">{{ em.email }}</div>
+                <div class="text-xs text-slate-400">
+                  {{ "Principal" if em.get('principal') else "Secundario" }} ·
+                  {% if em.estado == 'habilitado' %}<span class="text-green-600">Habilitado</span>{% else %}<span class="text-red-500">Inhabilitado</span>{% endif %}
+                  {% if em.get('bounce_type') %}
+                    · <span class="{% if em.bounce_type == 'hard' %}text-red-600 font-medium{% else %}text-amber-600{% endif %}">
+                      <i class="fa-solid fa-triangle-exclamation text-[10px]"></i>
+                      Rebote {{ em.bounce_type }}{% if em.get('bounce_at') %} {{ em.bounce_at[:10] }}{% endif %}
+                    </span>
+                  {% endif %}
+                </div>
               </div>
             </div>
-          </div>
-          <div class="flex items-center gap-1">
-            {% if not em.get('principal') %}
-            <form method="post" action="/members/{{ member.member_id }}/emails/set-principal">
-              <input type="hidden" name="email" value="{{ em.email }}">
-              <button type="submit" class="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors">Hacer principal</button>
-            </form>
-            {% endif %}
-            <form method="post" action="/members/{{ member.member_id }}/emails/toggle">
-              <input type="hidden" name="email" value="{{ em.email }}">
-              {% if em.estado == 'habilitado' %}
-              <input type="hidden" name="estado" value="inhabilitado">
-              <button type="submit" class="text-xs text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">Inhabilitar</button>
-              {% else %}
-              <input type="hidden" name="estado" value="habilitado">
-              <button type="submit" class="text-xs text-slate-500 hover:text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-50 transition-colors">Habilitar</button>
+            <div class="flex items-center gap-1">
+              <button type="button" @click="editing = true"
+                class="text-xs text-slate-400 hover:text-blue-600 px-2 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                title="Editar dirección">
+                <i class="fa-solid fa-pen text-[10px]"></i>
+              </button>
+              {% if not em.get('principal') %}
+              <form method="post" action="/members/{{ member.member_id }}/emails/set-principal">
+                <input type="hidden" name="email" value="{{ em.email }}">
+                <button type="submit" class="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors">Hacer principal</button>
+              </form>
               {% endif %}
+              <form method="post" action="/members/{{ member.member_id }}/emails/toggle">
+                <input type="hidden" name="email" value="{{ em.email }}">
+                {% if em.estado == 'habilitado' %}
+                <input type="hidden" name="estado" value="inhabilitado">
+                <button type="submit" class="text-xs text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">Inhabilitar</button>
+                {% else %}
+                <input type="hidden" name="estado" value="habilitado">
+                <button type="submit" class="text-xs text-slate-500 hover:text-green-600 px-3 py-1.5 rounded-lg hover:bg-green-50 transition-colors">Habilitar</button>
+                {% endif %}
+              </form>
+            </div>
+          </div>
+
+          {# Formulario de edición inline #}
+          <div x-show="editing" x-cloak class="p-3">
+            <form method="post" action="/members/{{ member.member_id }}/emails/rename" class="flex items-center gap-2">
+              <input type="hidden" name="old_email" value="{{ em.email }}">
+              <input name="new_email" type="email" value="{{ em.email }}"
+                     class="input flex-1 text-sm" required
+                     x-ref="editInput_{{ loop.index }}"
+                     x-init="if (editing) $el.focus()"
+                     @keydown.escape="editing = false">
+              <button type="submit"
+                class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg
+                       bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                <i class="fa-solid fa-check text-[10px]"></i> Guardar
+              </button>
+              <button type="button" @click="editing = false"
+                class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg
+                       border border-slate-200 text-slate-600 hover:bg-white transition-colors">
+                Cancelar
+              </button>
             </form>
           </div>
+
         </div>
         {% endfor %}
       </div>

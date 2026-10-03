@@ -334,6 +334,15 @@ def add_email(member_id: str, email: str):
     )
 
 
+def rename_email(member_id: str, old_email: str, new_email: str):
+    """Cambia la dirección de un email manteniendo estado, principal y bounce_type."""
+    new_email = new_email.strip().lower()
+    members_col.update_one(
+        {"member_id": member_id, "emails.email": old_email},
+        {"$set": {"emails.$.email": new_email}},
+    )
+
+
 def mark_email_bounce(email: str, bounce_type: str = "hard", reason: str = ""):
     """Registra un rebote en el email del socio. hard → inhabilita, soft → solo marca."""
     email = email.strip().lower()

@@ -346,6 +346,13 @@ async def add_email(member_id: str, new_email: str = Form(...)):
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
 
+@app.post("/members/{member_id}/emails/rename")
+async def rename_email(member_id: str, old_email: str = Form(...), new_email: str = Form(...)):
+    if old_email.strip() and new_email.strip() and old_email != new_email:
+        pdb.rename_email(member_id, old_email.strip(), new_email.strip())
+    return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
 @app.post("/members/{member_id}/notes")
 async def update_notes(member_id: str, notas: str = Form(...)):
     pdb.update_member_notes(member_id, notas)
