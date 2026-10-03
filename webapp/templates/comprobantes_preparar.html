@@ -35,41 +35,21 @@
           <div class="text-[11px] text-slate-500">Empresa (requiere RUC)</div>
         </button>
       </div>
-      <div class="grid grid-cols-2 gap-3 mt-4">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión</label>
-          <input type="date" x-model="form.fecha" class="input w-full text-sm">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
-          <select x-model="form.periodo" class="input w-full text-sm">
-            <option value="">— Todos —</option>
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-            <option value="2024">2024</option>
-          </select>
-        </div>
+      <div class="mt-4 max-w-xs">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión</label>
+        <input type="date" x-model="form.fecha" class="input w-full text-sm">
       </div>
     </div>
 
     <!-- 2. Empresa receptora (solo factura) -->
-    <div x-show="form.tipo === 'factura'" x-cloak class="bg-white rounded-xl border border-slate-200 p-5 relative overflow-hidden">
+    <div x-show="form.tipo === 'factura'" x-cloak class="bg-white rounded-xl border border-slate-200 p-5">
       <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
         <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">2</span>
         Empresa receptora
       </h2>
 
-      <!-- Empresa NO seleccionada -->
-      <div x-show="!form.empresa_id">
-        <button type="button" @click="abrirEmpresaModal()"
-                class="w-full flex items-center gap-3 border-2 border-dashed border-violet-200 rounded-xl px-4 py-3 text-sm text-violet-600 hover:border-violet-400 hover:bg-violet-50 transition-all">
-          <i class="fa-solid fa-building text-base"></i>
-          <span>Buscar o registrar empresa…</span>
-        </button>
-      </div>
-
-      <!-- Empresa seleccionada -->
-      <div x-show="form.empresa_id" x-cloak class="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
+      <!-- Empresa seleccionada: chip -->
+      <div x-show="form.empresa_id" x-cloak class="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 mb-3">
         <div class="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0">
           <i class="fa-solid fa-building text-white text-xs"></i>
         </div>
@@ -77,31 +57,24 @@
           <div class="font-semibold text-slate-800 text-sm" x-text="form.empresa"></div>
           <div class="text-xs text-violet-600 font-mono" x-show="form.ruc" x-text="'RUC ' + form.ruc"></div>
         </div>
-        <button type="button" @click="form.empresa = ''; form.ruc = ''; form.empresa_id = ''"
+        <button type="button" @click="form.empresa = ''; form.ruc = ''; form.empresa_id = ''; empSearch = ''; empSearchRes = []"
                 class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
           <i class="fa-solid fa-xmark text-xs"></i>
         </button>
       </div>
 
-      <!-- Overlay de búsqueda de empresa -->
-      <div x-show="empModal" x-cloak
-           class="absolute inset-0 bg-white z-10 flex flex-col p-5 rounded-xl">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <i class="fa-solid fa-building text-violet-500"></i> Buscar empresa
-          </h3>
-          <button type="button" @click="empModal = false; empNewForm.show = false"
-                  class="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 transition-colors">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-        <input type="text" x-model="empSearch" @input.debounce.250ms="buscarEmpresaModal()"
-               placeholder="Nombre o RUC…" autofocus
-               class="input w-full text-sm mb-2">
-        <div class="flex-1 overflow-y-auto space-y-1 mb-3 min-h-0">
+      <!-- Búsqueda inline -->
+      <div x-show="!form.empresa_id" class="relative">
+        <input type="text" x-model="empSearch"
+               @input.debounce.250ms="buscarEmpresa()"
+               @blur.debounce.200ms="empSearchRes = []"
+               placeholder="Buscar por nombre o RUC…"
+               class="input w-full text-sm">
+        <div x-show="empSearchRes.length > 0"
+             class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-0.5 max-h-52 overflow-y-auto">
           <template x-for="e in empSearchRes" :key="e._id">
-            <button type="button" @click="elegirEmpresaModal(e)"
-                    class="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-violet-50 border border-slate-200 text-left transition-colors">
+            <button type="button" @mousedown.prevent="elegirEmpresa(e)"
+                    class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-violet-50 border-b border-slate-100 last:border-0 text-left transition-colors">
               <div>
                 <div class="text-sm font-medium text-slate-800" x-text="e.nombre"></div>
                 <div class="text-xs text-slate-400" x-show="e.razon_social" x-text="e.razon_social"></div>
@@ -109,17 +82,19 @@
               <span class="text-xs font-mono text-slate-400 shrink-0 ml-2" x-show="e.ruc" x-text="'RUC ' + e.ruc"></span>
             </button>
           </template>
-          <p x-show="empSearch.length > 1 && empSearchRes.length === 0" x-cloak
-             class="text-xs text-slate-400 text-center py-4 italic">Sin resultados. ¿Registrar nueva empresa?</p>
         </div>
-        <!-- Registrar nueva empresa -->
-        <div class="border-t border-slate-100 pt-3">
+
+        <!-- Registrar nueva empresa (aparece cuando no hay resultados) -->
+        <div x-show="empSearch.length > 1 && empSearchRes.length === 0" x-cloak class="mt-2">
+          <p class="text-xs text-slate-400 italic mb-2">Sin resultados. ¿Registrar nueva empresa?</p>
+        </div>
+        <div class="mt-2">
           <button type="button" @click="empNewForm.show = !empNewForm.show"
-                  class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors mb-2">
+                  class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors">
             <i class="fa-solid" :class="empNewForm.show ? 'fa-chevron-up' : 'fa-plus'"></i>
             <span x-text="empNewForm.show ? 'Cancelar' : 'Registrar nueva empresa'"></span>
           </button>
-          <div x-show="empNewForm.show" x-cloak class="space-y-2">
+          <div x-show="empNewForm.show" x-cloak class="mt-2 space-y-2 border border-slate-200 rounded-xl p-3 bg-slate-50">
             <div class="grid grid-cols-2 gap-2">
               <div>
                 <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Nombre <span class="text-red-500">*</span></label>
@@ -151,24 +126,14 @@
     </div>
 
     <!-- 2b. Destinatario (solo boleta) -->
-    <div x-show="form.tipo === 'boleta'" x-cloak class="bg-white rounded-xl border border-slate-200 p-5 relative overflow-hidden">
+    <div x-show="form.tipo === 'boleta'" x-cloak class="bg-white rounded-xl border border-slate-200 p-5">
       <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
         <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">2</span>
-        Destinatario (persona natural)
+        Destinatario <span class="normal-case font-normal text-slate-400 text-[11px]">(opcional — para pre-registro con DNI)</span>
       </h2>
 
-      <!-- Sin destinatario seleccionado -->
-      <div x-show="!destinatario.member_id">
-        <button type="button" @click="socModal = true; socSearch = ''; socSearchRes = []"
-                class="w-full flex items-center gap-3 border-2 border-dashed border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-600 hover:border-sky-400 hover:bg-sky-50 transition-all">
-          <i class="fa-solid fa-user text-base"></i>
-          <span>Buscar socio / persona natural…</span>
-        </button>
-        <p class="text-xs text-slate-400 mt-2 italic">Opcional — necesario para pre-registro con DNI</p>
-      </div>
-
-      <!-- Destinatario seleccionado -->
-      <div x-show="destinatario.member_id" x-cloak class="flex items-center gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3">
+      <!-- Destinatario seleccionado: chip -->
+      <div x-show="destinatario.member_id" x-cloak class="flex items-center gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 mb-3">
         <div class="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center shrink-0">
           <i class="fa-solid fa-user text-white text-xs"></i>
         </div>
@@ -177,31 +142,24 @@
           <div class="text-xs font-mono" :class="destinatario.dni ? 'text-sky-600' : 'text-slate-400'"
                x-text="destinatario.dni ? 'DNI ' + destinatario.dni : 'Sin DNI registrado'"></div>
         </div>
-        <button type="button" @click="destinatario = {member_id:'',nombre:'',dni:''}"
+        <button type="button" @click="destinatario = {member_id:'',nombre:'',dni:''}; socSearch = ''; socSearchRes = []"
                 class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
           <i class="fa-solid fa-xmark text-xs"></i>
         </button>
       </div>
 
-      <!-- Overlay búsqueda de socio -->
-      <div x-show="socModal" x-cloak
-           class="absolute inset-0 bg-white z-10 flex flex-col p-5 rounded-xl">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <i class="fa-solid fa-user text-sky-500"></i> Buscar destinatario
-          </h3>
-          <button type="button" @click="socModal = false"
-                  class="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 transition-colors">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-        <input type="text" x-model="socSearch" @input.debounce.250ms="buscarSocioDestinatario()"
-               placeholder="Nombre, apellido o ID…"
-               class="input w-full text-sm mb-2">
-        <div class="flex-1 overflow-y-auto space-y-1 min-h-0">
+      <!-- Búsqueda inline -->
+      <div x-show="!destinatario.member_id" class="relative">
+        <input type="text" x-model="socSearch"
+               @input.debounce.250ms="buscarSocioDestinatario()"
+               @blur.debounce.200ms="socSearchRes = []"
+               placeholder="Buscar por nombre, apellido o ID…"
+               class="input w-full text-sm">
+        <div x-show="socSearchRes.length > 0"
+             class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-0.5 max-h-52 overflow-y-auto">
           <template x-for="s in socSearchRes" :key="s.member_id">
-            <button type="button" @click="elegirSocioDestinatario(s)"
-                    class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-sky-50 border border-slate-200 text-left transition-colors">
+            <button type="button" @mousedown.prevent="elegirSocioDestinatario(s)"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-sky-50 border-b border-slate-100 last:border-0 text-left transition-colors">
               <div class="flex-1 min-w-0">
                 <div class="text-sm font-medium text-slate-800" x-text="(s.apellidos||'') + ' ' + (s.nombres||'')"></div>
                 <div class="text-xs text-slate-400" x-text="s.member_id"></div>
@@ -211,9 +169,9 @@
                     x-text="s.dni ? 'DNI ' + s.dni : 'Sin DNI'"></span>
             </button>
           </template>
-          <p x-show="socSearch.length > 1 && socSearchRes.length === 0" x-cloak
-             class="text-xs text-slate-400 text-center py-4 italic">Sin resultados</p>
         </div>
+        <p x-show="socSearch.length > 1 && socSearchRes.length === 0" x-cloak
+           class="text-xs text-slate-400 mt-1 italic">Sin resultados</p>
       </div>
     </div>
 
@@ -477,6 +435,20 @@
           <p class="text-[11px] text-slate-400 mt-0.5">Vacío → se guarda como pre-registro hasta importar el XML.</p>
         </div>
         <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
+          <select x-model="form.medio_pago" class="input w-full text-sm">
+            <option value="">— Sin especificar —</option>
+            <option>Transferencia bancaria</option>
+            <option>Depósito bancario</option>
+            <option>Efectivo</option>
+            <option>Yape / Plin</option>
+            <option>Niubiz</option>
+            <option>WooCommerce</option>
+            <option>Cheque</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Concepto / Notas</label>
           <input type="text" x-model="form.concepto" placeholder="Descripción adicional"
                  class="input w-full text-sm">
@@ -556,11 +528,11 @@ function preparar() {
     form: {
       tipo: 'boleta',
       fecha: new Date().toISOString().slice(0, 10),
-      periodo: '2026',
       empresa: '',
       empresa_id: '',
       ruc: '',
       numero: '',
+      medio_pago: '',
       concepto: '',
     },
     lineas: [],
@@ -570,12 +542,10 @@ function preparar() {
 
     // Destinatario (boleta)
     destinatario: { member_id: '', nombre: '', dni: '' },
-    socModal: false,
     socSearch: '',
     socSearchRes: [],
 
-    // Empresa modal
-    empModal: false,
+    // Empresa
     empSearch: '',
     empSearchRes: [],
     empNewForm: { show: false, nombre: '', ruc: '', razon_social: '' },
@@ -633,24 +603,20 @@ function preparar() {
       if (pr.precio && !ln.monto) ln.monto = pr.precio;
     },
 
-    // ── Empresa modal ──────────────────────────────────────────────
-    abrirEmpresaModal() {
-      this.empModal = true;
-      this.empSearch = '';
-      this.empSearchRes = [];
-      this.empNewForm = { show: false, nombre: '', ruc: '', razon_social: '' };
-    },
-    async buscarEmpresaModal() {
+    // ── Empresa ────────────────────────────────────────────────────
+    async buscarEmpresa() {
       const q = this.empSearch.trim();
       if (!q) { this.empSearchRes = []; return; }
       const r = await fetch('/api/companies?q=' + encodeURIComponent(q));
       this.empSearchRes = await r.json();
     },
-    elegirEmpresaModal(e) {
+    elegirEmpresa(e) {
       this.form.empresa    = e.nombre;
       this.form.ruc        = e.ruc || '';
       this.form.empresa_id = e._id || '';
-      this.empModal = false;
+      this.empSearch       = e.nombre;
+      this.empSearchRes    = [];
+      this.empNewForm.show = false;
     },
     async registrarNuevaEmpresa() {
       if (!this.empNewForm.nombre.trim() || this.empSaving) return;
@@ -741,6 +707,7 @@ function preparar() {
             empresa:             this.form.empresa || '',
             empresa_ruc:         this.form.ruc || '',
             empresa_id:          this.form.empresa_id || '',
+            medio_pago:          this.form.medio_pago || '',
             destinatario_id:     this.destinatario.member_id || '',
             destinatario_nombre: this.destinatario.nombre || '',
             destinatario_dni:    this.destinatario.dni || '',

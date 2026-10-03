@@ -2733,7 +2733,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
                         estado: str = "emitido",
                         destinatario_id: str = "",
                         destinatario_nombre: str = "",
-                        destinatario_dni: str = "") -> str:
+                        destinatario_dni: str = "",
+                        medio_pago: str = "") -> str:
     # Derive socios from items if provided
     if items:
         seen = set()
@@ -2767,6 +2768,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "socios":               socios,
         "items":                items or [],
         "estado":               estado,
+        "medio_pago":           medio_pago.strip() if medio_pago else "",
         "destinatario_id":      destinatario_id.strip() if destinatario_id else "",
         "destinatario_nombre":  destinatario_nombre.strip() if destinatario_nombre else "",
         "destinatario_dni":     destinatario_dni.strip() if destinatario_dni else "",
@@ -2779,7 +2781,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
-               "socios", "items", "estado"}
+               "socios", "items", "estado", "medio_pago"}
     update = {k: v for k, v in fields.items() if k in allowed}
     if "empresa" in update:
         emp = (update["empresa"] or "").strip()

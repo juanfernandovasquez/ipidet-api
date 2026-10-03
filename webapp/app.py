@@ -1511,6 +1511,7 @@ async def comprobante_add(request: Request):
         items                = items,
         ruc                  = data.get("empresa_ruc", ""),
         estado               = estado,
+        medio_pago           = data.get("medio_pago", ""),
         destinatario_id      = data.get("destinatario_id", ""),
         destinatario_nombre  = data.get("destinatario_nombre", ""),
         destinatario_dni     = data.get("destinatario_dni", ""),
