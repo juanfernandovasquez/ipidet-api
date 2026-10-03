@@ -3,6 +3,13 @@
 {% block heading %}Comunicaciones{% endblock %}
 
 {% block content %}
+{% if from_members %}
+<div class="mb-4 flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+  <i class="fa-solid fa-filter text-blue-500"></i>
+  Filtros aplicados desde la vista de socios.
+  <a href="/comunicaciones" class="ml-auto text-blue-500 hover:text-blue-700 text-xs underline underline-offset-2">Limpiar</a>
+</div>
+{% endif %}
 <div x-data="comunicaciones()" x-init="init()">
 
   <div class="grid grid-cols-1 xl:grid-cols-5 gap-5">
@@ -1186,6 +1193,14 @@ function comunicaciones() {
       this.cargarExcluidos();
       {% if pre_member %}
       this.manuales.push({ ...{{ pre_member | tojson }}, selected: true });
+      {% endif %}
+      {% if pre_ubicacion %}
+      this.filtros.ubicacion = {{ pre_ubicacion | tojson }};
+      {% endif %}
+      {% if pre_pago %}
+      this.filtros.modo = 'periodo';
+      if (!this.filtros.estados_pago.includes({{ pre_pago | tojson }}))
+        this.filtros.estados_pago.push({{ pre_pago | tojson }});
       {% endif %}
       this.$nextTick(() => {
         const el = this.$refs.cuerpoEditor;

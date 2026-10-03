@@ -197,6 +197,103 @@ async def members_list(
     ))
 
 
+MEMBERS_COLS = [
+    ("id",             "ID"),
+    ("apellidos",      "Apellidos"),
+    ("nombres",        "Nombres"),
+    ("email_principal","Email principal"),
+    ("email_alt",      "Email alternativo"),
+    ("dni",            "DNI"),
+    ("celular",        "Celular"),
+    ("centro_trabajo", "Centro de trabajo"),
+    ("ubicacion",      "Ubicación"),
+    ("tipo_socio",     "Tipo de socio"),
+    ("estado",         "Estado"),
+    ("pago_2026",      "Pago 2026"),
+]
+
+@app.get("/members/export")
+async def members_export(
+    request: Request,
+    search:        str = "",
+    estado:        str = "",
+    pago:          str = "",
+    ubicacion:     str = "",
+    tipo_socio:    str = "",
+    email_est:     str = "",
+    tiene_dni:     str = "",
+    tiene_celular: str = "",
+    alt_email_est: str = "",
+    cols:          str = "",
+):
+    selected = [c.strip() for c in cols.split(",") if c.strip()] if cols else [k for k, _ in MEMBERS_COLS]
+    docs = pdb.get_members_export(
+        search=search, estado=estado, pago=pago, ubicacion=ubicacion,
+        tipo_socio=tipo_socio, email_est=email_est,
+        tiene_dni=tiene_dni, tiene_celular=tiene_celular,
+        alt_email_est=alt_email_est,
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Socios"
+
+    col_labels = {k: lbl for k, lbl in MEMBERS_COLS}
+    headers = [col_labels[c] for c in selected if c in col_labels]
+    header_fill = PatternFill("solid", fgColor="1E3A5F")
+    header_font = Font(bold=True, color="FFFFFF")
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    STATUS_ES = {
+        "pagado": "Pagado", "debe": "Debe", "fraccionamiento": "Fraccionamiento",
+        "parcial": "Parcial", "exonerado": "Exonerado", "no_aplica": "N/A",
+        "pendiente": "Pendiente", "retirar": "Retirar", "en_revision": "En revisión",
+    }
+
+    for ri, d in enumerate(docs, 2):
+        emails = d.get("emails") or []
+        ep = next((e["email"] for e in emails if e.get("principal") and e.get("estado") == "habilitado"),
+                  next((e["email"] for e in emails if e.get("principal")), ""))
+        alts = [e["email"] for e in emails if not e.get("principal") and e.get("email")]
+        p26 = d.get("pago_2026") or {}
+        p26_str = STATUS_ES.get(p26.get("estado", ""), p26.get("estado", "")) if p26 else ""
+
+        val_map = {
+            "id":             d.get("member_id", ""),
+            "apellidos":      d.get("apellidos", ""),
+            "nombres":        d.get("nombres", ""),
+            "email_principal": ep,
+            "email_alt":      "; ".join(alts),
+            "dni":            d.get("dni") or "",
+            "celular":        d.get("celular") or "",
+            "centro_trabajo": d.get("centro_trabajo") or "",
+            "ubicacion":      d.get("ubicacion") or "",
+            "tipo_socio":     d.get("tipo_socio") or "",
+            "estado":         d.get("estado") or "",
+            "pago_2026":      p26_str,
+        }
+        for ci, col_key in enumerate(selected, 1):
+            if col_key in val_map:
+                ws.cell(row=ri, column=ci, value=val_map[col_key])
+
+    for col in ws.columns:
+        max_len = max((len(str(c.value or "")) for c in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 45)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=socios.xlsx"},
+    )
+
+
 @app.post("/members/nuevo")
 async def member_nuevo(
     apellidos:       str = Form(...),
@@ -1892,7 +1989,9 @@ async def comprobante_sync(comprobante_id: str):
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
-async def comunicaciones(request: Request, pre_member_id: str = ""):
+async def comunicaciones(request: Request, pre_member_id: str = "",
+                         pre_ubicacion: str = "", pre_pago: str = "",
+                         from_members: str = ""):
     history     = pdb.get_comunicaciones_history()
     titulos     = pdb.get_member_titulos()
     ubicaciones = pdb.get_member_ubicaciones()
@@ -1917,6 +2016,8 @@ async def comunicaciones(request: Request, pre_member_id: str = ""):
     return templates.TemplateResponse(request, "comunicaciones.html", _ctx(request,
         history=history, titulos=titulos, ubicaciones=ubicaciones, empresas=empresas,
         pre_member=pre_member,
+        pre_ubicacion=pre_ubicacion, pre_pago=pre_pago,
+        from_members=from_members,
     ))
 
 

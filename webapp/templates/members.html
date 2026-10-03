@@ -4,6 +4,14 @@
 
 {% block header_actions %}
 <span class="text-sm text-slate-500">{{ total }} socio{% if total != 1 %}s{% endif %}</span>
+<a href="/comunicaciones?pre_ubicacion={{ ubicacion | urlencode }}&pre_pago={{ pago | urlencode }}&from_members=1"
+   class="btn-ghost text-sm">
+  <i class="fa-solid fa-paper-plane mr-1.5"></i> Enviar comunicación
+</a>
+<button onclick="document.getElementById('modal-export').classList.remove('hidden')"
+  class="btn-ghost text-sm">
+  <i class="fa-solid fa-file-excel mr-1.5 text-emerald-600"></i> Exportar Excel
+</button>
 <button onclick="document.getElementById('modal-nuevo-socio').classList.remove('hidden')"
   class="btn-primary text-sm">
   <i class="fa-solid fa-user-plus mr-1.5"></i> Nuevo socio
@@ -451,12 +459,90 @@
   </div>
 </div>
 
+<!-- Modal: exportar Excel -->
+<div id="modal-export" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+     x-data="membersExport()">
+  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-export').classList.add('hidden')"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+    <div class="flex items-center justify-between mb-5">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center">
+          <i class="fa-solid fa-file-excel text-emerald-600 text-base"></i>
+        </div>
+        <h2 class="font-semibold text-slate-800 text-base">Exportar a Excel</h2>
+      </div>
+      <button onclick="document.getElementById('modal-export').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <p class="text-xs text-slate-500 mb-4">Selecciona las columnas a incluir. Se exportarán los socios del filtro actual ({{ total }}).</p>
+    <div class="grid grid-cols-2 gap-y-2 gap-x-4 mb-5">
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.id" class="rounded border-slate-300 text-blue-600">ID
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.apellidos" class="rounded border-slate-300 text-blue-600">Apellidos
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.nombres" class="rounded border-slate-300 text-blue-600">Nombres
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.email_principal" class="rounded border-slate-300 text-blue-600">Email principal
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.email_alt" class="rounded border-slate-300 text-blue-600">Email alternativo
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.dni" class="rounded border-slate-300 text-blue-600">DNI
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.celular" class="rounded border-slate-300 text-blue-600">Celular
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.centro_trabajo" class="rounded border-slate-300 text-blue-600">Centro de trabajo
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.ubicacion" class="rounded border-slate-300 text-blue-600">Ubicación
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.tipo_socio" class="rounded border-slate-300 text-blue-600">Tipo de socio
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.estado" class="rounded border-slate-300 text-blue-600">Estado
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" x-model="cols.pago_2026" class="rounded border-slate-300 text-blue-600">Pago 2026
+      </label>
+    </div>
+    <div class="flex gap-3">
+      <button type="button" @click="exportar()" class="btn-primary flex-1 text-sm">
+        <i class="fa-solid fa-download mr-1.5"></i> Descargar
+      </button>
+      <button type="button" onclick="document.getElementById('modal-export').classList.add('hidden')" class="btn-ghost text-sm">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 function membersSetFilter(name, val) {
   var f = document.getElementById('memberFilterForm');
   f.querySelector('[name=' + name + ']').value = val;
   f.querySelector('[name=page]').value = '1';
   f.submit();
+}
+
+function membersExport() {
+  return {
+    cols: { id:true, apellidos:true, nombres:true, email_principal:true, email_alt:true,
+            dni:true, celular:true, centro_trabajo:true, ubicacion:true,
+            tipo_socio:true, estado:true, pago_2026:true },
+    exportar() {
+      const selected = Object.keys(this.cols).filter(k => this.cols[k]);
+      if (!selected.length) { alert('Selecciona al menos una columna.'); return; }
+      window.location.href = '/members/export?{{ qf }}&cols=' + selected.join(',');
+      document.getElementById('modal-export').classList.add('hidden');
+    }
+  };
 }
 </script>
 

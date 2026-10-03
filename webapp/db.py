@@ -202,6 +202,21 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
     return [_clean(d) for d in docs], total
 
 
+def get_members_export(search: str = "", estado: str = "", pago: str = "",
+                       ubicacion: str = "", tipo_socio: str = "",
+                       email_est: str = "", tiene_dni: str = "",
+                       tiene_celular: str = "", alt_email_est: str = "") -> list:
+    """Igual que get_members pero sin paginación — devuelve todos los docs."""
+    docs, _ = get_members(
+        search=search, estado=estado, pago=pago, ubicacion=ubicacion,
+        tipo_socio=tipo_socio, email_est=email_est,
+        tiene_dni=tiene_dni, tiene_celular=tiene_celular,
+        alt_email_est=alt_email_est,
+        page=1, per_page=9999,
+    )
+    return docs
+
+
 def _next_member_id() -> str:
     """Devuelve el siguiente IPIDET-XXXX disponible."""
     docs = members_col.find(
