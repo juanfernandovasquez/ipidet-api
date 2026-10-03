@@ -82,7 +82,7 @@
                 Sin DNI — agrégalo para el pre-registro
               </div>
             </div>
-            <button type="button" @click="destinatario = {member_id:'',nombre:'',dni:''}; recipSearch = ''; empSearchRes = []; socSearchRes = []; dniInput = ''; dniGuardando = false"
+            <button type="button" @click="destinatario.member_id=''; destinatario.nombre=''; destinatario.dni=''; recipSearch=''; empSearchRes=[]; socSearchRes=[]; dniInput=''; dniGuardando=false"
                     class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 shrink-0">
               <i class="fa-solid fa-xmark text-xs"></i>
             </button>
@@ -650,11 +650,9 @@ function preparar() {
       this.empNewForm.show = false;
     },
     elegirSocioDestinatario(s) {
-      this.destinatario = {
-        member_id: s.member_id,
-        nombre:    ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id,
-        dni:       s.dni || '',
-      };
+      this.destinatario.member_id = s.member_id;
+      this.destinatario.nombre    = ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id;
+      this.destinatario.dni       = s.dni || '';
       this.recipSearch  = '';
       this.empSearchRes = [];
       this.socSearchRes = [];
