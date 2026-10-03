@@ -1068,103 +1068,197 @@
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-            <i class="fa-solid fa-file-lines text-blue-600 text-sm"></i>
+          <div class="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-file-lines text-blue-600 text-base"></i>
           </div>
-          <h2 class="font-semibold text-slate-800">Plantillas de comunicación</h2>
+          <div>
+            <h2 class="font-semibold text-slate-800">Plantillas de correo</h2>
+            <p class="text-xs text-slate-400 mt-0.5" x-text="`${plantillasList.length} plantilla${plantillasList.length !== 1 ? 's' : ''}`"></p>
+          </div>
         </div>
-        <button @click="showGestorPlantillas = false" class="text-slate-400 hover:text-slate-600">
-          <i class="fa-solid fa-xmark text-lg"></i>
-        </button>
+        <div class="flex items-center gap-2">
+          <button type="button"
+            @click="nuevaPlantillaAbierta = !nuevaPlantillaAbierta; editandoPlantilla = null"
+            :class="nuevaPlantillaAbierta
+              ? 'bg-blue-700 text-white'
+              : 'bg-blue-600 hover:bg-blue-700 text-white'"
+            class="inline-flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-lg shadow-sm transition-colors">
+            <i class="fa-solid fa-plus text-xs"></i> Nueva plantilla
+          </button>
+          <button @click="showGestorPlantillas = false"
+            class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Form: nueva plantilla (top, collapsible) -->
+      <div x-show="nuevaPlantillaAbierta" x-cloak
+           class="border-b border-blue-100 bg-blue-50/60 px-6 py-5 flex-shrink-0 space-y-3">
+        <p class="text-xs font-semibold text-blue-700 uppercase tracking-wide">Nueva plantilla</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Nombre <span class="text-red-500">*</span></label>
+            <input x-model="nuevaPlantillaNombre" type="text"
+                   class="input w-full text-sm" placeholder="Ej. Bienvenida">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Asunto del correo</label>
+            <input x-model="nuevaPlantillaAsunto" type="text"
+                   class="input w-full text-sm" placeholder="Asunto del email…">
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-medium text-slate-600">Cuerpo del correo</label>
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] text-slate-400 mr-1">Variables:</span>
+              <button type="button"
+                @mousedown.prevent="tplNuevaExecCmd('insertText', '{{nombre}}')"
+                class="text-[10px] font-mono bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 px-1.5 py-0.5 rounded transition-colors">
+                &#123;&#123;nombre&#125;&#125;
+              </button>
+            </div>
+          </div>
+          <!-- Mini toolbar -->
+          <div class="flex items-center gap-1 mb-1">
+            <button type="button" @mousedown.prevent="tplNuevaExecCmd('bold')"
+              class="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold transition-colors">B</button>
+            <button type="button" @mousedown.prevent="tplNuevaExecCmd('italic')"
+              class="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs italic transition-colors">I</button>
+            <button type="button" @mousedown.prevent="tplNuevaInsertLink()"
+              class="flex items-center gap-1 h-7 px-2 rounded border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs transition-colors">
+              <i class="fa-solid fa-link text-[10px]"></i> Enlace
+            </button>
+          </div>
+          <div x-ref="tplNuevaEditor"
+               contenteditable="true"
+               spellcheck="true"
+               @input="nuevaPlantillaCuerpo = $el.innerHTML"
+               @blur="nuevaPlantillaCuerpo = $el.innerHTML"
+               class="input w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-auto"
+               style="min-height:130px; max-height:240px; white-space:pre-wrap; word-break:break-word; line-height:1.65">
+          </div>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button type="button" @click="crearPlantilla()"
+            :disabled="!nuevaPlantillaNombre.trim()"
+            class="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg
+                   bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-plus text-xs"></i> Crear plantilla
+          </button>
+          <button type="button"
+            @click="nuevaPlantillaAbierta = false; nuevaPlantillaNombre = ''; nuevaPlantillaAsunto = ''; nuevaPlantillaCuerpo = ''; $refs.tplNuevaEditor.innerHTML = ''"
+            class="inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg
+                   border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+            Cancelar
+          </button>
+        </div>
       </div>
 
       <!-- Lista de plantillas -->
       <div class="flex-1 overflow-y-auto divide-y divide-slate-100">
         <template x-for="p in plantillasList" :key="p._id">
           <div class="px-6 py-4">
-            <!-- Vista normal -->
+
+            <!-- Fila normal -->
             <div x-show="editandoPlantilla !== p._id">
-              <div class="flex items-start justify-between gap-4">
+              <div class="flex items-start gap-4">
                 <div class="flex-1 min-w-0">
-                  <div class="font-medium text-slate-800 text-sm" x-text="p.nombre"></div>
-                  <div class="text-xs text-slate-400 mt-0.5 truncate" x-text="p.asunto || '(sin asunto)'"></div>
-                  <div class="text-xs text-slate-500 mt-1 line-clamp-2 whitespace-pre-line" x-text="p.cuerpo"></div>
+                  <p class="font-medium text-slate-800 text-sm" x-text="p.nombre"></p>
+                  <p class="text-xs text-slate-400 mt-0.5 truncate"
+                     x-text="p.asunto || '(sin asunto)'"></p>
+                  <p class="text-xs text-slate-500 mt-1.5 line-clamp-2"
+                     x-html="(p.cuerpo || '').replace(/<[^>]*>/g, ' ').trim() || '—'"></p>
                 </div>
-                <div class="flex items-center gap-1 shrink-0">
+                <div class="flex items-center gap-1 shrink-0 mt-0.5">
                   <button type="button" @click="iniciarEditPlantilla(p)"
-                    class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                    title="Editar">
-                    <i class="fa-solid fa-pen text-xs"></i>
+                    class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg
+                           border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors">
+                    <i class="fa-solid fa-pen text-[10px]"></i> Editar
                   </button>
                   <button type="button"
                     x-show="!p.key || p.key.length === 8"
                     @click="eliminarPlantilla(p)"
-                    class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                    title="Eliminar">
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors">
                     <i class="fa-solid fa-trash text-xs"></i>
                   </button>
                 </div>
               </div>
             </div>
-            <!-- Formulario de edición inline -->
+
+            <!-- Formulario edición inline -->
             <div x-show="editandoPlantilla === p._id" x-cloak class="space-y-3">
-              <div>
-                <label class="block text-xs font-medium text-slate-500 mb-1">Nombre de la plantilla</label>
-                <input x-model="editPlantillaNombre" type="text" class="input w-full text-sm" placeholder="Ej. Bienvenida">
+              <div class="flex items-center gap-2 mb-3">
+                <div class="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-pen text-amber-600 text-[10px]"></i>
+                </div>
+                <p class="text-xs font-semibold text-slate-700">Editando plantilla</p>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Nombre</label>
+                  <input x-model="editPlantillaNombre" type="text"
+                         class="input w-full text-sm" placeholder="Nombre de la plantilla">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Asunto del correo</label>
+                  <input x-model="editPlantillaAsunto" type="text"
+                         class="input w-full text-sm" placeholder="Asunto…">
+                </div>
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-500 mb-1">Asunto del correo</label>
-                <input x-model="editPlantillaAsunto" type="text" class="input w-full text-sm" placeholder="Asunto…">
+                <div class="flex items-center justify-between mb-1">
+                  <label class="block text-xs font-medium text-slate-500">Cuerpo</label>
+                  <div class="flex items-center gap-1">
+                    <span class="text-[10px] text-slate-400 mr-1">Variables:</span>
+                    <button type="button"
+                      @mousedown.prevent="tplEditExecCmd('insertText', '{{nombre}}')"
+                      class="text-[10px] font-mono bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 px-1.5 py-0.5 rounded transition-colors">
+                      &#123;&#123;nombre&#125;&#125;
+                    </button>
+                  </div>
+                </div>
+                <!-- Mini toolbar edición -->
+                <div class="flex items-center gap-1 mb-1">
+                  <button type="button" @mousedown.prevent="tplEditExecCmd('bold')"
+                    class="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold transition-colors">B</button>
+                  <button type="button" @mousedown.prevent="tplEditExecCmd('italic')"
+                    class="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs italic transition-colors">I</button>
+                  <button type="button" @mousedown.prevent="tplEditInsertLink()"
+                    class="flex items-center gap-1 h-7 px-2 rounded border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs transition-colors">
+                    <i class="fa-solid fa-link text-[10px]"></i> Enlace
+                  </button>
+                </div>
+                <div x-ref="tplEditEditor"
+                     contenteditable="true"
+                     spellcheck="true"
+                     @input="editPlantillaCuerpo = $el.innerHTML"
+                     @blur="editPlantillaCuerpo = $el.innerHTML"
+                     class="input w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-auto"
+                     style="min-height:130px; max-height:260px; white-space:pre-wrap; word-break:break-word; line-height:1.65">
+                </div>
               </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-500 mb-1">Cuerpo del correo</label>
-                <textarea x-model="editPlantillaCuerpo" rows="6" class="input w-full text-sm resize-y font-mono text-xs"
-                          placeholder="Texto del correo…"></textarea>
-              </div>
-              <div class="flex gap-2">
+              <div class="flex gap-2 pt-1">
                 <button type="button" @click="guardarEditPlantilla(p)"
-                  class="btn-primary text-xs py-1.5 px-3">
-                  <i class="fa-solid fa-check mr-1"></i> Guardar
+                  class="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg
+                         bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors">
+                  <i class="fa-solid fa-check text-xs"></i> Guardar cambios
                 </button>
                 <button type="button" @click="editandoPlantilla = null"
-                  class="btn-ghost text-xs py-1.5 px-3">Cancelar</button>
+                  class="inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg
+                         border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                  Cancelar
+                </button>
               </div>
             </div>
+
           </div>
         </template>
-      </div>
-
-      <!-- Nueva plantilla -->
-      <div class="border-t border-slate-200 flex-shrink-0">
-        <div x-show="!nuevaPlantillaAbierta" class="px-6 py-3">
-          <button type="button" @click="nuevaPlantillaAbierta = true"
-            class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors">
-            <i class="fa-solid fa-plus text-xs"></i> Nueva plantilla
-          </button>
-        </div>
-        <div x-show="nuevaPlantillaAbierta" x-cloak class="px-6 py-4 bg-slate-50 space-y-3">
-          <p class="text-xs font-semibold text-slate-600">Nueva plantilla</p>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">Nombre <span class="text-red-500">*</span></label>
-            <input x-model="nuevaPlantillaNombre" type="text" class="input w-full text-sm" placeholder="Nombre de la plantilla">
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">Asunto del correo</label>
-            <input x-model="nuevaPlantillaAsunto" type="text" class="input w-full text-sm" placeholder="Asunto…">
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">Cuerpo del correo</label>
-            <textarea x-model="nuevaPlantillaCuerpo" rows="5" class="input w-full text-sm resize-y font-mono text-xs"
-                      placeholder="Texto del correo…"></textarea>
-          </div>
-          <div class="flex gap-2">
-            <button type="button" @click="crearPlantilla()"
-              class="btn-primary text-xs py-1.5 px-3">
-              <i class="fa-solid fa-plus mr-1"></i> Crear
-            </button>
-            <button type="button" @click="nuevaPlantillaAbierta = false; nuevaPlantillaNombre = ''; nuevaPlantillaAsunto = ''; nuevaPlantillaCuerpo = ''"
-              class="btn-ghost text-xs py-1.5 px-3">Cancelar</button>
-          </div>
+        <div x-show="plantillasList.length === 0"
+             class="px-6 py-10 text-center text-slate-400">
+          <i class="fa-solid fa-file-lines text-3xl mb-2 block opacity-30"></i>
+          No hay plantillas aún.
         </div>
       </div>
 
@@ -1428,20 +1522,53 @@ function comunicaciones() {
       this.editPlantillaNombre = p.nombre;
       this.editPlantillaAsunto = p.asunto || '';
       this.editPlantillaCuerpo = p.cuerpo || '';
+      this.nuevaPlantillaAbierta = false;
+      this.$nextTick(() => {
+        const el = this.$refs.tplEditEditor;
+        if (el) el.innerHTML = p.cuerpo || '';
+      });
     },
 
     async guardarEditPlantilla(p) {
+      const el = this.$refs.tplEditEditor;
+      const cuerpo = el ? el.innerHTML : this.editPlantillaCuerpo;
       await fetch(`/api/plantillas/${p._id}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre: this.editPlantillaNombre,
           asunto: this.editPlantillaAsunto,
-          cuerpo: this.editPlantillaCuerpo,
+          cuerpo: cuerpo,
         }),
       });
       this.editandoPlantilla = null;
       await this.cargarPlantillas();
+    },
+
+    tplEditExecCmd(cmd, val = undefined) {
+      this.$refs.tplEditEditor && this.$refs.tplEditEditor.focus();
+      document.execCommand(cmd, false, val ?? null);
+    },
+
+    tplEditInsertLink() {
+      const url  = prompt('URL del enlace:');
+      if (!url) return;
+      const txt  = prompt('Texto del enlace:', url) || url;
+      this.$refs.tplEditEditor && this.$refs.tplEditEditor.focus();
+      document.execCommand('insertHTML', false, `<a href="${url}" style="color:#2563eb">${txt}</a>`);
+    },
+
+    tplNuevaExecCmd(cmd, val = undefined) {
+      this.$refs.tplNuevaEditor && this.$refs.tplNuevaEditor.focus();
+      document.execCommand(cmd, false, val ?? null);
+    },
+
+    tplNuevaInsertLink() {
+      const url  = prompt('URL del enlace:');
+      if (!url) return;
+      const txt  = prompt('Texto del enlace:', url) || url;
+      this.$refs.tplNuevaEditor && this.$refs.tplNuevaEditor.focus();
+      document.execCommand('insertHTML', false, `<a href="${url}" style="color:#2563eb">${txt}</a>`);
     },
 
     async eliminarPlantilla(p) {
@@ -1452,19 +1579,22 @@ function comunicaciones() {
 
     async crearPlantilla() {
       if (!this.nuevaPlantillaNombre.trim()) return;
+      const el = this.$refs.tplNuevaEditor;
+      const cuerpo = el ? el.innerHTML : this.nuevaPlantillaCuerpo;
       await fetch('/api/plantillas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nombre: this.nuevaPlantillaNombre,
           asunto: this.nuevaPlantillaAsunto,
-          cuerpo: this.nuevaPlantillaCuerpo,
+          cuerpo: cuerpo,
         }),
       });
       this.nuevaPlantillaAbierta = false;
       this.nuevaPlantillaNombre  = '';
       this.nuevaPlantillaAsunto  = '';
       this.nuevaPlantillaCuerpo  = '';
+      if (el) el.innerHTML = '';
       await this.cargarPlantillas();
     },
 
