@@ -9,161 +9,134 @@
   <!-- ──────────── Panel izquierdo: Builder ──────────── -->
   <div class="xl:col-span-3 space-y-4">
 
-    <!-- 1. Tipo y fecha -->
+    <!-- 1. Comprobante: tipo + destinatario + fecha (una sola card) -->
     <div class="bg-white rounded-xl border border-slate-200 p-5">
       <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
         <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">1</span>
-        Tipo de comprobante
-      </h2>
-      <div class="flex gap-3 flex-wrap">
-        <button type="button" @click="form.tipo = 'boleta'"
-                :class="form.tipo === 'boleta' ? 'ring-2 ring-sky-500 bg-sky-50' : 'hover:bg-slate-50'"
-                class="flex-1 min-w-28 border border-slate-200 rounded-xl px-4 py-3 text-left transition-all">
-          <div class="flex items-center gap-2 mb-1">
-            <i class="fa-solid fa-file-lines text-sky-500 text-sm"></i>
-            <span class="font-semibold text-slate-800 text-sm">Boleta</span>
-          </div>
-          <div class="text-[11px] text-slate-500">Persona natural / socio individual</div>
-        </button>
-        <button type="button" @click="form.tipo = 'factura'"
-                :class="form.tipo === 'factura' ? 'ring-2 ring-violet-500 bg-violet-50' : 'hover:bg-slate-50'"
-                class="flex-1 min-w-28 border border-slate-200 rounded-xl px-4 py-3 text-left transition-all">
-          <div class="flex items-center gap-2 mb-1">
-            <i class="fa-solid fa-file-invoice text-violet-500 text-sm"></i>
-            <span class="font-semibold text-slate-800 text-sm">Factura</span>
-          </div>
-          <div class="text-[11px] text-slate-500">Empresa (requiere RUC)</div>
-        </button>
-      </div>
-      <div class="mt-4 max-w-xs">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión</label>
-        <input type="date" x-model="form.fecha" class="input w-full text-sm">
-      </div>
-    </div>
-
-    <!-- 2. Para / Destinatario (empresa o socio) -->
-    <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-        <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">2</span>
-        Para
-        <span class="normal-case font-normal text-slate-400 text-[11px]">(empresa o socio — opcional para boleta)</span>
+        Comprobante
       </h2>
 
-      <!-- Chips de seleccionados -->
-      <div class="space-y-2 mb-3">
-        <!-- Empresa seleccionada -->
-        <div x-show="form.empresa_id" x-cloak class="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5">
-          <div class="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0">
-            <i class="fa-solid fa-building text-white text-[10px]"></i>
+      <!-- Fila principal: toggle tipo + buscador + fecha -->
+      <div class="flex items-start gap-2.5 flex-wrap sm:flex-nowrap">
+
+        <!-- Toggle boleta / factura -->
+        <div class="inline-flex bg-slate-100 rounded-lg p-0.5 shrink-0">
+          <button type="button" @click="form.tipo = 'boleta'"
+                  :class="form.tipo === 'boleta' ? 'bg-white shadow text-sky-600 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all whitespace-nowrap">
+            <i class="fa-solid fa-file-lines text-xs"></i> Boleta
+          </button>
+          <button type="button" @click="form.tipo = 'factura'"
+                  :class="form.tipo === 'factura' ? 'bg-white shadow text-violet-600 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all whitespace-nowrap">
+            <i class="fa-solid fa-file-invoice text-xs"></i> Factura
+          </button>
+        </div>
+
+        <!-- Buscador empresa / socio (flex-1) -->
+        <div x-show="!form.empresa_id && !destinatario.member_id" class="flex-1 relative min-w-0">
+          <input type="text" x-model="recipSearch"
+                 @input.debounce.250ms="buscarDestinatario()"
+                 @blur.debounce.200ms="empSearchRes = []; socSearchRes = []"
+                 placeholder="Buscar empresa o socio…"
+                 class="input w-full text-sm">
+          <!-- Dropdown con grupos -->
+          <div x-show="empSearchRes.length > 0 || socSearchRes.length > 0"
+               class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-0.5 max-h-64 overflow-y-auto">
+            <template x-if="empSearchRes.length > 0">
+              <div>
+                <div class="px-3 py-1.5 bg-violet-50 border-b border-violet-100 flex items-center gap-1.5">
+                  <i class="fa-solid fa-building text-violet-400 text-[10px]"></i>
+                  <span class="text-[10px] font-bold text-violet-500 uppercase tracking-wider">Empresas</span>
+                </div>
+                <template x-for="e in empSearchRes" :key="e._id">
+                  <button type="button" @mousedown.prevent="elegirEmpresa(e)"
+                          class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-violet-50 border-b border-slate-100 last:border-0 text-left transition-colors">
+                    <div>
+                      <div class="text-sm font-medium text-slate-800" x-text="e.nombre"></div>
+                      <div class="text-xs text-slate-400" x-show="e.razon_social" x-text="e.razon_social"></div>
+                    </div>
+                    <span class="text-xs font-mono text-violet-700 shrink-0 ml-2 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full"
+                          x-show="e.ruc" x-text="'RUC ' + e.ruc"></span>
+                  </button>
+                </template>
+              </div>
+            </template>
+            <template x-if="socSearchRes.length > 0">
+              <div>
+                <div class="px-3 py-1.5 bg-sky-50 border-b border-sky-100 flex items-center gap-1.5">
+                  <i class="fa-solid fa-users text-sky-400 text-[10px]"></i>
+                  <span class="text-[10px] font-bold text-sky-500 uppercase tracking-wider">Socios</span>
+                </div>
+                <template x-for="s in socSearchRes" :key="s.member_id">
+                  <button type="button" @mousedown.prevent="elegirSocioDestinatario(s)"
+                          class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-sky-50 border-b border-slate-100 last:border-0 text-left transition-colors">
+                    <div class="flex-1 min-w-0">
+                      <div class="text-sm font-medium text-slate-800" x-text="(s.apellidos||'') + ' ' + (s.nombres||'')"></div>
+                      <div class="text-xs text-slate-400" x-text="s.member_id"></div>
+                    </div>
+                    <span class="text-xs font-mono shrink-0"
+                          :class="s.dni ? 'text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full' : 'text-slate-400'"
+                          x-text="s.dni ? 'DNI ' + s.dni : 'Sin DNI'"></span>
+                  </button>
+                </template>
+              </div>
+            </template>
           </div>
-          <div class="flex-1 min-w-0">
-            <div class="font-semibold text-slate-800 text-sm" x-text="form.empresa"></div>
-            <div class="text-xs text-violet-600 font-mono" x-show="form.ruc" x-text="'RUC ' + form.ruc"></div>
+          <p x-show="recipSearch.length > 1 && empSearchRes.length === 0 && socSearchRes.length === 0" x-cloak
+             class="text-xs text-slate-400 mt-1 italic">Sin resultados.</p>
+        </div>
+
+        <!-- Chip empresa seleccionada (inline, en lugar del buscador) -->
+        <div x-show="form.empresa_id" x-cloak
+             class="flex-1 flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5 min-w-0">
+          <i class="fa-solid fa-building text-violet-500 text-xs shrink-0"></i>
+          <div class="flex-1 min-w-0 truncate">
+            <span class="text-sm font-semibold text-slate-800" x-text="form.empresa"></span>
+            <span x-show="form.ruc" class="ml-1.5 text-xs text-violet-700 font-mono" x-text="form.ruc"></span>
           </div>
           <button type="button" @click="form.empresa = ''; form.ruc = ''; form.empresa_id = ''; recipSearch = ''; empSearchRes = []; socSearchRes = []"
-                  class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
+                  class="text-slate-400 hover:text-red-500 transition-colors shrink-0">
             <i class="fa-solid fa-xmark text-xs"></i>
           </button>
         </div>
-        <!-- Socio/persona seleccionada -->
-        <div x-show="destinatario.member_id" x-cloak
+
+        <!-- Chip socio seleccionado (inline, en lugar del buscador) -->
+        <div x-show="destinatario.member_id && !form.empresa_id" x-cloak
              :class="destinatario.dni ? 'bg-sky-50 border-sky-200' : 'bg-amber-50 border-amber-200'"
-             class="border rounded-xl px-3 py-2.5">
-          <div class="flex items-center gap-3">
-            <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                 :class="destinatario.dni ? 'bg-sky-600' : 'bg-amber-500'">
-              <i class="fa-solid fa-user text-white text-[10px]"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="font-semibold text-slate-800 text-sm" x-text="destinatario.nombre"></div>
-              <div x-show="destinatario.dni" class="text-xs text-sky-600 font-mono" x-text="'DNI ' + destinatario.dni"></div>
-              <div x-show="!destinatario.dni" class="text-xs text-amber-600 flex items-center gap-1">
-                <i class="fa-solid fa-triangle-exclamation text-[10px]"></i>
-                Sin DNI — agrégalo para el pre-registro
-              </div>
-            </div>
-            <button type="button" @click="destinatario.member_id=''; destinatario.nombre=''; destinatario.dni=''; recipSearch=''; empSearchRes=[]; socSearchRes=[]; dniInput=''; dniGuardando=false"
-                    class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 shrink-0">
-              <i class="fa-solid fa-xmark text-xs"></i>
-            </button>
+             class="flex-1 flex items-center gap-2 border rounded-lg px-2.5 py-1.5 min-w-0">
+          <i class="fa-solid fa-user text-xs shrink-0"
+             :class="destinatario.dni ? 'text-sky-500' : 'text-amber-500'"></i>
+          <div class="flex-1 min-w-0 truncate">
+            <span class="text-sm font-semibold text-slate-800" x-text="destinatario.nombre"></span>
+            <span x-show="destinatario.dni" class="ml-1.5 text-xs text-sky-700 font-mono" x-text="'DNI ' + destinatario.dni"></span>
+            <span x-show="!destinatario.dni" class="ml-1.5 text-xs text-amber-700">Sin DNI</span>
           </div>
-          <!-- Editor inline de DNI (solo cuando no tiene) -->
-          <div x-show="!destinatario.dni" x-cloak class="mt-2 flex gap-2">
-            <input type="text" x-model="dniInput" maxlength="8"
-                   @keydown.enter.prevent="guardarDni()"
-                   placeholder="Ingresar DNI (8 dígitos)"
-                   class="input flex-1 text-sm font-mono">
-            <button type="button" @click="guardarDni()"
-                    :disabled="dniInput.length !== 8 || dniGuardando"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                    :class="dniInput.length === 8 && !dniGuardando
-                      ? 'bg-sky-600 hover:bg-sky-700 text-white'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
-              <i class="fa-solid" :class="dniGuardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
-              <span x-text="dniGuardando ? 'Guardando…' : 'Guardar'"></span>
-            </button>
-          </div>
+          <button type="button" @click="destinatario.member_id=''; destinatario.nombre=''; destinatario.dni=''; recipSearch=''; empSearchRes=[]; socSearchRes=[]; dniInput=''; dniGuardando=false"
+                  class="text-slate-400 hover:text-red-500 transition-colors shrink-0">
+            <i class="fa-solid fa-xmark text-xs"></i>
+          </button>
         </div>
+
+        <!-- Fecha de emisión -->
+        <input type="date" x-model="form.fecha" class="input text-sm shrink-0 w-36">
       </div>
 
-      <!-- Búsqueda unificada -->
-      <div x-show="!form.empresa_id || !destinatario.member_id" class="relative">
-        <input type="text" x-model="recipSearch"
-               @input.debounce.250ms="buscarDestinatario()"
-               @blur.debounce.200ms="empSearchRes = []; socSearchRes = []"
-               placeholder="Buscar empresa o socio…"
-               class="input w-full text-sm">
-
-        <!-- Dropdown con grupos -->
-        <div x-show="empSearchRes.length > 0 || socSearchRes.length > 0"
-             class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-0.5 max-h-64 overflow-y-auto">
-
-          <!-- Grupo: Empresas -->
-          <template x-if="empSearchRes.length > 0">
-            <div>
-              <div class="px-3 py-1.5 bg-violet-50 border-b border-violet-100 flex items-center gap-1.5">
-                <i class="fa-solid fa-building text-violet-400 text-[10px]"></i>
-                <span class="text-[10px] font-bold text-violet-500 uppercase tracking-wider">Empresas</span>
-              </div>
-              <template x-for="e in empSearchRes" :key="e._id">
-                <button type="button" @mousedown.prevent="elegirEmpresa(e)"
-                        class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-violet-50 border-b border-slate-100 last:border-0 text-left transition-colors">
-                  <div>
-                    <div class="text-sm font-medium text-slate-800" x-text="e.nombre"></div>
-                    <div class="text-xs text-slate-400" x-show="e.razon_social" x-text="e.razon_social"></div>
-                  </div>
-                  <span class="text-xs font-mono text-violet-500 shrink-0 ml-2 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full"
-                        x-show="e.ruc" x-text="'RUC ' + e.ruc"></span>
-                </button>
-              </template>
-            </div>
-          </template>
-
-          <!-- Grupo: Socios -->
-          <template x-if="socSearchRes.length > 0">
-            <div>
-              <div class="px-3 py-1.5 bg-sky-50 border-b border-sky-100 flex items-center gap-1.5">
-                <i class="fa-solid fa-users text-sky-400 text-[10px]"></i>
-                <span class="text-[10px] font-bold text-sky-500 uppercase tracking-wider">Socios</span>
-              </div>
-              <template x-for="s in socSearchRes" :key="s.member_id">
-                <button type="button" @mousedown.prevent="elegirSocioDestinatario(s)"
-                        class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-sky-50 border-b border-slate-100 last:border-0 text-left transition-colors">
-                  <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium text-slate-800" x-text="(s.apellidos||'') + ' ' + (s.nombres||'')"></div>
-                    <div class="text-xs text-slate-400" x-text="s.member_id"></div>
-                  </div>
-                  <span class="text-xs font-mono shrink-0"
-                        :class="s.dni ? 'text-sky-600 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full' : 'text-slate-300'"
-                        x-text="s.dni ? 'DNI ' + s.dni : 'Sin DNI'"></span>
-                </button>
-              </template>
-            </div>
-          </template>
-        </div>
-
-        <p x-show="recipSearch.length > 1 && empSearchRes.length === 0 && socSearchRes.length === 0" x-cloak
-           class="text-xs text-slate-400 mt-1 italic">Sin resultados.</p>
+      <!-- Editor inline de DNI (cuando socio sin DNI) -->
+      <div x-show="destinatario.member_id && !destinatario.dni" x-cloak class="mt-2.5 flex gap-2">
+        <input type="text" x-model="dniInput" maxlength="8"
+               @keydown.enter.prevent="guardarDni()"
+               placeholder="DNI del socio (8 dígitos)"
+               class="input flex-1 text-sm font-mono">
+        <button type="button" @click="guardarDni()"
+                :disabled="dniInput.length !== 8 || dniGuardando"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0"
+                :class="dniInput.length === 8 && !dniGuardando
+                  ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+          <i class="fa-solid" :class="dniGuardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+          <span x-text="dniGuardando ? 'Guardando…' : 'Guardar DNI'"></span>
+        </button>
       </div>
 
       <!-- Registrar nueva empresa -->
@@ -207,7 +180,7 @@
     <div class="bg-white rounded-xl border border-slate-200 p-5">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-          <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">3</span>
+          <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">2</span>
           Líneas de detalle
         </h2>
         <button @click="agregarLinea()" type="button"
