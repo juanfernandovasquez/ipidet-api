@@ -1602,9 +1602,9 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
 
             if direct_tipo == "principal":
                 current_estado = pay.get("estado")
-                if current_estado in _ESTADOS_NO_MODIFICAR:
-                    # Pago ya registrado: vincular comprobante sin cambiar estado.
-                    # Solo llena fecha_pago desde el comprobante si el pago no tiene una ya.
+                # Proteger fraccionamiento: tiene cuotas activas, el sync de un
+                # comprobante de cuota anual no debe pisar ese estado.
+                if current_estado in _ESTADOS_NO_MODIFICAR or current_estado == "fraccionamiento":
                     fp = (fecha_emision or None) if not pay.get("fecha_pago") else None
                     update_payment(direct_pid, estado=current_estado,
                                    num_comprobante=numero, tipo_comprobante=tipo,
@@ -1613,7 +1613,7 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                    empresa=empresa or None,
                                    comprobante_id=comprobante_id)
                     results.append(_res(item, "ok",
-                        f"Comprobante vinculado (pago ya estaba '{current_estado}')"))
+                        f"Comprobante vinculado (estado '{current_estado}' preservado)"))
                 else:
                     update_payment(direct_pid, estado="pagado",
                                    fecha_pago=fecha_emision or None,
