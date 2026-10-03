@@ -41,137 +41,141 @@
       </div>
     </div>
 
-    <!-- 2. Empresa receptora (solo factura) -->
-    <div x-show="form.tipo === 'factura'" x-cloak class="bg-white rounded-xl border border-slate-200 p-5">
+    <!-- 2. Para / Destinatario (empresa o socio) -->
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
       <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
         <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">2</span>
-        Empresa receptora
+        Para
+        <span class="normal-case font-normal text-slate-400 text-[11px]">(empresa o socio — opcional para boleta)</span>
       </h2>
 
-      <!-- Empresa seleccionada: chip -->
-      <div x-show="form.empresa_id" x-cloak class="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 mb-3">
-        <div class="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center shrink-0">
-          <i class="fa-solid fa-building text-white text-xs"></i>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-semibold text-slate-800 text-sm" x-text="form.empresa"></div>
-          <div class="text-xs text-violet-600 font-mono" x-show="form.ruc" x-text="'RUC ' + form.ruc"></div>
-        </div>
-        <button type="button" @click="form.empresa = ''; form.ruc = ''; form.empresa_id = ''; empSearch = ''; empSearchRes = []"
-                class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
-          <i class="fa-solid fa-xmark text-xs"></i>
-        </button>
-      </div>
-
-      <!-- Búsqueda inline -->
-      <div x-show="!form.empresa_id" class="relative">
-        <input type="text" x-model="empSearch"
-               @input.debounce.250ms="buscarEmpresa()"
-               @blur.debounce.200ms="empSearchRes = []"
-               placeholder="Buscar por nombre o RUC…"
-               class="input w-full text-sm">
-        <div x-show="empSearchRes.length > 0"
-             class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-0.5 max-h-52 overflow-y-auto">
-          <template x-for="e in empSearchRes" :key="e._id">
-            <button type="button" @mousedown.prevent="elegirEmpresa(e)"
-                    class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-violet-50 border-b border-slate-100 last:border-0 text-left transition-colors">
-              <div>
-                <div class="text-sm font-medium text-slate-800" x-text="e.nombre"></div>
-                <div class="text-xs text-slate-400" x-show="e.razon_social" x-text="e.razon_social"></div>
-              </div>
-              <span class="text-xs font-mono text-slate-400 shrink-0 ml-2" x-show="e.ruc" x-text="'RUC ' + e.ruc"></span>
-            </button>
-          </template>
-        </div>
-
-        <!-- Registrar nueva empresa (aparece cuando no hay resultados) -->
-        <div x-show="empSearch.length > 1 && empSearchRes.length === 0" x-cloak class="mt-2">
-          <p class="text-xs text-slate-400 italic mb-2">Sin resultados. ¿Registrar nueva empresa?</p>
-        </div>
-        <div class="mt-2">
-          <button type="button" @click="empNewForm.show = !empNewForm.show"
-                  class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors">
-            <i class="fa-solid" :class="empNewForm.show ? 'fa-chevron-up' : 'fa-plus'"></i>
-            <span x-text="empNewForm.show ? 'Cancelar' : 'Registrar nueva empresa'"></span>
-          </button>
-          <div x-show="empNewForm.show" x-cloak class="mt-2 space-y-2 border border-slate-200 rounded-xl p-3 bg-slate-50">
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Nombre <span class="text-red-500">*</span></label>
-                <input type="text" x-model="empNewForm.nombre" placeholder="Nombre comercial"
-                       class="input w-full text-xs py-1.5">
-              </div>
-              <div>
-                <label class="block text-[10px] font-medium text-slate-500 mb-0.5">RUC</label>
-                <input type="text" x-model="empNewForm.ruc" placeholder="20XXXXXXXXX"
-                       class="input w-full text-xs py-1.5 font-mono">
-              </div>
-              <div class="col-span-2">
-                <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Razón social</label>
-                <input type="text" x-model="empNewForm.razon_social" placeholder="Razón social completa"
-                       class="input w-full text-xs py-1.5">
-              </div>
-            </div>
-            <button type="button" @click="registrarNuevaEmpresa()" :disabled="!empNewForm.nombre.trim() || empSaving"
-                    class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all"
-                    :class="empNewForm.nombre.trim() && !empSaving
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
-              <i class="fa-solid" :class="empSaving ? 'fa-circle-notch fa-spin' : 'fa-building-circle-arrow-right'"></i>
-              <span x-text="empSaving ? 'Registrando…' : 'Registrar y seleccionar'"></span>
-            </button>
+      <!-- Chips de seleccionados -->
+      <div class="space-y-2 mb-3">
+        <!-- Empresa seleccionada -->
+        <div x-show="form.empresa_id" x-cloak class="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5">
+          <div class="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-building text-white text-[10px]"></i>
           </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-slate-800 text-sm" x-text="form.empresa"></div>
+            <div class="text-xs text-violet-600 font-mono" x-show="form.ruc" x-text="'RUC ' + form.ruc"></div>
+          </div>
+          <button type="button" @click="form.empresa = ''; form.ruc = ''; form.empresa_id = ''; recipSearch = ''; empSearchRes = []; socSearchRes = []"
+                  class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
+            <i class="fa-solid fa-xmark text-xs"></i>
+          </button>
+        </div>
+        <!-- Socio/persona seleccionada -->
+        <div x-show="destinatario.member_id" x-cloak class="flex items-center gap-3 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2.5">
+          <div class="w-7 h-7 rounded-lg bg-sky-600 flex items-center justify-center shrink-0">
+            <i class="fa-solid fa-user text-white text-[10px]"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-slate-800 text-sm" x-text="destinatario.nombre"></div>
+            <div class="text-xs font-mono" :class="destinatario.dni ? 'text-sky-600' : 'text-slate-400'"
+                 x-text="destinatario.dni ? 'DNI ' + destinatario.dni : 'Sin DNI registrado'"></div>
+          </div>
+          <button type="button" @click="destinatario = {member_id:'',nombre:'',dni:''}; recipSearch = ''; empSearchRes = []; socSearchRes = []"
+                  class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
+            <i class="fa-solid fa-xmark text-xs"></i>
+          </button>
         </div>
       </div>
-    </div>
 
-    <!-- 2b. Destinatario (solo boleta) -->
-    <div x-show="form.tipo === 'boleta'" x-cloak class="bg-white rounded-xl border border-slate-200 p-5">
-      <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-        <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">2</span>
-        Destinatario <span class="normal-case font-normal text-slate-400 text-[11px]">(opcional — para pre-registro con DNI)</span>
-      </h2>
-
-      <!-- Destinatario seleccionado: chip -->
-      <div x-show="destinatario.member_id" x-cloak class="flex items-center gap-3 bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 mb-3">
-        <div class="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center shrink-0">
-          <i class="fa-solid fa-user text-white text-xs"></i>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-semibold text-slate-800 text-sm" x-text="destinatario.nombre"></div>
-          <div class="text-xs font-mono" :class="destinatario.dni ? 'text-sky-600' : 'text-slate-400'"
-               x-text="destinatario.dni ? 'DNI ' + destinatario.dni : 'Sin DNI registrado'"></div>
-        </div>
-        <button type="button" @click="destinatario = {member_id:'',nombre:'',dni:''}; socSearch = ''; socSearchRes = []"
-                class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
-          <i class="fa-solid fa-xmark text-xs"></i>
-        </button>
-      </div>
-
-      <!-- Búsqueda inline -->
-      <div x-show="!destinatario.member_id" class="relative">
-        <input type="text" x-model="socSearch"
-               @input.debounce.250ms="buscarSocioDestinatario()"
-               @blur.debounce.200ms="socSearchRes = []"
-               placeholder="Buscar por nombre, apellido o ID…"
+      <!-- Búsqueda unificada -->
+      <div x-show="!form.empresa_id || !destinatario.member_id" class="relative">
+        <input type="text" x-model="recipSearch"
+               @input.debounce.250ms="buscarDestinatario()"
+               @blur.debounce.200ms="empSearchRes = []; socSearchRes = []"
+               placeholder="Buscar empresa o socio…"
                class="input w-full text-sm">
-        <div x-show="socSearchRes.length > 0"
-             class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-0.5 max-h-52 overflow-y-auto">
-          <template x-for="s in socSearchRes" :key="s.member_id">
-            <button type="button" @mousedown.prevent="elegirSocioDestinatario(s)"
-                    class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-sky-50 border-b border-slate-100 last:border-0 text-left transition-colors">
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium text-slate-800" x-text="(s.apellidos||'') + ' ' + (s.nombres||'')"></div>
-                <div class="text-xs text-slate-400" x-text="s.member_id"></div>
+
+        <!-- Dropdown con grupos -->
+        <div x-show="empSearchRes.length > 0 || socSearchRes.length > 0"
+             class="absolute z-50 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-lg mt-0.5 max-h-64 overflow-y-auto">
+
+          <!-- Grupo: Empresas -->
+          <template x-if="empSearchRes.length > 0">
+            <div>
+              <div class="px-3 py-1.5 bg-violet-50 border-b border-violet-100 flex items-center gap-1.5">
+                <i class="fa-solid fa-building text-violet-400 text-[10px]"></i>
+                <span class="text-[10px] font-bold text-violet-500 uppercase tracking-wider">Empresas</span>
               </div>
-              <span class="text-xs font-mono shrink-0"
-                    :class="s.dni ? 'text-sky-600 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full' : 'text-slate-300'"
-                    x-text="s.dni ? 'DNI ' + s.dni : 'Sin DNI'"></span>
-            </button>
+              <template x-for="e in empSearchRes" :key="e._id">
+                <button type="button" @mousedown.prevent="elegirEmpresa(e)"
+                        class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-violet-50 border-b border-slate-100 last:border-0 text-left transition-colors">
+                  <div>
+                    <div class="text-sm font-medium text-slate-800" x-text="e.nombre"></div>
+                    <div class="text-xs text-slate-400" x-show="e.razon_social" x-text="e.razon_social"></div>
+                  </div>
+                  <span class="text-xs font-mono text-violet-500 shrink-0 ml-2 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full"
+                        x-show="e.ruc" x-text="'RUC ' + e.ruc"></span>
+                </button>
+              </template>
+            </div>
+          </template>
+
+          <!-- Grupo: Socios -->
+          <template x-if="socSearchRes.length > 0">
+            <div>
+              <div class="px-3 py-1.5 bg-sky-50 border-b border-sky-100 flex items-center gap-1.5">
+                <i class="fa-solid fa-users text-sky-400 text-[10px]"></i>
+                <span class="text-[10px] font-bold text-sky-500 uppercase tracking-wider">Socios</span>
+              </div>
+              <template x-for="s in socSearchRes" :key="s.member_id">
+                <button type="button" @mousedown.prevent="elegirSocioDestinatario(s)"
+                        class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-sky-50 border-b border-slate-100 last:border-0 text-left transition-colors">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium text-slate-800" x-text="(s.apellidos||'') + ' ' + (s.nombres||'')"></div>
+                    <div class="text-xs text-slate-400" x-text="s.member_id"></div>
+                  </div>
+                  <span class="text-xs font-mono shrink-0"
+                        :class="s.dni ? 'text-sky-600 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full' : 'text-slate-300'"
+                        x-text="s.dni ? 'DNI ' + s.dni : 'Sin DNI'"></span>
+                </button>
+              </template>
+            </div>
           </template>
         </div>
-        <p x-show="socSearch.length > 1 && socSearchRes.length === 0" x-cloak
-           class="text-xs text-slate-400 mt-1 italic">Sin resultados</p>
+
+        <p x-show="recipSearch.length > 1 && empSearchRes.length === 0 && socSearchRes.length === 0" x-cloak
+           class="text-xs text-slate-400 mt-1 italic">Sin resultados.</p>
+      </div>
+
+      <!-- Registrar nueva empresa -->
+      <div class="mt-3">
+        <button type="button" @click="empNewForm.show = !empNewForm.show"
+                class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors">
+          <i class="fa-solid" :class="empNewForm.show ? 'fa-chevron-up' : 'fa-plus'"></i>
+          <span x-text="empNewForm.show ? 'Cancelar' : 'Registrar nueva empresa'"></span>
+        </button>
+        <div x-show="empNewForm.show" x-cloak class="mt-2 space-y-2 border border-slate-200 rounded-xl p-3 bg-slate-50">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Nombre <span class="text-red-500">*</span></label>
+              <input type="text" x-model="empNewForm.nombre" placeholder="Nombre comercial"
+                     class="input w-full text-xs py-1.5">
+            </div>
+            <div>
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">RUC</label>
+              <input type="text" x-model="empNewForm.ruc" placeholder="20XXXXXXXXX"
+                     class="input w-full text-xs py-1.5 font-mono">
+            </div>
+            <div class="col-span-2">
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Razón social</label>
+              <input type="text" x-model="empNewForm.razon_social" placeholder="Razón social completa"
+                     class="input w-full text-xs py-1.5">
+            </div>
+          </div>
+          <button type="button" @click="registrarNuevaEmpresa()" :disabled="!empNewForm.nombre.trim() || empSaving"
+                  class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                  :class="empNewForm.nombre.trim() && !empSaving
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+            <i class="fa-solid" :class="empSaving ? 'fa-circle-notch fa-spin' : 'fa-building-circle-arrow-right'"></i>
+            <span x-text="empSaving ? 'Registrando…' : 'Registrar y seleccionar'"></span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -179,8 +183,7 @@
     <div class="bg-white rounded-xl border border-slate-200 p-5">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-          <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold"
-                x-text="form.tipo === 'factura' ? '3' : '2'"></span>
+          <span class="w-5 h-5 inline-flex items-center justify-center bg-slate-200 text-slate-500 rounded-full text-[10px] font-bold">3</span>
           Líneas de detalle
         </h2>
         <button @click="agregarLinea()" type="button"
@@ -540,14 +543,11 @@ function preparar() {
     copied: null,
     resultado: null,
 
-    // Destinatario (boleta)
+    // Destinatario y empresa — búsqueda unificada
     destinatario: { member_id: '', nombre: '', dni: '' },
-    socSearch: '',
-    socSearchRes: [],
-
-    // Empresa
-    empSearch: '',
+    recipSearch: '',
     empSearchRes: [],
+    socSearchRes: [],
     empNewForm: { show: false, nombre: '', ruc: '', razon_social: '' },
     empSaving: false,
 
@@ -603,20 +603,35 @@ function preparar() {
       if (pr.precio && !ln.monto) ln.monto = pr.precio;
     },
 
-    // ── Empresa ────────────────────────────────────────────────────
-    async buscarEmpresa() {
-      const q = this.empSearch.trim();
-      if (!q) { this.empSearchRes = []; return; }
-      const r = await fetch('/api/companies?q=' + encodeURIComponent(q));
-      this.empSearchRes = await r.json();
+    // ── Búsqueda unificada (empresa + socio) ──────────────────────
+    async buscarDestinatario() {
+      const q = this.recipSearch.trim();
+      if (q.length < 2) { this.empSearchRes = []; this.socSearchRes = []; return; }
+      const [rEmp, rSoc] = await Promise.all([
+        fetch('/api/companies?q=' + encodeURIComponent(q)).then(r => r.json()),
+        fetch('/api/members?search=' + encodeURIComponent(q)).then(r => r.json()),
+      ]);
+      this.empSearchRes = rEmp.slice(0, 5);
+      this.socSearchRes = (rSoc.members || []).slice(0, 6);
     },
     elegirEmpresa(e) {
       this.form.empresa    = e.nombre;
       this.form.ruc        = e.ruc || '';
       this.form.empresa_id = e._id || '';
-      this.empSearch       = e.nombre;
+      this.recipSearch     = '';
       this.empSearchRes    = [];
+      this.socSearchRes    = [];
       this.empNewForm.show = false;
+    },
+    elegirSocioDestinatario(s) {
+      this.destinatario = {
+        member_id: s.member_id,
+        nombre:    ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id,
+        dni:       s.dni || '',
+      };
+      this.recipSearch  = '';
+      this.empSearchRes = [];
+      this.socSearchRes = [];
     },
     async registrarNuevaEmpresa() {
       if (!this.empNewForm.nombre.trim() || this.empSaving) return;
@@ -634,28 +649,11 @@ function preparar() {
         });
         const d = await r.json();
         if (d.ok) {
-          this.elegirEmpresaModal(d);
+          this.elegirEmpresa(d);
         }
       } finally {
         this.empSaving = false;
       }
-    },
-
-    // ── Destinatario (boleta) ──────────────────────────────────────
-    async buscarSocioDestinatario() {
-      const q = this.socSearch.trim();
-      if (q.length < 2) { this.socSearchRes = []; return; }
-      const r = await fetch('/api/members?search=' + encodeURIComponent(q));
-      const d = await r.json();
-      this.socSearchRes = (d.members || []).slice(0, 8);
-    },
-    elegirSocioDestinatario(s) {
-      this.destinatario = {
-        member_id: s.member_id,
-        nombre:    ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id,
-        dni:       s.dni || '',
-      };
-      this.socModal = false;
     },
 
     // ── Utils ──────────────────────────────────────────────────────
