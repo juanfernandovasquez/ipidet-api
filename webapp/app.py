@@ -1493,6 +1493,29 @@ async def comprobante_add(request: Request):
         or (", ".join(sorted({it["producto_nombre"] for it in items if it.get("producto_nombre")})))
     )
 
+    # Resolve payment_id + tipo_pago from producto_id + member_id (deterministic, no inference)
+    # Only for cuota_anual / cuota_provincia → tipo_pago "principal"
+    if any(it.get("producto_id") and it.get("member_id") and not it.get("payment_id") for it in items):
+        from bson import ObjectId as _OId
+        for item in items:
+            if item.get("payment_id") or not item.get("member_id") or not item.get("producto_id"):
+                continue
+            try:
+                prod = pdb.productos_col.find_one({"_id": _OId(item["producto_id"])})
+            except Exception:
+                continue
+            if not prod:
+                continue
+            tipo_prod   = prod.get("tipo", "")
+            periodo_prod = prod.get("periodo", "")
+            if tipo_prod in ("cuota_anual", "cuota_provincia") and periodo_prod:
+                pmt = pdb.payments_col.find_one(
+                    {"member_id": item["member_id"], "periodo": periodo_prod}
+                )
+                if pmt:
+                    item["payment_id"] = str(pmt["_id"])
+                    item["tipo_pago"]  = "principal"
+
     # Without a number → save as pre-registered draft
     estado = "emitido" if numero else "pre_registrado"
 

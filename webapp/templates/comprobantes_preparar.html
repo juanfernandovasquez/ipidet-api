@@ -566,6 +566,8 @@ function preparar() {
     get canGuardar() {
       if (!this.form.fecha) return false;
       if (!this.lineas.some(l => l.pid || l.pnombre)) return false;
+      if (this.form.tipo === 'boleta' && !this.destinatario.member_id) return false;
+      if (this.form.tipo === 'factura' && !this.form.empresa_id) return false;
       return true;
     },
 
@@ -718,6 +720,7 @@ function preparar() {
       this.resultado = null;
       const items = this.lineas.filter(l => l.pid || l.pnombre).map(l => ({
         member_id:       l.sid || null,
+        producto_id:     l.pid || null,
         producto_nombre: l.pnombre,
         codigo_sunat:    l.pcode || '',
         monto:           parseFloat(l.monto) || 0,
