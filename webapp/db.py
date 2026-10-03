@@ -1546,10 +1546,13 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
             if direct_tipo == "principal":
                 current_estado = pay.get("estado")
                 if current_estado in _ESTADOS_NO_MODIFICAR:
-                    # Pago ya registrado: solo vincular el comprobante sin cambiar estado
+                    # Pago ya registrado: vincular comprobante sin cambiar estado.
+                    # Solo llena fecha_pago desde el comprobante si el pago no tiene una ya.
+                    fp = (fecha_emision or None) if not pay.get("fecha_pago") else None
                     update_payment(direct_pid, estado=current_estado,
                                    num_comprobante=numero, tipo_comprobante=tipo,
                                    fecha_emision_comprobante=fecha_emision or None,
+                                   fecha_pago=fp,
                                    empresa=empresa or None,
                                    comprobante_id=comprobante_id)
                     results.append(_res(item, "ok",
