@@ -24,10 +24,10 @@
   "wp_user_id":       member.wp_user_id | string if member.wp_user_id else "",
 } %}
 
-<div class="grid grid-cols-1 xl:grid-cols-3 gap-5" x-data="memberPage()">
+<script id="member-init" type="application/json">{{ mdata | tojson }}</script>
 
-  {# JSON embebido — leído por memberPage() #}
-  <script id="member-init" type="application/json">{{ mdata | tojson }}</script>
+<div x-data="memberPage()">
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
 
   <!-- ══ Columna izquierda: Info + Emails + Comentarios ══ -->
   <div class="xl:col-span-2 space-y-5">
@@ -298,7 +298,7 @@
     </div>
   </div>
 
-</div>
+</div>{# /grid #}
 
 <!-- ══ Modal: Editar datos del socio ══ -->
 <div x-show="editOpen" x-cloak
@@ -475,7 +475,8 @@
     </div>
 
   </div>
-</div>
+</div>{# /modal #}
+</div>{# /x-data wrapper #}
 
 <script>
 function memberPage() {
