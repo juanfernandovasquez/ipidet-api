@@ -136,7 +136,7 @@
 
       {# ── Fila COMPROBANTE (boleta / factura / recibo) ─────────────────────── #}
       {% if c._tipo_doc == 'comprobante' %}
-      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
+      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
       <tbody x-data="{
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
