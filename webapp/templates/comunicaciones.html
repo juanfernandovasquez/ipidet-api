@@ -1194,13 +1194,9 @@ function comunicaciones() {
       {% if pre_member %}
       this.manuales.push({ ...{{ pre_member | tojson }}, selected: true });
       {% endif %}
-      {% if pre_ubicacion %}
-      this.filtros.ubicacion = {{ pre_ubicacion | tojson }};
-      {% endif %}
-      {% if pre_pago %}
-      this.filtros.modo = 'periodo';
-      if (!this.filtros.estados_pago.includes({{ pre_pago | tojson }}))
-        this.filtros.estados_pago.push({{ pre_pago | tojson }});
+      {% if pre_destinatarios %}
+      this.destinatarios = {{ pre_destinatarios | tojson }}.map(d => ({ ...d, selected: true }));
+      this.showPreview = true;
       {% endif %}
       this.$nextTick(() => {
         const el = this.$refs.cuerpoEditor;

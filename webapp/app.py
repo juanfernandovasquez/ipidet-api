@@ -1989,15 +1989,55 @@ async def comprobante_sync(comprobante_id: str):
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
-async def comunicaciones(request: Request, pre_member_id: str = "",
-                         pre_ubicacion: str = "", pre_pago: str = "",
-                         from_members: str = ""):
+async def comunicaciones(
+    request: Request,
+    pre_member_id: str = "",
+    from_members:  str = "",
+    # params forwarded from /members when from_members=1
+    search:        str = "",
+    estado:        str = "",
+    pago:          str = "",
+    ubicacion:     str = "",
+    tipo_socio:    str = "",
+    email_est:     str = "",
+    tiene_dni:     str = "",
+    tiene_celular: str = "",
+    alt_email_est: str = "",
+):
     history     = pdb.get_comunicaciones_history()
     titulos     = pdb.get_member_titulos()
     ubicaciones = pdb.get_member_ubicaciones()
     empresas    = pdb.get_companies()
-    pre_member  = None
-    if pre_member_id:
+
+    pre_member        = None
+    pre_destinatarios = []
+
+    if from_members:
+        docs = pdb.get_members_export(
+            search=search, estado=estado, pago=pago, ubicacion=ubicacion,
+            tipo_socio=tipo_socio, email_est=email_est,
+            tiene_dni=tiene_dni, tiene_celular=tiene_celular,
+            alt_email_est=alt_email_est,
+        )
+        for m in docs:
+            emails = m.get("emails", [])
+            email = next(
+                (e["email"] for e in emails if e.get("principal") and e.get("estado") == "habilitado"),
+                next((e["email"] for e in emails if e.get("estado") == "habilitado"), None),
+            )
+            if not email:
+                continue
+            p26 = m.get("pago_2026") or {}
+            pre_destinatarios.append({
+                "member_id":   m["member_id"],
+                "nombre":      f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
+                "email":       email,
+                "titulo":      m.get("titulo", ""),
+                "ubicacion":   m.get("ubicacion", ""),
+                "estado_pago": p26.get("estado", "") if p26 else "",
+            })
+
+    elif pre_member_id:
         m = pdb.get_member(pre_member_id)
         if m:
             ep = next(
@@ -2013,10 +2053,11 @@ async def comunicaciones(request: Request, pre_member_id: str = "",
                     "ubicacion":  m.get("ubicacion", ""),
                     "estado_pago": "",
                 }
+
     return templates.TemplateResponse(request, "comunicaciones.html", _ctx(request,
         history=history, titulos=titulos, ubicaciones=ubicaciones, empresas=empresas,
         pre_member=pre_member,
-        pre_ubicacion=pre_ubicacion, pre_pago=pre_pago,
+        pre_destinatarios=pre_destinatarios,
         from_members=from_members,
     ))
 

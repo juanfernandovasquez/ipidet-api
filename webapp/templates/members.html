@@ -5,7 +5,7 @@
 {% block header_actions %}
 <span class="text-sm text-slate-400 font-medium tabular-nums">{{ total }} socio{% if total != 1 %}s{% endif %}</span>
 
-<a href="/comunicaciones?pre_ubicacion={{ ubicacion | urlencode }}&pre_pago={{ pago | urlencode }}&from_members=1"
+<a href="/comunicaciones?from_members=1&search={{ search | urlencode }}&estado={{ estado | urlencode }}&pago={{ pago | urlencode }}&ubicacion={{ ubicacion | urlencode }}&tipo_socio={{ tipo_socio | urlencode }}&email_est={{ email_est | urlencode }}&tiene_dni={{ tiene_dni | urlencode }}&tiene_celular={{ tiene_celular | urlencode }}&alt_email_est={{ alt_email_est | urlencode }}"
    class="inline-flex items-center gap-2 text-sm font-medium px-3.5 py-2 rounded-lg
           border border-slate-200 bg-white text-slate-600
           hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 transition-colors">
