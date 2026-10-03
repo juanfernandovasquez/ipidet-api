@@ -480,8 +480,12 @@ items            [{        líneas de detalle del comprobante
                    cuota_numero: int | null      número de cuota si tipo_pago == "cuota"
                    codigo_sunat: string | null   código SUNAT del producto
                  }]
-estado           string    "emitido" | "anulado"  (soft delete: nunca borrar físicamente)
-created_at       datetime
+estado              string    "emitido" | "anulado" | "pre_registrado"
+                              "pre_registrado" = borrador sin número SUNAT (se completa al importar XML)
+destinatario_id     string    member_id del receptor (solo boleta, para pre-registro con DNI)
+destinatario_nombre string    nombre del receptor persona natural
+destinatario_dni    string    DNI del receptor (para matching XML → pre-comprobante)
+created_at          datetime
 ```
 
 **Comportamiento de sync (`sync_comprobante_to_payments`):**

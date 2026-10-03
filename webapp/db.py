@@ -1018,8 +1018,8 @@ def _resolve_empresa_nombres(search: str) -> list[str] | None:
 
 def add_company(nombre: str, ruc: str = "", razon_social: str = "",
                 tipo: str = "empresa", contacto_nombre: str = "",
-                contacto_email: str = "", contacto_telefono: str = ""):
-    companies_col.insert_one({
+                contacto_email: str = "", contacto_telefono: str = "") -> str:
+    result = companies_col.insert_one({
         "nombre":            nombre.strip(),
         "razon_social":      razon_social.strip(),
         "ruc":               ruc.strip(),
@@ -1030,6 +1030,7 @@ def add_company(nombre: str, ruc: str = "", razon_social: str = "",
         "activo":            True,
         "created_at":        datetime.now(timezone.utc),
     })
+    return str(result.inserted_id)
 
 def update_company(company_id: str, nombre: str, ruc: str = "",
                    razon_social: str = "", tipo: str = "empresa",
@@ -2548,13 +2549,15 @@ def get_comprobante_stats() -> dict:
     hoy = _date.today()
     este_mes = hoy.strftime("%Y-%m")
     q = {"estado": {"$ne": "anulado"}}
-    docs = list(comprobantes_col.find(q, {"tipo": 1, "fecha_emision": 1}))
+    docs = list(comprobantes_col.find(q, {"tipo": 1, "fecha_emision": 1, "estado": 1}))
     cs = get_credito_stats()
+    emitidos = [d for d in docs if d.get("estado") != "pre_registrado"]
     return {
-        "total":                len(docs),
-        "boletas":              sum(1 for d in docs if d.get("tipo") == "boleta"),
-        "facturas":             sum(1 for d in docs if d.get("tipo") == "factura"),
-        "este_mes":             sum(1 for d in docs if (d.get("fecha_emision") or "").startswith(este_mes)),
+        "total":                len(emitidos),
+        "boletas":              sum(1 for d in emitidos if d.get("tipo") == "boleta"),
+        "facturas":             sum(1 for d in emitidos if d.get("tipo") == "factura"),
+        "este_mes":             sum(1 for d in emitidos if (d.get("fecha_emision") or "").startswith(este_mes)),
+        "pre_registrados":      sum(1 for d in docs if d.get("estado") == "pre_registrado"),
         "credito_pendiente":    cs["total_pendiente"],
         "credito_vencido":      cs["total_vencido"],
         "credito_cobrado":      cs["total_cobrado"],
@@ -2726,7 +2729,11 @@ def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
 
 def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: float,
                         producto_nombre: str, concepto: str, empresa: str,
-                        socios: list, items: list = None, ruc: str = "") -> str:
+                        socios: list, items: list = None, ruc: str = "",
+                        estado: str = "emitido",
+                        destinatario_id: str = "",
+                        destinatario_nombre: str = "",
+                        destinatario_dni: str = "") -> str:
     # Derive socios from items if provided
     if items:
         seen = set()
@@ -2747,20 +2754,23 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
             ruc_emp = ruc_emp or comp.get("ruc", "")
             empresa_id = str(comp["_id"])
     doc = {
-        "numero":          numero.strip(),
-        "tipo":            tipo,
-        "fecha_emision":   fecha_emision,
-        "fecha_carga":     datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-        "monto_total":     monto_total,
-        "producto_nombre": producto_nombre.strip(),
-        "concepto":        concepto.strip(),
-        "empresa":         emp,
-        "empresa_id":      empresa_id,
-        "ruc_empresa":     ruc_emp,
-        "socios":          socios,
-        "items":           items or [],
-        "estado":          "emitido",
-        "created_at":      datetime.now(timezone.utc),
+        "numero":               numero.strip(),
+        "tipo":                 tipo,
+        "fecha_emision":        fecha_emision,
+        "fecha_carga":          datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "monto_total":          monto_total,
+        "producto_nombre":      producto_nombre.strip(),
+        "concepto":             concepto.strip(),
+        "empresa":              emp,
+        "empresa_id":           empresa_id,
+        "ruc_empresa":          ruc_emp,
+        "socios":               socios,
+        "items":                items or [],
+        "estado":               estado,
+        "destinatario_id":      destinatario_id.strip() if destinatario_id else "",
+        "destinatario_nombre":  destinatario_nombre.strip() if destinatario_nombre else "",
+        "destinatario_dni":     destinatario_dni.strip() if destinatario_dni else "",
+        "created_at":           datetime.now(timezone.utc),
     }
     result = comprobantes_col.insert_one(doc)
     return str(result.inserted_id)
@@ -2795,6 +2805,38 @@ def update_comprobante(comprobante_id: str, fields: dict) -> None:
 
 def delete_comprobante(comprobante_id: str) -> None:
     comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": {"estado": "anulado"}})
+
+
+def get_pre_comprobantes(tipo: str = None) -> list:
+    """Comprobantes pre-registrados (borradores sin número de SUNAT)."""
+    q: dict = {"estado": "pre_registrado"}
+    if tipo:
+        q["tipo"] = tipo
+    docs = list(comprobantes_col.find(q).sort("created_at", -1))
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+    return docs
+
+
+def complete_pre_comprobante(comp_id: str, numero: str, tipo: str,
+                              fecha_emision: str, monto_total: float = None,
+                              ruc: str = None) -> dict:
+    """Completa un pre-comprobante con los datos reales del XML/SUNAT."""
+    update: dict = {
+        "numero":       numero,
+        "tipo":         tipo,
+        "fecha_emision": fecha_emision,
+        "estado":       "emitido",
+    }
+    if monto_total is not None:
+        update["monto_total"] = monto_total
+    if ruc is not None:
+        update["ruc_empresa"] = ruc
+    comprobantes_col.update_one({"_id": ObjectId(comp_id)}, {"$set": update})
+    doc = comprobantes_col.find_one({"_id": ObjectId(comp_id)})
+    if doc:
+        doc["_id"] = str(doc["_id"])
+    return doc or {}
 
 
 def get_comprobantes_por_empresa(empresa: str) -> list:

@@ -1132,9 +1132,30 @@ async def api_companies(q: str = ""):
 
 
 @app.post("/api/companies")
-async def api_add_company(nombre: str = Form(...), ruc: str = Form(""), tipo: str = Form("empresa")):
-    pdb.add_company(nombre, ruc, tipo=tipo)
-    return {"ok": True}
+async def api_add_company(request: Request):
+    ct = request.headers.get("content-type", "")
+    if "application/json" in ct:
+        data = await request.json()
+    else:
+        data = dict(await request.form())
+    nombre       = (data.get("nombre", "") or "").strip()
+    ruc          = (data.get("ruc", "") or "").strip()
+    razon_social = (data.get("razon_social", "") or "").strip()
+    tipo         = (data.get("tipo", "empresa") or "empresa").strip()
+    if not nombre:
+        raise HTTPException(400, "nombre requerido")
+    # Return existing if already registered
+    existing = pdb.companies_col.find_one(
+        {"$or": [
+            {"nombre": {"$regex": f"^{re.escape(nombre)}$", "$options": "i"}},
+            *([{"ruc": ruc}] if ruc else []),
+        ]}
+    )
+    if existing:
+        return {"ok": True, "_id": str(existing["_id"]), "nombre": existing["nombre"],
+                "ruc": existing.get("ruc", ""), "razon_social": existing.get("razon_social", "")}
+    new_id = pdb.add_company(nombre=nombre, ruc=ruc, razon_social=razon_social, tipo=tipo)
+    return {"ok": True, "_id": new_id, "nombre": nombre, "ruc": ruc, "razon_social": razon_social}
 
 
 @app.delete("/api/companies/{company_id}")
@@ -1457,6 +1478,7 @@ async def comprobante_add(request: Request):
     data    = await request.json()
     items   = data.get("items", [])
     empresa = data.get("empresa", "").strip()
+    numero  = data.get("numero", "").strip()
     monto_total = float(data.get("monto_total") or 0)
 
     # Auto-registrar empresa si no existe en companies
@@ -1474,32 +1496,47 @@ async def comprobante_add(request: Request):
         or (", ".join(sorted({it["producto_nombre"] for it in items if it.get("producto_nombre")})))
     )
 
+    # Without a number → save as pre-registered draft
+    estado = "emitido" if numero else "pre_registrado"
+
     comp_id = pdb.create_comprobante(
-        numero          = data.get("numero", ""),
-        tipo            = data.get("tipo", "boleta"),
-        fecha_emision   = data.get("fecha_emision", ""),
-        monto_total     = monto_total,
-        producto_nombre = producto_nombre,
-        concepto        = data.get("concepto", ""),
-        empresa         = empresa,
-        socios          = socios,
-        items           = items,
+        numero               = numero,
+        tipo                 = data.get("tipo", "boleta"),
+        fecha_emision        = data.get("fecha_emision", ""),
+        monto_total          = monto_total,
+        producto_nombre      = producto_nombre,
+        concepto             = data.get("concepto", ""),
+        empresa              = empresa,
+        socios               = socios,
+        items                = items,
+        ruc                  = data.get("empresa_ruc", ""),
+        estado               = estado,
+        destinatario_id      = data.get("destinatario_id", ""),
+        destinatario_nombre  = data.get("destinatario_nombre", ""),
+        destinatario_dni     = data.get("destinatario_dni", ""),
     )
-    cruce = pdb.sync_comprobante_to_payments(
-        items          = items,
-        numero         = data.get("numero", ""),
-        tipo           = data.get("tipo", "boleta"),
-        fecha_emision  = data.get("fecha_emision", ""),
-        empresa        = empresa,
-        comprobante_id = comp_id,
-    )
-    cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
-    cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
-    if data.get("es_credito"):
+
+    # Only sync payments when we have a real numero
+    cruce: list = []
+    cruce_ok = 0
+    cruce_alerts = 0
+    if numero:
+        cruce = pdb.sync_comprobante_to_payments(
+            items          = items,
+            numero         = numero,
+            tipo           = data.get("tipo", "boleta"),
+            fecha_emision  = data.get("fecha_emision", ""),
+            empresa        = empresa,
+            comprobante_id = comp_id,
+        )
+        cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
+        cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
+
+    if data.get("es_credito") and numero:
         periodo = data.get("periodo", "").strip()
         pdb.create_factura_credito(
             empresa           = empresa,
-            numero_factura    = data.get("numero", ""),
+            numero_factura    = numero,
             monto             = monto_total,
             fecha_emision     = data.get("fecha_emision", ""),
             fecha_vencimiento = data.get("fecha_vencimiento", ""),
@@ -1507,7 +1544,49 @@ async def comprobante_add(request: Request):
             socios            = socios,
             periodo           = periodo,
         )
-    return {"ok": True, "id": comp_id, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
+    return {"ok": True, "id": comp_id, "estado": estado,
+            "pre_registrado": estado == "pre_registrado",
+            "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
+
+
+@app.get("/api/comprobantes/pre-registrados")
+async def api_pre_registrados(tipo: str = ""):
+    docs = pdb.get_pre_comprobantes(tipo=tipo or None)
+    return docs
+
+
+@app.post("/comprobantes/{comp_id}/complete")
+async def comprobante_complete(comp_id: str, request: Request):
+    from bson import ObjectId
+    data = await request.json()
+    numero = data.get("numero", "").strip()
+    if not numero:
+        raise HTTPException(400, "numero requerido")
+    comp = pdb.comprobantes_col.find_one({"_id": ObjectId(comp_id)})
+    if not comp or comp.get("estado") != "pre_registrado":
+        raise HTTPException(404, "pre-comprobante no encontrado")
+    monto_raw = data.get("monto_total")
+    pdb.complete_pre_comprobante(
+        comp_id       = comp_id,
+        numero        = numero,
+        tipo          = data.get("tipo") or comp["tipo"],
+        fecha_emision = data.get("fecha_emision") or comp.get("fecha_emision", ""),
+        monto_total   = float(monto_raw) if monto_raw is not None else None,
+        ruc           = data.get("ruc") or None,
+    )
+    comp = pdb.comprobantes_col.find_one({"_id": ObjectId(comp_id)})
+    items = comp.get("items", [])
+    cruce = pdb.sync_comprobante_to_payments(
+        items          = items,
+        numero         = numero,
+        tipo           = comp["tipo"],
+        fecha_emision  = comp.get("fecha_emision", ""),
+        empresa        = comp.get("empresa", ""),
+        comprobante_id = comp_id,
+    )
+    cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
+    cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
+    return {"ok": True, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
 
 
 @app.post("/comprobantes/import-xml")
@@ -1546,15 +1625,84 @@ async def comprobantes_import_xml(
             continue
 
         # Deduplicar por número de comprobante
-        if pdb.comprobantes_col.find_one({"numero": numero}):
+        if pdb.comprobantes_col.find_one({"numero": numero, "estado": {"$ne": "pre_registrado"}}):
             results.append({"filename": fname, "numero": numero, "status": "duplicado",
                             "tipo": data["tipo"], "empresa": data["razon_social"], "monto": data["monto_total"]})
             continue
 
-        # Upsert empresa por RUC (solo si es RUC de 11 dígitos, no DNI)
+        xml_ruc  = data["ruc_empresa"]
+        xml_tipo = data["tipo"]
+        xml_monto = data["monto_total"]
+
+        # Buscar pre-comprobante coincidente por RUC (factura) o DNI (boleta)
+        pre_match = None
+        if xml_ruc:
+            if len(xml_ruc) == 11 and xml_ruc.isdigit():
+                # Factura: matching por ruc_empresa
+                pre_match = pdb.comprobantes_col.find_one({
+                    "estado":       "pre_registrado",
+                    "tipo":         xml_tipo,
+                    "ruc_empresa":  xml_ruc,
+                })
+            elif len(xml_ruc) == 8 and xml_ruc.isdigit():
+                # Boleta: matching por destinatario_dni
+                pre_match = pdb.comprobantes_col.find_one({
+                    "estado":           "pre_registrado",
+                    "tipo":             xml_tipo,
+                    "destinatario_dni": xml_ruc,
+                })
+
         empresa_nombre = data["razon_social"]
-        ruc = data["ruc_empresa"]
+        ruc = xml_ruc
         empresa_nueva = False
+
+        if pre_match:
+            # Completar pre-comprobante existente con datos del XML
+            pre_comp_id = str(pre_match["_id"])
+            pdb.complete_pre_comprobante(
+                comp_id       = pre_comp_id,
+                numero        = numero,
+                tipo          = xml_tipo,
+                fecha_emision = data["fecha_emision"],
+                monto_total   = xml_monto,
+                ruc           = ruc if ruc and len(ruc) == 11 else None,
+            )
+            items = pre_match.get("items") or data["items"]
+            # Auto-cruce items from XML if pre-match has no items
+            if not items:
+                items = data["items"]
+                for it in items:
+                    cs = it.get("codigo_sunat", "")
+                    if cs and cs in prods_sunat:
+                        it["producto_nombre"] = prods_sunat[cs]["nombre"]
+            socios = list({it["member_id"] for it in items if it.get("member_id")})
+            cruce = pdb.sync_comprobante_to_payments(
+                items          = items,
+                numero         = numero,
+                tipo           = xml_tipo,
+                fecha_emision  = data["fecha_emision"],
+                empresa        = pre_match.get("empresa", empresa_nombre),
+                comprobante_id = pre_comp_id,
+            )
+            cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
+            cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
+            results.append({
+                "filename":       fname,
+                "numero":         numero,
+                "tipo":           xml_tipo,
+                "status":         "completado",
+                "empresa":        pre_match.get("empresa") or empresa_nombre,
+                "empresa_nueva":  False,
+                "monto":          xml_monto,
+                "socios_count":   len(socios),
+                "cruce_ok":       cruce_ok,
+                "cruce_alerts":   cruce_alerts,
+                "cruce_items":    cruce,
+                "pre_comp_id":    pre_comp_id,
+            })
+            continue
+
+        # No pre-match: create new comprobante
 
         if ruc and len(ruc) == 11 and ruc.isdigit():
             existing_emp = pdb.companies_col.find_one({"ruc": ruc})

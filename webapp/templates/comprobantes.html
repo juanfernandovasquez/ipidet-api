@@ -47,6 +47,13 @@
     <div class="text-xl font-bold text-red-700">S/ {{ "%.0f"|format(stats.credito_vencido) }}</div>
     <div class="text-[11px] text-red-400 mt-0.5">{{ stats.credito_n_vencidos }} factura(s)</div>
   </div>
+  {% if stats.pre_registrados %}
+  <div class="bg-amber-50 rounded-xl border border-amber-200 p-4">
+    <div class="text-[10px] text-amber-600 uppercase tracking-wide mb-1">Pre-registrados</div>
+    <div class="text-2xl font-bold text-amber-800">{{ stats.pre_registrados }}</div>
+    <div class="text-[11px] text-amber-500 mt-0.5">Pendientes de XML</div>
+  </div>
+  {% endif %}
   <!-- Acciones -->
   <div class="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl p-4 flex flex-col justify-between cursor-pointer transition-colors"
        onclick="document.getElementById('modal-nuevo').classList.remove('hidden'); window.dispatchEvent(new CustomEvent('comp-nuevo'))">
@@ -173,7 +180,15 @@
         <td class="px-4 py-3 text-right font-semibold text-slate-800">
           {% if c.monto_total %}S/ {{ "%.2f"|format(c.monto_total) }}{% else %}—{% endif %}
         </td>
-        <td class="px-4 py-3"><span class="text-xs text-slate-300">—</span></td>
+        <td class="px-4 py-3">
+          {% if c.estado == 'pre_registrado' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-clock text-[9px]"></i> Pre-reg.
+          </span>
+          {% else %}
+          <span class="text-xs text-slate-300">—</span>
+          {% endif %}
+        </td>
         <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
           <div class="flex items-center justify-end gap-1">
             <button @click="eliminar()" class="text-slate-300 hover:text-red-500 transition-colors p-1">
@@ -703,6 +718,7 @@
          get hayPreview()    { return this.previews.length > 0 && !this.listo; },
          get listo()         { return this.resultados.length > 0; },
          get importados()    { return this.resultados.filter(r => r.status === 'importado').length; },
+         get completados()   { return this.resultados.filter(r => r.status === 'completado').length; },
          get duplicados()    { return this.resultados.filter(r => r.status === 'duplicado').length; },
          get errores()       { return this.resultados.filter(r => r.status === 'error').length; },
          get empNuevas()     { return this.resultados.filter(r => r.empresa_nueva).length; },
@@ -1131,10 +1147,14 @@
 
       <!-- FASE C: Resultados (post-import) -->
       <div x-show="listo" x-cloak>
-        <div class="grid grid-cols-5 gap-3 mb-4">
+        <div class="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
           <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
             <div class="text-xl font-bold text-emerald-700" x-text="importados"></div>
             <div class="text-[11px] text-emerald-600 mt-0.5">Importados</div>
+          </div>
+          <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-center" x-show="completados > 0">
+            <div class="text-xl font-bold text-indigo-700" x-text="completados"></div>
+            <div class="text-[11px] text-indigo-600 mt-0.5">Pre-reg. completados</div>
           </div>
           <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
             <div class="text-xl font-bold text-amber-700" x-text="duplicados"></div>
@@ -1218,6 +1238,10 @@
                       <span x-show="r.status === 'importado'"
                             class="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                         <i class="fa-solid fa-check text-[8px]"></i> OK
+                      </span>
+                      <span x-show="r.status === 'completado'"
+                            class="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                        <i class="fa-solid fa-link text-[8px]"></i> Pre-reg. completado
                       </span>
                       <span x-show="r.status === 'duplicado'"
                             class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
