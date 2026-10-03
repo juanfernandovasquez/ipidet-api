@@ -121,6 +121,16 @@
             </div>
           </th>
 
+          {# DNI #}
+          <th class="px-4 py-3">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">DNI</span>
+          </th>
+
+          {# Celular #}
+          <th class="px-4 py-3">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Celular</span>
+          </th>
+
           {# Lugar — filtro ubicacion #}
           <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
             <button type="button" @click="open=!open"
@@ -219,9 +229,27 @@
                    class="fa-solid transition-colors"></i>
               </button>
             </div>
+            {% for e in m.emails %}
+              {% if not e.get('principal') and e.get('email') %}
+              <div class="text-[10px] text-slate-400 mt-0.5 truncate flex items-center gap-0.5">
+                {% if e.get('estado') == 'rebotado' %}<i class="fa-solid fa-triangle-exclamation text-red-400 text-[9px] shrink-0"></i>{% endif %}
+                {{ e.email }}
+              </div>
+              {% endif %}
+            {% endfor %}
             {% else %}
             <span class="text-slate-300 italic text-[11px]">sin email</span>
             {% endif %}
+          </td>
+
+          {# DNI #}
+          <td class="px-4 py-3 text-xs text-slate-500 font-mono">
+            {{ m.dni or '—' }}
+          </td>
+
+          {# Celular #}
+          <td class="px-4 py-3 text-xs text-slate-500">
+            {{ m.celular or '—' }}
           </td>
 
           {# Lugar #}
@@ -251,7 +279,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="5" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="7" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
             No se encontraron socios con estos filtros.
           </td>

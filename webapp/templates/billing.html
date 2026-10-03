@@ -104,16 +104,22 @@
   <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
     <table class="w-full text-sm">
       <thead>
-        <tr class="bg-slate-50 border-b border-slate-200 text-left">
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Socio</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider w-44">2025</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider w-44">2026</th>
+        <tr class="bg-slate-50 text-xs uppercase tracking-wider text-left">
+          <th rowspan="2" class="px-4 py-3 font-semibold text-slate-600 border-b border-slate-200">Socio</th>
+          <th rowspan="2" class="px-4 py-3 font-semibold text-slate-600 border-b border-slate-200">Email</th>
+          <th colspan="3" class="px-3 py-2 font-semibold text-slate-400 text-center border-b border-slate-100 tracking-widest">2025</th>
+          <th colspan="3" class="px-3 py-2 font-semibold text-blue-500 text-center border-b border-blue-100 bg-blue-50/30 border-l-2 border-l-slate-200 tracking-widest">2026</th>
+        </tr>
+        <tr class="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wider text-left">
+          <th class="px-3 py-2 font-medium text-slate-400">Estado</th>
+          <th class="px-3 py-2 font-medium text-slate-400">Empresa</th>
+          <th class="px-3 py-2 font-medium text-slate-400">Fecha</th>
+          <th class="px-3 py-2 font-medium text-slate-400 border-l-2 border-l-slate-200">Estado</th>
+          <th class="px-3 py-2 font-medium text-slate-400">Empresa</th>
+          <th class="px-3 py-2 font-medium text-slate-400">Fecha</th>
         </tr>
       </thead>
 
-      {% for row in payments %}
-      {# ── Build pay_data dicts for each year ── #}
       {% macro pay_dict(p) %}{% if p %}{{ {
         "id": p._id | string,
         "member_id": p.member_id or "",
@@ -138,6 +144,7 @@
         "pagos_parciales": p.get("pagos_parciales") or [],
       } | tojson }}{% endif %}{% endmacro %}
 
+      {% for row in payments %}
       {% set p25 = row.pago_2025 %}
       {% set p26 = row.pago_2026 %}
 
@@ -155,72 +162,72 @@
           </td>
 
           {# Email #}
-          <td class="px-4 py-3 text-xs text-slate-500 max-w-[200px]">
+          <td class="px-4 py-3 text-xs text-slate-500 max-w-[180px]">
             <span class="truncate block">{{ row.email_principal or '—' }}</span>
           </td>
 
-          {# 2025 #}
+          {# ── 2025: Estado ── #}
           {% if p25 %}
           {% set sl25 = status_labels.get(p25.estado, ('—','gray')) %}
-          <td class="px-3 py-3 cursor-pointer hover:bg-blue-50/60 transition-colors"
+          <td class="px-3 py-3 cursor-pointer hover:bg-slate-100/80 transition-colors"
               data-pay='{{ pay_dict(p25) }}'
-              onclick="window.dispatchEvent(new CustomEvent('billing-abrir', {detail: JSON.parse(this.dataset.pay)}))">
-            <div class="space-y-1">
-              {% if p25.estado == 'fraccionamiento' and p25.cuotas_total > 0 %}
-                <span class="badge badge-amber">Fracc. {{ p25.cuotas_pagadas }}/{{ p25.cuotas_total }}</span>
-              {% elif p25.estado == 'parcial' %}
-                {% set mt25 = p25.get('monto_total') or 0 %}
-                <span class="badge badge-blue">Parcial{% if mt25 %} S/{{ p25.monto_pagado|int }}/{{ mt25|int }}{% endif %}</span>
-              {% else %}
-                <span class="badge badge-{{ sl25[1] }}">{{ sl25[0] }}</span>
-              {% endif %}
-              {% if p25.get('empresa_pagadora') %}
-              <div class="text-[11px] text-slate-500">{{ p25.empresa_pagadora }}</div>
-              {% endif %}
-              {% if p25.get('fecha_pago') %}
-              <div class="text-[11px] text-slate-400">{{ p25.fecha_pago }}</div>
-              {% endif %}
-              {% if p25.get('comprobante_emitido') %}
-              <div class="text-[11px] text-emerald-600 flex items-center gap-0.5">
-                <i class="fa-solid fa-circle-check text-[10px]"></i> Comp. emitido
-              </div>
-              {% endif %}
-            </div>
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir',{detail:JSON.parse(this.dataset.pay)}))">
+            {% if p25.estado == 'fraccionamiento' and p25.cuotas_total > 0 %}
+              <span class="badge badge-amber">{{ p25.cuotas_pagadas }}/{{ p25.cuotas_total }}</span>
+            {% elif p25.estado == 'parcial' %}
+              {% set mt25 = p25.get('monto_total') or 0 %}
+              <span class="badge badge-blue">Parcial{% if mt25 %} S/{{ p25.monto_pagado|int }}/{{ mt25|int }}{% endif %}</span>
+            {% else %}
+              <span class="badge badge-{{ sl25[1] }}">{{ sl25[0] }}</span>
+            {% endif %}
+            {% if p25.get('comprobante_emitido') %}<i class="fa-solid fa-receipt text-emerald-500 text-[9px] ml-1" title="Comp. emitido"></i>{% endif %}
+          </td>
+          {# ── 2025: Empresa ── #}
+          <td class="px-3 py-3 text-xs text-slate-500 cursor-pointer hover:bg-slate-100/80 transition-colors"
+              data-pay='{{ pay_dict(p25) }}'
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir',{detail:JSON.parse(this.dataset.pay)}))">
+            {{ p25.get('empresa_pagadora') or '—' }}
+          </td>
+          {# ── 2025: Fecha ── #}
+          <td class="px-3 py-3 text-xs text-slate-400 cursor-pointer hover:bg-slate-100/80 transition-colors"
+              data-pay='{{ pay_dict(p25) }}'
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir',{detail:JSON.parse(this.dataset.pay)}))">
+            {{ p25.get('fecha_pago') or '—' }}
           </td>
           {% else %}
-          <td class="px-3 py-3 text-center text-slate-200 text-lg">—</td>
+          <td colspan="3" class="px-3 py-3 text-center text-slate-200 text-xs">—</td>
           {% endif %}
 
-          {# 2026 #}
+          {# ── 2026: Estado ── #}
           {% if p26 %}
           {% set sl26 = status_labels.get(p26.estado, ('—','gray')) %}
-          <td class="px-3 py-3 cursor-pointer hover:bg-blue-50/60 transition-colors"
+          <td class="px-3 py-3 cursor-pointer hover:bg-blue-50/60 transition-colors border-l-2 border-l-slate-200"
               data-pay='{{ pay_dict(p26) }}'
-              onclick="window.dispatchEvent(new CustomEvent('billing-abrir', {detail: JSON.parse(this.dataset.pay)}))">
-            <div class="space-y-1">
-              {% if p26.estado == 'fraccionamiento' and p26.cuotas_total > 0 %}
-                <span class="badge badge-amber">Fracc. {{ p26.cuotas_pagadas }}/{{ p26.cuotas_total }}</span>
-              {% elif p26.estado == 'parcial' %}
-                {% set mt26 = p26.get('monto_total') or 0 %}
-                <span class="badge badge-blue">Parcial{% if mt26 %} S/{{ p26.monto_pagado|int }}/{{ mt26|int }}{% endif %}</span>
-              {% else %}
-                <span class="badge badge-{{ sl26[1] }}">{{ sl26[0] }}</span>
-              {% endif %}
-              {% if p26.get('empresa_pagadora') %}
-              <div class="text-[11px] text-slate-500">{{ p26.empresa_pagadora }}</div>
-              {% endif %}
-              {% if p26.get('fecha_pago') %}
-              <div class="text-[11px] text-slate-400">{{ p26.fecha_pago }}</div>
-              {% endif %}
-              {% if p26.get('comprobante_emitido') %}
-              <div class="text-[11px] text-emerald-600 flex items-center gap-0.5">
-                <i class="fa-solid fa-circle-check text-[10px]"></i> Comp. emitido
-              </div>
-              {% endif %}
-            </div>
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir',{detail:JSON.parse(this.dataset.pay)}))">
+            {% if p26.estado == 'fraccionamiento' and p26.cuotas_total > 0 %}
+              <span class="badge badge-amber">{{ p26.cuotas_pagadas }}/{{ p26.cuotas_total }}</span>
+            {% elif p26.estado == 'parcial' %}
+              {% set mt26 = p26.get('monto_total') or 0 %}
+              <span class="badge badge-blue">Parcial{% if mt26 %} S/{{ p26.monto_pagado|int }}/{{ mt26|int }}{% endif %}</span>
+            {% else %}
+              <span class="badge badge-{{ sl26[1] }}">{{ sl26[0] }}</span>
+            {% endif %}
+            {% if p26.get('comprobante_emitido') %}<i class="fa-solid fa-receipt text-emerald-500 text-[9px] ml-1" title="Comp. emitido"></i>{% endif %}
+          </td>
+          {# ── 2026: Empresa ── #}
+          <td class="px-3 py-3 text-xs text-slate-500 cursor-pointer hover:bg-blue-50/60 transition-colors"
+              data-pay='{{ pay_dict(p26) }}'
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir',{detail:JSON.parse(this.dataset.pay)}))">
+            {{ p26.get('empresa_pagadora') or '—' }}
+          </td>
+          {# ── 2026: Fecha ── #}
+          <td class="px-3 py-3 text-xs text-slate-400 cursor-pointer hover:bg-blue-50/60 transition-colors"
+              data-pay='{{ pay_dict(p26) }}'
+              onclick="window.dispatchEvent(new CustomEvent('billing-abrir',{detail:JSON.parse(this.dataset.pay)}))">
+            {{ p26.get('fecha_pago') or '—' }}
           </td>
           {% else %}
-          <td class="px-3 py-3 text-center text-slate-200 text-lg">—</td>
+          <td colspan="3" class="px-3 py-3 text-center text-slate-200 text-xs border-l-2 border-l-slate-200">—</td>
           {% endif %}
 
         </tr>
@@ -228,7 +235,7 @@
       {% else %}
       <tbody>
         <tr>
-          <td colspan="4" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="8" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-money-bill-wave text-2xl mb-2 block text-slate-300"></i>
             No se encontraron registros con estos filtros.
           </td>
