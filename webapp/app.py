@@ -1820,6 +1820,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
         "empresa":       empresa,
         "concepto":      data.get("concepto", ""),
         "monto_total":   float(data.get("monto_total") or 0),
+        "medio_pago":    data.get("medio_pago", ""),
         "items":         items,
     }
     if items:
