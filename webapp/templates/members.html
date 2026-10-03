@@ -3,18 +3,29 @@
 {% block heading %}Padrón de Socios{% endblock %}
 
 {% block header_actions %}
-<span class="text-sm text-slate-500">{{ total }} socio{% if total != 1 %}s{% endif %}</span>
+<span class="text-sm text-slate-400 font-medium tabular-nums">{{ total }} socio{% if total != 1 %}s{% endif %}</span>
+
 <a href="/comunicaciones?pre_ubicacion={{ ubicacion | urlencode }}&pre_pago={{ pago | urlencode }}&from_members=1"
-   class="btn-ghost text-sm">
-  <i class="fa-solid fa-paper-plane mr-1.5"></i> Enviar comunicación
+   class="inline-flex items-center gap-2 text-sm font-medium px-3.5 py-2 rounded-lg
+          border border-slate-200 bg-white text-slate-600
+          hover:bg-slate-50 hover:border-slate-300 hover:text-slate-800 transition-colors">
+  <i class="fa-solid fa-paper-plane text-indigo-400 text-[13px]"></i>
+  Enviar comunicación
 </a>
+
 <button onclick="document.getElementById('modal-export').classList.remove('hidden')"
-  class="btn-ghost text-sm">
-  <i class="fa-solid fa-file-excel mr-1.5 text-emerald-600"></i> Exportar Excel
+  class="inline-flex items-center gap-2 text-sm font-medium px-3.5 py-2 rounded-lg
+         border border-emerald-200 bg-emerald-50 text-emerald-700
+         hover:bg-emerald-100 hover:border-emerald-300 transition-colors">
+  <i class="fa-solid fa-file-excel text-emerald-500 text-[13px]"></i>
+  Exportar Excel
 </button>
+
 <button onclick="document.getElementById('modal-nuevo-socio').classList.remove('hidden')"
-  class="btn-primary text-sm">
-  <i class="fa-solid fa-user-plus mr-1.5"></i> Nuevo socio
+  class="inline-flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-lg
+         bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors">
+  <i class="fa-solid fa-user-plus text-[13px]"></i>
+  Nuevo socio
 </button>
 {% endblock %}
 
