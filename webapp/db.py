@@ -274,6 +274,22 @@ def update_email_status(member_id: str, email: str, nuevo_estado: str):
         {"member_id": member_id, "emails.email": email},
         {"$set": {"emails.$.estado": nuevo_estado}},
     )
+    if nuevo_estado in ("inhabilitado", "rebotado"):
+        _maybe_promote_secondary(member_id)
+
+
+def _maybe_promote_secondary(member_id: str):
+    """Si el principal está inhabilitado/rebotado y hay un secundario habilitado, lo promueve."""
+    member = members_col.find_one({"member_id": member_id}, {"emails": 1})
+    if not member:
+        return
+    emails = member.get("emails") or []
+    principal = next((e for e in emails if e.get("principal")), None)
+    if not principal or principal.get("estado") == "habilitado":
+        return
+    candidate = next((e for e in emails if not e.get("principal") and e.get("estado") == "habilitado"), None)
+    if candidate:
+        set_email_principal(member_id, candidate["email"])
 
 
 def set_email_principal(member_id: str, email: str):
@@ -307,6 +323,12 @@ def mark_email_bounce(email: str, bounce_type: str = "hard", reason: str = ""):
     if bounce_type == "hard":
         update["$set"]["emails.$.estado"] = "inhabilitado"
     members_col.update_one({"emails.email": {"$regex": f"^{email}$", "$options": "i"}}, update)
+    if bounce_type == "hard":
+        member = members_col.find_one(
+            {"emails.email": {"$regex": f"^{email}$", "$options": "i"}}, {"member_id": 1}
+        )
+        if member:
+            _maybe_promote_secondary(member["member_id"])
 
 
 def get_bounced_emails():
