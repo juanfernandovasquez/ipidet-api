@@ -3106,6 +3106,13 @@ def delete_comprobante(comprobante_id: str) -> None:
     comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": {"estado": "anulado"}})
 
 
+def get_comprobante_by_id(comprobante_id: str) -> dict | None:
+    doc = comprobantes_col.find_one({"_id": ObjectId(comprobante_id)})
+    if doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+
 def get_pre_comprobantes(tipo: str = None) -> list:
     """Comprobantes pre-registrados (borradores sin número de SUNAT)."""
     q: dict = {"estado": "pre_registrado"}

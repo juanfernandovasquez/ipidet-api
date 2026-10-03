@@ -394,8 +394,9 @@
            if (!this.canGuardar || this.guardando) return;
            this.guardando = true;
            const items = this.items.filter(it => it.pid || it.pnombre).map(it => ({
-             member_id: it.sid || null, producto_nombre: it.pnombre,
-             codigo_sunat: it.pcode || '', monto: parseFloat(it.monto) || 0
+             member_id: it.sid || null, producto_id: it.pid || null,
+             producto_nombre: it.pnombre, codigo_sunat: it.pcode || '',
+             monto: parseFloat(it.monto) || 0
            }));
            const url = this.editId
              ? '/comprobantes/' + this.editId + '/update'

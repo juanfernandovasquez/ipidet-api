@@ -1978,19 +1978,58 @@ async def comprobante_sync(comprobante_id: str):
     comp = pdb.comprobantes_col.find_one({"_id": _ObjId(comprobante_id)})
     if not comp:
         raise HTTPException(status_code=404, detail="Comprobante no encontrado")
-    items = comp.get("items") or []
+    items = list(comp.get("items") or [])
     if not items:
         return {"ok": True, "cruce_ok": 0, "cruce_alerts": 0, "cruce_items": [],
                 "msg": "Este comprobante no tiene líneas de detalle vinculadas"}
+
+    # Resolve payment_id for items that don't have it yet
+    # Match by producto_nombre → products DB → periodo → payment
+    items_updated = False
+    for item in items:
+        if item.get("payment_id") or not item.get("member_id"):
+            continue
+        prod_id  = item.get("producto_id")
+        prod_nom = item.get("producto_nombre", "")
+        prod = None
+        if prod_id:
+            try:
+                prod = pdb.productos_col.find_one({"_id": _ObjId(prod_id)})
+            except Exception:
+                pass
+        if not prod and prod_nom:
+            prod = pdb.productos_col.find_one(
+                {"nombre": {"$regex": f"^{prod_nom}$", "$options": "i"}}
+            )
+        if not prod:
+            continue
+        tipo_prod   = prod.get("tipo", "")
+        periodo_prod = prod.get("periodo", "")
+        if tipo_prod in ("cuota_anual", "cuota_provincia") and periodo_prod:
+            pmt = pdb.payments_col.find_one(
+                {"member_id": item["member_id"], "periodo": periodo_prod}
+            )
+            if pmt:
+                item["payment_id"] = str(pmt["_id"])
+                item["tipo_pago"]  = "principal"
+                item["producto_id"] = str(prod["_id"])
+                items_updated = True
+
+    if items_updated:
+        pdb.comprobantes_col.update_one(
+            {"_id": _ObjId(comprobante_id)}, {"$set": {"items": items}}
+        )
+
     cruce = pdb.sync_comprobante_to_payments(
         items         = items,
         numero        = comp.get("numero", ""),
         tipo          = comp.get("tipo", "boleta"),
         fecha_emision = comp.get("fecha_emision", ""),
         empresa       = comp.get("empresa", ""),
+        comprobante_id = comprobante_id,
     )
     cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
-    cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
+    cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok",))
     return {"ok": True, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
 
 
