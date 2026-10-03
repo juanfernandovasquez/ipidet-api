@@ -884,9 +884,14 @@ def set_monto_objetivo(payment_id: str, monto_objetivo: float) -> None:
 
 def add_cuota(payment_id: str, monto: float, fecha_venc: str = None,
               producto_nombre: str = None):
-    doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"cuotas": 1})
-    cuotas = doc.get("cuotas", []) if doc else []
-    numero = max((c.get("numero", 0) for c in cuotas), default=0) + 1
+    doc = payments_col.find_one(
+        {"_id": ObjectId(payment_id)},
+        {"cuotas": 1, "member_id": 1, "periodo": 1},
+    )
+    cuotas    = doc.get("cuotas", []) if doc else []
+    numero    = max((c.get("numero", 0) for c in cuotas), default=0) + 1
+    member_id = (doc or {}).get("member_id", "")
+    periodo   = (doc or {}).get("periodo", "")
     cuota = {
         "numero":          numero,
         "monto":           monto,
@@ -894,6 +899,7 @@ def add_cuota(payment_id: str, monto: float, fecha_venc: str = None,
         "fecha_pago":      None,
         "estado":          "pendiente",
         "producto_nombre": producto_nombre or None,
+        "codigo_cuota":    f"{member_id}-{periodo}-C{numero:02d}" if member_id and periodo else None,
     }
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
@@ -904,9 +910,14 @@ def add_cuota(payment_id: str, monto: float, fecha_venc: str = None,
 
 def add_cuotas_batch(payment_id: str, cuotas: list) -> list:
     """Add multiple cuotas at once. cuotas = [{monto, fecha_venc}]"""
-    doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"cuotas": 1})
-    existing = doc.get("cuotas", []) if doc else []
-    max_num = max((c.get("numero", 0) for c in existing), default=0)
+    doc = payments_col.find_one(
+        {"_id": ObjectId(payment_id)},
+        {"cuotas": 1, "member_id": 1, "periodo": 1},
+    )
+    existing  = doc.get("cuotas", []) if doc else []
+    max_num   = max((c.get("numero", 0) for c in existing), default=0)
+    member_id = (doc or {}).get("member_id", "")
+    periodo   = (doc or {}).get("periodo", "")
     new_cuotas = []
     for c in cuotas:
         max_num += 1
@@ -917,6 +928,7 @@ def add_cuotas_batch(payment_id: str, cuotas: list) -> list:
             "fecha_pago":      None,
             "estado":          "pendiente",
             "producto_nombre": c.get("producto_nombre") or None,
+            "codigo_cuota":    f"{member_id}-{periodo}-C{max_num:02d}" if member_id and periodo else None,
         })
     if new_cuotas:
         payments_col.update_one(
@@ -927,6 +939,51 @@ def add_cuotas_batch(payment_id: str, cuotas: list) -> list:
             },
         )
     return new_cuotas
+
+
+def decode_codigo_cuota(codigo: str) -> dict | None:
+    """Parse 'IPIDET-0235-2026-C02' → {payment_id, cuota_numero, member_id, periodo}.
+    Returns None if the code is invalid or no matching payment exists."""
+    import re as _re
+    m = _re.match(r'^(IPIDET-[\d?]+)-(\d{4})-C(\d+)$', codigo.strip(), _re.IGNORECASE)
+    if not m:
+        return None
+    member_id = m.group(1).upper()
+    periodo   = m.group(2)
+    numero    = int(m.group(3))
+    pay = payments_col.find_one({"member_id": member_id, "periodo": periodo}, {"_id": 1})
+    if not pay:
+        return None
+    return {
+        "payment_id":   str(pay["_id"]),
+        "cuota_numero": numero,
+        "member_id":    member_id,
+        "periodo":      periodo,
+    }
+
+
+def backfill_cuotas_codigo() -> int:
+    """Idempotent: fill missing codigo_cuota on existing cuota subdocuments."""
+    count = 0
+    for pay in payments_col.find(
+        {"cuotas": {"$elemMatch": {"codigo_cuota": {"$exists": False}}}},
+        {"member_id": 1, "periodo": 1, "cuotas": 1},
+    ):
+        member_id = pay.get("member_id", "")
+        periodo   = pay.get("periodo", "")
+        if not member_id or not periodo:
+            continue
+        cuotas  = pay.get("cuotas", [])
+        updated = False
+        for cuota in cuotas:
+            if "codigo_cuota" not in cuota:
+                n = cuota.get("numero", 0)
+                cuota["codigo_cuota"] = f"{member_id}-{periodo}-C{n:02d}"
+                updated = True
+        if updated:
+            payments_col.update_one({"_id": pay["_id"]}, {"$set": {"cuotas": cuotas}})
+            count += 1
+    return count
 
 
 def update_cuota(payment_id: str, numero: int, estado: str, fecha_pago: str = None,

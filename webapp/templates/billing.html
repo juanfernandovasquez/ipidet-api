@@ -457,6 +457,7 @@
                        class="flex items-center gap-3 px-3 py-2.5 text-xs flex-wrap">
                     <span class="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 shrink-0 text-[10px]" x-text="q.numero"></span>
                     <span class="font-semibold text-blue-700 w-16 shrink-0" x-text="'S/ ' + q.monto"></span>
+                    <span class="font-mono text-[10px] text-slate-300 select-all" x-show="q.codigo_cuota" x-text="q.codigo_cuota"></span>
                     <span :class="q.estado === 'pagado' ? 'badge badge-green' : 'badge badge-yellow'"
                           x-text="q.estado === 'pagado' ? 'Pagado' : 'Pendiente'"></span>
                     <span class="text-slate-400" x-show="q.fecha_venc" x-text="'Vence: ' + q.fecha_venc"></span>

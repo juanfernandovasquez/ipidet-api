@@ -137,6 +137,7 @@ async def _startup():
     asyncio.create_task(scheduler.run_programados_scheduler())
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_payments_fecha_pago)
+    asyncio.get_running_loop().run_in_executor(None, pdb.backfill_cuotas_codigo)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1184,7 +1185,7 @@ async def frac_emitir_comprobante(
     )
     pdb.update_cuota(payment_id, cuota_n, estado="pagado",
                      num_comprobante=numero.strip(), tipo_comprobante=tipo,
-                     comprobante_id=comp_id)
+                     fecha_pago=fecha, comprobante_id=comp_id)
     return RedirectResponse(redirect_to, status_code=303)
 
 
@@ -1615,23 +1616,24 @@ async def comprobantes_list(
 
 def _resolve_payment_ids(items: list) -> None:
     """
-    Mutates items in-place: sets payment_id + tipo_pago for cuota_anual / cuota_provincia
-    items that have member_id but no payment_id yet. Tries producto_id first, then
-    producto_nombre as fallback. No-op for items that already have payment_id.
+    Mutates items in-place to fill payment_id + tipo_pago. Two resolution paths:
+    1. producto_id → cuota_anual / cuota_provincia → principal payment
+    2. codigo_sunat matches IPIDET-XXXX-YYYY-CNN pattern → fraccionamiento cuota
+    No-op for items that already have payment_id.
     """
     from bson import ObjectId as _OId
     for item in items:
         if item.get("payment_id") or not item.get("member_id"):
             continue
+
+        # Path 1: product FK → cuota_anual / cuota_provincia → principal payment
         prod = None
         if item.get("producto_id"):
             try:
                 prod = pdb.productos_col.find_one({"_id": _OId(item["producto_id"])})
             except Exception:
                 pass
-        if not prod:
-            continue
-        if prod.get("tipo") in ("cuota_anual", "cuota_provincia") and prod.get("periodo"):
+        if prod and prod.get("tipo") in ("cuota_anual", "cuota_provincia") and prod.get("periodo"):
             pmt = pdb.payments_col.find_one(
                 {"member_id": item["member_id"], "periodo": prod["periodo"]}
             )
@@ -1639,6 +1641,15 @@ def _resolve_payment_ids(items: list) -> None:
                 item["payment_id"]  = str(pmt["_id"])
                 item["tipo_pago"]   = "principal"
                 item["producto_id"] = str(prod["_id"])
+            continue  # handled (or no matching payment for this member+period)
+
+        # Path 2: codigo_sunat encodes a fraccionamiento cuota reference
+        if item.get("codigo_sunat"):
+            decoded = pdb.decode_codigo_cuota(item["codigo_sunat"])
+            if decoded:
+                item["payment_id"]   = decoded["payment_id"]
+                item["tipo_pago"]    = "cuota"
+                item["cuota_numero"] = decoded["cuota_numero"]
 
 
 @app.post("/comprobantes/add")
