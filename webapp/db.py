@@ -1544,17 +1544,25 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                 continue
 
             if direct_tipo == "principal":
-                if pay.get("estado") in _ESTADOS_NO_MODIFICAR:
-                    results.append(_res(item, "ya_pagado", f"Ya tiene estado '{pay.get('estado')}'"))
-                    continue
-                update_payment(direct_pid, estado="pagado",
-                               fecha_pago=fecha_emision or None,
-                               num_comprobante=numero, tipo_comprobante=tipo,
-                               fecha_emision_comprobante=fecha_emision or None,
-                               empresa=empresa or None,
-                               medio=medio_pago or None,
-                               comprobante_id=comprobante_id)
-                results.append(_res(item, "ok", "Pago marcado como pagado"))
+                current_estado = pay.get("estado")
+                if current_estado in _ESTADOS_NO_MODIFICAR:
+                    # Pago ya registrado: solo vincular el comprobante sin cambiar estado
+                    update_payment(direct_pid, estado=current_estado,
+                                   num_comprobante=numero, tipo_comprobante=tipo,
+                                   fecha_emision_comprobante=fecha_emision or None,
+                                   empresa=empresa or None,
+                                   comprobante_id=comprobante_id)
+                    results.append(_res(item, "ok",
+                        f"Comprobante vinculado (pago ya estaba '{current_estado}')"))
+                else:
+                    update_payment(direct_pid, estado="pagado",
+                                   fecha_pago=fecha_emision or None,
+                                   num_comprobante=numero, tipo_comprobante=tipo,
+                                   fecha_emision_comprobante=fecha_emision or None,
+                                   empresa=empresa or None,
+                                   medio=medio_pago or None,
+                                   comprobante_id=comprobante_id)
+                    results.append(_res(item, "ok", "Pago marcado como pagado"))
 
             elif direct_tipo == "cuota":
                 cuotas = pay.get("cuotas") or []
@@ -1564,15 +1572,19 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                         f"Cuota #{direct_cuota} no existe"))
                     continue
                 if target.get("estado") == "pagado":
-                    results.append(_res(item, "ya_pagado",
-                        f"Cuota #{direct_cuota} ya estaba pagada"))
-                    continue
-                update_cuota(direct_pid, direct_cuota, estado="pagado",
-                             fecha_pago=fecha_emision or None,
-                             num_comprobante=numero, tipo_comprobante=tipo,
-                             medio_pago=medio_pago or None,
-                             comprobante_id=comprobante_id)
-                results.append(_res(item, "ok", f"Cuota #{direct_cuota} marcada como pagada"))
+                    # Cuota ya pagada: solo vincular el comprobante
+                    update_cuota(direct_pid, direct_cuota, estado="pagado",
+                                 num_comprobante=numero, tipo_comprobante=tipo,
+                                 comprobante_id=comprobante_id)
+                    results.append(_res(item, "ok",
+                        f"Comprobante vinculado en cuota #{direct_cuota} (ya estaba pagada)"))
+                else:
+                    update_cuota(direct_pid, direct_cuota, estado="pagado",
+                                 fecha_pago=fecha_emision or None,
+                                 num_comprobante=numero, tipo_comprobante=tipo,
+                                 medio_pago=medio_pago or None,
+                                 comprobante_id=comprobante_id)
+                    results.append(_res(item, "ok", f"Cuota #{direct_cuota} marcada como pagada"))
 
             elif direct_tipo == "parcial":
                 add_pago_parcial(direct_pid, monto=monto,
