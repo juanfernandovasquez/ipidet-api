@@ -258,8 +258,13 @@ async def update_member_tipo_socio(member_id: str, tipo_socio: str = Form(...)):
 
 
 @app.post("/members/{member_id}/dni")
-async def update_member_dni(member_id: str, dni: str = Form(...)):
-    pdb.update_member_dni(member_id, dni.strip())
+async def update_member_dni(member_id: str, request: Request, dni: str = Form(None)):
+    ct = request.headers.get("content-type", "")
+    if "application/json" in ct:
+        data = await request.json()
+        pdb.update_member_dni(member_id, (data.get("dni") or "").strip())
+        return {"ok": True}
+    pdb.update_member_dni(member_id, (dni or "").strip())
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
 

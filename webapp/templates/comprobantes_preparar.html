@@ -66,19 +66,43 @@
           </button>
         </div>
         <!-- Socio/persona seleccionada -->
-        <div x-show="destinatario.member_id" x-cloak class="flex items-center gap-3 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2.5">
-          <div class="w-7 h-7 rounded-lg bg-sky-600 flex items-center justify-center shrink-0">
-            <i class="fa-solid fa-user text-white text-[10px]"></i>
+        <div x-show="destinatario.member_id" x-cloak
+             :class="destinatario.dni ? 'bg-sky-50 border-sky-200' : 'bg-amber-50 border-amber-200'"
+             class="border rounded-xl px-3 py-2.5">
+          <div class="flex items-center gap-3">
+            <div class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                 :class="destinatario.dni ? 'bg-sky-600' : 'bg-amber-500'">
+              <i class="fa-solid fa-user text-white text-[10px]"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-slate-800 text-sm" x-text="destinatario.nombre"></div>
+              <div x-show="destinatario.dni" class="text-xs text-sky-600 font-mono" x-text="'DNI ' + destinatario.dni"></div>
+              <div x-show="!destinatario.dni" class="text-xs text-amber-600 flex items-center gap-1">
+                <i class="fa-solid fa-triangle-exclamation text-[10px]"></i>
+                Sin DNI — agrégalo para el pre-registro
+              </div>
+            </div>
+            <button type="button" @click="destinatario = {member_id:'',nombre:'',dni:''}; recipSearch = ''; empSearchRes = []; socSearchRes = []; dniInput = ''; dniGuardando = false"
+                    class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 shrink-0">
+              <i class="fa-solid fa-xmark text-xs"></i>
+            </button>
           </div>
-          <div class="flex-1 min-w-0">
-            <div class="font-semibold text-slate-800 text-sm" x-text="destinatario.nombre"></div>
-            <div class="text-xs font-mono" :class="destinatario.dni ? 'text-sky-600' : 'text-slate-400'"
-                 x-text="destinatario.dni ? 'DNI ' + destinatario.dni : 'Sin DNI registrado'"></div>
+          <!-- Editor inline de DNI (solo cuando no tiene) -->
+          <div x-show="!destinatario.dni" x-cloak class="mt-2 flex gap-2">
+            <input type="text" x-model="dniInput" maxlength="8"
+                   @keydown.enter.prevent="guardarDni()"
+                   placeholder="Ingresar DNI (8 dígitos)"
+                   class="input flex-1 text-sm font-mono">
+            <button type="button" @click="guardarDni()"
+                    :disabled="dniInput.length !== 8 || dniGuardando"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    :class="dniInput.length === 8 && !dniGuardando
+                      ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+              <i class="fa-solid" :class="dniGuardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+              <span x-text="dniGuardando ? 'Guardando…' : 'Guardar'"></span>
+            </button>
           </div>
-          <button type="button" @click="destinatario = {member_id:'',nombre:'',dni:''}; recipSearch = ''; empSearchRes = []; socSearchRes = []"
-                  class="text-slate-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
-            <i class="fa-solid fa-xmark text-xs"></i>
-          </button>
         </div>
       </div>
 
@@ -550,6 +574,8 @@ function preparar() {
     socSearchRes: [],
     empNewForm: { show: false, nombre: '', ruc: '', razon_social: '' },
     empSaving: false,
+    dniInput: '',
+    dniGuardando: false,
 
     get total() {
       return this.lineas.reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
@@ -632,6 +658,26 @@ function preparar() {
       this.recipSearch  = '';
       this.empSearchRes = [];
       this.socSearchRes = [];
+      this.dniInput     = '';
+    },
+    async guardarDni() {
+      const dni = this.dniInput.trim();
+      if (dni.length !== 8 || this.dniGuardando) return;
+      this.dniGuardando = true;
+      try {
+        const r = await fetch(`/members/${this.destinatario.member_id}/dni`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dni }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          this.destinatario.dni = dni;
+          this.dniInput = '';
+        }
+      } finally {
+        this.dniGuardando = false;
+      }
     },
     async registrarNuevaEmpresa() {
       if (!this.empNewForm.nombre.trim() || this.empSaving) return;
