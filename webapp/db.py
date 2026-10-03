@@ -103,7 +103,7 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
                 ubicacion: str = "", wp: str = "", page: int = 1, per_page: int = 50,
                 sort: str = "nombre", sort_dir: str = "asc",
                 email_est: str = "", tiene_dni: str = "", tiene_celular: str = "",
-                tipo_socio: str = ""):
+                tipo_socio: str = "", alt_email_est: str = ""):
     from pymongo import ASCENDING, DESCENDING
     query = {}
     if search:
@@ -166,6 +166,16 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
         query["celular"] = {"$exists": True, "$nin": [None, ""]}
     elif tiene_celular == "no":
         _push_or(query, [{"celular": {"$exists": False}}, {"celular": {"$in": [None, ""]}}])
+
+    if alt_email_est == "con_alt":
+        query["emails"] = {"$elemMatch": {"principal": False}}
+    elif alt_email_est == "sin_alt":
+        _push_or(query, [
+            {"emails": {"$not": {"$elemMatch": {"principal": False}}}},
+            {"emails": {"$exists": False}}, {"emails": {"$size": 0}},
+        ])
+    elif alt_email_est == "alt_rebotado":
+        query["emails"] = {"$elemMatch": {"principal": False, "estado": {"$in": ["rebotado", "inhabilitado"]}}}
 
     # Orden
     sort_key   = "apellidos" if sort == "nombre" else "member_id"

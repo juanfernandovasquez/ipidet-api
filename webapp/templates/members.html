@@ -12,10 +12,10 @@
 
 {% block content %}
 
-{% set qf = "search=" ~ search ~ "&estado=" ~ estado ~ "&pago=" ~ pago ~ "&ubicacion=" ~ ubicacion ~ "&tipo_socio=" ~ tipo_socio ~ "&email_est=" ~ email_est %}
+{% set qf = "search=" ~ search ~ "&estado=" ~ estado ~ "&pago=" ~ pago ~ "&ubicacion=" ~ ubicacion ~ "&tipo_socio=" ~ tipo_socio ~ "&email_est=" ~ email_est ~ "&tiene_dni=" ~ tiene_dni ~ "&tiene_celular=" ~ tiene_celular ~ "&alt_email_est=" ~ alt_email_est %}
 {% set sd_id     = 'desc' if sort == 'id'     and sort_dir == 'asc' else 'asc' %}
 {% set sd_nombre = 'desc' if sort == 'nombre' and sort_dir == 'asc' else 'asc' %}
-{% set any_filter = search or estado or pago or ubicacion or tipo_socio or email_est %}
+{% set any_filter = search or estado or pago or ubicacion or tipo_socio or email_est or tiene_dni or tiene_celular or alt_email_est %}
 
 {% set estado_labels = {"activo":"Activo","retirar":"Retirar","en_revision":"En revisión"} %}
 {% set tipo_labels   = {"ordinario":"Ordinario","afiliado":"Afiliado","honorario":"Honorario","filial":"Filial","asociado":"Asociado"} %}
@@ -25,11 +25,14 @@
   <input type="hidden" name="sort"       value="{{ sort }}">
   <input type="hidden" name="sort_dir"   value="{{ sort_dir }}">
   <input type="hidden" name="page"       value="1">
-  <input type="hidden" name="estado"     value="{{ estado }}">
-  <input type="hidden" name="pago"       value="{{ pago }}">
-  <input type="hidden" name="ubicacion"  value="{{ ubicacion }}">
-  <input type="hidden" name="tipo_socio" value="{{ tipo_socio }}">
-  <input type="hidden" name="email_est"  value="{{ email_est }}">
+  <input type="hidden" name="estado"        value="{{ estado }}">
+  <input type="hidden" name="pago"          value="{{ pago }}">
+  <input type="hidden" name="ubicacion"     value="{{ ubicacion }}">
+  <input type="hidden" name="tipo_socio"    value="{{ tipo_socio }}">
+  <input type="hidden" name="email_est"     value="{{ email_est }}">
+  <input type="hidden" name="tiene_dni"     value="{{ tiene_dni }}">
+  <input type="hidden" name="tiene_celular" value="{{ tiene_celular }}">
+  <input type="hidden" name="alt_email_est" value="{{ alt_email_est }}">
 
   <!-- Buscador -->
   <div class="flex items-center gap-3 mb-4">
@@ -121,19 +124,71 @@
             </div>
           </th>
 
-          {# Email secundario #}
-          <th class="px-4 py-3">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Email alt.</span>
+          {# Email alt. — filtro alt_email_est #}
+          <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
+            <button type="button" @click="open=!open"
+              class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
+                     {{ 'text-blue-600' if alt_email_est else 'text-slate-500 hover:text-slate-700' }}">
+              {% if alt_email_est == 'con_alt' %}Con alt.
+              {% elif alt_email_est == 'sin_alt' %}Sin alt.
+              {% elif alt_email_est == 'alt_rebotado' %}Alt. caído
+              {% else %}Email alt.{% endif %}
+              <i class="fa-solid fa-chevron-down text-[9px] {{ 'text-blue-500' if alt_email_est else 'text-slate-300' }}"></i>
+            </button>
+            <div x-show="open" x-cloak
+                 class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[160px]">
+              {% for val, lbl in [("","Todos"),("con_alt","Con email alt."),("sin_alt","Sin email alt."),("alt_rebotado","Alt. caído/inhabilitado")] %}
+              <button type="button" onclick="membersSetFilter('alt_email_est','{{ val }}')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if alt_email_est == val else 'text-slate-700' }}">
+                {{ lbl }}
+              </button>
+              {% endfor %}
+            </div>
           </th>
 
-          {# DNI #}
-          <th class="px-4 py-3">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">DNI</span>
+          {# DNI — filtro tiene_dni #}
+          <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
+            <button type="button" @click="open=!open"
+              class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
+                     {{ 'text-blue-600' if tiene_dni else 'text-slate-500 hover:text-slate-700' }}">
+              {% if tiene_dni == 'si' %}Con DNI
+              {% elif tiene_dni == 'no' %}Sin DNI
+              {% else %}DNI{% endif %}
+              <i class="fa-solid fa-chevron-down text-[9px] {{ 'text-blue-500' if tiene_dni else 'text-slate-300' }}"></i>
+            </button>
+            <div x-show="open" x-cloak
+                 class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[140px]">
+              {% for val, lbl in [("","Todos"),("si","Con DNI"),("no","Sin DNI")] %}
+              <button type="button" onclick="membersSetFilter('tiene_dni','{{ val }}')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if tiene_dni == val else 'text-slate-700' }}">
+                {{ lbl }}
+              </button>
+              {% endfor %}
+            </div>
           </th>
 
-          {# Celular #}
-          <th class="px-4 py-3">
-            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Celular</span>
+          {# Celular — filtro tiene_celular #}
+          <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
+            <button type="button" @click="open=!open"
+              class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
+                     {{ 'text-blue-600' if tiene_celular else 'text-slate-500 hover:text-slate-700' }}">
+              {% if tiene_celular == 'si' %}Con cel.
+              {% elif tiene_celular == 'no' %}Sin cel.
+              {% else %}Celular{% endif %}
+              <i class="fa-solid fa-chevron-down text-[9px] {{ 'text-blue-500' if tiene_celular else 'text-slate-300' }}"></i>
+            </button>
+            <div x-show="open" x-cloak
+                 class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[150px]">
+              {% for val, lbl in [("","Todos"),("si","Con celular"),("no","Sin celular")] %}
+              <button type="button" onclick="membersSetFilter('tiene_celular','{{ val }}')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if tiene_celular == val else 'text-slate-700' }}">
+                {{ lbl }}
+              </button>
+              {% endfor %}
+            </div>
           </th>
 
           {# Lugar — filtro ubicacion #}
