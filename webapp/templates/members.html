@@ -163,8 +163,9 @@
             </a>
           </th>
 
-          {# ── WP ID, Estado, acción: sin sort/filter ── #}
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">WP ID</th>
+          {# ── Lugar de trabajo, Fecha nac., Estado, acción: sin sort/filter ── #}
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Lugar de trabajo</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Fecha nac.</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
           <th class="px-4 py-3"></th>
         </tr>
@@ -243,9 +244,18 @@
             {% endif %}
           </td>
 
-          {# WP ID #}
-          <td class="px-4 py-3 font-mono text-xs text-slate-500">
-            {% if m.wp_user_id %}{{ m.wp_user_id }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          {# Lugar de trabajo #}
+          <td class="px-4 py-3 text-xs text-slate-600 max-w-[180px]">
+            <span class="truncate block">{{ m.centro_trabajo or '<span class="text-slate-300">—</span>' | safe }}</span>
+          </td>
+
+          {# Fecha de nacimiento #}
+          <td class="px-4 py-3 text-xs text-slate-600 font-mono">
+            {% if m.fecha_nacimiento %}
+              {{ m.fecha_nacimiento.strftime('%d/%m/%Y') }}
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
           </td>
 
           {# Estado #}
@@ -266,7 +276,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="9" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="10" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
             No se encontraron socios con estos filtros.
           </td>
