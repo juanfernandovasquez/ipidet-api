@@ -3124,7 +3124,7 @@ def backfill_comprobantes_payment_ids() -> dict:
     fixed_items = 0
     cursor = comprobantes_col.find(
         {"estado": {"$ne": "anulado"},
-         "items": {"$elemMatch": {"member_id": {"$exists": True, "$ne": None, "$ne": ""},
+         "items": {"$elemMatch": {"member_id": {"$exists": True, "$nin": [None, ""]},
                                   "payment_id": {"$exists": False}}}}
     )
     for comp in cursor:

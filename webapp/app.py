@@ -135,7 +135,7 @@ async def _startup():
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
-    asyncio.get_event_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
+    asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1629,8 +1629,10 @@ def _resolve_payment_ids(items: list) -> None:
             except Exception:
                 pass
         if not prod and item.get("producto_nombre"):
+            import re as _re
+            nombre_esc = _re.escape(item["producto_nombre"].strip())
             prod = pdb.productos_col.find_one(
-                {"nombre": {"$regex": f"^{item['producto_nombre'].strip()}$", "$options": "i"}}
+                {"nombre": {"$regex": f"^{nombre_esc}$", "$options": "i"}}
             )
         if not prod:
             continue
@@ -1960,15 +1962,13 @@ async def comprobante_update(comprobante_id: str, request: Request):
         "items":         items,
     }
     if items:
+        _resolve_payment_ids(items)
+        fields["items"] = items
         fields["socios"] = list({it["member_id"] for it in items if it.get("member_id")})
         prod_names = list({it.get("producto_nombre", "") for it in items if it.get("producto_nombre")})
         fields["producto_nombre"] = prod_names[0] if len(prod_names) == 1 else ", ".join(sorted(prod_names))
     else:
         fields["producto_nombre"] = data.get("producto_nombre", "")
-    if items:
-        _resolve_payment_ids(items)
-        fields["items"] = items
-        fields["socios"] = list({it["member_id"] for it in items if it.get("member_id")})
     pdb.update_comprobante(comprobante_id, fields)
     if items:
         pdb.sync_comprobante_to_payments(
