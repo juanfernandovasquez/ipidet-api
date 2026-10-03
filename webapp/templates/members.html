@@ -61,44 +61,101 @@
   </div>
 
   <!-- Table -->
-  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    <table class="w-full text-sm whitespace-nowrap">
       <thead>
         <tr class="bg-slate-50 border-b border-slate-200 text-left">
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">ID</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Nombre</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email principal</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Ubicación</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Pago 2026</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email secundario</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">DNI</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Celular</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">WP ID</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
         {% for m in members %}
-        {% set p2026 = m.pago_2026 %}
-        {% set sl = status_labels.get(p2026.get('estado',''), ('—','gray')) %}
+        {# --- helpers de email --- #}
+        {% set email_principal   = m.emails | selectattr("principal", "equalto", true)  | list | first | default(none) %}
+        {% set email_secundario  = m.emails | rejectattr("principal", "equalto", true)  | list | first | default(none) %}
         <tr class="hover:bg-slate-50 transition-colors">
+
+          {# ID #}
           <td class="px-4 py-3 font-mono text-xs text-slate-500">{{ m.member_id }}</td>
+
+          {# Nombre #}
           <td class="px-4 py-3">
             <a href="/members/{{ m.member_id }}" class="hover:text-blue-600 transition-colors">
               <div class="font-medium text-slate-800">{{ m.apellidos }}</div>
               <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
             </a>
           </td>
-          <td class="px-4 py-3 text-slate-600 text-xs">
-            {% set habilitados = m.emails | selectattr("estado","eq","habilitado") | list %}
-            {% if habilitados %}
-              {{ habilitados[0].email }}
-              {% if habilitados | length > 1 %}
-              <span class="text-slate-400">+{{ habilitados|length - 1 }}</span>
-              {% endif %}
+
+          {# Email principal #}
+          <td class="px-4 py-3 text-xs max-w-[220px]">
+            {% if email_principal %}
+              <div class="flex items-center gap-1.5">
+                {% if email_principal.estado == "habilitado" %}
+                  <i class="fa-solid fa-circle-check text-emerald-500 shrink-0" title="Habilitado"></i>
+                {% elif email_principal.estado == "rebotado" %}
+                  <i class="fa-solid fa-circle-xmark text-red-400 shrink-0" title="Rebotado"></i>
+                {% else %}
+                  <i class="fa-solid fa-circle-xmark text-amber-400 shrink-0" title="Inhabilitado"></i>
+                {% endif %}
+                <span class="text-slate-600 truncate">{{ email_principal.email }}</span>
+              </div>
             {% else %}
-              <span class="text-red-400 italic">sin email</span>
+              <span class="text-slate-300 italic text-[11px]">sin email</span>
             {% endif %}
           </td>
-          <td class="px-4 py-3 text-slate-500 text-xs">{{ m.ubicacion or '—' }}</td>
+
+          {# Email secundario #}
+          <td class="px-4 py-3 text-xs max-w-[220px]">
+            {% if email_secundario %}
+              <div class="flex items-center gap-1.5">
+                {% if email_secundario.estado == "habilitado" %}
+                  <i class="fa-solid fa-circle-check text-emerald-500 shrink-0" title="Habilitado"></i>
+                {% elif email_secundario.estado == "rebotado" %}
+                  <i class="fa-solid fa-circle-xmark text-red-400 shrink-0" title="Rebotado"></i>
+                {% else %}
+                  <i class="fa-solid fa-circle-xmark text-amber-400 shrink-0" title="Inhabilitado"></i>
+                {% endif %}
+                <span class="text-slate-600 truncate">{{ email_secundario.email }}</span>
+              </div>
+            {% else %}
+              <span class="text-slate-300">—</span>
+            {% endif %}
+          </td>
+
+          {# DNI #}
+          <td class="px-4 py-3 font-mono text-xs text-slate-600">
+            {{ m.dni or '<span class="text-slate-300">—</span>' | safe }}
+          </td>
+
+          {# Celular #}
+          <td class="px-4 py-3 text-xs">
+            {% if m.celular %}
+              <div class="flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-check text-emerald-500 shrink-0" title="Disponible"></i>
+                <span class="text-slate-600 font-mono">{{ m.celular }}</span>
+              </div>
+            {% else %}
+              <div class="flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-minus text-slate-300 shrink-0" title="Sin celular"></i>
+                <span class="text-slate-300">—</span>
+              </div>
+            {% endif %}
+          </td>
+
+          {# WP ID #}
+          <td class="px-4 py-3 font-mono text-xs text-slate-500">
+            {% if m.wp_user_id %}{{ m.wp_user_id }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+
+          {# Estado #}
           <td class="px-4 py-3">
             {% if m.estado == 'activo' %}
             <span class="badge badge-green">Activo</span>
@@ -108,26 +165,15 @@
             <span class="badge badge-gray">{{ m.estado }}</span>
             {% endif %}
           </td>
-          <td class="px-4 py-3">
-            {% if p2026 %}
-            <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
-            {% if p2026.get('empresa_pagadora') %}
-            <span class="text-xs text-slate-400 ml-1">{{ p2026.empresa_pagadora }}</span>
-            {% endif %}
-            {% else %}
-            <span class="text-slate-300 text-xs">—</span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-3 font-mono text-xs text-slate-500">
-            {% if m.wp_user_id %}{{ m.wp_user_id }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-          </td>
+
+          {# Acción #}
           <td class="px-4 py-3 text-right">
             <a href="/members/{{ m.member_id }}" class="text-blue-600 hover:text-blue-800 text-xs font-medium">Ver →</a>
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="8" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="9" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
             No se encontraron socios con estos filtros.
           </td>
