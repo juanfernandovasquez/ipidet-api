@@ -136,6 +136,7 @@ async def _startup():
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
+    asyncio.get_running_loop().run_in_executor(None, pdb.backfill_payments_fecha_pago)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────

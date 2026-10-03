@@ -3177,6 +3177,36 @@ def backfill_comprobantes_payment_ids() -> dict:
     return {"fixed_comprobantes": fixed_comps, "fixed_items": fixed_items}
 
 
+def backfill_payments_fecha_pago() -> int:
+    """
+    Startup migration: for payments that are pagado/exonerado/no_aplica, have a
+    comprobante_id linked, but no fecha_pago — fill fecha_pago from the comprobante's
+    fecha_emision. Idempotent — skips payments that already have fecha_pago.
+    """
+    filled = 0
+    cursor = payments_col.find({
+        "estado":        {"$in": list(_ESTADOS_NO_MODIFICAR)},
+        "comprobante_id": {"$exists": True, "$nin": [None, ""]},
+        "fecha_pago":    {"$in": [None, ""]},
+    })
+    for pay in cursor:
+        comp_id = pay.get("comprobante_id")
+        if not comp_id:
+            continue
+        try:
+            comp = comprobantes_col.find_one({"_id": ObjectId(comp_id)}, {"fecha_emision": 1})
+        except Exception:
+            continue
+        if not comp or not comp.get("fecha_emision"):
+            continue
+        payments_col.update_one(
+            {"_id": pay["_id"]},
+            {"$set": {"fecha_pago": comp["fecha_emision"]}},
+        )
+        filled += 1
+    return filled
+
+
 def get_pre_comprobantes(tipo: str = None) -> list:
     """Comprobantes pre-registrados (borradores sin número de SUNAT)."""
     q: dict = {"estado": "pre_registrado"}
