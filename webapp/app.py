@@ -163,19 +163,30 @@ async def dashboard(request: Request):
 @app.get("/members", response_class=HTMLResponse)
 async def members_list(
     request: Request,
-    search: str = "",
-    estado: str = "",
-    pago: str = "",
-    ubicacion: str = "",
-    wp: str = "",
-    page: int = 1,
+    search:        str = "",
+    estado:        str = "",
+    pago:          str = "",
+    ubicacion:     str = "",
+    wp:            str = "",
+    page:          int = 1,
+    sort:          str = "nombre",
+    sort_dir:      str = "asc",
+    email_est:     str = "",
+    tiene_dni:     str = "",
+    tiene_celular: str = "",
 ):
-    docs, total = pdb.get_members(search, estado, pago, ubicacion, wp, page)
+    docs, total = pdb.get_members(
+        search, estado, pago, ubicacion, wp, page,
+        sort=sort, sort_dir=sort_dir,
+        email_est=email_est, tiene_dni=tiene_dni, tiene_celular=tiene_celular,
+    )
     return templates.TemplateResponse(request, "members.html", _ctx(request,
         members=docs, total=total,
         search=search, estado=estado, pago=pago, ubicacion=ubicacion, wp=wp,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
+        sort=sort, sort_dir=sort_dir,
+        email_est=email_est, tiene_dni=tiene_dni, tiene_celular=tiene_celular,
     ))
 
 

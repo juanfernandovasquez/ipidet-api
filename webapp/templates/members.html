@@ -54,23 +54,116 @@
         </select>
       </div>
       <button type="submit" class="sr-only">Filtrar</button>
-      {% if search or estado or pago or ubicacion or wp %}
+      {% if search or estado or pago or ubicacion or wp or email_est or tiene_dni or tiene_celular %}
       <a href="/members" class="btn-ghost">Limpiar</a>
       {% endif %}
     </form>
   </div>
 
   <!-- Table -->
+  {# ── URL helpers para headers de tabla ── #}
+  {# Dirección de sort al hacer clic #}
+  {% set sd_id     = 'desc' if sort == 'id'     and sort_dir == 'asc' else 'asc' %}
+  {% set sd_nombre = 'desc' if sort == 'nombre' and sort_dir == 'asc' else 'asc' %}
+  {# Ciclos de filtro: vacío → si/habilitado → no/problema → vacío #}
+  {% set nx_email_est    = 'habilitado' if email_est    == '' else ('problema'  if email_est    == 'habilitado' else '') %}
+  {% set nx_tiene_dni    = 'si'         if tiene_dni    == '' else ('no'        if tiene_dni    == 'si'         else '') %}
+  {% set nx_tiene_celular= 'si'         if tiene_celular== '' else ('no'        if tiene_celular== 'si'         else '') %}
+  {# Base común de parámetros de filtro (sin sort/page) #}
+  {% set qf = "search=" ~ search ~ "&estado=" ~ estado ~ "&pago=" ~ pago ~ "&ubicacion=" ~ ubicacion ~ "&wp=" ~ wp %}
+  {# Base con sort actual (para links de filtro) #}
+  {% set qfs = qf ~ "&sort=" ~ sort ~ "&sort_dir=" ~ sort_dir %}
+  {# Base con filtros actuales (para links de sort) #}
+  {% set qfv = qf ~ "&email_est=" ~ email_est ~ "&tiene_dni=" ~ tiene_dni ~ "&tiene_celular=" ~ tiene_celular %}
+
   <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm whitespace-nowrap">
       <thead>
         <tr class="bg-slate-50 border-b border-slate-200 text-left">
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">ID</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Nombre</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email principal</th>
+
+          {# ── ID: sortable ── #}
+          <th class="px-4 py-3 text-xs uppercase tracking-wider">
+            <a href="/members?{{ qfv }}&sort=id&sort_dir={{ sd_id }}&page=1"
+               class="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors
+                      {{ 'text-blue-600' if sort == 'id' else 'text-slate-600' }}">
+              ID
+              {% if sort == 'id' %}
+                <i class="fa-solid {{ 'fa-sort-up' if sort_dir == 'asc' else 'fa-sort-down' }} text-blue-500 text-[10px]"></i>
+              {% else %}
+                <i class="fa-solid fa-sort text-slate-300 text-[10px]"></i>
+              {% endif %}
+            </a>
+          </th>
+
+          {# ── Nombre: sortable ── #}
+          <th class="px-4 py-3 text-xs uppercase tracking-wider">
+            <a href="/members?{{ qfv }}&sort=nombre&sort_dir={{ sd_nombre }}&page=1"
+               class="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors
+                      {{ 'text-blue-600' if sort == 'nombre' else 'text-slate-600' }}">
+              Nombre
+              {% if sort == 'nombre' %}
+                <i class="fa-solid {{ 'fa-sort-up' if sort_dir == 'asc' else 'fa-sort-down' }} text-blue-500 text-[10px]"></i>
+              {% else %}
+                <i class="fa-solid fa-sort text-slate-300 text-[10px]"></i>
+              {% endif %}
+            </a>
+          </th>
+
+          {# ── Email principal: filtro ciclo ── #}
+          <th class="px-4 py-3 text-xs uppercase tracking-wider">
+            <a href="/members?{{ qfs }}&email_est={{ nx_email_est }}&tiene_dni={{ tiene_dni }}&tiene_celular={{ tiene_celular }}&page=1"
+               class="flex items-center gap-1.5 font-semibold hover:text-blue-600 transition-colors
+                      {{ 'text-blue-600' if email_est else 'text-slate-600' }}"
+               title="{{ 'Filtrando: habilitados — clic para ver con problema' if email_est == 'habilitado' else ('Filtrando: con problema — clic para quitar filtro' if email_est == 'problema' else 'Clic para filtrar por estado de email') }}">
+              Email principal
+              {% if email_est == 'habilitado' %}
+                <i class="fa-solid fa-circle-check text-emerald-500 text-[10px]"></i>
+              {% elif email_est == 'problema' %}
+                <i class="fa-solid fa-circle-xmark text-red-500 text-[10px]"></i>
+              {% else %}
+                <i class="fa-solid fa-filter text-slate-300 text-[10px]"></i>
+              {% endif %}
+            </a>
+          </th>
+
+          {# ── Email secundario: sin ordenamiento ── #}
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email secundario</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">DNI</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Celular</th>
+
+          {# ── DNI: filtro ciclo ── #}
+          <th class="px-4 py-3 text-xs uppercase tracking-wider">
+            <a href="/members?{{ qfs }}&email_est={{ email_est }}&tiene_dni={{ nx_tiene_dni }}&tiene_celular={{ tiene_celular }}&page=1"
+               class="flex items-center gap-1.5 font-semibold hover:text-blue-600 transition-colors
+                      {{ 'text-blue-600' if tiene_dni else 'text-slate-600' }}"
+               title="{{ 'Filtrando: con DNI — clic para ver sin DNI' if tiene_dni == 'si' else ('Filtrando: sin DNI — clic para quitar filtro' if tiene_dni == 'no' else 'Clic para filtrar por DNI') }}">
+              DNI
+              {% if tiene_dni == 'si' %}
+                <i class="fa-solid fa-circle-check text-emerald-500 text-[10px]"></i>
+              {% elif tiene_dni == 'no' %}
+                <i class="fa-solid fa-circle-xmark text-amber-500 text-[10px]"></i>
+              {% else %}
+                <i class="fa-solid fa-filter text-slate-300 text-[10px]"></i>
+              {% endif %}
+            </a>
+          </th>
+
+          {# ── Celular: filtro ciclo ── #}
+          <th class="px-4 py-3 text-xs uppercase tracking-wider">
+            <a href="/members?{{ qfs }}&email_est={{ email_est }}&tiene_dni={{ tiene_dni }}&tiene_celular={{ nx_tiene_celular }}&page=1"
+               class="flex items-center gap-1.5 font-semibold hover:text-blue-600 transition-colors
+                      {{ 'text-blue-600' if tiene_celular else 'text-slate-600' }}"
+               title="{{ 'Filtrando: con celular — clic para ver sin celular' if tiene_celular == 'si' else ('Filtrando: sin celular — clic para quitar filtro' if tiene_celular == 'no' else 'Clic para filtrar por celular') }}">
+              Celular
+              {% if tiene_celular == 'si' %}
+                <i class="fa-solid fa-circle-check text-emerald-500 text-[10px]"></i>
+              {% elif tiene_celular == 'no' %}
+                <i class="fa-solid fa-circle-xmark text-amber-500 text-[10px]"></i>
+              {% else %}
+                <i class="fa-solid fa-filter text-slate-300 text-[10px]"></i>
+              {% endif %}
+            </a>
+          </th>
+
+          {# ── WP ID, Estado, acción: sin sort/filter ── #}
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">WP ID</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Estado</th>
           <th class="px-4 py-3"></th>
@@ -188,10 +281,10 @@
       <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }}</span>
       <div class="flex gap-2">
         {% if page > 1 %}
-        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&wp={{ wp }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
+        <a href="?{{ qfs }}&email_est={{ email_est }}&tiene_dni={{ tiene_dni }}&tiene_celular={{ tiene_celular }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
         {% endif %}
         {% if page < total_pages %}
-        <a href="?search={{ search }}&estado={{ estado }}&pago={{ pago }}&ubicacion={{ ubicacion }}&wp={{ wp }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
+        <a href="?{{ qfs }}&email_est={{ email_est }}&tiene_dni={{ tiene_dni }}&tiene_celular={{ tiene_celular }}&page={{ page + 1 }}" class="btn-ghost text-xs py-1">Siguiente →</a>
         {% endif %}
       </div>
     </div>

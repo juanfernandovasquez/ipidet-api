@@ -91,13 +91,26 @@ def get_stats() -> dict:
 
 # ── Members ───────────────────────────────────────────────────────────────────
 
+def _push_or(query: dict, or_conditions: list) -> None:
+    """Agrega una condición $or obligatoria sin pisar un $or existente."""
+    new_clause = {"$or": or_conditions}
+    if "$or" in query:
+        query.setdefault("$and", []).extend([{"$or": query.pop("$or")}, new_clause])
+    elif "$and" in query:
+        query["$and"].append(new_clause)
+    else:
+        query["$or"] = or_conditions
+
+
 def get_members(search: str = "", estado: str = "", pago: str = "",
-                ubicacion: str = "", wp: str = "", page: int = 1, per_page: int = 50):
+                ubicacion: str = "", wp: str = "", page: int = 1, per_page: int = 50,
+                sort: str = "nombre", sort_dir: str = "asc",
+                email_est: str = "", tiene_dni: str = "", tiene_celular: str = ""):
+    from pymongo import ASCENDING, DESCENDING
     query = {}
     if search:
         words = [w for w in search.split() if len(w) >= 2]
         if len(words) > 1:
-            # Búsqueda multi-palabra: cada palabra debe aparecer en apellidos o nombres
             query["$and"] = [
                 {"$or": [
                     {"apellidos": {"$regex": w, "$options": "i"}},
@@ -133,9 +146,29 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
         else:
             return [], 0
 
+    # Filtros de cabecera de tabla
+    if email_est == "habilitado":
+        query["emails"] = {"$elemMatch": {"principal": True, "estado": "habilitado"}}
+    elif email_est == "problema":
+        query["emails"] = {"$elemMatch": {"principal": True, "estado": {"$in": ["rebotado", "inhabilitado"]}}}
+
+    if tiene_dni == "si":
+        query["dni"] = {"$exists": True, "$nin": [None, ""]}
+    elif tiene_dni == "no":
+        _push_or(query, [{"dni": {"$exists": False}}, {"dni": {"$in": [None, ""]}}])
+
+    if tiene_celular == "si":
+        query["celular"] = {"$exists": True, "$nin": [None, ""]}
+    elif tiene_celular == "no":
+        _push_or(query, [{"celular": {"$exists": False}}, {"celular": {"$in": [None, ""]}}])
+
+    # Orden
+    sort_key   = "apellidos" if sort == "nombre" else "member_id"
+    sort_order = ASCENDING if sort_dir == "asc" else DESCENDING
+
     total = members_col.count_documents(query)
     skip = (page - 1) * per_page
-    docs = list(members_col.find(query).sort("apellidos", 1).skip(skip).limit(per_page))
+    docs = list(members_col.find(query).sort(sort_key, sort_order).skip(skip).limit(per_page))
 
     # Attach payment status for 2025 and 2026
     member_ids = [d["member_id"] for d in docs]
