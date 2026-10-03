@@ -401,6 +401,38 @@ def update_member_wp_user_id(member_id: str, wp_user_id: int | None):
         members_col.update_one({"member_id": member_id}, {"$unset": {"wp_user_id": ""}})
 
 
+def update_member(member_id: str, fields: dict) -> None:
+    ALLOWED = {"apellidos", "nombres", "titulo", "centro_trabajo", "celular",
+               "ubicacion", "tipo_socio", "estado", "dni",
+               "fecha_ingreso", "fecha_nacimiento", "wp_user_id"}
+    update: dict = {}
+    unset:  dict = {}
+    for k, v in fields.items():
+        if k not in ALLOWED:
+            continue
+        if k == "apellidos":
+            update[k] = (v or "").strip().upper()
+        elif k == "nombres":
+            update[k] = (v or "").strip()
+        elif k == "wp_user_id":
+            if v:
+                try:
+                    update[k] = int(v)
+                except (ValueError, TypeError):
+                    pass
+            else:
+                unset[k] = ""
+        else:
+            update[k] = (v or "").strip() if isinstance(v, str) else v
+    ops: dict = {}
+    if update:
+        ops["$set"] = update
+    if unset:
+        ops["$unset"] = unset
+    if ops:
+        members_col.update_one({"member_id": member_id}, ops)
+
+
 def auto_set_wp_user_id(member_id: str, wp_user_id: int):
     """Guarda wp_user_id solo si el socio todavía no lo tiene. No pisa vínculos manuales."""
     members_col.update_one(

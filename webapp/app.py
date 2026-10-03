@@ -215,7 +215,12 @@ async def member_detail(request: Request, member_id: str):
     doc = pdb.get_member(member_id)
     if not doc:
         return RedirectResponse("/members")
-    return templates.TemplateResponse(request, "member.html", _ctx(request, member=doc))
+    return templates.TemplateResponse(request, "member.html", _ctx(
+        request,
+        member=doc,
+        titulos=pdb.get_member_titulos(),
+        ubicaciones=pdb.get_member_ubicaciones(),
+    ))
 
 
 @app.post("/members/{member_id}/emails/toggle")
@@ -284,6 +289,13 @@ async def update_member_wp_user_id(member_id: str, wp_user_id: str = Form(...)):
     val = wp_user_id.strip()
     pdb.update_member_wp_user_id(member_id, int(val) if val else None)
     return RedirectResponse(f"/members/{member_id}", status_code=303)
+
+
+@app.post("/members/{member_id}/update")
+async def member_update(member_id: str, request: Request):
+    data = await request.json()
+    pdb.update_member(member_id, data)
+    return {"ok": True}
 
 
 # ── Cobranzas ─────────────────────────────────────────────────────────────────
