@@ -612,13 +612,15 @@ async def update_cuota(
     banco_origen: str = Form(""),
     monto: str = Form(""),
     fecha_venc: str = Form(""),
+    comprobante_id: str = Form(""),
     redirect_to: str = Form("/billing"),
 ):
     monto_f = float(monto) if monto.strip() else None
     pdb.update_cuota(payment_id, numero, estado, fecha_pago or None,
                      medio or None, num_comprobante or None,
                      tipo_comprobante or None, link_constancia or None,
-                     banco_origen or None, monto_f, fecha_venc or None)
+                     banco_origen or None, monto_f, fecha_venc or None,
+                     comprobante_id=comprobante_id or None)
     return RedirectResponse(redirect_to, status_code=303)
 
 
@@ -724,6 +726,7 @@ async def api_billing_update(payment_id: str, request: Request):
         banco_origen              = data.get("banco_origen") or None,
         comprobante_emitido       = comp_emit,
         fecha_emision_comprobante = data.get("fecha_emision_comprobante") or None,
+        comprobante_id            = data.get("comprobante_id"),
     )
     estado_socio = data.get("estado_socio")
     if estado_socio:
@@ -768,6 +771,7 @@ async def api_billing_cuota_update(payment_id: str, numero: int, request: Reques
         banco_origen     = data.get("banco_origen"),
         monto            = monto_f,
         fecha_venc       = data.get("fecha_venc"),
+        comprobante_id   = data.get("comprobante_id"),
     )
     return JSONResponse({"ok": True})
 
@@ -802,6 +806,7 @@ async def api_billing_parciales_add(payment_id: str, request: Request):
         tipo_comprobante = data.get("tipo_comprobante") or None,
         link_constancia  = data.get("link_constancia") or None,
         banco_origen     = data.get("banco_origen") or None,
+        comprobante_id   = data.get("comprobante_id") or None,
     )
     return JSONResponse({"ok": True, "parcial": parcial})
 
@@ -819,6 +824,7 @@ async def api_billing_parcial_update(payment_id: str, numero: int, request: Requ
         tipo_comprobante = data.get("tipo_comprobante"),
         link_constancia  = data.get("link_constancia"),
         banco_origen     = data.get("banco_origen"),
+        comprobante_id   = data.get("comprobante_id"),
     )
     return JSONResponse({"ok": True})
 
@@ -1480,11 +1486,12 @@ async def comprobante_add(request: Request):
         items           = items,
     )
     cruce = pdb.sync_comprobante_to_payments(
-        items         = items,
-        numero        = data.get("numero", ""),
-        tipo          = data.get("tipo", "boleta"),
-        fecha_emision = data.get("fecha_emision", ""),
-        empresa       = empresa,
+        items          = items,
+        numero         = data.get("numero", ""),
+        tipo           = data.get("tipo", "boleta"),
+        fecha_emision  = data.get("fecha_emision", ""),
+        empresa        = empresa,
+        comprobante_id = comp_id,
     )
     cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
     cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -1575,7 +1582,7 @@ async def comprobantes_import_xml(
 
         socios = list({it["member_id"] for it in items if it.get("member_id")})
 
-        pdb.create_comprobante(
+        comp_id = pdb.create_comprobante(
             numero          = numero,
             tipo            = data["tipo"],
             fecha_emision   = data["fecha_emision"],
@@ -1589,11 +1596,12 @@ async def comprobantes_import_xml(
         )
 
         cruce = pdb.sync_comprobante_to_payments(
-            items         = items,
-            numero        = numero,
-            tipo          = data["tipo"],
-            fecha_emision = data["fecha_emision"],
-            empresa       = empresa_nombre,
+            items          = items,
+            numero         = numero,
+            tipo           = data["tipo"],
+            fecha_emision  = data["fecha_emision"],
+            empresa        = empresa_nombre,
+            comprobante_id = comp_id,
         )
         cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))

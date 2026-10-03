@@ -838,6 +838,7 @@ function billingModal() {
         tipoPagador:          d.empresa_pagadora ? 'empresa' : 'socio',
         empresa:              d.empresa_pagadora || '',
         comprobante_emitido:  d.comprobante_emitido ? 'true' : 'false',
+        comprobante_id:       d.comprobante_id || null,
       };
       this.cuotas          = (d.cuotas || []).map(c => Object.assign({}, c));
       this.monto_objetivo  = d.monto_objetivo || null;
@@ -857,12 +858,14 @@ function billingModal() {
 
     onPickerResult(detail) {
       if (detail.formKey === 'billing-modal-main') {
-        this.form.nc      = detail.c.numero || '';
-        this.form.tipoComp = detail.c.tipo || '';
-        this.form.fechaComp = detail.c.fecha_emision || '';
+        this.form.nc             = detail.c.numero || '';
+        this.form.tipoComp       = detail.c.tipo || '';
+        this.form.fechaComp      = detail.c.fecha_emision || '';
+        this.form.comprobante_id = detail.c._id || null;
       } else if (this.editCuota >= 0 && detail.formKey === 'billing-modal-cuota-' + this.editCuota) {
         this.editCuotaData.num_comprobante  = detail.c.numero || '';
         this.editCuotaData.tipo_comprobante = detail.c.tipo || '';
+        this.editCuotaData.comprobante_id   = detail.c._id || null;
       }
     },
 
@@ -884,6 +887,7 @@ function billingModal() {
             empresa:                   this.form.tipoPagador === 'empresa' ? (this.form.empresa || null) : null,
             comprobante_emitido:       this.form.comprobante_emitido === 'true',
             estado_socio:              this.estado_socio,
+            comprobante_id:            this.form.comprobante_id || null,
           }),
         });
         if (r.ok) { this.cerrar(); location.reload(); }
@@ -912,6 +916,7 @@ function billingModal() {
         medio:           q.medio_pago || '',
         banco_origen:    q.banco_origen || '',
         link_constancia: q.link_constancia || '',
+        comprobante_id:  q.comprobante_id || null,
       };
     },
     async saveCuota(numero) {
@@ -928,6 +933,7 @@ function billingModal() {
           medio:           d.medio || null,
           banco_origen:    d.banco_origen || null,
           link_constancia: d.link_constancia || null,
+          comprobante_id:  d.comprobante_id || null,
         }),
       });
       if (r.ok) {
@@ -1000,7 +1006,7 @@ function billingModal() {
 
     /* ── Parciales ── */
     resetNuevoParcial() {
-      this.nuevoParcial = { monto: '', fecha_pago: '', medio: '', banco_origen: '', tipo_comprobante: '', num_comprobante: '', link_constancia: '' };
+      this.nuevoParcial = { monto: '', fecha_pago: '', medio: '', banco_origen: '', tipo_comprobante: '', num_comprobante: '', link_constancia: '', comprobante_id: null };
     },
     startEditParcial(pp) {
       this.editParcial = pp.numero;
@@ -1012,6 +1018,7 @@ function billingModal() {
         tipo_comprobante: pp.tipo_comprobante || '',
         num_comprobante:  pp.num_comprobante || '',
         link_constancia:  pp.link_constancia || '',
+        comprobante_id:  pp.comprobante_id || null,
       };
     },
     async saveParcial(numero) {
@@ -1026,6 +1033,7 @@ function billingModal() {
           tipo_comprobante: d.tipo_comprobante || null,
           num_comprobante:  d.num_comprobante || null,
           link_constancia:  d.link_constancia || null,
+          comprobante_id:  d.comprobante_id || null,
         }),
       });
       if (r.ok) {
@@ -1062,6 +1070,7 @@ function billingModal() {
           tipo_comprobante: this.nuevoParcial.tipo_comprobante || null,
           num_comprobante:  this.nuevoParcial.num_comprobante || null,
           link_constancia:  this.nuevoParcial.link_constancia || null,
+          comprobante_id:  this.nuevoParcial.comprobante_id || null,
         }),
       });
       const d = await r.json();

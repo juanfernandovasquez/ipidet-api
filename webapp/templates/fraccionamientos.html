@@ -319,13 +319,13 @@
                   </td>
                   <td class="py-1.5"
                   x-data="{ editingCuota: false, editandoDatos: false, emitiendo: false,
-                    payNumComp: '', payTipoComp: '', editNumComp: '', editTipoComp: '' }"
+                    payNumComp: '', payTipoComp: '', payCompId: '', editNumComp: '', editTipoComp: '', editCompId: '' }"
                   x-init="editNumComp = $el.dataset.numComp; editTipoComp = $el.dataset.tipoComp"
                   data-num-comp="{{ cuota.get('num_comprobante') or '' }}"
                   data-tipo-comp="{{ cuota.get('tipo_comprobante') or '' }}"
                   @comprobante-picked.window="
-                    if ($event.detail.formKey === 'pay-{{ f._id }}-{{ cuota.numero }}') { payNumComp = $event.detail.c.numero; payTipoComp = $event.detail.c.tipo; }
-                    if ($event.detail.formKey === 'edit-{{ f._id }}-{{ cuota.numero }}') { editNumComp = $event.detail.c.numero; editTipoComp = $event.detail.c.tipo; }
+                    if ($event.detail.formKey === 'pay-{{ f._id }}-{{ cuota.numero }}') { payNumComp = $event.detail.c.numero; payTipoComp = $event.detail.c.tipo; payCompId = $event.detail.c._id || ''; }
+                    if ($event.detail.formKey === 'edit-{{ f._id }}-{{ cuota.numero }}') { editNumComp = $event.detail.c.numero; editTipoComp = $event.detail.c.tipo; editCompId = $event.detail.c._id || ''; }
                   ">
                     {% if cuota.estado != 'pagado' %}
                     <div class="mb-1">
@@ -352,6 +352,7 @@
                     <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
                       <input type="hidden" name="redirect_to" value="{{ rf }}">
                       <input type="hidden" name="estado" value="pagado">
+                      <input type="hidden" name="comprobante_id" :value="payCompId">
                       <input name="fecha_pago" type="date" class="input text-xs py-0.5 w-28">
                       <select name="medio" class="input text-xs py-0.5">
                         <option value="">Medio</option>
@@ -423,6 +424,7 @@
                       <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update" class="flex flex-wrap gap-1 items-center">
                         <input type="hidden" name="redirect_to" value="{{ rf }}">
                         <input type="hidden" name="estado" value="pagado">
+                        <input type="hidden" name="comprobante_id" :value="editCompId">
                         <input name="fecha_pago" type="date" value="{{ cuota.get('fecha_pago','') }}" class="input text-xs py-0.5 w-28">
                         <select name="medio" class="input text-xs py-0.5">
                           <option value="">Medio</option>

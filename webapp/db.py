@@ -1426,11 +1426,19 @@ def mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
                           tipo_comprobante: str, fecha_emision: str):
     """Marca el pago principal como pagado por empresa y registra el comprobante."""
     from bson import ObjectId
+    empresa_id = None
+    if empresa:
+        emp_doc = companies_col.find_one(
+            {"nombre": {"$regex": f"^{_re.escape(empresa)}$", "$options": "i"}},
+            {"_id": 1},
+        )
+        empresa_id = str(emp_doc["_id"]) if emp_doc else None
     payments_col.update_one(
         {"_id": ObjectId(payment_id)},
         {"$set": {
             "estado":             "pagado",
             "empresa_pagadora":   empresa,
+            "empresa_id":         empresa_id,
             "num_comprobante":    num_comprobante or None,
             "tipo_comprobante":   tipo_comprobante or None,
             "fecha_emision_comprobante": fecha_emision or None,
@@ -1933,6 +1941,7 @@ def create_factura_credito(empresa: str, numero_factura: str, monto: float,
                             concepto: str = "", socios: list | None = None,
                             periodo: str = "") -> str:
     emp = empresa.strip()
+    empresa_id = None
     if emp:
         existing = companies_col.find_one(
             {"$or": [
@@ -1941,11 +1950,14 @@ def create_factura_credito(empresa: str, numero_factura: str, monto: float,
             ]},
             {"nombre": 1},
         )
-        emp = existing["nombre"] if existing else emp
-        if not existing:
+        if existing:
+            emp = existing["nombre"]
+            empresa_id = str(existing["_id"])
+        else:
             add_company(nombre=emp)
     doc = {
-        "empresa": emp,
+        "empresa":    emp,
+        "empresa_id": empresa_id,
         "numero_factura": numero_factura.strip(),
         "monto": monto,
         "fecha_emision": fecha_emision,
@@ -1985,6 +1997,14 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
     medio_pago  = f.get("medio_pago") or None
     link_const  = f.get("link_constancia") or None
 
+    empresa_id = None
+    if empresa:
+        emp_doc = companies_col.find_one(
+            {"nombre": {"$regex": f"^{_re.escape(empresa)}$", "$options": "i"}},
+            {"_id": 1},
+        )
+        empresa_id = str(emp_doc["_id"]) if emp_doc else None
+
     if estado == "cobrado" or (cuotas and all(c.get("estado") == "pagado" for c in cuotas)):
         new_estado = "pagado"
         fecha = f.get("fecha_cobro") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -1999,11 +2019,13 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
             if new_estado == "pagado":
                 upd["fecha_pago"]       = fecha
                 upd["empresa_pagadora"] = empresa
+                upd["empresa_id"]       = empresa_id
                 upd["medio_pago"]       = medio_pago
                 upd["link_constancia"]  = link_const
             else:
                 upd["fecha_pago"]       = None
                 upd["empresa_pagadora"] = None
+                upd["empresa_id"]       = None
                 upd["medio_pago"]       = None
                 upd["link_constancia"]  = None
             payments_col.update_one({"_id": p["_id"]}, {"$set": upd})
@@ -2872,7 +2894,11 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
     if periodo:
         pmt_q["periodo"] = periodo
     if empresa:
-        pmt_q["empresa_pagadora"] = empresa
+        nombres = _resolve_empresa_nombres(empresa)
+        if nombres:
+            pmt_q["empresa_pagadora"] = {"$in": nombres}
+        else:
+            pmt_q["empresa_pagadora"] = empresa
     for pmt in payments_col.find(pmt_q):
         mid      = pmt.get("member_id", "")
         per      = pmt.get("periodo", "")
@@ -2989,6 +3015,7 @@ def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
                 update["socios"] = [str(s) for s in v if s]
         elif k == "empresa":
             emp = str(v).strip()
+            empresa_id = None
             if emp:
                 existing = companies_col.find_one(
                     {"$or": [
@@ -2997,10 +3024,13 @@ def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
                     ]},
                     {"nombre": 1},
                 )
-                emp = existing["nombre"] if existing else emp
-                if not existing:
+                if existing:
+                    emp = existing["nombre"]
+                    empresa_id = str(existing["_id"])
+                else:
                     add_company(nombre=emp)
             update["empresa"] = emp
+            update["empresa_id"] = empresa_id
         else:
             update[k] = str(v).strip()
     if update:

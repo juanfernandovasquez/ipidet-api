@@ -508,6 +508,7 @@ Al crear con socios+periodo, `sync_credito_to_cobranzas()` sincroniza el estado 
 
 ```
 empresa           string
+empresa_id        string | null    FK → companies._id  (auto-resuelto al crear/editar)
 numero_factura    string
 monto             float
 fecha_emision     string    "YYYY-MM-DD"
