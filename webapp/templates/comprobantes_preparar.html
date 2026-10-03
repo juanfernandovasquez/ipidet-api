@@ -26,7 +26,7 @@
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all whitespace-nowrap">
             <i class="fa-solid fa-file-lines text-xs"></i> Boleta
           </button>
-          <button type="button" @click="form.tipo = 'factura'"
+          <button type="button" @click="form.tipo = 'factura'; destinatario.member_id=''; destinatario.nombre=''; destinatario.dni=''; dniInput=''; dniGuardando=false"
                   :class="form.tipo === 'factura' ? 'bg-white shadow text-violet-600 font-semibold' : 'text-slate-500 hover:text-slate-700'"
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all whitespace-nowrap">
             <i class="fa-solid fa-file-invoice text-xs"></i> Factura
@@ -38,7 +38,7 @@
           <input type="text" x-model="recipSearch"
                  @input.debounce.250ms="buscarDestinatario()"
                  @blur.debounce.200ms="empSearchRes = []; socSearchRes = []"
-                 placeholder="Buscar empresa o socio…"
+                 :placeholder="form.tipo === 'factura' ? 'Buscar empresa…' : 'Buscar empresa o socio…'"
                  class="input w-full text-sm">
           <!-- Dropdown con grupos -->
           <div x-show="empSearchRes.length > 0 || socSearchRes.length > 0"
@@ -606,12 +606,13 @@ function preparar() {
     async buscarDestinatario() {
       const q = this.recipSearch.trim();
       if (q.length < 2) { this.empSearchRes = []; this.socSearchRes = []; return; }
+      const esFact = this.form.tipo === 'factura';
       const [rEmp, rSoc] = await Promise.all([
         fetch('/api/companies?q=' + encodeURIComponent(q)).then(r => r.json()),
-        fetch('/api/members?search=' + encodeURIComponent(q)).then(r => r.json()),
+        esFact ? Promise.resolve({}) : fetch('/api/members?search=' + encodeURIComponent(q)).then(r => r.json()),
       ]);
       this.empSearchRes = rEmp.slice(0, 5);
-      this.socSearchRes = (rSoc.members || []).slice(0, 6);
+      this.socSearchRes = esFact ? [] : (rSoc.members || []).slice(0, 6);
     },
     elegirEmpresa(e) {
       this.form.empresa    = e.nombre;
