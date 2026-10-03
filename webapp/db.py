@@ -1741,6 +1741,124 @@ def get_marketing_emails(titulo: str = "", ubicacion: str = "",
 # ── Comunicaciones ─────────────────────────────────────────────────────────────
 
 comunicaciones_col = _db.comunicaciones
+plantillas_col     = _db.plantillas_comunicaciones
+
+_PLANTILLAS_DEFAULT = [
+    {
+        "key": "libre",
+        "nombre": "Libre",
+        "asunto": "",
+        "cuerpo": "",
+        "orden": 0,
+    },
+    {
+        "key": "recordatorio",
+        "nombre": "Recordatorio cuota",
+        "asunto": "Recordatorio de cuota IPIDET",
+        "cuerpo": (
+            "Estimado/a asociado/a,\n\n"
+            "Le recordamos que tiene pendiente el pago de su cuota anual de membresía IPIDET.\n\n"
+            "Para realizar su pago o consultar opciones de fraccionamiento, comuníquese con nosotros.\n\n"
+            "Cordialmente,\nEquipo IPIDET"
+        ),
+        "orden": 1,
+    },
+    {
+        "key": "mora",
+        "nombre": "Aviso de mora",
+        "asunto": "Aviso de mora — IPIDET",
+        "cuerpo": (
+            "Estimado/a asociado/a,\n\n"
+            "Le informamos que su cuota de membresía se encuentra vencida. "
+            "Le pedimos regularizar su situación a la brevedad posible para mantener los beneficios de su membresía.\n\n"
+            "Para coordinar el pago, comuníquese con nosotros.\n\n"
+            "Cordialmente,\nEquipo IPIDET"
+        ),
+        "orden": 2,
+    },
+    {
+        "key": "evento",
+        "nombre": "Invitación a evento",
+        "asunto": "Invitación — Próximo evento IPIDET",
+        "cuerpo": (
+            "Estimado/a asociado/a,\n\n"
+            "Tenemos el agrado de invitarle al próximo evento organizado por IPIDET.\n\n"
+            "[Detalla aquí: nombre del evento, fecha, hora, modalidad y enlace de inscripción]\n\n"
+            "Esperamos contar con su presencia.\n\n"
+            "Cordialmente,\nEquipo IPIDET"
+        ),
+        "orden": 3,
+    },
+    {
+        "key": "actualizacion_datos",
+        "nombre": "Actualización de datos",
+        "asunto": "Actualización de datos — IPIDET",
+        "cuerpo": (
+            "Estimado/a asociado/a,\n\n"
+            "Nos comunicamos para solicitarle la actualización de sus datos en nuestra base de socios "
+            "(correo electrónico, celular, centro de trabajo y DNI).\n\n"
+            "Puede enviarnos sus datos actualizados respondiendo a este correo.\n\n"
+            "Su información actualizada nos permite brindarle un mejor servicio y mantenerle informado/a "
+            "sobre las actividades y beneficios de IPIDET.\n\n"
+            "Agradecemos su colaboración.\n\n"
+            "Cordialmente,\nEquipo IPIDET"
+        ),
+        "orden": 4,
+    },
+]
+
+
+def get_plantillas() -> list:
+    docs = list(plantillas_col.find({"activa": {"$ne": False}}).sort("orden", 1))
+    if not docs:
+        _seed_plantillas()
+        docs = list(plantillas_col.find({"activa": {"$ne": False}}).sort("orden", 1))
+    return [_clean(d) for d in docs]
+
+
+def _seed_plantillas():
+    now = datetime.now(timezone.utc)
+    for p in _PLANTILLAS_DEFAULT:
+        plantillas_col.update_one(
+            {"key": p["key"]},
+            {"$setOnInsert": {**p, "activa": True, "created_at": now}},
+            upsert=True,
+        )
+
+
+def create_plantilla(nombre: str, asunto: str, cuerpo: str) -> str:
+    max_orden = plantillas_col.find_one(sort=[("orden", -1)]) or {}
+    orden = (max_orden.get("orden") or 0) + 1
+    import uuid as _uuid
+    key = _uuid.uuid4().hex[:8]
+    result = plantillas_col.insert_one({
+        "key": key,
+        "nombre": nombre,
+        "asunto": asunto,
+        "cuerpo": cuerpo,
+        "orden": orden,
+        "activa": True,
+        "created_at": datetime.now(timezone.utc),
+    })
+    return str(result.inserted_id)
+
+
+def update_plantilla(plantilla_id: str, nombre: str = None, asunto: str = None, cuerpo: str = None):
+    fields: dict = {"updated_at": datetime.now(timezone.utc)}
+    if nombre is not None:
+        fields["nombre"] = nombre
+    if asunto is not None:
+        fields["asunto"] = asunto
+    if cuerpo is not None:
+        fields["cuerpo"] = cuerpo
+    plantillas_col.update_one({"_id": ObjectId(plantilla_id)}, {"$set": fields})
+
+
+def delete_plantilla(plantilla_id: str):
+    plantillas_col.update_one(
+        {"_id": ObjectId(plantilla_id)},
+        {"$set": {"activa": False}},
+    )
 
 
 def get_comunicacion_destinatarios(

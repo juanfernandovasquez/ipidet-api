@@ -2062,6 +2062,41 @@ async def comunicaciones(
     ))
 
 
+@app.get("/api/plantillas")
+async def api_get_plantillas():
+    return pdb.get_plantillas()
+
+
+@app.post("/api/plantillas")
+async def api_create_plantilla(request: Request):
+    data = await request.json()
+    nombre = (data.get("nombre") or "").strip()
+    asunto = (data.get("asunto") or "").strip()
+    cuerpo = (data.get("cuerpo") or "").strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="nombre requerido")
+    pid = pdb.create_plantilla(nombre=nombre, asunto=asunto, cuerpo=cuerpo)
+    return {"ok": True, "id": pid}
+
+
+@app.post("/api/plantillas/{plantilla_id}/update")
+async def api_update_plantilla(plantilla_id: str, request: Request):
+    data = await request.json()
+    pdb.update_plantilla(
+        plantilla_id,
+        nombre=data.get("nombre"),
+        asunto=data.get("asunto"),
+        cuerpo=data.get("cuerpo"),
+    )
+    return {"ok": True}
+
+
+@app.post("/api/plantillas/{plantilla_id}/delete")
+async def api_delete_plantilla(plantilla_id: str):
+    pdb.delete_plantilla(plantilla_id)
+    return {"ok": True}
+
+
 @app.post("/api/comunicaciones/preview")
 async def comunicaciones_preview(request: Request):
     data        = await request.json()
