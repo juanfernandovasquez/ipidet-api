@@ -107,6 +107,14 @@ data-id="{{ p._id | string }}"
 
 Toda conexión a MongoDB Atlas requiere `tlsCAFile=certifi.where()`. Sin esto falla con error de certificado SSL. Aplica a `webapp/db.py`, `webapp/auth.py`, y cualquier cliente nuevo que se agregue.
 
+### R8 — Sin inferencias: toda sincronización via FK directa
+
+`sync_comprobante_to_payments` **solo opera via FK directa**. Cada ítem debe incluir `payment_id` + `tipo_pago` explícitos. Sin ellos, el ítem queda sin sincronizar y se devuelve `status: "no_fk"` — **nunca se infiere el payment por nombre de producto, código SUNAT ni período**.
+
+El slow path de inferencia fue eliminado. Si al registrar un comprobante la UI muestra ítems con `status: "no_fk"`, significa que el comprobante no está vinculado a ningún pago — el operador debe ir a Cobranzas y vincular manualmente con el picker de comprobantes.
+
+Esta regla aplica a cualquier función que llame `sync_comprobante_to_payments`, a cualquier nueva ruta que cree comprobantes, y a cualquier migración o script de backfill.
+
 ### R7 — FKs en colecciones: siempre pasar `comprobante_id` y `empresa_id`
 
 Los campos de texto `num_comprobante` y `empresa_pagadora` tienen ahora un campo FK paralelo (`comprobante_id` y `empresa_id`) que apunta al `_id` del documento relacionado. Al escribir en estas funciones, siempre pasar el FK cuando se conoce:
@@ -126,8 +134,7 @@ pdb.update_payment(payment_id, estado="pagado", num_comprobante="B001-001")
 
 - `empresa_id` se auto-resuelve dentro de `update_payment` y `create_comprobante` cuando se pasa `empresa`.
 - `comprobante_id` debe pasarse explícitamente desde la ruta que acaba de crear el comprobante.
-- Documentos legacy sin FK funcionan mediante el slow path de `sync_comprobante_to_payments` (por nombre de producto).
-- Si hay documentos históricos sin FK, correr `python migrate_fks.py`.
+- Si hay documentos históricos sin FK, correr `python migrate_fks.py` para backfill antes de sincronizar.
 
 ---
 

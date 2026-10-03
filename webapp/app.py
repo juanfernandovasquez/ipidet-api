@@ -1526,6 +1526,7 @@ async def comprobante_add(request: Request):
             fecha_emision  = data.get("fecha_emision", ""),
             empresa        = empresa,
             comprobante_id = comp_id,
+            medio_pago     = data.get("medio_pago", ""),
         )
         cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -1581,6 +1582,7 @@ async def comprobante_complete(comp_id: str, request: Request):
         fecha_emision  = comp.get("fecha_emision", ""),
         empresa        = comp.get("empresa", ""),
         comprobante_id = comp_id,
+        medio_pago     = comp.get("medio_pago", ""),
     )
     cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
     cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -1681,6 +1683,7 @@ async def comprobantes_import_xml(
                 fecha_emision  = data["fecha_emision"],
                 empresa        = pre_match.get("empresa", empresa_nombre),
                 comprobante_id = pre_comp_id,
+                medio_pago     = pre_match.get("medio_pago", ""),
             )
             cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
             cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -1748,6 +1751,7 @@ async def comprobantes_import_xml(
             fecha_emision  = data["fecha_emision"],
             empresa        = empresa_nombre,
             comprobante_id = comp_id,
+            medio_pago     = "",
         )
         cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -1799,6 +1803,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
             tipo=fields["tipo"],
             fecha_emision=fields["fecha_emision"],
             empresa=empresa,
+            medio_pago=fields.get("medio_pago", ""),
         )
     return {"ok": True}
 

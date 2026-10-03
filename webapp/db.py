@@ -1231,6 +1231,7 @@ _ESTADOS_NO_MODIFICAR = ("pagado", "exonerado", "no_aplica")
 _CRUCE_LABELS: dict = {
     "ok":                  ("Cruzado",              "green"),
     "ya_pagado":           ("Ya pagado",             "blue"),
+    "no_fk":               ("Sin FK directa",        "amber"),
     "no_product":          ("Producto no encontrado","red"),
     "tipo_no_pago":        ("Tipo no aplica",        "amber"),
     "sin_periodo":         ("Sin período",            "red"),
@@ -1243,30 +1244,12 @@ _CRUCE_LABELS: dict = {
 
 def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                   fecha_emision: str, empresa: str = "",
-                                  comprobante_id: str = None) -> list[dict]:
-    """Cruza cada item del comprobante con el payment exacto.
-    Fast path: si el item tiene payment_id + tipo_pago, usa FK directa.
-    Slow path (legacy): codigo_sunat / nombre exacto → producto → tipo + periodo + cuota_numero."""
+                                  comprobante_id: str = None,
+                                  medio_pago: str = "") -> list[dict]:
+    """Cruza cada item del comprobante con el payment exacto via FK directa.
+    Requiere payment_id + tipo_pago en cada item. Sin ellos el item queda sin sincronizar."""
     results: list[dict] = []
     seen: set = set()
-
-    _prods_loaded = False
-    prod_by_code: dict = {}
-    prod_by_name: dict = {}
-
-    def _load_prods():
-        nonlocal _prods_loaded, prod_by_code, prod_by_name
-        if _prods_loaded:
-            return
-        all_prods = list(productos_col.find(
-            {}, {"nombre": 1, "tipo": 1, "periodo": 1, "codigo_sunat": 1, "cuota_numero": 1}
-        ))
-        prod_by_code.update({p["codigo_sunat"]: p for p in all_prods if p.get("codigo_sunat")})
-        for p in all_prods:
-            k = (p.get("nombre") or "").lower().strip()
-            if k:
-                prod_by_name[k] = p
-        _prods_loaded = True
 
     def _res(item: dict, status: str, msg: str) -> dict:
         label, color = _CRUCE_LABELS.get(status, (status, "slate"))
@@ -1314,15 +1297,16 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                num_comprobante=numero, tipo_comprobante=tipo,
                                fecha_emision_comprobante=fecha_emision or None,
                                empresa=empresa or None,
+                               medio=medio_pago or None,
                                comprobante_id=comprobante_id)
-                results.append(_res(item, "ok", "Pago marcado como pagado (FK directa)"))
+                results.append(_res(item, "ok", "Pago marcado como pagado"))
 
             elif direct_tipo == "cuota":
                 cuotas = pay.get("cuotas") or []
                 target = next((c for c in cuotas if c.get("numero") == direct_cuota), None)
                 if not target:
                     results.append(_res(item, "cuota_no_existe",
-                        f"Cuota #{direct_cuota} no existe (FK directa)"))
+                        f"Cuota #{direct_cuota} no existe"))
                     continue
                 if target.get("estado") == "pagado":
                     results.append(_res(item, "ya_pagado",
@@ -1331,105 +1315,22 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                 update_cuota(direct_pid, direct_cuota, estado="pagado",
                              fecha_pago=fecha_emision or None,
                              num_comprobante=numero, tipo_comprobante=tipo,
+                             medio_pago=medio_pago or None,
                              comprobante_id=comprobante_id)
-                results.append(_res(item, "ok", f"Cuota #{direct_cuota} marcada como pagada (FK directa)"))
+                results.append(_res(item, "ok", f"Cuota #{direct_cuota} marcada como pagada"))
 
             elif direct_tipo == "parcial":
                 add_pago_parcial(direct_pid, monto=monto,
                                  fecha_pago=fecha_emision or None,
                                  num_comprobante=numero, tipo_comprobante=tipo,
+                                 medio=medio_pago or None,
                                  comprobante_id=comprobante_id)
-                results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado (FK directa)"))
+                results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado"))
             continue
 
-        # ── SLOW PATH: inferencia por producto (legacy/manual) ───────────────
-        _load_prods()
-        pcode   = (item.get("codigo_sunat") or "").strip()
-        pnombre = (item.get("producto_nombre") or "").strip()
-
-        prod = prod_by_code.get(pcode) if pcode else None
-        if not prod and pnombre:
-            prod = prod_by_name.get(pnombre.lower())
-
-        if not prod:
-            results.append(_res(item, "no_product",
-                f"'{pcode or pnombre}' no coincide con ningún producto de la plataforma"))
-            continue
-
-        tipo_prod = prod.get("tipo", "")
-        periodo   = (prod.get("periodo") or "").strip()
-        cuota_num = prod.get("cuota_numero")
-
-        if tipo_prod not in _TIPOS_PAGO:
-            results.append(_res(item, "tipo_no_pago",
-                f"Tipo '{tipo_prod}' no genera registro de pago"))
-            continue
-
-        if not periodo:
-            results.append(_res(item, "sin_periodo",
-                "El producto no tiene período — configurarlo en la ficha del producto"))
-            continue
-
-        key = (mid, periodo, tipo_prod, cuota_num)
-        if key in seen:
-            continue
-        seen.add(key)
-
-        payment_id = get_or_create_payment(mid, periodo)
-        pay = payments_col.find_one({"_id": ObjectId(payment_id)}, {"estado": 1, "cuotas": 1})
-        if not pay:
-            results.append(_res(item, "error", "No se pudo obtener el registro de pago"))
-            continue
-        current_estado = pay.get("estado", "")
-
-        if tipo_prod in _TIPOS_CUOTA_COMPLETA:
-            if current_estado in _ESTADOS_NO_MODIFICAR:
-                results.append(_res(item, "ya_pagado",
-                    f"El pago ya tiene estado '{current_estado}'"))
-                continue
-            update_payment(payment_id, estado="pagado",
-                          fecha_pago=fecha_emision or None,
-                          num_comprobante=numero, tipo_comprobante=tipo,
-                          fecha_emision_comprobante=fecha_emision or None,
-                          empresa=empresa or None,
-                          comprobante_id=comprobante_id)
-            results.append(_res(item, "ok", "Pago marcado como pagado"))
-
-        elif tipo_prod in _TIPOS_FRACCION:
-            if cuota_num is None:
-                results.append(_res(item, "sin_cuota_num",
-                    "El producto no tiene N° de cuota — configurarlo en la ficha del producto"))
-                continue
-            if current_estado != "fraccionamiento":
-                results.append(_res(item, "estado_incompatible",
-                    f"El pago está en '{current_estado}', no en fraccionamiento"))
-                continue
-            cuotas = pay.get("cuotas") or []
-            target = next((c for c in cuotas if c.get("numero") == cuota_num), None)
-            if not target:
-                results.append(_res(item, "cuota_no_existe",
-                    f"La cuota #{cuota_num} no existe en este pago"))
-                continue
-            if target.get("estado") == "pagado":
-                results.append(_res(item, "ya_pagado",
-                    f"La cuota #{cuota_num} ya estaba pagada"))
-                continue
-            update_cuota(payment_id, numero=cuota_num, estado="pagado",
-                        fecha_pago=fecha_emision or None,
-                        num_comprobante=numero, tipo_comprobante=tipo,
-                        comprobante_id=comprobante_id)
-            results.append(_res(item, "ok", f"Cuota #{cuota_num} marcada como pagada"))
-
-        elif tipo_prod in _TIPOS_PARCIAL:
-            if current_estado in ("exonerado", "no_aplica", "fraccionamiento"):
-                results.append(_res(item, "estado_incompatible",
-                    f"El pago está en '{current_estado}', no aplica pago parcial"))
-                continue
-            add_pago_parcial(payment_id, monto=monto,
-                           fecha_pago=fecha_emision or None,
-                           num_comprobante=numero, tipo_comprobante=tipo,
-                           comprobante_id=comprobante_id)
-            results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado"))
+        # ── SIN FK: no se sincroniza ─────────────────────────────────────────
+        results.append(_res(item, "no_fk",
+            "Sin payment_id + tipo_pago — vincula el comprobante desde Cobranzas"))
 
     return results
 
