@@ -101,22 +101,44 @@
           </button>
         </div>
 
-        <!-- Chip socio seleccionado (inline, en lugar del buscador) -->
+        <!-- Chip socio seleccionado -->
         <div x-show="destinatario.member_id && !form.empresa_id" x-cloak
-             :class="destinatario.dni ? 'bg-sky-50 border-sky-200' : 'bg-amber-50 border-amber-200'"
-             class="flex-1 flex items-center gap-2 border rounded-lg px-2.5 py-1.5 min-w-0">
+             :class="destinatario.dni ? 'bg-sky-50 border-sky-200 flex-1' : 'bg-amber-50 border-amber-200 shrink-0'"
+             class="flex items-center gap-2 border rounded-lg px-2.5 py-1.5 min-w-0">
           <i class="fa-solid fa-user text-xs shrink-0"
              :class="destinatario.dni ? 'text-sky-500' : 'text-amber-500'"></i>
-          <div class="flex-1 min-w-0 truncate">
-            <span class="text-sm font-semibold text-slate-800" x-text="destinatario.nombre"></span>
+          <div class="min-w-0" :class="destinatario.dni ? 'flex-1 truncate' : ''">
+            <span class="text-sm font-semibold text-slate-800 whitespace-nowrap" x-text="destinatario.nombre"></span>
             <span x-show="destinatario.dni" class="ml-1.5 text-xs text-sky-700 font-mono" x-text="'DNI ' + destinatario.dni"></span>
-            <span x-show="!destinatario.dni" class="ml-1.5 text-xs text-amber-700">Sin DNI</span>
+            <span x-show="!destinatario.dni" class="ml-1 text-xs text-amber-600">
+              <i class="fa-solid fa-triangle-exclamation text-[10px]"></i>
+            </span>
           </div>
           <button type="button" @click="destinatario.member_id=''; destinatario.nombre=''; destinatario.dni=''; recipSearch=''; empSearchRes=[]; socSearchRes=[]; dniInput=''; dniGuardando=false"
                   class="text-slate-400 hover:text-red-500 transition-colors shrink-0">
             <i class="fa-solid fa-xmark text-xs"></i>
           </button>
         </div>
+
+        <!-- DNI input inline (cuando socio seleccionado sin DNI) -->
+        <input type="text" x-model="dniInput" maxlength="8"
+               x-show="destinatario.member_id && !destinatario.dni && !form.empresa_id" x-cloak
+               @keydown.enter.prevent="guardarDni()"
+               placeholder="DNI (8 dígitos)"
+               class="input text-sm font-mono shrink-0 w-32">
+
+        <!-- Botón guardar DNI -->
+        <button type="button"
+                x-show="destinatario.member_id && !destinatario.dni && !form.empresa_id" x-cloak
+                @click="guardarDni()"
+                :disabled="dniInput.length !== 8 || dniGuardando"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all shrink-0 whitespace-nowrap"
+                :class="dniInput.length === 8 && !dniGuardando
+                  ? 'bg-sky-600 hover:bg-sky-700 text-white border-sky-600'
+                  : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'">
+          <i class="fa-solid text-[10px]" :class="dniGuardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
+          <span x-text="dniGuardando ? '…' : 'Guardar DNI'"></span>
+        </button>
 
         <!-- Botón nueva empresa (solo factura, sin empresa seleccionada) -->
         <button type="button"
@@ -132,23 +154,6 @@
 
         <!-- Fecha de emisión -->
         <input type="date" x-model="form.fecha" class="input text-sm shrink-0 w-36">
-      </div>
-
-      <!-- Editor inline de DNI (cuando socio sin DNI) -->
-      <div x-show="destinatario.member_id && !destinatario.dni" x-cloak class="mt-2.5 flex gap-2">
-        <input type="text" x-model="dniInput" maxlength="8"
-               @keydown.enter.prevent="guardarDni()"
-               placeholder="DNI del socio (8 dígitos)"
-               class="input flex-1 text-sm font-mono">
-        <button type="button" @click="guardarDni()"
-                :disabled="dniInput.length !== 8 || dniGuardando"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0"
-                :class="dniInput.length === 8 && !dniGuardando
-                  ? 'bg-sky-600 hover:bg-sky-700 text-white'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
-          <i class="fa-solid" :class="dniGuardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
-          <span x-text="dniGuardando ? 'Guardando…' : 'Guardar DNI'"></span>
-        </button>
       </div>
 
       <!-- Form nueva empresa (se abre desde el botón de la fila) -->
