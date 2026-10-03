@@ -12,30 +12,26 @@
 
 {% block content %}
 
-{# ── Helpers de URL ── #}
 {% set qf = "search=" ~ search ~ "&estado=" ~ estado ~ "&pago=" ~ pago ~ "&ubicacion=" ~ ubicacion ~ "&tipo_socio=" ~ tipo_socio ~ "&email_est=" ~ email_est %}
 {% set sd_id     = 'desc' if sort == 'id'     and sort_dir == 'asc' else 'asc' %}
 {% set sd_nombre = 'desc' if sort == 'nombre' and sort_dir == 'asc' else 'asc' %}
 {% set any_filter = search or estado or pago or ubicacion or tipo_socio or email_est %}
 
-{# ── Label maps ── #}
-{% set estado_labels   = {"activo":"Activo","retirar":"Retirar","en_revision":"En revisión","inactivo":"Inactivo"} %}
-{% set pago_labels     = {"pagado":"Pagado","debe":"Debe","fraccionamiento":"Fraccionamiento","parcial":"Parcial","exonerado":"Exonerado","retirar":"Retirar"} %}
-{% set tipo_labels     = {"ordinario":"Ordinario","afiliado":"Afiliado","honorario":"Honorario","filial":"Filial","asociado":"Asociado"} %}
-{% set email_labels    = {"rebotado":"Con rebote","sin_email":"Sin email"} %}
+{% set estado_labels = {"activo":"Activo","retirar":"Retirar","en_revision":"En revisión"} %}
+{% set tipo_labels   = {"ordinario":"Ordinario","afiliado":"Afiliado","honorario":"Honorario","filial":"Filial","asociado":"Asociado"} %}
+{% set email_labels  = {"rebotado":"Con rebote","sin_email":"Sin email"} %}
 
 <form id="memberFilterForm" method="get" action="/members">
-  {# Hidden state inputs #}
-  <input type="hidden" name="sort"      value="{{ sort }}">
-  <input type="hidden" name="sort_dir"  value="{{ sort_dir }}">
-  <input type="hidden" name="page"      value="1">
-  <input type="hidden" name="estado"    value="{{ estado }}">
-  <input type="hidden" name="pago"      value="{{ pago }}">
-  <input type="hidden" name="ubicacion" value="{{ ubicacion }}">
-  <input type="hidden" name="tipo_socio"value="{{ tipo_socio }}">
-  <input type="hidden" name="email_est" value="{{ email_est }}">
+  <input type="hidden" name="sort"       value="{{ sort }}">
+  <input type="hidden" name="sort_dir"   value="{{ sort_dir }}">
+  <input type="hidden" name="page"       value="1">
+  <input type="hidden" name="estado"     value="{{ estado }}">
+  <input type="hidden" name="pago"       value="{{ pago }}">
+  <input type="hidden" name="ubicacion"  value="{{ ubicacion }}">
+  <input type="hidden" name="tipo_socio" value="{{ tipo_socio }}">
+  <input type="hidden" name="email_est"  value="{{ email_est }}">
 
-  <!-- Search row -->
+  <!-- Buscador -->
   <div class="flex items-center gap-3 mb-4">
     <div class="relative flex-1 max-w-xs" x-data="{ t: null }">
       <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[11px] pointer-events-none"></i>
@@ -45,148 +41,130 @@
              x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
     </div>
     {% if any_filter %}
-    <a href="/members" class="flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 transition-colors">
+    <a href="/members" class="flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600">
       <i class="fa-solid fa-xmark text-[11px]"></i> Limpiar
     </a>
     {% endif %}
   </div>
 
-  <!-- Table -->
-  <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
-    <table class="w-full text-sm whitespace-nowrap">
+  <!-- Tabla -->
+  <div class="bg-white rounded-xl border border-slate-200">
+    <table class="w-full text-sm">
       <thead>
         <tr class="bg-slate-50 border-b border-slate-200 text-left">
 
-          {# ID — sort only #}
-          <th class="px-4 py-2 text-xs uppercase tracking-wider">
+          {# ID — solo sort #}
+          <th class="px-4 py-3 w-32">
             <a href="/members?{{ qf }}&sort=id&sort_dir={{ sd_id }}&page=1"
-               class="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors
-                      {{ 'text-blue-600' if sort == 'id' else 'text-slate-600' }}">
+               class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider hover:text-blue-600
+                      {{ 'text-blue-600' if sort == 'id' else 'text-slate-500' }}">
               ID
-              <i class="fa-solid {{ 'fa-sort-up text-blue-500' if sort == 'id' and sort_dir == 'asc' else ('fa-sort-down text-blue-500' if sort == 'id' else 'fa-sort text-slate-300') }} text-[10px]"></i>
+              <i class="fa-solid text-[10px]
+                 {{ 'fa-sort-up text-blue-500' if sort == 'id' and sort_dir == 'asc'
+                    else ('fa-sort-down text-blue-500' if sort == 'id' else 'fa-sort text-slate-300') }}"></i>
             </a>
           </th>
 
-          {# Nombre — sort + tipo_socio filter #}
-          <th class="px-4 py-2 text-xs uppercase tracking-wider" x-data="{open:false}" @click.outside="open=false">
-            <a href="/members?{{ qf }}&sort=nombre&sort_dir={{ sd_nombre }}&page=1"
-               class="flex items-center gap-1 font-semibold hover:text-blue-600 transition-colors
-                      {{ 'text-blue-600' if sort == 'nombre' else 'text-slate-600' }}">
-              Nombre
-              <i class="fa-solid {{ 'fa-sort-up text-blue-500' if sort == 'nombre' and sort_dir == 'asc' else ('fa-sort-down text-blue-500' if sort == 'nombre' else 'fa-sort text-slate-300') }} text-[10px]"></i>
-            </a>
-            <div class="mt-1 relative">
+          {# Nombre — sort + filtro tipo_socio #}
+          <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
+            <div class="flex items-center gap-2">
               <button type="button" @click="open=!open"
-                class="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors
-                       {{ 'bg-blue-50 border-blue-300 text-blue-700 font-medium' if tipo_socio else 'bg-white border-slate-200 text-slate-400 hover:border-slate-300' }}">
-                {% if tipo_socio %}{{ tipo_labels.get(tipo_socio, tipo_socio)|capitalize }}{% else %}Tipo{% endif %}
-                <i class="fa-solid fa-chevron-down text-[9px]"></i>
+                class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
+                       {{ 'text-blue-600' if tipo_socio else 'text-slate-500 hover:text-slate-700' }}">
+                {% if tipo_socio %}
+                  {{ tipo_labels.get(tipo_socio, tipo_socio) }}
+                {% else %}
+                  Nombre
+                {% endif %}
+                <i class="fa-solid fa-chevron-down text-[9px]
+                   {{ 'text-blue-500' if tipo_socio else 'text-slate-300' }}"></i>
               </button>
-              <div x-show="open" x-cloak
-                   class="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[150px] font-normal normal-case">
-                {% for val, lbl in [("","Todos"),("ordinario","Ordinario"),("afiliado","Afiliado"),("honorario","Honorario"),("filial","Filial"),("asociado","Asociado")] %}
-                <button type="button" onclick="membersSetFilter('tipo_socio','{{ val }}')"
-                  class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 transition-colors
-                         {{ 'text-blue-600 font-medium bg-blue-50/50' if tipo_socio == val else 'text-slate-700' }}">
-                  {{ lbl }}
-                </button>
-                {% endfor %}
-              </div>
+              <a href="/members?{{ qf }}&sort=nombre&sort_dir={{ sd_nombre }}&page=1"
+                 class="text-[10px] {{ 'text-blue-500' if sort == 'nombre' else 'text-slate-300 hover:text-slate-500' }}">
+                <i class="fa-solid {{ 'fa-sort-up' if sort == 'nombre' and sort_dir == 'asc' else ('fa-sort-down' if sort == 'nombre' else 'fa-sort') }}"></i>
+              </a>
+            </div>
+            <div x-show="open" x-cloak
+                 class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[160px]">
+              {% for val, lbl in [("","Todos"),("ordinario","Ordinario"),("afiliado","Afiliado"),("honorario","Honorario"),("filial","Filial"),("asociado","Asociado")] %}
+              <button type="button" onclick="membersSetFilter('tipo_socio','{{ val }}')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if tipo_socio == val else 'text-slate-700' }}">
+                {{ lbl }}
+              </button>
+              {% endfor %}
             </div>
           </th>
 
-          {# Email — email_est filter #}
-          <th class="px-4 py-2 text-xs uppercase tracking-wider" x-data="{open:false}" @click.outside="open=false">
-            <span class="font-semibold text-slate-600">Email</span>
-            <div class="mt-1 relative">
-              <button type="button" @click="open=!open"
-                class="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors
-                       {{ 'bg-blue-50 border-blue-300 text-blue-700 font-medium' if email_est else 'bg-white border-slate-200 text-slate-400 hover:border-slate-300' }}">
-                {% if email_est %}{{ email_labels.get(email_est, email_est) }}{% else %}Estado{% endif %}
-                <i class="fa-solid fa-chevron-down text-[9px]"></i>
+          {# Email — filtro estado email #}
+          <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
+            <button type="button" @click="open=!open"
+              class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
+                     {{ 'text-blue-600' if email_est else 'text-slate-500 hover:text-slate-700' }}">
+              {% if email_est %}
+                {{ email_labels.get(email_est, email_est) }}
+              {% else %}
+                Email
+              {% endif %}
+              <i class="fa-solid fa-chevron-down text-[9px]
+                 {{ 'text-blue-500' if email_est else 'text-slate-300' }}"></i>
+            </button>
+            <div x-show="open" x-cloak
+                 class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[150px]">
+              {% for val, lbl in [("","Todos"),("rebotado","Con rebote"),("sin_email","Sin email")] %}
+              <button type="button" onclick="membersSetFilter('email_est','{{ val }}')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if email_est == val else 'text-slate-700' }}">
+                {{ lbl }}
               </button>
-              <div x-show="open" x-cloak
-                   class="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[150px] font-normal normal-case">
-                {% for val, lbl in [("","Todos"),("rebotado","Con rebote"),("sin_email","Sin email")] %}
-                <button type="button" onclick="membersSetFilter('email_est','{{ val }}')"
-                  class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 transition-colors
-                         {{ 'text-blue-600 font-medium bg-blue-50/50' if email_est == val else 'text-slate-700' }}">
-                  {{ lbl }}
-                </button>
-                {% endfor %}
-              </div>
+              {% endfor %}
             </div>
           </th>
 
-          {# Lugar — ubicacion filter #}
-          <th class="px-4 py-2 text-xs uppercase tracking-wider" x-data="{open:false}" @click.outside="open=false">
-            <span class="font-semibold text-slate-600">Lugar</span>
-            <div class="mt-1 relative">
-              <button type="button" @click="open=!open"
-                class="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors
-                       {{ 'bg-blue-50 border-blue-300 text-blue-700 font-medium' if ubicacion else 'bg-white border-slate-200 text-slate-400 hover:border-slate-300' }}">
-                {% if ubicacion %}{{ ubicacion }}{% else %}Región{% endif %}
-                <i class="fa-solid fa-chevron-down text-[9px]"></i>
+          {# Lugar — filtro ubicacion #}
+          <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
+            <button type="button" @click="open=!open"
+              class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
+                     {{ 'text-blue-600' if ubicacion else 'text-slate-500 hover:text-slate-700' }}">
+              {% if ubicacion %}{{ ubicacion }}{% else %}Lugar{% endif %}
+              <i class="fa-solid fa-chevron-down text-[9px]
+                 {{ 'text-blue-500' if ubicacion else 'text-slate-300' }}"></i>
+            </button>
+            <div x-show="open" x-cloak
+                 class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[160px] max-h-60 overflow-y-auto">
+              <button type="button" onclick="membersSetFilter('ubicacion','')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if not ubicacion else 'text-slate-700' }}">
+                Todas
               </button>
-              <div x-show="open" x-cloak
-                   class="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[150px] max-h-56 overflow-y-auto font-normal normal-case">
-                <button type="button" onclick="membersSetFilter('ubicacion','')"
-                  class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 {{ 'text-blue-600 font-medium bg-blue-50/50' if not ubicacion else 'text-slate-700' }}">
-                  Todas
-                </button>
-                {% for ub in ubicaciones %}
-                <button type="button" onclick="membersSetFilter('ubicacion','{{ ub }}')"
-                  class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 {{ 'text-blue-600 font-medium bg-blue-50/50' if ubicacion == ub else 'text-slate-700' }}">
-                  {{ ub }}
-                </button>
-                {% endfor %}
-              </div>
+              {% for ub in ubicaciones %}
+              <button type="button" onclick="membersSetFilter('ubicacion','{{ ub }}')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if ubicacion == ub else 'text-slate-700' }}">
+                {{ ub }}
+              </button>
+              {% endfor %}
             </div>
           </th>
 
-          {# Pago 2026 — pago filter #}
-          <th class="px-4 py-2 text-xs uppercase tracking-wider" x-data="{open:false}" @click.outside="open=false">
-            <span class="font-semibold text-slate-600">Pago 2026</span>
-            <div class="mt-1 relative">
-              <button type="button" @click="open=!open"
-                class="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors
-                       {{ 'bg-blue-50 border-blue-300 text-blue-700 font-medium' if pago else 'bg-white border-slate-200 text-slate-400 hover:border-slate-300' }}">
-                {% if pago %}{{ pago_labels.get(pago, pago)|capitalize }}{% else %}Estado{% endif %}
-                <i class="fa-solid fa-chevron-down text-[9px]"></i>
+          {# Estado — filtro estado socio #}
+          <th class="px-4 py-3 relative" x-data="{open:false}" @click.outside="open=false">
+            <button type="button" @click="open=!open"
+              class="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider
+                     {{ 'text-blue-600' if estado else 'text-slate-500 hover:text-slate-700' }}">
+              {% if estado %}{{ estado_labels.get(estado, estado) }}{% else %}Estado{% endif %}
+              <i class="fa-solid fa-chevron-down text-[9px]
+                 {{ 'text-blue-500' if estado else 'text-slate-300' }}"></i>
+            </button>
+            <div x-show="open" x-cloak
+                 class="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[150px]">
+              {% for val, lbl in [("","Todos"),("activo","Activo"),("retirar","Retirar"),("en_revision","En revisión")] %}
+              <button type="button" onclick="membersSetFilter('estado','{{ val }}')"
+                class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
+                       {{ 'text-blue-600 font-semibold bg-blue-50/50' if estado == val else 'text-slate-700' }}">
+                {{ lbl }}
               </button>
-              <div x-show="open" x-cloak
-                   class="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[180px] font-normal normal-case">
-                {% for val, lbl in [("","Todos"),("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),("parcial","Parcial"),("exonerado","Exonerado"),("retirar","Retirar")] %}
-                <button type="button" onclick="membersSetFilter('pago','{{ val }}')"
-                  class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 transition-colors
-                         {{ 'text-blue-600 font-medium bg-blue-50/50' if pago == val else 'text-slate-700' }}">
-                  {{ lbl }}
-                </button>
-                {% endfor %}
-              </div>
-            </div>
-          </th>
-
-          {# Estado (miembro) — estado filter #}
-          <th class="px-4 py-2 text-xs uppercase tracking-wider" x-data="{open:false}" @click.outside="open=false">
-            <span class="font-semibold text-slate-600">Estado</span>
-            <div class="mt-1 relative">
-              <button type="button" @click="open=!open"
-                class="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border transition-colors
-                       {{ 'bg-blue-50 border-blue-300 text-blue-700 font-medium' if estado else 'bg-white border-slate-200 text-slate-400 hover:border-slate-300' }}">
-                {% if estado %}{{ estado_labels.get(estado, estado)|capitalize }}{% else %}Todos{% endif %}
-                <i class="fa-solid fa-chevron-down text-[9px]"></i>
-              </button>
-              <div x-show="open" x-cloak
-                   class="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[150px] font-normal normal-case">
-                {% for val, lbl in [("","Todos"),("activo","Activo"),("retirar","Retirar"),("en_revision","En revisión")] %}
-                <button type="button" onclick="membersSetFilter('estado','{{ val }}')"
-                  class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50 transition-colors
-                         {{ 'text-blue-600 font-medium bg-blue-50/50' if estado == val else 'text-slate-700' }}">
-                  {{ lbl }}
-                </button>
-                {% endfor %}
-              </div>
+              {% endfor %}
             </div>
           </th>
 
@@ -195,104 +173,67 @@
 
       <tbody class="divide-y divide-slate-100">
         {% for m in members %}
-        {% set email_principal  = m.emails | selectattr("principal", "equalto", true) | list | first | default(none) %}
-        {% set p26 = m.pago_2026 %}
-        <tr x-data="{
-              copied: null,
-              copy(text, key) {
-                navigator.clipboard.writeText(text || '').then(() => {
-                  this.copied = key;
-                  setTimeout(() => this.copied = null, 1500);
-                });
-              }
-            }" class="hover:bg-slate-50 transition-colors">
+        {% set email_principal = m.emails | selectattr("principal","equalto",true) | list | first | default(none) %}
+        <tr x-data="{ copied: null, copy(text, key) { navigator.clipboard.writeText(text||'').then(() => { this.copied=key; setTimeout(()=>this.copied=null,1500) }) } }"
+            class="hover:bg-slate-50 transition-colors">
 
           {# ID #}
           <td class="px-4 py-3">
             <div class="flex items-center gap-1">
-              <span class="font-mono text-xs text-slate-500">{{ m.member_id }}</span>
-              <button type="button" @click="copy('{{ m.member_id }}', 'id')" title="Copiar ID">
-                <i class="fa-solid text-[10px] transition-colors"
-                   :class="copied === 'id' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
+              <span class="font-mono text-xs text-slate-400">{{ m.member_id }}</span>
+              <button type="button" @click="copy('{{ m.member_id }}','id')" class="text-[10px]">
+                <i :class="copied==='id' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-200 hover:text-slate-400'"
+                   class="fa-solid transition-colors"></i>
               </button>
             </div>
           </td>
 
-          {# Nombre + tipo_socio #}
-          <td class="px-4 py-3" data-nombre="{{ m.apellidos }} {{ m.nombres }}">
-            <div class="flex items-start gap-1">
-              <a href="/members/{{ m.member_id }}" class="hover:text-blue-600 transition-colors flex-1 min-w-0">
-                <div class="font-medium text-slate-800 text-sm">{{ m.apellidos }}</div>
-                <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
-                {% if m.tipo_socio and m.tipo_socio != 'ordinario' %}
-                <div class="mt-0.5">
-                  <span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">
-                    {{ tipo_labels.get(m.tipo_socio, m.tipo_socio)|capitalize }}
-                  </span>
-                </div>
-                {% endif %}
-              </a>
-              <button type="button" @click="copy($el.closest('td').dataset.nombre, 'nombre')" title="Copiar nombre" class="mt-0.5 shrink-0">
-                <i class="fa-solid text-[10px] transition-colors"
-                   :class="copied === 'nombre' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
-              </button>
-            </div>
+          {# Nombre #}
+          <td class="px-4 py-3">
+            <a href="/members/{{ m.member_id }}" class="hover:text-blue-600 transition-colors block">
+              <div class="font-medium text-slate-800 text-sm">{{ m.apellidos }}</div>
+              <div class="text-slate-500 text-xs">{{ m.nombres }}</div>
+            </a>
+            {% if m.tipo_socio and m.tipo_socio != 'ordinario' %}
+            <span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full mt-0.5 inline-block">
+              {{ tipo_labels.get(m.tipo_socio, m.tipo_socio) }}
+            </span>
+            {% endif %}
           </td>
 
           {# Email #}
           <td class="px-4 py-3 text-xs max-w-[220px]"
               data-email="{{ email_principal.email if email_principal else '' }}">
             {% if email_principal %}
-              <div class="flex items-center gap-1">
-                {% if email_principal.estado == "habilitado" %}
-                  <i class="fa-solid fa-circle-check text-emerald-500 shrink-0 text-[10px]" title="Habilitado"></i>
-                {% elif email_principal.estado == "rebotado" %}
-                  <i class="fa-solid fa-circle-xmark text-red-400 shrink-0 text-[10px]" title="Rebotado"></i>
-                {% else %}
-                  <i class="fa-solid fa-circle-xmark text-amber-400 shrink-0 text-[10px]" title="Inhabilitado"></i>
-                {% endif %}
-                <span class="text-slate-600 truncate">{{ email_principal.email }}</span>
-                <button type="button" @click="copy($el.closest('td').dataset.email, 'ep')" title="Copiar email" class="shrink-0">
-                  <i class="fa-solid text-[10px] transition-colors"
-                     :class="copied === 'ep' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-300 hover:text-slate-500'"></i>
-                </button>
-              </div>
+            <div class="flex items-center gap-1">
+              {% if email_principal.estado == "habilitado" %}
+                <i class="fa-solid fa-circle-check text-emerald-400 text-[10px] shrink-0"></i>
+              {% elif email_principal.estado == "rebotado" %}
+                <i class="fa-solid fa-circle-xmark text-red-400 text-[10px] shrink-0"></i>
+              {% else %}
+                <i class="fa-solid fa-circle-minus text-amber-400 text-[10px] shrink-0"></i>
+              {% endif %}
+              <span class="text-slate-600 truncate">{{ email_principal.email }}</span>
+              <button type="button" @click="copy($el.closest('td').dataset.email,'ep')" class="shrink-0 text-[10px]">
+                <i :class="copied==='ep' ? 'fa-check text-emerald-500' : 'fa-copy text-slate-200 hover:text-slate-400'"
+                   class="fa-solid transition-colors"></i>
+              </button>
+            </div>
             {% else %}
-              <span class="text-slate-300 italic text-[11px]">sin email</span>
+            <span class="text-slate-300 italic text-[11px]">sin email</span>
             {% endif %}
           </td>
 
-          {# Lugar de trabajo #}
-          <td class="px-4 py-3 text-xs text-slate-600 max-w-[180px]">
+          {# Lugar #}
+          <td class="px-4 py-3 text-xs text-slate-500">
             {% if m.centro_trabajo %}
-              <span class="truncate block">{{ m.centro_trabajo }}</span>
+            <div class="truncate max-w-[180px]">{{ m.centro_trabajo }}</div>
             {% endif %}
             {% if m.ubicacion %}
-              <span class="text-[11px] text-slate-400">{{ m.ubicacion }}</span>
+            <div class="text-slate-400 text-[11px]">{{ m.ubicacion }}</div>
             {% endif %}
             {% if not m.centro_trabajo and not m.ubicacion %}
-              <span class="text-slate-300">—</span>
-            {% endif %}
-          </td>
-
-          {# Pago 2026 #}
-          <td class="px-4 py-3">
-            {% if p26 %}
-              {% set sl = status_labels.get(p26.estado, ('—','gray')) %}
-              {% if p26.estado == 'fraccionamiento' %}
-                {% set ct = p26.get('cuotas') or [] %}
-                {% set cp = ct | selectattr('estado','equalto','pagado') | list | length %}
-                <span class="badge badge-amber">Fracc. {{ cp }}/{{ ct|length }}</span>
-              {% elif p26.estado == 'parcial' %}
-                <span class="badge badge-blue">Parcial</span>
-              {% else %}
-                <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
-              {% endif %}
-              {% if p26.get('empresa_pagadora') %}
-                <div class="text-[11px] text-slate-400 mt-0.5">{{ p26.empresa_pagadora }}</div>
-              {% endif %}
-            {% else %}
-              <span class="text-slate-300 text-xs">—</span>
+            <span class="text-slate-300">—</span>
             {% endif %}
           </td>
 
@@ -310,7 +251,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="6" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="5" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-magnifying-glass text-2xl mb-2 block"></i>
             No se encontraron socios con estos filtros.
           </td>
@@ -319,9 +260,9 @@
       </tbody>
     </table>
 
-    <!-- Pagination -->
+    <!-- Paginación -->
     {% if total_pages > 1 %}
-    <div class="border-t border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50">
+    <div class="border-t border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50 rounded-b-xl">
       <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }}</span>
       <div class="flex gap-2">
         {% if page > 1 %}
@@ -367,8 +308,6 @@
             <option>Abogado</option><option>Abogada</option>
             <option>Economista</option>
             <option>Administrador</option><option>Administradora</option>
-            <option>Ingeniero Industrial y Comercial</option>
-            <option>Bachiller en Economía</option><option>Socia Líder</option>
           </select>
         </div>
         <div>
@@ -378,7 +317,6 @@
             <option>Lima</option><option>La Libertad</option>
             <option>Lambayeque</option><option>Arequipa</option>
             <option>Piura</option><option>Puno</option>
-            <option>España</option><option>Argentina</option>
           </select>
         </div>
       </div>
@@ -402,7 +340,7 @@
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Notas</label>
-        <textarea name="notas" rows="2" placeholder="Observaciones adicionales…" class="input w-full resize-none"></textarea>
+        <textarea name="notas" rows="2" class="input w-full resize-none"></textarea>
       </div>
       <div class="flex gap-3 pt-2">
         <button type="submit" class="btn-primary flex-1">Crear socio</button>
