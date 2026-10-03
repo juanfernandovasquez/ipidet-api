@@ -8,7 +8,9 @@ Qué hace:
   4. payments.pagos_parciales[].comprobante_id ← busca comprobantes.numero == parcial.num_comprobante
   5. comprobantes.empresa_id       ← busca companies.nombre == comprobantes.empresa
   6. comprobantes.items[].payment_id + tipo_pago + cuota_numero
-     ← infiere vía member_id + producto → periodo → payment (SIN cambiar estados)
+     ← vía member_id + producto_id/nombre → periodo → payment (SIN cambiar estados)
+  7. facturas_credito.empresa_id   ← busca companies.nombre == credito.empresa
+  8. payments.producto_id          ← vía members.ubicacion → productos({tipo, periodo})
 
 Seguro:
   - Solo escribe campos que AÚN NO EXISTEN en el documento (idempotente).
@@ -270,6 +272,53 @@ def migrate_facturas_credito_empresa():
     print(f"  facturas credito:      {updated} documentos actualizados")
 
 
+# ── 8: payments.producto_id ──────────────────────────────────────────────────
+
+def migrate_payments_producto_id():
+    """
+    Asigna producto_id a payments que no lo tienen.
+    Lima → cuota_anual; demás ubicaciones → cuota_provincia.
+    Solo escribe si el producto existe para ese periodo.
+    """
+    # Pre-carga todos los productos activos de tipo cuota por (tipo, periodo)
+    prods = list(productos_col.find(
+        {"tipo": {"$in": ["cuota_anual", "cuota_provincia"]}, "activo": True},
+        {"_id": 1, "tipo": 1, "periodo": 1},
+    ))
+    # {("cuota_anual","2026"): "abc123", ...}
+    prod_map: dict[tuple, str] = {(p["tipo"], p["periodo"]): str(p["_id"]) for p in prods if p.get("periodo")}
+
+    # Pre-carga ubicaciones de socios
+    ubicaciones: dict[str, str] = {
+        m["member_id"]: (m.get("ubicacion") or "").strip().lower()
+        for m in members_col.find({}, {"member_id": 1, "ubicacion": 1})
+    }
+
+    updated = 0
+    skipped_no_prod = 0
+
+    for pay in payments_col.find({"producto_id": {"$exists": False}, "periodo": {"$exists": True}}):
+        periodo   = pay.get("periodo", "")
+        member_id = pay.get("member_id", "")
+        if not periodo or not member_id:
+            continue
+
+        ubicacion = ubicaciones.get(member_id, "")
+        tipo      = "cuota_anual" if ubicacion == "lima" else "cuota_provincia"
+        prod_id   = prod_map.get((tipo, periodo))
+
+        if not prod_id:
+            skipped_no_prod += 1
+            continue
+
+        payments_col.update_one({"_id": pay["_id"]}, {"$set": {"producto_id": prod_id}})
+        updated += 1
+
+    print(f"  payments producto_id:  {updated} documentos actualizados")
+    if skipped_no_prod:
+        print(f"    (sin producto en BD para ese periodo/ubicacion: {skipped_no_prod} payments)")
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -281,5 +330,6 @@ if __name__ == "__main__":
     migrate_comprobantes_empresa()
     migrate_comprobante_items()
     migrate_facturas_credito_empresa()
+    migrate_payments_producto_id()
     print()
     print("Migración completada.")

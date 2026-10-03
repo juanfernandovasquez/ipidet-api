@@ -380,17 +380,28 @@ def auto_set_wp_user_id(member_id: str, wp_user_id: int):
 
 def generar_cobros_periodo(periodo: str) -> dict:
     """Crea registros 'debe' para todos los socios activos sin registro en ese período."""
-    activos = list(members_col.find({"estado": "activo"}, {"member_id": 1}))
+    # Resolve product IDs for this period (Lima vs. provincia)
+    prod_lima = productos_col.find_one({"tipo": "cuota_anual",    "periodo": periodo, "activo": True}, {"_id": 1})
+    prod_prov = productos_col.find_one({"tipo": "cuota_provincia", "periodo": periodo, "activo": True}, {"_id": 1})
+    pid_lima = str(prod_lima["_id"]) if prod_lima else None
+    pid_prov = str(prod_prov["_id"]) if prod_prov else None
+
+    activos = list(members_col.find({"estado": "activo"}, {"member_id": 1, "ubicacion": 1}))
     existentes = {
         p["member_id"]
         for p in payments_col.find({"periodo": periodo}, {"member_id": 1})
     }
-    faltantes = [m["member_id"] for m in activos if m["member_id"] not in existentes]
+    faltantes = [m for m in activos if m["member_id"] not in existentes]
     if faltantes:
-        payments_col.insert_many([
-            {"member_id": mid, "periodo": periodo, "estado": "debe"}
-            for mid in faltantes
-        ])
+        docs = []
+        for m in faltantes:
+            es_lima = (m.get("ubicacion") or "").strip().lower() == "lima"
+            prod_id = pid_lima if es_lima else pid_prov
+            doc = {"member_id": m["member_id"], "periodo": periodo, "estado": "debe"}
+            if prod_id:
+                doc["producto_id"] = prod_id
+            docs.append(doc)
+        payments_col.insert_many(docs)
     return {"creados": len(faltantes), "ya_existian": len(existentes), "total_activos": len(activos)}
 
 

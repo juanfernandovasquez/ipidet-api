@@ -409,6 +409,7 @@ Un documento por socio por período.
 ```
 member_id               string    FK → members.member_id
 periodo                 string    "2025" | "2026"
+producto_id             string | null    FK → productos._id  (cuota_anual o cuota_provincia del período; asignado por generar_cobros_periodo y backfill migrate_fks.py)
 estado                  string    ver sección 7.2 para estados válidos y transiciones
 empresa_pagadora        string | null    "EY" | "BDO" | "PWC" | "KPMG" | "PPU"
 empresa_id              string | null    FK → companies._id  (auto-resuelto al setear empresa_pagadora)
