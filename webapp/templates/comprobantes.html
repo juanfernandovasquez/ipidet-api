@@ -138,6 +138,15 @@
       {% if c._tipo_doc == 'comprobante' %}
       {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
       <tbody x-data="{
+        sincronizando: false,
+        async sincronizar() {
+          this.sincronizando = true;
+          const r = await fetch('/comprobantes/{{ c._id }}/sync', { method: 'POST' });
+          const d = await r.json();
+          this.sincronizando = false;
+          if (d.cruce_ok > 0) location.reload();
+          else alert('Sin pagos que vincular (' + (d.cruce_items||[]).map(i=>i.status).join(', ') + ')');
+        },
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
           const r = await fetch('/comprobantes/{{ c._id }}/delete', { method: 'POST' });
@@ -191,6 +200,11 @@
         </td>
         <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
           <div class="flex items-center justify-end gap-1">
+            <button @click="sincronizar()" :disabled="sincronizando"
+                    title="Vincular pagos automáticamente"
+                    class="text-slate-300 hover:text-blue-500 transition-colors p-1 disabled:opacity-40">
+              <i class="fa-solid text-xs" :class="sincronizando ? 'fa-circle-notch fa-spin' : 'fa-rotate'"></i>
+            </button>
             <button @click="eliminar()" class="text-slate-300 hover:text-red-500 transition-colors p-1">
               <i class="fa-solid fa-trash-can text-xs"></i>
             </button>

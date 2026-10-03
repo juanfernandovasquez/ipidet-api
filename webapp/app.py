@@ -1611,6 +1611,38 @@ async def comprobantes_list(
     ))
 
 
+def _resolve_payment_ids(items: list) -> None:
+    """
+    Mutates items in-place: sets payment_id + tipo_pago for cuota_anual / cuota_provincia
+    items that have member_id but no payment_id yet. Tries producto_id first, then
+    producto_nombre as fallback. No-op for items that already have payment_id.
+    """
+    from bson import ObjectId as _OId
+    for item in items:
+        if item.get("payment_id") or not item.get("member_id"):
+            continue
+        prod = None
+        if item.get("producto_id"):
+            try:
+                prod = pdb.productos_col.find_one({"_id": _OId(item["producto_id"])})
+            except Exception:
+                pass
+        if not prod and item.get("producto_nombre"):
+            prod = pdb.productos_col.find_one(
+                {"nombre": {"$regex": f"^{item['producto_nombre'].strip()}$", "$options": "i"}}
+            )
+        if not prod:
+            continue
+        if prod.get("tipo") in ("cuota_anual", "cuota_provincia") and prod.get("periodo"):
+            pmt = pdb.payments_col.find_one(
+                {"member_id": item["member_id"], "periodo": prod["periodo"]}
+            )
+            if pmt:
+                item["payment_id"]  = str(pmt["_id"])
+                item["tipo_pago"]   = "principal"
+                item["producto_id"] = str(prod["_id"])
+
+
 @app.post("/comprobantes/add")
 async def comprobante_add(request: Request):
     data    = await request.json()
@@ -1619,35 +1651,14 @@ async def comprobante_add(request: Request):
     numero  = data.get("numero", "").strip()
     monto_total = float(data.get("monto_total") or 0)
 
+    _resolve_payment_ids(items)
+
     # Derive socios and a summary product name from line items
     socios = list({it["member_id"] for it in items if it.get("member_id")})
     producto_nombre = (
         data.get("producto_nombre", "")
         or (", ".join(sorted({it["producto_nombre"] for it in items if it.get("producto_nombre")})))
     )
-
-    # Resolve payment_id + tipo_pago from producto_id + member_id (deterministic, no inference)
-    # Only for cuota_anual / cuota_provincia → tipo_pago "principal"
-    if any(it.get("producto_id") and it.get("member_id") and not it.get("payment_id") for it in items):
-        from bson import ObjectId as _OId
-        for item in items:
-            if item.get("payment_id") or not item.get("member_id") or not item.get("producto_id"):
-                continue
-            try:
-                prod = pdb.productos_col.find_one({"_id": _OId(item["producto_id"])})
-            except Exception:
-                continue
-            if not prod:
-                continue
-            tipo_prod   = prod.get("tipo", "")
-            periodo_prod = prod.get("periodo", "")
-            if tipo_prod in ("cuota_anual", "cuota_provincia") and periodo_prod:
-                pmt = pdb.payments_col.find_one(
-                    {"member_id": item["member_id"], "periodo": periodo_prod}
-                )
-                if pmt:
-                    item["payment_id"] = str(pmt["_id"])
-                    item["tipo_pago"]  = "principal"
 
     # Without a number → save as pre-registered draft
     estado = "emitido" if numero else "pre_registrado"
@@ -1951,8 +1962,11 @@ async def comprobante_update(comprobante_id: str, request: Request):
         fields["producto_nombre"] = prod_names[0] if len(prod_names) == 1 else ", ".join(sorted(prod_names))
     else:
         fields["producto_nombre"] = data.get("producto_nombre", "")
+    if items:
+        _resolve_payment_ids(items)
+        fields["items"] = items
+        fields["socios"] = list({it["member_id"] for it in items if it.get("member_id")})
     pdb.update_comprobante(comprobante_id, fields)
-    # Auto-sync: propagate changes to payments whenever items are present
     if items:
         pdb.sync_comprobante_to_payments(
             items=items,
@@ -1960,7 +1974,6 @@ async def comprobante_update(comprobante_id: str, request: Request):
             tipo=fields["tipo"],
             fecha_emision=fields["fecha_emision"],
             empresa=empresa,
-            medio_pago=fields.get("medio_pago", ""),
             comprobante_id=comprobante_id,
         )
     return {"ok": True}
@@ -1983,39 +1996,9 @@ async def comprobante_sync(comprobante_id: str):
         return {"ok": True, "cruce_ok": 0, "cruce_alerts": 0, "cruce_items": [],
                 "msg": "Este comprobante no tiene líneas de detalle vinculadas"}
 
-    # Resolve payment_id for items that don't have it yet
-    # Match by producto_nombre → products DB → periodo → payment
-    items_updated = False
-    for item in items:
-        if item.get("payment_id") or not item.get("member_id"):
-            continue
-        prod_id  = item.get("producto_id")
-        prod_nom = item.get("producto_nombre", "")
-        prod = None
-        if prod_id:
-            try:
-                prod = pdb.productos_col.find_one({"_id": _ObjId(prod_id)})
-            except Exception:
-                pass
-        if not prod and prod_nom:
-            prod = pdb.productos_col.find_one(
-                {"nombre": {"$regex": f"^{prod_nom}$", "$options": "i"}}
-            )
-        if not prod:
-            continue
-        tipo_prod   = prod.get("tipo", "")
-        periodo_prod = prod.get("periodo", "")
-        if tipo_prod in ("cuota_anual", "cuota_provincia") and periodo_prod:
-            pmt = pdb.payments_col.find_one(
-                {"member_id": item["member_id"], "periodo": periodo_prod}
-            )
-            if pmt:
-                item["payment_id"] = str(pmt["_id"])
-                item["tipo_pago"]  = "principal"
-                item["producto_id"] = str(prod["_id"])
-                items_updated = True
-
-    if items_updated:
+    before = [(it.get("payment_id"), it.get("producto_id")) for it in items]
+    _resolve_payment_ids(items)
+    if any((it.get("payment_id"), it.get("producto_id")) != b for it, b in zip(items, before)):
         pdb.comprobantes_col.update_one(
             {"_id": _ObjId(comprobante_id)}, {"$set": {"items": items}}
         )
