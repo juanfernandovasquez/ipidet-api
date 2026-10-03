@@ -1,7 +1,6 @@
 from datetime import datetime
 from bson import ObjectId
-from pymongo import MongoClient
-from config.settings import MONGODB_URI, DB_NAME
+from webapp.mongo_client import db as _db
 
 
 def _clean(obj):
@@ -14,10 +13,6 @@ def _clean(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
     return obj
-
-import certifi
-_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
-_db = _client[DB_NAME]
 
 members_col = _db.members
 payments_col = _db.payments

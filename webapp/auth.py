@@ -1,13 +1,9 @@
 import os
 import bcrypt
-import certifi
 from datetime import datetime, timezone
 from bson import ObjectId
-from pymongo import MongoClient
-from config.settings import MONGODB_URI, DB_NAME, ADMIN_EMAIL, ADMIN_PASSWORD
-
-_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
-_db = _client[DB_NAME]
+from config.settings import DB_NAME, ADMIN_EMAIL, ADMIN_PASSWORD
+from webapp.mongo_client import db as _db
 users_col = _db.users
 
 # Secciones de la plataforma (clave, etiqueta, ícono FA)
