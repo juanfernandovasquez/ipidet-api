@@ -1,8 +1,4 @@
-from pymongo import MongoClient
-from config.settings import MONGODB_URI, DB_NAME
-
-_client = MongoClient(MONGODB_URI)
-_db = _client[DB_NAME]
+from config.mongo_client import db as _db
 
 members_col = _db.members
 payments_col = _db.payments

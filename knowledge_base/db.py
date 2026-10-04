@@ -1,12 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from bson import ObjectId
-import certifi
-from pymongo import MongoClient
-from config.settings import MONGODB_URI, DB_NAME
-
-_client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where(), maxPoolSize=10, minPoolSize=0)
-_db = _client[DB_NAME]
+from config.mongo_client import db as _db
 
 faqs = _db.faqs
 interactions = _db.interactions
