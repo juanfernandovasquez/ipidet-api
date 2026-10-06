@@ -904,6 +904,7 @@
              if (p.numero && valid.length > 0) {
                items_map[p.numero] = valid.map(it => ({
                  member_id:       it.sid || null,
+                 producto_id:     it.pid || null,
                  producto_nombre: it.pnombre,
                  codigo_sunat:    it.pcode || '',
                  monto:           parseFloat(it.monto) || 0,
