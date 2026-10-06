@@ -3209,16 +3209,17 @@ def get_comprobante_by_id(comprobante_id: str) -> dict | None:
 def backfill_comprobantes_payment_ids() -> dict:
     """
     Startup migration: for each non-anulado comprobante whose items have member_id
-    but no payment_id, resolves payment_id via producto_nombre → productos → periodo
-    → payments, persists the resolved items, and syncs payments.
-    Idempotent — only touches items that are still missing payment_id.
+    but no payment_id (missing OR null), resolves payment_id via producto_id or
+    producto_nombre → productos → periodo → payments, persists the resolved items,
+    and syncs payments. Idempotent — only touches items still missing payment_id.
     """
     fixed_comps = 0
     fixed_items = 0
+    # $in:[None,""] matches both null values and absent fields (MongoDB treats missing as null)
     cursor = comprobantes_col.find(
         {"estado": {"$ne": "anulado"},
          "items": {"$elemMatch": {"member_id": {"$exists": True, "$nin": [None, ""]},
-                                  "payment_id": {"$exists": False}}}}
+                                  "payment_id": {"$in": [None, ""]}}}}
     )
     for comp in cursor:
         items = list(comp.get("items") or [])
@@ -3265,6 +3266,37 @@ def backfill_comprobantes_payment_ids() -> dict:
             )
             fixed_comps += 1
     return {"fixed_comprobantes": fixed_comps, "fixed_items": fixed_items}
+
+
+def backfill_resync_comprobantes_with_payment_id() -> dict:
+    """
+    Startup migration: re-syncs all non-anulado comprobantes whose items already have
+    payment_id set (string). Applies current sync logic to existing data: empresa
+    propagation/clearing, medio_pago propagation, fraccionamiento→pagado when full
+    annual boleta is linked. Safe to run on every startup — idempotent.
+    """
+    synced = 0
+    cursor = comprobantes_col.find(
+        {"estado": {"$ne": "anulado"},
+         "items": {"$elemMatch": {"payment_id": {"$exists": True, "$nin": [None, ""]}}}}
+    )
+    for comp in cursor:
+        items = list(comp.get("items") or [])
+        if not items:
+            continue
+        comp_id    = str(comp["_id"])
+        medio_pago = comp.get("medio_pago") or ""
+        sync_comprobante_to_payments(
+            items          = items,
+            numero         = comp.get("numero", ""),
+            tipo           = comp.get("tipo", "boleta"),
+            fecha_emision  = comp.get("fecha_emision", ""),
+            empresa        = comp.get("empresa", ""),
+            comprobante_id = comp_id,
+            medio_pago     = medio_pago,
+        )
+        synced += 1
+    return {"resynced_comprobantes": synced}
 
 
 def backfill_payments_fecha_pago() -> int:
