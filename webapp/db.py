@@ -1610,7 +1610,7 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                    num_comprobante=numero, tipo_comprobante=tipo,
                                    fecha_emision_comprobante=fecha_emision or None,
                                    fecha_pago=fp,
-                                   empresa=empresa or None,
+                                   empresa=empresa,
                                    comprobante_id=comprobante_id)
                     results.append(_res(item, "ok",
                         f"Comprobante vinculado (estado '{current_estado}' preservado)"))
@@ -1619,7 +1619,7 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                    fecha_pago=fecha_emision or None,
                                    num_comprobante=numero, tipo_comprobante=tipo,
                                    fecha_emision_comprobante=fecha_emision or None,
-                                   empresa=empresa or None,
+                                   empresa=empresa,
                                    medio=medio_pago or None,
                                    comprobante_id=comprobante_id)
                     results.append(_res(item, "ok", "Pago marcado como pagado"))

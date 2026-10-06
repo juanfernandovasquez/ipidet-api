@@ -2011,6 +2011,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
             fecha_emision=fields["fecha_emision"],
             empresa=empresa,
             comprobante_id=comprobante_id,
+            medio_pago=fields.get("medio_pago", ""),
         )
     return {"ok": True}
 
