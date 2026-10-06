@@ -1629,6 +1629,12 @@ def _resolve_payment_ids(items: list) -> None:
             continue
 
         # Path 1: product FK → cuota_anual / cuota_provincia → principal payment
+        # Si producto_id falta pero codigo_sunat está presente, resolver FK primero.
+        if not item.get("producto_id") and item.get("codigo_sunat"):
+            p_by_code = pdb.productos_col.find_one({"codigo_sunat": item["codigo_sunat"]})
+            if p_by_code:
+                item["producto_id"] = str(p_by_code["_id"])
+
         prod = None
         if item.get("producto_id"):
             try:
