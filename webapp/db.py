@@ -1602,9 +1602,8 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
 
             if direct_tipo == "principal":
                 current_estado = pay.get("estado")
-                # Proteger fraccionamiento: tiene cuotas activas, el sync de un
-                # comprobante de cuota anual no debe pisar ese estado.
-                if current_estado in _ESTADOS_NO_MODIFICAR or current_estado == "fraccionamiento":
+                if current_estado in _ESTADOS_NO_MODIFICAR:
+                    # Ya finalizado: solo vincular el comprobante, sin cambiar estado.
                     fp = (fecha_emision or None) if not pay.get("fecha_pago") else None
                     update_payment(direct_pid, estado=current_estado,
                                    num_comprobante=numero, tipo_comprobante=tipo,
@@ -1615,6 +1614,16 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                     results.append(_res(item, "ok",
                         f"Comprobante vinculado (estado '{current_estado}' preservado)"))
                 else:
+                    # Pago completo (tipo principal) siempre resulta en "pagado".
+                    # Si había un fraccionamiento con cuotas sin pagar, se cancela el plan.
+                    if current_estado == "fraccionamiento":
+                        cuotas = pay.get("cuotas") or []
+                        ninguna_pagada = not any(c.get("estado") == "pagado" for c in cuotas)
+                        if ninguna_pagada:
+                            payments_col.update_one(
+                                {"_id": ObjectId(direct_pid)},
+                                {"$set": {"cuotas": []}},
+                            )
                     update_payment(direct_pid, estado="pagado",
                                    fecha_pago=fecha_emision or None,
                                    num_comprobante=numero, tipo_comprobante=tipo,
