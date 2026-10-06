@@ -1852,7 +1852,10 @@ async def comprobantes_import_xml(
                 for it in items:
                     cs = it.get("codigo_sunat", "")
                     if cs and cs in prods_sunat:
-                        it["producto_nombre"] = prods_sunat[cs]["nombre"]
+                        prod = prods_sunat[cs]
+                        it["producto_nombre"] = prod["nombre"]
+                        if not it.get("producto_id"):
+                            it["producto_id"] = str(prod["_id"])
             _resolve_payment_ids(items)
             socios = list({it["member_id"] for it in items if it.get("member_id")})
             cruce = pdb.sync_comprobante_to_payments(
@@ -1898,11 +1901,14 @@ async def comprobantes_import_xml(
             items = user_items
         else:
             items = data["items"]
-            # Auto-cruce: código SUNAT → nombre de producto en plataforma
+            # Auto-cruce: código SUNAT → nombre y producto_id en plataforma
             for it in items:
                 cs = it.get("codigo_sunat", "")
                 if cs and cs in prods_sunat:
-                    it["producto_nombre"] = prods_sunat[cs]["nombre"]
+                    prod = prods_sunat[cs]
+                    it["producto_nombre"] = prod["nombre"]
+                    if not it.get("producto_id"):
+                        it["producto_id"] = str(prod["_id"])
         _resolve_payment_ids(items)
 
         descs = [it["producto_nombre"] for it in items if it.get("producto_nombre")]

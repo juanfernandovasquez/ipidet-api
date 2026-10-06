@@ -2817,8 +2817,29 @@ def _sync_wc_product_ids():
         )
 
 
+def _sync_productos_codigo_sunat():
+    """Backfill: asigna codigo_sunat a los productos que no lo tengan.
+    Solo escribe el campo si está vacío o ausente — no pisa ediciones manuales."""
+    mappings = [
+        ("cuota_anual",    "2024", "CUOTA-2024"),
+        ("cuota_anual",    "2025", "CUOTA-2025"),
+        ("cuota_anual",    "2026", "CUOTA-2026"),
+        ("cuota_anual",    "2027", "CUOTA-2027"),
+        ("cuota_provincia","2024", "CUOTA-PROV-2024"),
+        ("cuota_provincia","2025", "CUOTA-PROV-2025"),
+        ("cuota_provincia","2026", "CUOTA-PROV-2026"),
+        ("cuota_provincia","2027", "CUOTA-PROV-2027"),
+        ("fraccionamiento","",     "FRACC-CUOTA"),
+    ]
+    for tipo, periodo, codigo in mappings:
+        q = {"tipo": tipo, "periodo": periodo,
+             "$or": [{"codigo_sunat": {"$exists": False}}, {"codigo_sunat": ""}]}
+        productos_col.update_many(q, {"$set": {"codigo_sunat": codigo}})
+
+
 _seed_productos()
 _sync_wc_product_ids()
+_sync_productos_codigo_sunat()
 
 
 def get_productos(tipo: str = "", solo_activos: bool = False) -> list:
