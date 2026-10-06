@@ -1636,14 +1636,11 @@ def _resolve_payment_ids(items: list) -> None:
             except Exception:
                 pass
         if prod and prod.get("tipo") in ("cuota_anual", "cuota_provincia") and prod.get("periodo"):
-            pmt = pdb.payments_col.find_one(
-                {"member_id": item["member_id"], "periodo": prod["periodo"]}
-            )
-            if pmt:
-                item["payment_id"]  = str(pmt["_id"])
-                item["tipo_pago"]   = "principal"
-                item["producto_id"] = str(prod["_id"])
-            continue  # handled (or no matching payment for this member+period)
+            pmt_id = pdb.get_or_create_payment(item["member_id"], prod["periodo"])
+            item["payment_id"]  = pmt_id
+            item["tipo_pago"]   = "principal"
+            item["producto_id"] = str(prod["_id"])
+            continue
 
         # Path 2: codigo_sunat encodes a fraccionamiento cuota reference
         if item.get("codigo_sunat"):
