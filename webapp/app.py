@@ -1829,6 +1829,14 @@ async def comprobantes_import_xml(
                     "tipo":             xml_tipo,
                     "destinatario_dni": xml_ruc,
                 })
+                # Fallback: matching por socios (cuando el borrador no guardó destinatario_dni)
+                if not pre_match:
+                    xml_members = [it["member_id"] for it in data["items"] if it.get("member_id")]
+                    if xml_members:
+                        pre_match = pdb.comprobantes_col.find_one(
+                            {"estado": "pre_registrado", "tipo": xml_tipo, "socios": {"$in": xml_members}},
+                            sort=[("created_at", -1)],
+                        )
 
         empresa_nombre = data["razon_social"]
         ruc = xml_ruc
@@ -1846,11 +1854,17 @@ async def comprobantes_import_xml(
                 ruc           = ruc if ruc and len(ruc) == 11 else None,
             )
             items = list(pre_match.get("items") or data["items"])
-            # Auto-cruce items from XML if pre-match has no items
             if not items:
                 items = data["items"]
-                for it in items:
-                    cs = it.get("codigo_sunat", "")
+            # Enriquecer con codigo_sunat del XML: aplica tanto si el borrador
+            # tenía items como si no, para items que aún no tienen payment_id.
+            xml_items_by_mid = {it["member_id"]: it for it in data["items"] if it.get("member_id")}
+            for idx, it in enumerate(items):
+                if it.get("payment_id"):
+                    continue  # ya tiene FK directa, no tocar
+                xml_it = xml_items_by_mid.get(it.get("member_id")) or (data["items"][idx] if idx < len(data["items"]) else None)
+                if xml_it:
+                    cs = xml_it.get("codigo_sunat", "")
                     if cs and cs in prods_sunat:
                         prod = prods_sunat[cs]
                         it["producto_nombre"] = prod["nombre"]

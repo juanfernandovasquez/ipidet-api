@@ -333,7 +333,7 @@
            return this.items.reduce((s, it) => s + (parseFloat(it.monto) || 0), 0);
          },
          agregarItem() {
-           this.items.push({ sid: '', snombre: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '' });
+           this.items.push({ sid: '', snombre: '', sdni: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '' });
          },
          quitarItem(idx) { this.items.splice(idx, 1); },
          async buscarSocio(item) {
@@ -346,6 +346,7 @@
            item.sid     = s.member_id;
            item.snombre = ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id;
            item.sSearch = item.snombre;
+           item.sdni    = s.dni || '';
            item.sResults = [];
          },
          cambiarProducto(item) {
@@ -396,7 +397,7 @@
                const pid = (this.productos.find(p => p.nombre === it.producto_nombre) || {}).id || '';
                const sid = it.member_id || '';
                const snombre = sid ? (sm[sid] || sid) : '';
-               return { sid, snombre, sSearch: snombre, sResults: [], pid, pnombre: it.producto_nombre || '', monto: it.monto || '' };
+               return { sid, snombre, sdni: '', sSearch: snombre, sResults: [], pid, pnombre: it.producto_nombre || '', monto: it.monto || '' };
              });
            } else {
              this.items = [];
@@ -412,13 +413,19 @@
              producto_nombre: it.pnombre, codigo_sunat: it.pcode || '',
              monto: parseFloat(it.monto) || 0
            }));
+           // Para boletas a persona natural: auto-rellenar destinatario desde el ítem único
+           const soloSocios = this.items.filter(it => it.sid && it.sdni);
+           const destDni    = (this.form.tipo === 'boleta' && soloSocios.length === 1) ? soloSocios[0].sdni    : '';
+           const destNombre = (this.form.tipo === 'boleta' && soloSocios.length === 1) ? soloSocios[0].snombre : '';
+           const destId     = (this.form.tipo === 'boleta' && soloSocios.length === 1) ? soloSocios[0].sid     : '';
            const url = this.editId
              ? '/comprobantes/' + this.editId + '/update'
              : '/comprobantes/add';
            const r = await fetch(url, {
              method: 'POST',
              headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ ...this.form, items, monto_total: this.montoTotal, es_credito: this.es_credito }),
+             body: JSON.stringify({ ...this.form, items, monto_total: this.montoTotal, es_credito: this.es_credito,
+                                    destinatario_dni: destDni, destinatario_nombre: destNombre, destinatario_id: destId }),
            });
            this.guardando = false;
            if (r.ok) location.reload();
