@@ -799,10 +799,7 @@
            const prod = xi.codigoSunat
              ? this.productos.find(p => p.codigo_sunat && p.codigo_sunat === xi.codigoSunat)
              : null;
-           const prodByName = !prod && xi.desc
-             ? this.productos.find(p => p.nombre.toLowerCase() === xi.desc.toLowerCase())
-             : null;
-           const matched = prod || prodByName;
+           const matched = prod;
            return {
              sid: xi.memberId || '', snombre: xi.memberId || '',
              sSearch: xi.memberId || '', sResults: [],

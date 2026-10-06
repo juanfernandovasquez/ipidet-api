@@ -2817,24 +2817,27 @@ def _sync_wc_product_ids():
         )
 
 
+def _codigo_sunat_para_producto(tipo: str, periodo: str) -> str | None:
+    """Deriva el código SUNAT canónico para un producto dado su tipo y período."""
+    if tipo == "cuota_anual" and periodo:
+        return f"CUOTA-{periodo}"
+    if tipo == "cuota_provincia" and periodo:
+        return f"CUOTA-PROV-{periodo}"
+    if tipo == "fraccionamiento":
+        return "FRACC-CUOTA"
+    return None
+
+
 def _sync_productos_codigo_sunat():
     """Backfill: asigna codigo_sunat a los productos que no lo tengan.
-    Solo escribe el campo si está vacío o ausente — no pisa ediciones manuales."""
-    mappings = [
-        ("cuota_anual",    "2024", "CUOTA-2024"),
-        ("cuota_anual",    "2025", "CUOTA-2025"),
-        ("cuota_anual",    "2026", "CUOTA-2026"),
-        ("cuota_anual",    "2027", "CUOTA-2027"),
-        ("cuota_provincia","2024", "CUOTA-PROV-2024"),
-        ("cuota_provincia","2025", "CUOTA-PROV-2025"),
-        ("cuota_provincia","2026", "CUOTA-PROV-2026"),
-        ("cuota_provincia","2027", "CUOTA-PROV-2027"),
-        ("fraccionamiento","",     "FRACC-CUOTA"),
-    ]
-    for tipo, periodo, codigo in mappings:
-        q = {"tipo": tipo, "periodo": periodo,
-             "$or": [{"codigo_sunat": {"$exists": False}}, {"codigo_sunat": ""}]}
-        productos_col.update_many(q, {"$set": {"codigo_sunat": codigo}})
+    Solo escribe el campo si está vacío o ausente — no pisa ediciones manuales.
+    Genera el código dinámicamente desde tipo + periodo, sin años hardcodeados."""
+    for prod in productos_col.find(
+        {"$or": [{"codigo_sunat": {"$exists": False}}, {"codigo_sunat": ""}]}
+    ):
+        codigo = _codigo_sunat_para_producto(prod.get("tipo", ""), prod.get("periodo", ""))
+        if codigo:
+            productos_col.update_one({"_id": prod["_id"]}, {"$set": {"codigo_sunat": codigo}})
 
 
 _seed_productos()
