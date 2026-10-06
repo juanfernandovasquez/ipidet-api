@@ -1881,18 +1881,19 @@ async def comprobantes_import_xml(
             cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
             cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
             results.append({
-                "filename":       fname,
-                "numero":         numero,
-                "tipo":           xml_tipo,
-                "status":         "completado",
-                "empresa":        pre_match.get("empresa") or empresa_nombre,
-                "empresa_nueva":  False,
-                "monto":          xml_monto,
-                "socios_count":   len(socios),
-                "cruce_ok":       cruce_ok,
-                "cruce_alerts":   cruce_alerts,
-                "cruce_items":    cruce,
-                "pre_comp_id":    pre_comp_id,
+                "filename":        fname,
+                "numero":          numero,
+                "tipo":            xml_tipo,
+                "status":          "completado",
+                "empresa":         pre_match.get("empresa") or empresa_nombre,
+                "empresa_nueva":   False,
+                "monto":           xml_monto,
+                "socios_count":    len(socios),
+                "cruce_ok":        cruce_ok,
+                "cruce_alerts":    cruce_alerts,
+                "cruce_items":     cruce,
+                "pre_comp_id":     pre_comp_id,
+                "destinatario_doc": xml_ruc if (xml_ruc and len(xml_ruc) == 8) else None,
             })
             continue
 
@@ -1954,17 +1955,18 @@ async def comprobantes_import_xml(
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
 
         results.append({
-            "filename":      fname,
-            "numero":        numero,
-            "tipo":          data["tipo"],
-            "status":        "importado",
-            "empresa":       empresa_nombre,
-            "empresa_nueva": empresa_nueva,
-            "monto":         data["monto_total"],
-            "socios_count":  len(socios),
-            "cruce_ok":      cruce_ok,
-            "cruce_alerts":  cruce_alerts,
-            "cruce_items":   cruce,
+            "filename":        fname,
+            "numero":          numero,
+            "tipo":            data["tipo"],
+            "status":          "importado",
+            "empresa":         empresa_nombre,
+            "empresa_nueva":   empresa_nueva,
+            "monto":           data["monto_total"],
+            "socios_count":    len(socios),
+            "cruce_ok":        cruce_ok,
+            "cruce_alerts":    cruce_alerts,
+            "cruce_items":     cruce,
+            "destinatario_doc": xml_ruc if (xml_ruc and len(xml_ruc) == 8) else None,
         })
 
     return {"results": results}

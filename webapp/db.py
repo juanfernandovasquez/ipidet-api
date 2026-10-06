@@ -1543,7 +1543,7 @@ _ESTADOS_NO_MODIFICAR = ("pagado", "exonerado", "no_aplica")
 _CRUCE_LABELS: dict = {
     "ok":                  ("Cruzado",              "green"),
     "ya_pagado":           ("Ya pagado",             "blue"),
-    "no_fk":               ("Sin FK directa",        "amber"),
+    "no_fk":               ("No vinculado",           "amber"),
     "no_product":          ("Producto no encontrado","red"),
     "tipo_no_pago":        ("Tipo no aplica",        "amber"),
     "sin_periodo":         ("Sin período",            "red"),

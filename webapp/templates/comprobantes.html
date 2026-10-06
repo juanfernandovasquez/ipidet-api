@@ -1034,11 +1034,14 @@
                     <template x-if="!p.error && !p.esEmpresa && p.receptor">
                       <span class="flex flex-col gap-0.5">
                         <span class="text-slate-700" x-text="p.receptor"></span>
-                        <span class="text-[10px] text-slate-400 italic">persona natural</span>
+                        <span class="text-[10px] text-slate-400 font-mono" x-text="p.ruc ? 'DNI ' + p.ruc : 'persona natural'"></span>
                       </span>
                     </template>
                     <template x-if="!p.error && !p.esEmpresa && !p.receptor">
-                      <span class="text-slate-400 italic">Persona natural</span>
+                      <span class="flex flex-col gap-0.5">
+                        <span class="text-slate-400 italic">Persona natural</span>
+                        <span x-show="p.ruc" class="text-[10px] text-slate-400 font-mono" x-text="'DNI ' + p.ruc"></span>
+                      </span>
                     </template>
                   </td>
                   <td class="px-3 py-2 font-mono text-slate-400 text-[11px]" x-text="p.fecha || '—'"></td>
@@ -1085,16 +1088,36 @@
                       <div class="space-y-1.5">
                         <template x-for="(item, j) in p.items" :key="j">
                           <div class="bg-white rounded-lg border border-slate-100 px-2 py-2 space-y-1.5">
-                            <!-- Fila 1: XML source info (read-only reference) -->
-                            <div x-show="item.xmlDesc || item.xmlCode" class="flex items-center gap-2 text-[10px] text-slate-400">
+                            <!-- Fila 1: XML source info + estado de reconocimiento -->
+                            <div x-show="item.xmlDesc || item.xmlCode" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
                               <i class="fa-solid fa-file-code text-[9px] shrink-0"></i>
-                              <span x-show="item.xmlCode" class="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded" x-text="item.xmlCode"></span>
-                              <span x-show="item.xmlDesc" class="truncate italic" x-text="item.xmlDesc"></span>
+                              <span x-show="item.xmlCode" class="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0" x-text="item.xmlCode"></span>
+                              <span x-show="item.xmlDesc" class="truncate italic min-w-0" x-text="item.xmlDesc"></span>
+                              <!-- Socio reconocido -->
+                              <span x-show="item.sid"
+                                    class="shrink-0 text-emerald-700 bg-emerald-50 border border-emerald-200 flex items-center gap-1 px-1.5 py-0.5 rounded font-medium">
+                                <i class="fa-solid fa-user-check text-[9px]"></i>
+                                <span x-text="item.sid"></span>
+                              </span>
+                              <span x-show="!item.sid && (item.xmlCode || item.xmlDesc)"
+                                    class="shrink-0 text-orange-500 flex items-center gap-1">
+                                <i class="fa-solid fa-user-xmark text-[9px]"></i> Socio no reconocido
+                              </span>
+                              <!-- Producto reconocido -->
                               <span x-show="item.autoMatched"
                                     class="ml-auto shrink-0 text-emerald-600 flex items-center gap-1">
-                                <i class="fa-solid fa-check-circle text-[9px]"></i> Auto-vinculado
+                                <i class="fa-solid fa-check-circle text-[9px]"></i> Producto reconocido
                               </span>
-                              <span x-show="!item.autoMatched && !item.pid"
+                              <span x-show="!item.autoMatched && item.pid"
+                                    class="ml-auto shrink-0 text-blue-600 flex items-center gap-1">
+                                <i class="fa-solid fa-link text-[9px]"></i> Producto vinculado
+                              </span>
+                              <span x-show="!item.autoMatched && !item.pid && item.xmlCode"
+                                    class="ml-auto shrink-0 text-orange-500 flex items-center gap-1">
+                                <i class="fa-solid fa-triangle-exclamation text-[9px]"></i>
+                                <span x-text="'Cód. ' + item.xmlCode + ' sin mapeo'"></span>
+                              </span>
+                              <span x-show="!item.autoMatched && !item.pid && !item.xmlCode"
                                     class="ml-auto shrink-0 text-orange-500 flex items-center gap-1">
                                 <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Sin producto
                               </span>
@@ -1240,7 +1263,10 @@
                         </span>
                       </template>
                       <template x-if="r.status !== 'error' && !r.empresa">
-                        <span class="text-slate-400 italic">Persona natural</span>
+                        <span class="flex flex-col gap-0.5">
+                          <span class="text-slate-400 italic">Persona natural</span>
+                          <span x-show="r.destinatario_doc" class="text-[10px] text-slate-400 font-mono" x-text="'DNI ' + r.destinatario_doc"></span>
+                        </span>
                       </template>
                     </td>
                     <td class="px-3 py-2 text-center">
