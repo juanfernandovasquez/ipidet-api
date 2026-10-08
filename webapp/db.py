@@ -3283,6 +3283,81 @@ def get_comprobante_email_info(comp_id: str) -> dict | None:
     }
 
 
+def get_factura_credito_email_info(factura_id: str) -> dict | None:
+    """Devuelve la info necesaria para el modal de envío de email de una factura crédito."""
+    try:
+        fac = credito_col.find_one({"_id": ObjectId(factura_id)})
+    except Exception:
+        return None
+    if not fac:
+        return None
+
+    socios_info = []
+    for mid in (fac.get("socios") or []):
+        m = members_col.find_one(
+            {"member_id": mid},
+            {"nombres": 1, "apellidos": 1, "celular": 1, "dni": 1, "emails": 1},
+        )
+        if not m:
+            continue
+        email_principal = next(
+            (e["email"] for e in m.get("emails", [])
+             if e.get("principal") and e.get("estado") == "habilitado"),
+            next((e["email"] for e in m.get("emails", [])
+                  if e.get("estado") == "habilitado"), None),
+        )
+        socios_info.append({
+            "member_id": mid,
+            "nombre": f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
+            "email": email_principal or "",
+            "celular": m.get("celular") or "",
+            "dni": m.get("dni") or "",
+        })
+
+    empresa = fac.get("empresa") or ""
+    empresa_email = ""
+    empresa_contacto = ""
+    if empresa:
+        emp = companies_col.find_one(
+            {"$or": [
+                {"nombre":      {"$regex": f"^{_re.escape(empresa)}$", "$options": "i"}},
+                {"razon_social": {"$regex": f"^{_re.escape(empresa)}$", "$options": "i"}},
+            ]},
+            {"contacto_email": 1, "contacto_nombre": 1},
+        )
+        if emp:
+            empresa_email    = emp.get("contacto_email") or ""
+            empresa_contacto = emp.get("contacto_nombre") or ""
+
+    if empresa and empresa_email:
+        para_sugerido = empresa_email
+        para_label = f"{empresa_contacto} ({empresa})" if empresa_contacto else empresa
+    elif socios_info and socios_info[0]["email"]:
+        para_sugerido = socios_info[0]["email"]
+        para_label = socios_info[0]["nombre"]
+    else:
+        para_sugerido = ""
+        para_label = ""
+
+    return {
+        "_id":              str(fac["_id"]),
+        "numero":           fac.get("numero_factura") or "",
+        "tipo":             "factura",
+        "fecha_emision":    fac.get("fecha_emision") or "",
+        "empresa":          empresa,
+        "empresa_email":    empresa_email,
+        "empresa_contacto": empresa_contacto,
+        "has_xml":          False,
+        "monto_total":      float(fac.get("monto") or 0),
+        "items":            [{"producto_nombre": fac.get("concepto") or f"Membresía {fac.get('periodo', '')}".strip(),
+                              "monto": float(fac.get("monto") or 0)}],
+        "concepto":         fac.get("concepto") or "",
+        "socios_info":      socios_info,
+        "para_sugerido":    para_sugerido,
+        "para_label":       para_label,
+    }
+
+
 def backfill_comprobantes_payment_ids() -> dict:
     """
     Startup migration: for each non-anulado comprobante whose items have member_id

@@ -265,11 +265,18 @@
           {% endif %}
         </td>
         <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
-          <form method="post" action="/billing/credito/{{ c._id }}/delete" onsubmit="return confirm('¿Eliminar esta factura?')">
-            <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1">
-              <i class="fa-solid fa-trash-can text-xs"></i>
+          <div class="flex items-center justify-end gap-1">
+            <button onclick="window.dispatchEvent(new CustomEvent('cred-enviar', {detail: '{{ c._id }}'}))"
+                    title="Enviar por correo"
+                    class="text-slate-300 hover:text-emerald-500 transition-colors p-1">
+              <i class="fa-solid fa-envelope text-xs"></i>
             </button>
-          </form>
+            <form method="post" action="/billing/credito/{{ c._id }}/delete" onsubmit="return confirm('¿Eliminar esta factura?')">
+              <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1">
+                <i class="fa-solid fa-trash-can text-xs"></i>
+              </button>
+            </form>
+          </div>
         </td>
       </tr>
       </tbody>
@@ -1877,6 +1884,7 @@ function credModal() {
 <div x-data="sendCompModal()" x-show="open" x-cloak
      class="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 pt-10 overflow-y-auto"
      @comp-enviar.window="abrir($event.detail)"
+     @cred-enviar.window="abrirCredito($event.detail)"
      @keydown.escape.window="open && cerrar()">
   <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg" @click.stop>
 
@@ -2015,19 +2023,48 @@ function credModal() {
 <script>
 function sendCompModal() {
   return {
-    open: false, loading: false, compId: null, info: null,
+    open: false, loading: false, compId: null, tipoDoc: 'comprobante', info: null,
     toEmails: [], ccEmails: [], toInput: '', ccInput: '',
     sending: false, sent: false, sentCount: 0, error: '',
 
-    async abrir(compId) {
-      this.compId = compId; this.toEmails = []; this.ccEmails = [];
-      this.toInput = ''; this.ccInput = ''; this.sent = false;
-      this.sentCount = 0; this.error = ''; this.info = null;
+    _reset(compId, tipoDoc) {
+      this.compId = compId; this.tipoDoc = tipoDoc;
+      this.toEmails = []; this.ccEmails = [];
+      this.toInput = ''; this.ccInput = '';
+      this.sent = false; this.sentCount = 0; this.error = ''; this.info = null;
       this.open = true; this.loading = true;
+    },
+
+    _popularDestinatarios() {
+      if (!this.info) return;
+      this.toEmails = this.info.para_sugerido ? [this.info.para_sugerido] : [];
+      const socios  = this.info.socios_info || [];
+      // Si pagó empresa: todos los socios van en CC.
+      // Si es pago individual con múltiples socios: desde el 2° van en CC.
+      const desde = this.info.empresa ? 0 : 1;
+      this.ccEmails = socios.slice(desde)
+        .map(s => s.email).filter(e => e && !this.toEmails.includes(e));
+    },
+
+    async abrir(compId) {
+      this._reset(compId, 'comprobante');
       try {
         const r = await fetch('/api/comprobantes/' + compId + '/email-info');
         this.info = await r.json();
-        if (this.info.para_sugerido) this.toEmails = [this.info.para_sugerido];
+        this._popularDestinatarios();
+      } catch(e) {
+        this.error = 'Error al cargar información';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async abrirCredito(facId) {
+      this._reset(facId, 'credito');
+      try {
+        const r = await fetch('/api/facturas-credito/' + facId + '/email-info');
+        this.info = await r.json();
+        this._popularDestinatarios();
       } catch(e) {
         this.error = 'Error al cargar información';
       } finally {
@@ -2053,7 +2090,10 @@ function sendCompModal() {
       if (this.toEmails.length === 0) { this.error = 'Agrega al menos un destinatario'; return; }
       this.sending = true; this.error = '';
       try {
-        const r = await fetch('/comprobantes/' + this.compId + '/enviar-email', {
+        const url = this.tipoDoc === 'credito'
+          ? '/facturas-credito/' + this.compId + '/enviar-email'
+          : '/comprobantes/' + this.compId + '/enviar-email';
+        const r = await fetch(url, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ to: this.toEmails, cc: this.ccEmails }),

@@ -1418,6 +1418,65 @@ async def comprobante_enviar_email(comp_id: str, request: Request):
     return JSONResponse({"ok": True, "enviados": len(to_emails)})
 
 
+@app.get("/api/facturas-credito/{factura_id}/email-info")
+async def api_factura_credito_email_info(factura_id: str):
+    info = pdb.get_factura_credito_email_info(factura_id)
+    if not info:
+        return JSONResponse({"error": "no encontrado"}, status_code=404)
+    return info
+
+
+@app.post("/facturas-credito/{factura_id}/enviar-email")
+async def factura_credito_enviar_email(factura_id: str, request: Request):
+    from webapp.pdf_builder import build_comprobante_pdf
+    from bson import ObjectId as _ObjId
+
+    data      = await request.json()
+    to_emails = [e.strip() for e in (data.get("to") or []) if e.strip()]
+    cc_emails = [e.strip() for e in (data.get("cc") or []) if e.strip()]
+
+    if not to_emails:
+        return JSONResponse({"ok": False, "error": "Sin destinatarios"}, status_code=400)
+
+    info = pdb.get_factura_credito_email_info(factura_id)
+    if not info:
+        return JSONResponse({"ok": False, "error": "Factura no encontrada"}, status_code=404)
+
+    try:
+        fac = pdb.credito_col.find_one({"_id": _ObjId(factura_id)})
+    except Exception:
+        fac = None
+
+    comp_like = {
+        "numero":        info["numero"],
+        "tipo":          "factura",
+        "fecha_emision": info["fecha_emision"],
+        "empresa":       info["empresa"],
+        "ruc_empresa":   (fac or {}).get("ruc") or "",
+        "monto_total":   info["monto_total"],
+        "items":         info["items"],
+        "concepto":      info["concepto"],
+        "socios":        (fac or {}).get("socios") or [],
+    }
+
+    pdf_bytes = build_comprobante_pdf(comp_like, info["socios_info"])
+    numero    = info["numero"] or factura_id
+    subject   = f"Factura N° {numero} — IPIDET"
+
+    attachments = [{"filename": f"{numero}.pdf", "data": pdf_bytes, "mime": "application/pdf"}]
+    html_body   = mailer.tpl_comprobante_pago(comp_like, info["socios_info"])
+
+    try:
+        await mailer.send_email(
+            to=to_emails, subject=subject, html_body=html_body,
+            attachments=attachments, cc=cc_emails or None,
+        )
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    return JSONResponse({"ok": True, "enviados": len(to_emails)})
+
+
 @app.get("/api/payments")
 async def api_payments(periodo: str = "2026", estado: str = ""):
     docs, total = pdb.get_payments(periodo, estado)
