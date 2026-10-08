@@ -2059,7 +2059,10 @@ function sendCompModal() {
           body: JSON.stringify({ to: this.toEmails, cc: this.ccEmails }),
         });
         const d = await r.json();
-        if (d.ok) { this.sent = true; this.sentCount = d.enviados; }
+        if (d.ok) {
+          this.sent = true; this.sentCount = d.enviados;
+          setTimeout(() => this.cerrar(), 2000);
+        }
         else { this.error = d.error || 'Error al enviar'; }
       } catch(e) {
         this.error = 'Error de red: ' + e.message;
