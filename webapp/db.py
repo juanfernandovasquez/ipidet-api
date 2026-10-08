@@ -3124,7 +3124,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
                         destinatario_id: str = "",
                         destinatario_nombre: str = "",
                         destinatario_dni: str = "",
-                        medio_pago: str = "") -> str:
+                        medio_pago: str = "",
+                        xml_raw: str = "") -> str:
     # Derive socios from items if provided
     if items:
         seen = set()
@@ -3159,6 +3160,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "items":                items or [],
         "estado":               estado,
         "medio_pago":           medio_pago.strip() if medio_pago else "",
+        "xml_raw":              xml_raw or "",
         "destinatario_id":      destinatario_id.strip() if destinatario_id else "",
         "destinatario_nombre":  destinatario_nombre.strip() if destinatario_nombre else "",
         "destinatario_dni":     destinatario_dni.strip() if destinatario_dni else "",
@@ -3171,7 +3173,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
-               "socios", "items", "estado", "medio_pago"}
+               "socios", "items", "estado", "medio_pago", "xml_raw"}
     update = {k: v for k, v in fields.items() if k in allowed}
     if "empresa" in update:
         emp = (update["empresa"] or "").strip()
@@ -3204,6 +3206,81 @@ def get_comprobante_by_id(comprobante_id: str) -> dict | None:
     if doc:
         doc["_id"] = str(doc["_id"])
     return doc
+
+
+def get_comprobante_email_info(comp_id: str) -> dict | None:
+    """Devuelve la info necesaria para el modal de envío de email."""
+    import re as _re2
+    try:
+        comp = comprobantes_col.find_one({"_id": ObjectId(comp_id)})
+    except Exception:
+        return None
+    if not comp:
+        return None
+
+    socios_info = []
+    for mid in (comp.get("socios") or []):
+        m = members_col.find_one(
+            {"member_id": mid},
+            {"nombres": 1, "apellidos": 1, "celular": 1, "dni": 1, "emails": 1},
+        )
+        if not m:
+            continue
+        email_principal = next(
+            (e["email"] for e in m.get("emails", [])
+             if e.get("principal") and e.get("estado") == "habilitado"),
+            next((e["email"] for e in m.get("emails", [])
+                  if e.get("estado") == "habilitado"), None),
+        )
+        socios_info.append({
+            "member_id": mid,
+            "nombre": f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
+            "email": email_principal or "",
+            "celular": m.get("celular") or "",
+            "dni": m.get("dni") or "",
+        })
+
+    empresa = comp.get("empresa") or ""
+    empresa_email = ""
+    empresa_contacto = ""
+    if empresa:
+        emp = companies_col.find_one(
+            {"$or": [
+                {"nombre":      {"$regex": f"^{_re2.escape(empresa)}$", "$options": "i"}},
+                {"razon_social": {"$regex": f"^{_re2.escape(empresa)}$", "$options": "i"}},
+            ]},
+            {"contacto_email": 1, "contacto_nombre": 1},
+        )
+        if emp:
+            empresa_email    = emp.get("contacto_email") or ""
+            empresa_contacto = emp.get("contacto_nombre") or ""
+
+    if empresa and empresa_email:
+        para_sugerido = empresa_email
+        para_label = f"{empresa_contacto} ({empresa})" if empresa_contacto else empresa
+    elif socios_info and socios_info[0]["email"]:
+        para_sugerido = socios_info[0]["email"]
+        para_label = socios_info[0]["nombre"]
+    else:
+        para_sugerido = ""
+        para_label = ""
+
+    return {
+        "_id":              str(comp["_id"]),
+        "numero":           comp.get("numero") or "",
+        "tipo":             comp.get("tipo") or "boleta",
+        "fecha_emision":    comp.get("fecha_emision") or "",
+        "empresa":          empresa,
+        "empresa_email":    empresa_email,
+        "empresa_contacto": empresa_contacto,
+        "has_xml":          bool(comp.get("xml_raw")),
+        "monto_total":      comp.get("monto_total") or 0,
+        "items":            comp.get("items") or [],
+        "concepto":         comp.get("concepto") or comp.get("producto_nombre") or "",
+        "socios_info":      socios_info,
+        "para_sugerido":    para_sugerido,
+        "para_label":       para_label,
+    }
 
 
 def backfill_comprobantes_payment_ids() -> dict:

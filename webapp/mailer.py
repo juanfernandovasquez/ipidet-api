@@ -29,12 +29,14 @@ def _send_sync(
     html_body: str,
     attachments: list[dict] | None = None,
     reply_to: str | None = None,
+    cc: list[str] | None = None,
 ):
     """
     Envía un email via Brevo SMTP (blocking).
     attachments: [{"filename": "...", "data": bytes, "mime": "application/pdf"}]
     """
     recipients = [to] if isinstance(to, str) else to
+    cc_list = list(cc) if cc else []
 
     msg = MIMEMultipart("mixed")
     msg["From"]    = f"{BREVO_FROM_NAME} <{BREVO_FROM_EMAIL}>"
@@ -42,6 +44,8 @@ def _send_sync(
     msg["Subject"] = subject
     if reply_to:
         msg["Reply-To"] = reply_to
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
 
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
@@ -57,11 +61,12 @@ def _send_sync(
         server.ehlo()
         server.starttls()
         server.login(BREVO_SMTP_USER, BREVO_SMTP_PASSWORD)
-        server.sendmail(BREVO_FROM_EMAIL, recipients, msg.as_bytes())
+        server.sendmail(BREVO_FROM_EMAIL, recipients + cc_list, msg.as_bytes())
 
 
-def _send_api(to: str, subject: str, html_body: str,
-              attachments: list[dict] | None = None, reply_to: str | None = None):
+def _send_api(to: str | list[str], subject: str, html_body: str,
+              attachments: list[dict] | None = None, reply_to: str | None = None,
+              cc: list[str] | None = None):
     """Envía un email via Brevo HTTP API v3."""
     payload: dict = {
         "sender":      {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
@@ -71,6 +76,8 @@ def _send_api(to: str, subject: str, html_body: str,
     }
     if reply_to:
         payload["replyTo"] = {"email": reply_to}
+    if cc:
+        payload["cc"] = [{"email": e} for e in cc]
     att_brevo = []
     for a in (attachments or []):
         raw = a.get("data") or b""
@@ -98,16 +105,17 @@ async def send_email(
     html_body: str,
     attachments: list[dict] | None = None,
     reply_to: str | None = None,
+    cc: list[str] | None = None,
 ):
     """Usa HTTP API si BREVO_API_KEY está configurada; si no, SMTP."""
     loop = asyncio.get_running_loop()
     if BREVO_API_KEY:
         await loop.run_in_executor(
-            None, partial(_send_api, to, subject, html_body, attachments, reply_to)
+            None, partial(_send_api, to, subject, html_body, attachments, reply_to, cc)
         )
     else:
         await loop.run_in_executor(
-            None, partial(_send_sync, to, subject, html_body, attachments, reply_to)
+            None, partial(_send_sync, to, subject, html_body, attachments, reply_to, cc)
         )
 
 
@@ -309,6 +317,110 @@ def tpl_recordatorio_cuota(nombre: str, periodo: str, monto: str = "") -> str:
       </p>
       <p style="color:#475569;line-height:1.6;margin-top:24px">Cordialmente,<br><strong>Equipo IPIDET</strong></p>
     """)
+
+
+def tpl_comprobante_pago(comp: dict, socios_info: list) -> str:
+    """Plantilla de email de confirmación de pago con datos del comprobante."""
+    numero     = comp.get("numero", "")
+    tipo       = comp.get("tipo", "boleta")
+    tipo_label = {"boleta": "Boleta de Venta", "factura": "Factura",
+                  "recibo": "Recibo por Honorarios"}.get(tipo, tipo.capitalize())
+    fecha      = comp.get("fecha_emision", "")
+    monto      = float(comp.get("monto_total") or 0)
+    empresa    = comp.get("empresa", "")
+    has_xml    = bool(comp.get("xml_raw"))
+
+    if empresa:
+        saludo_nombre = empresa
+    elif socios_info:
+        saludo_nombre = socios_info[0].get("nombre", "")
+    else:
+        saludo_nombre = "socio/a"
+
+    items = comp.get("items") or []
+    if not items:
+        items = [{"producto_nombre": comp.get("producto_nombre") or comp.get("concepto") or "Cuota",
+                  "monto": monto}]
+    items_rows = "".join(
+        f'<tr style="background:{"#f8fafc" if i % 2 else "#ffffff"}">'
+        f'<td style="padding:8px 12px;font-size:13px;color:#1e293b">'
+        f'{it.get("producto_nombre") or it.get("codigo_sunat") or "—"}'
+        f'{(" · <span style=\'color:#94a3b8;font-size:11px\'>" + it["member_id"] + "</span>") if it.get("member_id") else ""}'
+        f'</td>'
+        f'<td style="padding:8px 12px;font-size:13px;color:#1e293b;text-align:right">'
+        f'S/ {float(it.get("monto") or 0):.2f}'
+        f'</td></tr>'
+        for i, it in enumerate(items)
+    )
+
+    receptor_rows = ""
+    if empresa:
+        if comp.get("ruc_empresa"):
+            receptor_rows += (
+                f'<tr><td style="padding:6px 12px;font-size:13px;color:#64748b;font-weight:600">RUC</td>'
+                f'<td style="padding:6px 12px;font-size:13px;color:#1e293b">{comp["ruc_empresa"]}</td></tr>'
+            )
+    else:
+        for s in socios_info:
+            if s.get("celular"):
+                receptor_rows += (
+                    f'<tr><td style="padding:6px 12px;font-size:13px;color:#64748b;font-weight:600">Celular</td>'
+                    f'<td style="padding:6px 12px;font-size:13px;color:#1e293b">{s["celular"]}</td></tr>'
+                )
+            if s.get("dni"):
+                receptor_rows += (
+                    f'<tr style="background:#f8fafc"><td style="padding:6px 12px;font-size:13px;color:#64748b;font-weight:600">DNI</td>'
+                    f'<td style="padding:6px 12px;font-size:13px;color:#1e293b">{s["dni"]}</td></tr>'
+                )
+
+    adjuntos_note = (
+        '<p style="color:#64748b;font-size:12px;margin:8px 0 0">Adjunto encontrará el comprobante en formato PDF y el archivo XML para sistemas contables (SUNAT).</p>'
+        if has_xml else
+        '<p style="color:#64748b;font-size:12px;margin:8px 0 0">Adjunto encontrará el comprobante en formato PDF.</p>'
+    )
+
+    contenido = f"""
+      <h2 style="margin:0 0 8px;color:#1e3a5f;font-size:20px">Confirmacion de pago</h2>
+      <p style="color:#475569;line-height:1.6;margin:0 0 20px">Estimado/a <strong>{saludo_nombre}</strong>,<br>
+      Nos complace confirmar que hemos recibido su pago y hemos emitido el comprobante correspondiente.</p>
+
+      <table style="border-collapse:collapse;width:100%;margin:0 0 20px">
+        <tr style="background:#f1f5f9">
+          <td style="padding:8px 12px;font-size:13px;color:#64748b;font-weight:600;width:40%">Tipo</td>
+          <td style="padding:8px 12px;font-size:13px;color:#1e293b">{tipo_label}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-size:13px;color:#64748b;font-weight:600">N&ordm; comprobante</td>
+          <td style="padding:8px 12px;font-size:13px;color:#1e293b;font-weight:700;font-family:monospace">{numero}</td>
+        </tr>
+        <tr style="background:#f1f5f9">
+          <td style="padding:8px 12px;font-size:13px;color:#64748b;font-weight:600">Fecha de emision</td>
+          <td style="padding:8px 12px;font-size:13px;color:#1e293b">{fecha}</td>
+        </tr>
+        {receptor_rows}
+      </table>
+
+      <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#1e3a5f">CONCEPTOS</p>
+      <table style="border-collapse:collapse;width:100%;margin:0 0 4px">
+        <tr style="background:#1e3a5f">
+          <th style="padding:7px 12px;font-size:12px;color:#ffffff;text-align:left">Descripcion</th>
+          <th style="padding:7px 12px;font-size:12px;color:#ffffff;text-align:right">Monto</th>
+        </tr>
+        {items_rows}
+        <tr style="border-top:2px solid #e2e8f0">
+          <td style="padding:8px 12px;font-size:14px;font-weight:700;color:#1e3a5f">TOTAL</td>
+          <td style="padding:8px 12px;font-size:14px;font-weight:700;color:#1e3a5f;text-align:right">S/ {monto:.2f}</td>
+        </tr>
+      </table>
+
+      {adjuntos_note}
+
+      <p style="color:#475569;line-height:1.6;margin-top:24px">
+        Ante cualquier consulta sobre este comprobante, comuniquese con nosotros respondiendo este correo.<br>
+        <strong>Equipo IPIDET</strong>
+      </p>
+    """
+    return _base_html(contenido)
 
 
 def tpl_comprobante(nombre: str, num_comprobante: str, tipo: str,

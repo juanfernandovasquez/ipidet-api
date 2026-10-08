@@ -1364,6 +1364,60 @@ async def api_comprobantes_search(q: str = "", fecha: str = ""):
     ]}
 
 
+@app.get("/api/comprobantes/{comp_id}/email-info")
+async def api_comprobante_email_info(comp_id: str):
+    info = pdb.get_comprobante_email_info(comp_id)
+    if not info:
+        return JSONResponse({"error": "no encontrado"}, status_code=404)
+    return info
+
+
+@app.post("/comprobantes/{comp_id}/enviar-email")
+async def comprobante_enviar_email(comp_id: str, request: Request):
+    from webapp.pdf_builder import build_comprobante_pdf
+
+    data       = await request.json()
+    to_emails  = [e.strip() for e in (data.get("to") or []) if e.strip()]
+    cc_emails  = [e.strip() for e in (data.get("cc") or []) if e.strip()]
+
+    if not to_emails:
+        return JSONResponse({"ok": False, "error": "Sin destinatarios"}, status_code=400)
+
+    comp = pdb.get_comprobante_by_id(comp_id)
+    if not comp:
+        return JSONResponse({"ok": False, "error": "Comprobante no encontrado"}, status_code=404)
+
+    info        = pdb.get_comprobante_email_info(comp_id)
+    socios_info = info["socios_info"] if info else []
+
+    pdf_bytes = build_comprobante_pdf(comp, socios_info)
+    numero    = comp.get("numero", comp_id)
+    tipo      = comp.get("tipo", "boleta")
+
+    attachments = [{"filename": f"{numero}.pdf", "data": pdf_bytes, "mime": "application/pdf"}]
+    xml_raw = comp.get("xml_raw") or ""
+    if xml_raw:
+        xml_bytes = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
+        attachments.append({"filename": f"{numero}.xml", "data": xml_bytes, "mime": "application/xml"})
+
+    html_body  = mailer.tpl_comprobante_pago(comp, socios_info)
+    tipo_label = {"boleta": "Boleta de Venta", "factura": "Factura", "recibo": "Recibo"}.get(tipo, tipo.capitalize())
+    subject    = f"{tipo_label} N° {numero} — IPIDET"
+
+    try:
+        await mailer.send_email(
+            to=to_emails,
+            subject=subject,
+            html_body=html_body,
+            attachments=attachments,
+            cc=cc_emails or None,
+        )
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
+
+    return JSONResponse({"ok": True, "enviados": len(to_emails)})
+
+
 @app.get("/api/payments")
 async def api_payments(periodo: str = "2026", estado: str = ""):
     docs, total = pdb.get_payments(periodo, estado)
@@ -1947,6 +2001,7 @@ async def comprobantes_import_xml(
             socios          = socios,
             items           = items,
             ruc             = ruc or "",
+            xml_raw         = content.decode("utf-8", errors="replace"),
         )
 
         cruce = pdb.sync_comprobante_to_payments(

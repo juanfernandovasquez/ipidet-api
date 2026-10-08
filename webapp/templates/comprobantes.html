@@ -205,6 +205,11 @@
                     class="text-slate-300 hover:text-blue-500 transition-colors p-1 disabled:opacity-40">
               <i class="fa-solid text-xs" :class="sincronizando ? 'fa-circle-notch fa-spin' : 'fa-rotate'"></i>
             </button>
+            <button onclick="window.dispatchEvent(new CustomEvent('comp-enviar', {detail: '{{ c._id }}'}))"
+                    title="Enviar por correo"
+                    class="text-slate-300 hover:text-emerald-500 transition-colors p-1">
+              <i class="fa-solid fa-envelope text-xs"></i>
+            </button>
             <button @click="eliminar()" class="text-slate-300 hover:text-red-500 transition-colors p-1">
               <i class="fa-solid fa-trash-can text-xs"></i>
             </button>
@@ -1866,6 +1871,212 @@ function credModal() {
     },
   };
 }
+</script>
+
+<!-- ── Modal: Enviar comprobante por email ─────────────────────────────────── -->
+<div x-data="sendCompModal()" x-show="open" x-cloak
+     class="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 pt-10 overflow-y-auto"
+     @comp-enviar.window="abrir($event.detail)"
+     @keydown.escape.window="open && cerrar()">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg" @click.stop>
+
+    <!-- Header -->
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-slate-200">
+      <div class="w-9 h-9 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+        <i class="fa-solid fa-envelope text-emerald-600"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h3 class="font-semibold text-slate-800 text-base" x-text="'Enviar comprobante ' + (info ? info.numero : '…')"></h3>
+        <p class="text-xs text-slate-400 mt-0.5" x-show="info"
+           x-text="(info ? ({boleta:'Boleta de Venta',factura:'Factura',recibo:'Recibo'}[info.tipo] || info.tipo) : '') + '  ·  S/ ' + (info ? info.monto_total.toLocaleString('es-PE', {minimumFractionDigits:2}) : '')"></p>
+      </div>
+      <button @click="cerrar()" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <!-- Body -->
+    <div class="px-6 py-5 space-y-4">
+      <div x-show="loading" class="flex items-center justify-center py-8 text-slate-400">
+        <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Cargando info…
+      </div>
+
+      <template x-if="!loading && info">
+        <div class="space-y-4">
+
+          <!-- Para: -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1.5">Para: <span class="text-red-400">*</span></label>
+            <div class="flex flex-wrap gap-1.5 min-h-[40px] border border-slate-300 rounded-lg px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-400 cursor-text"
+                 @click="$refs.toInput.focus()">
+              <template x-for="(e, i) in toEmails" :key="i">
+                <span class="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                  <span x-text="e"></span>
+                  <button type="button" @click.stop="toEmails.splice(i,1)" class="hover:text-red-600 ml-0.5 text-[10px]">
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </span>
+              </template>
+              <input x-ref="toInput" x-model="toInput" type="email"
+                     @keydown.enter.prevent="addTo()"
+                     @keydown.tab.prevent="toInput.trim() && addTo()"
+                     @keydown.comma.prevent="addTo()"
+                     @blur="toInput.trim() && addTo()"
+                     placeholder="email@ejemplo.com — Enter para agregar"
+                     class="flex-1 min-w-32 outline-none text-sm bg-transparent">
+            </div>
+            <p class="text-[11px] mt-1" x-show="info.para_label"
+               x-text="'Sugerido: ' + info.para_label + (info.para_sugerido ? ' <' + info.para_sugerido + '>' : '')"
+               @click="info.para_sugerido && !toEmails.includes(info.para_sugerido) && toEmails.push(info.para_sugerido)"
+               :class="info.para_sugerido && !toEmails.includes(info.para_sugerido) ? 'cursor-pointer text-blue-500 hover:text-blue-700' : 'text-slate-400'">
+            </p>
+          </div>
+
+          <!-- CC: -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1.5">CC: <span class="text-slate-400 font-normal">(opcional)</span></label>
+            <div class="flex flex-wrap gap-1.5 min-h-[40px] border border-slate-300 rounded-lg px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-400 cursor-text"
+                 @click="$refs.ccInput.focus()">
+              <template x-for="(e, i) in ccEmails" :key="i">
+                <span class="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                  <span x-text="e"></span>
+                  <button type="button" @click.stop="ccEmails.splice(i,1)" class="hover:text-red-600 ml-0.5 text-[10px]">
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </span>
+              </template>
+              <input x-ref="ccInput" x-model="ccInput" type="email"
+                     @keydown.enter.prevent="addCc()"
+                     @keydown.tab.prevent="ccInput.trim() && addCc()"
+                     @keydown.comma.prevent="addCc()"
+                     @blur="ccInput.trim() && addCc()"
+                     placeholder="Copiar a…"
+                     class="flex-1 min-w-32 outline-none text-sm bg-transparent">
+            </div>
+          </div>
+
+          <!-- Adjuntos -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1.5">Adjuntos</label>
+            <div class="flex gap-2 flex-wrap">
+              <span class="inline-flex items-center gap-1.5 text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg">
+                <i class="fa-solid fa-file-pdf text-red-500"></i>
+                <span x-text="(info.numero || 'comprobante') + '.pdf'"></span>
+              </span>
+              <span x-show="info.has_xml" class="inline-flex items-center gap-1.5 text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg">
+                <i class="fa-solid fa-file-code text-orange-500"></i>
+                <span x-text="(info.numero || 'comprobante') + '.xml'"></span>
+              </span>
+              <span x-show="!info.has_xml" class="inline-flex items-center gap-1.5 text-xs bg-amber-50 text-amber-600 px-2.5 py-1 rounded-lg">
+                <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Sin XML original
+              </span>
+            </div>
+          </div>
+
+          <!-- Socios -->
+          <div x-show="info.socios_info && info.socios_info.length > 0">
+            <label class="block text-xs font-semibold text-slate-600 mb-1.5">Socios en el comprobante</label>
+            <div class="flex flex-wrap gap-1.5">
+              <template x-for="s in info.socios_info" :key="s.member_id">
+                <span class="inline-flex items-center gap-1.5 text-xs bg-slate-50 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-lg">
+                  <i class="fa-solid fa-user text-slate-300 text-[10px]"></i>
+                  <span x-text="s.nombre"></span>
+                  <span x-show="s.celular" class="text-slate-400" x-text="'· ' + s.celular"></span>
+                </span>
+              </template>
+            </div>
+          </div>
+
+          <!-- Error -->
+          <div x-show="error" class="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700" x-text="error"></div>
+
+          <!-- Éxito -->
+          <div x-show="sent" class="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-sm text-emerald-700 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check"></i>
+            <span x-text="'Correo enviado a ' + sentCount + ' destinatario(s)'"></span>
+          </div>
+
+        </div>
+      </template>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+      <button type="button" @click="cerrar()" class="text-sm text-slate-600 hover:text-slate-800 px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors">
+        Cerrar
+      </button>
+      <button type="button" @click="enviar()" :disabled="sending || sent || toEmails.length === 0"
+              class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
+        <i class="fa-solid" :class="sending ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
+        <span x-text="sending ? 'Enviando…' : 'Enviar'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+function sendCompModal() {
+  return {
+    open: false, loading: false, compId: null, info: null,
+    toEmails: [], ccEmails: [], toInput: '', ccInput: '',
+    sending: false, sent: false, sentCount: 0, error: '',
+
+    async abrir(compId) {
+      this.compId = compId; this.toEmails = []; this.ccEmails = [];
+      this.toInput = ''; this.ccInput = ''; this.sent = false;
+      this.sentCount = 0; this.error = ''; this.info = null;
+      this.open = true; this.loading = true;
+      try {
+        const r = await fetch('/api/comprobantes/' + compId + '/email-info');
+        this.info = await r.json();
+        if (this.info.para_sugerido) this.toEmails = [this.info.para_sugerido];
+      } catch(e) {
+        this.error = 'Error al cargar información';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    cerrar() { this.open = false; },
+
+    addTo() {
+      const e = this.toInput.trim();
+      if (e && !this.toEmails.includes(e)) this.toEmails.push(e);
+      this.toInput = '';
+    },
+
+    addCc() {
+      const e = this.ccInput.trim();
+      if (e && !this.ccEmails.includes(e)) this.ccEmails.push(e);
+      this.ccInput = '';
+    },
+
+    async enviar() {
+      if (this.toEmails.length === 0) { this.error = 'Agrega al menos un destinatario'; return; }
+      this.sending = true; this.error = '';
+      try {
+        const r = await fetch('/comprobantes/' + this.compId + '/enviar-email', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ to: this.toEmails, cc: this.ccEmails }),
+        });
+        const d = await r.json();
+        if (d.ok) { this.sent = true; this.sentCount = d.enviados; }
+        else { this.error = d.error || 'Error al enviar'; }
+      } catch(e) {
+        this.error = 'Error de red: ' + e.message;
+      } finally {
+        this.sending = false;
+      }
+    },
+  };
+}
+
+(function() {
+  const p = new URLSearchParams(window.location.search);
+  const sid = p.get('send');
+  if (sid) {
+    setTimeout(() => window.dispatchEvent(new CustomEvent('comp-enviar', { detail: sid })), 400);
+  }
+})();
 </script>
 
 {% endblock %}

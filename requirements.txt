@@ -13,3 +13,4 @@ a2wsgi>=1.10.0
 certifi>=2024.0.0
 itsdangerous>=2.1.0
 bcrypt>=4.0.0
+fpdf2>=2.7.0

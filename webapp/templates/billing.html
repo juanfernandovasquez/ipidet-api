@@ -334,6 +334,11 @@
                         class="shrink-0 text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-2 py-2 hover:bg-blue-50 transition-colors">
                   <i class="fa-solid fa-magnifying-glass text-xs"></i>
                 </button>
+                <a x-show="form.comprobante_id" :href="'/comprobantes?send=' + form.comprobante_id" target="_blank"
+                   title="Enviar comprobante por email"
+                   class="shrink-0 text-emerald-600 hover:text-emerald-800 border border-emerald-200 rounded-lg px-2 py-2 hover:bg-emerald-50 transition-colors">
+                  <i class="fa-solid fa-envelope text-xs"></i>
+                </a>
               </div>
             </div>
             <div>
