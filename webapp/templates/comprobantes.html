@@ -136,7 +136,7 @@
 
       {# ── Fila COMPROBANTE (boleta / factura / recibo) ─────────────────────── #}
       {% if c._tipo_doc == 'comprobante' %}
-      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
+      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "fecha_vencimiento": c.fecha_vencimiento or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
       <tbody x-data="{
         sincronizando: false,
         async sincronizar() {
@@ -397,11 +397,11 @@
            this.form.fecha_carga     = comp.fecha_carga || new Date().toISOString().slice(0,10);
            this.empFormSugg = [];
            this.empFormNueva = false;
-           this.form.concepto        = comp.concepto || '';
-           this.form.modalidad       = 'contado';
-           this.form.medio_pago      = comp.medio_pago || '';
-           this.form.fecha_vencimiento = '';
-           this.form.periodo         = '';
+           this.form.concepto          = comp.concepto || '';
+           this.form.medio_pago        = comp.medio_pago || '';
+           this.form.fecha_vencimiento = comp.fecha_vencimiento || '';
+           this.form.modalidad         = comp.fecha_vencimiento ? 'credito' : 'contado';
+           this.form.periodo           = '';
            const sm = {};
            (comp.socios_info || []).forEach(s => { sm[s.member_id] = s.nombre; });
            if (comp.items && comp.items.length) {
@@ -679,16 +679,6 @@
           <!-- Campos adicionales para crédito -->
           <div x-show="es_credito" x-cloak
                class="grid grid-cols-2 gap-3 pt-4 border-t border-slate-200">
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Período <span class="text-red-500">*</span></label>
-              <select x-model="form.periodo" class="input w-full text-sm">
-                <option value="">— Selecciona —</option>
-                <option value="2026">2026</option>
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-              </select>
-              <p class="text-[11px] text-slate-400 mt-0.5">Se asigna automáticamente según el producto.</p>
-            </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Fecha vencimiento <span class="text-red-500">*</span></label>
               <input type="date" x-model="form.fecha_vencimiento" class="input w-full text-sm">

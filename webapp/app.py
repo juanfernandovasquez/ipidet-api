@@ -1771,6 +1771,27 @@ def _resolve_payment_ids(items: list) -> None:
                 item["cuota_numero"] = decoded["cuota_numero"]
 
 
+def _derive_periodo_from_items(items: list) -> str:
+    """Derive billing period from resolved item payment/product links."""
+    from bson import ObjectId as _ObjId
+    for item in items:
+        if item.get("payment_id"):
+            try:
+                p = pdb.payments_col.find_one({"_id": _ObjId(item["payment_id"])}, {"periodo": 1})
+                if p and p.get("periodo"):
+                    return p["periodo"]
+            except Exception:
+                pass
+        if item.get("producto_id"):
+            try:
+                prod = pdb.productos_col.find_one({"_id": _ObjId(item["producto_id"])}, {"periodo": 1})
+                if prod and prod.get("periodo"):
+                    return prod["periodo"]
+            except Exception:
+                pass
+    return ""
+
+
 @app.post("/comprobantes/add")
 async def comprobante_add(request: Request):
     data    = await request.json()
@@ -1791,6 +1812,8 @@ async def comprobante_add(request: Request):
     # Without a number → save as pre-registered draft
     estado = "emitido" if numero else "pre_registrado"
 
+    fecha_vencimiento = data.get("fecha_vencimiento", "").strip()
+
     comp_id = pdb.create_comprobante(
         numero               = numero,
         tipo                 = data.get("tipo", "boleta"),
@@ -1807,6 +1830,7 @@ async def comprobante_add(request: Request):
         destinatario_id      = data.get("destinatario_id", ""),
         destinatario_nombre  = data.get("destinatario_nombre", ""),
         destinatario_dni     = data.get("destinatario_dni", ""),
+        fecha_vencimiento    = fecha_vencimiento,
     )
 
     # Only sync payments when we have a real numero
@@ -1827,13 +1851,13 @@ async def comprobante_add(request: Request):
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
 
     if data.get("es_credito") and numero:
-        periodo = data.get("periodo", "").strip()
+        periodo = data.get("periodo", "").strip() or _derive_periodo_from_items(items)
         pdb.create_factura_credito(
             empresa           = empresa,
             numero_factura    = numero,
             monto             = monto_total,
             fecha_emision     = data.get("fecha_emision", ""),
-            fecha_vencimiento = data.get("fecha_vencimiento", ""),
+            fecha_vencimiento = fecha_vencimiento,
             concepto          = data.get("concepto", ""),
             socios            = socios,
             periodo           = periodo,
@@ -2098,16 +2122,18 @@ async def comprobante_update(comprobante_id: str, request: Request):
     data  = await request.json()
     items = data.get("items", [])
     empresa = data.get("empresa", "").strip()
+    fecha_vencimiento = data.get("fecha_vencimiento", "").strip()
 
     fields = {
-        "numero":        data.get("numero", ""),
-        "tipo":          data.get("tipo", "boleta"),
-        "fecha_emision": data.get("fecha_emision", ""),
-        "empresa":       empresa,
-        "concepto":      data.get("concepto", ""),
-        "monto_total":   float(data.get("monto_total") or 0),
-        "medio_pago":    data.get("medio_pago", ""),
-        "items":         items,
+        "numero":            data.get("numero", ""),
+        "tipo":              data.get("tipo", "boleta"),
+        "fecha_emision":     data.get("fecha_emision", ""),
+        "empresa":           empresa,
+        "concepto":          data.get("concepto", ""),
+        "monto_total":       float(data.get("monto_total") or 0),
+        "medio_pago":        data.get("medio_pago", ""),
+        "fecha_vencimiento": fecha_vencimiento,
+        "items":             items,
     }
     if items:
         _resolve_payment_ids(items)
@@ -2128,6 +2154,33 @@ async def comprobante_update(comprobante_id: str, request: Request):
             comprobante_id=comprobante_id,
             medio_pago=fields.get("medio_pago", ""),
         )
+
+    if data.get("es_credito") and fields["numero"]:
+        periodo = data.get("periodo", "").strip() or _derive_periodo_from_items(items)
+        socios = fields.get("socios") or list({it["member_id"] for it in items if it.get("member_id")})
+        existing_cred = pdb.credito_col.find_one({"numero_factura": fields["numero"]})
+        if existing_cred:
+            pdb.update_factura_credito_fields(str(existing_cred["_id"]), {
+                "empresa":          empresa,
+                "concepto":         fields.get("concepto", ""),
+                "monto":            fields["monto_total"],
+                "fecha_emision":    fields["fecha_emision"],
+                "fecha_vencimiento": fecha_vencimiento,
+                "socios":           socios,
+                "periodo":          periodo,
+            })
+        else:
+            pdb.create_factura_credito(
+                empresa           = empresa,
+                numero_factura    = fields["numero"],
+                monto             = fields["monto_total"],
+                fecha_emision     = fields["fecha_emision"],
+                fecha_vencimiento = fecha_vencimiento,
+                concepto          = fields.get("concepto", ""),
+                socios            = socios,
+                periodo           = periodo,
+            )
+
     return {"ok": True}
 
 
