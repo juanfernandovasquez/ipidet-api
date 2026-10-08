@@ -1867,6 +1867,7 @@ async def comprobante_add(request: Request):
     estado = "emitido" if numero else "pre_registrado"
 
     fecha_vencimiento = data.get("fecha_vencimiento", "").strip()
+    es_credito = bool(data.get("es_credito") and numero)
 
     comp_id = pdb.create_comprobante(
         numero               = numero,
@@ -1885,6 +1886,7 @@ async def comprobante_add(request: Request):
         destinatario_nombre  = data.get("destinatario_nombre", ""),
         destinatario_dni     = data.get("destinatario_dni", ""),
         fecha_vencimiento    = fecha_vencimiento,
+        estado_credito       = "pendiente" if es_credito else "",
     )
 
     # Only sync payments when we have a real numero
@@ -1904,18 +1906,9 @@ async def comprobante_add(request: Request):
         cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
 
-    if data.get("es_credito") and numero:
-        periodo = data.get("periodo", "").strip() or _derive_periodo_from_items(items)
-        pdb.create_factura_credito(
-            empresa           = empresa,
-            numero_factura    = numero,
-            monto             = monto_total,
-            fecha_emision     = data.get("fecha_emision", ""),
-            fecha_vencimiento = fecha_vencimiento,
-            concepto          = data.get("concepto", ""),
-            socios            = socios,
-            periodo           = periodo,
-        )
+    if es_credito:
+        pdb.sync_comp_credito_to_payments(comp_id, "por_cobrar")
+
     return {"ok": True, "id": comp_id, "estado": estado,
             "pre_registrado": estado == "pre_registrado",
             "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
@@ -2197,6 +2190,12 @@ async def comprobante_update(comprobante_id: str, request: Request):
         fields["producto_nombre"] = prod_names[0] if len(prod_names) == 1 else ", ".join(sorted(prod_names))
     else:
         fields["producto_nombre"] = data.get("producto_nombre", "")
+    if data.get("es_credito") and fields["numero"] and fields.get("fecha_vencimiento"):
+        from bson import ObjectId as _ObjId
+        existing = pdb.comprobantes_col.find_one({"_id": _ObjId(comprobante_id)}, {"estado_credito": 1})
+        if not (existing and existing.get("estado_credito")):
+            fields["estado_credito"] = "pendiente"
+
     pdb.update_comprobante(comprobante_id, fields)
     if items:
         pdb.sync_comprobante_to_payments(
@@ -2208,32 +2207,6 @@ async def comprobante_update(comprobante_id: str, request: Request):
             comprobante_id=comprobante_id,
             medio_pago=fields.get("medio_pago", ""),
         )
-
-    if data.get("es_credito") and fields["numero"]:
-        periodo = data.get("periodo", "").strip() or _derive_periodo_from_items(items)
-        socios = fields.get("socios") or list({it["member_id"] for it in items if it.get("member_id")})
-        existing_cred = pdb.credito_col.find_one({"numero_factura": fields["numero"]})
-        if existing_cred:
-            pdb.update_factura_credito_fields(str(existing_cred["_id"]), {
-                "empresa":          empresa,
-                "concepto":         fields.get("concepto", ""),
-                "monto":            fields["monto_total"],
-                "fecha_emision":    fields["fecha_emision"],
-                "fecha_vencimiento": fecha_vencimiento,
-                "socios":           socios,
-                "periodo":          periodo,
-            })
-        else:
-            pdb.create_factura_credito(
-                empresa           = empresa,
-                numero_factura    = fields["numero"],
-                monto             = fields["monto_total"],
-                fecha_emision     = fields["fecha_emision"],
-                fecha_vencimiento = fecha_vencimiento,
-                concepto          = fields.get("concepto", ""),
-                socios            = socios,
-                periodo           = periodo,
-            )
 
     return {"ok": True}
 
@@ -2273,6 +2246,15 @@ async def comprobante_sync(comprobante_id: str):
     cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
     cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok",))
     return {"ok": True, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
+
+
+@app.post("/comprobantes/{comprobante_id}/credito/cobrar")
+async def comprobante_cobrar(comprobante_id: str, request: Request):
+    data = await request.json()
+    fecha_cobro = (data.get("fecha_cobro") or "").strip()
+    pdb.update_comprobante(comprobante_id, {"estado_credito": "cobrado", "fecha_cobro": fecha_cobro or None})
+    pdb.sync_comp_credito_to_payments(comprobante_id, "pagado", fecha_cobro)
+    return {"ok": True}
 
 
 # ── Comunicaciones ────────────────────────────────────────────────────────────

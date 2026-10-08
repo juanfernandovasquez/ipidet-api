@@ -2979,6 +2979,9 @@ def get_comprobantes_unified(
         doc["socios_info"] = info
 
     all_docs: list = []
+    # Track comprobante numbers that have a fecha_vencimiento (crédito self-contained)
+    # so facturas_credito with matching numero are skipped (dedup).
+    credito_numeros: set = set()
 
     if include_comp:
         q: dict = {"estado": {"$ne": "anulado"}}
@@ -3016,6 +3019,15 @@ def get_comprobantes_unified(
             d["lineas"] = lineas
             d["socios_map"] = {}
             _enrich(d)
+            # If this comprobante has a fecha_vencimiento it is self-contained crédito
+            if d.get("fecha_vencimiento"):
+                credito_numeros.add(d["numero"])
+                # Derive estado_credito dynamically if not stored
+                if not d.get("estado_credito"):
+                    d["estado_credito"] = _sync_credito_estado({
+                        "estado": d.get("estado_credito", ""),
+                        "fecha_vencimiento": d["fecha_vencimiento"],
+                    })
             all_docs.append(d)
 
     if include_cred:
@@ -3031,10 +3043,14 @@ def get_comprobantes_unified(
                 {"concepto":       {"$regex": search, "$options": "i"}},
             ]
         for d in credito_col.find(qc):
+            numero_fac = d.get("numero_factura") or ""
+            # Skip facturas_credito that are already represented by a self-contained comprobante
+            if numero_fac and numero_fac in credito_numeros:
+                continue
             d["_id"] = str(d["_id"])
             d["_tipo_doc"] = "credito"
             d["tipo"] = "credito"
-            d["numero"] = d.get("numero_factura") or ""
+            d["numero"] = numero_fac
             d["monto_total"] = float(d.get("monto") or 0)
             d["estado_credito"] = _sync_credito_estado(d)
             d["display_producto"] = d.get("concepto") or "—"
@@ -3126,7 +3142,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
                         destinatario_dni: str = "",
                         medio_pago: str = "",
                         xml_raw: str = "",
-                        fecha_vencimiento: str = "") -> str:
+                        fecha_vencimiento: str = "",
+                        estado_credito: str = "") -> str:
     # Derive socios from items if provided
     if items:
         seen = set()
@@ -3163,6 +3180,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "medio_pago":           medio_pago.strip() if medio_pago else "",
         "xml_raw":              xml_raw or "",
         "fecha_vencimiento":    fecha_vencimiento.strip() if fecha_vencimiento else "",
+        "estado_credito":       estado_credito or ("pendiente" if fecha_vencimiento else ""),
         "destinatario_id":      destinatario_id.strip() if destinatario_id else "",
         "destinatario_nombre":  destinatario_nombre.strip() if destinatario_nombre else "",
         "destinatario_dni":     destinatario_dni.strip() if destinatario_dni else "",
@@ -3175,7 +3193,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
-               "socios", "items", "estado", "medio_pago", "xml_raw", "fecha_vencimiento"}
+               "socios", "items", "estado", "medio_pago", "xml_raw", "fecha_vencimiento",
+               "estado_credito", "fecha_cobro"}
     update = {k: v for k, v in fields.items() if k in allowed}
     if "empresa" in update:
         emp = (update["empresa"] or "").strip()
@@ -3267,6 +3286,25 @@ def delete_comprobante(comprobante_id: str) -> None:
             "comprobante_emitido": False,
         }},
     )
+
+
+def sync_comp_credito_to_payments(comprobante_id: str, nuevo_estado: str, fecha_cobro: str = "") -> None:
+    """Sincroniza el estado de cobranza de un comprobante crédito hacia los payments vinculados."""
+    comp = comprobantes_col.find_one({"_id": ObjectId(comprobante_id)})
+    if not comp:
+        return
+    empresa = comp.get("empresa") or None
+    for item in (comp.get("items") or []):
+        pid = item.get("payment_id")
+        if not pid or item.get("tipo_pago") != "principal":
+            continue
+        try:
+            update_payment(pid, estado=nuevo_estado,
+                           fecha_pago=fecha_cobro or None,
+                           empresa=empresa,
+                           comprobante_id=comprobante_id)
+        except Exception:
+            pass
 
 
 def get_comprobante_by_id(comprobante_id: str) -> dict | None:

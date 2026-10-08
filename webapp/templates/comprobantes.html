@@ -136,9 +136,10 @@
 
       {# ── Fila COMPROBANTE (boleta / factura / recibo) ─────────────────────── #}
       {% if c._tipo_doc == 'comprobante' %}
-      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "fecha_vencimiento": c.fecha_vencimiento or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
+      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "fecha_vencimiento": c.fecha_vencimiento or "", "estado_credito": c.estado_credito or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
       <tbody x-data="{
         sincronizando: false,
+        cobrando: false,
         async sincronizar() {
           this.sincronizando = true;
           const r = await fetch('/comprobantes/{{ c._id }}/sync', { method: 'POST' });
@@ -146,6 +147,17 @@
           this.sincronizando = false;
           if (d.cruce_ok > 0) location.reload();
           else alert('Sin pagos que vincular (' + (d.cruce_items||[]).map(i=>i.status).join(', ') + ')');
+        },
+        async cobrar() {
+          const f = prompt('Fecha de cobro (YYYY-MM-DD):', new Date().toISOString().slice(0,10));
+          if (!f) return;
+          this.cobrando = true;
+          const r = await fetch('/comprobantes/{{ c._id }}/credito/cobrar', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({fecha_cobro: f})
+          });
+          this.cobrando = false;
+          if (r.ok) location.reload();
         },
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
@@ -176,12 +188,18 @@
           {% endif %}
         </td>
         <td class="px-4 py-3">
+          {% if c.fecha_vencimiento %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-building-columns text-[9px]"></i> Crédito
+          </span>
+          {% else %}
           <span class="inline-flex items-center gap-1 text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full">
             <i class="fa-solid fa-money-bill text-[9px]"></i> Contado
           </span>
+          {% endif %}
         </td>
         <td class="px-4 py-3 text-slate-500 text-xs font-mono">{{ c.fecha_emision or '—' }}</td>
-        <td class="px-4 py-3 text-xs font-mono text-slate-300">—</td>
+        <td class="px-4 py-3 text-xs font-mono {% if c.fecha_vencimiento and c.estado_credito == 'vencido' %}text-red-600 font-medium{% else %}text-slate-300{% endif %}">{{ c.fecha_vencimiento or '—' }}</td>
         <td class="px-4 py-3 text-slate-600 text-sm">{{ c.empresa or '—' }}</td>
         <td class="px-4 py-3 text-sm text-slate-700">
           {% set si = c.socios_info %}{% if si %}{% for s in si[:2] %}<a href="/members/{{ s.member_id }}" class="hover:text-blue-600 hover:underline">{{ s.nombre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if si | length > 2 %}<span class="text-slate-400 text-xs">, +{{ si | length - 2 }} más</span>{% endif %}{% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}
@@ -194,6 +212,18 @@
           <span class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
             <i class="fa-solid fa-clock text-[9px]"></i> Pre-reg.
           </span>
+          {% elif c.fecha_vencimiento and c.estado_credito == 'cobrado' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-check text-[9px]"></i> Cobrado
+          </span>
+          {% elif c.fecha_vencimiento and c.estado_credito == 'vencido' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Vencido
+          </span>
+          {% elif c.fecha_vencimiento %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-hourglass-half text-[9px]"></i> Pendiente
+          </span>
           {% else %}
           <span class="text-xs text-slate-300">—</span>
           {% endif %}
@@ -205,6 +235,13 @@
                     class="text-slate-300 hover:text-blue-500 transition-colors p-1 disabled:opacity-40">
               <i class="fa-solid text-xs" :class="sincronizando ? 'fa-circle-notch fa-spin' : 'fa-rotate'"></i>
             </button>
+            {% if c.fecha_vencimiento and c.estado_credito != 'cobrado' %}
+            <button @click="cobrar()" :disabled="cobrando"
+                    title="Marcar como cobrado"
+                    class="text-slate-300 hover:text-amber-500 transition-colors p-1 disabled:opacity-40">
+              <i class="fa-solid fa-sack-dollar text-xs"></i>
+            </button>
+            {% endif %}
             <button onclick="window.dispatchEvent(new CustomEvent('comp-enviar', {detail: '{{ c._id }}'}))"
                     title="Enviar por correo"
                     class="text-slate-300 hover:text-emerald-500 transition-colors p-1">
