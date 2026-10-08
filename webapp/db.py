@@ -3200,7 +3200,73 @@ def update_comprobante(comprobante_id: str, fields: dict) -> None:
 
 
 def delete_comprobante(comprobante_id: str) -> None:
+    comp = comprobantes_col.find_one({"_id": ObjectId(comprobante_id)}, {"items": 1})
     comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": {"estado": "anulado"}})
+    if not comp:
+        return
+    items = comp.get("items") or []
+    reverted_pids: set = set()
+    for item in items:
+        pid = item.get("payment_id")
+        if not pid:
+            continue
+        tipo = item.get("tipo_pago")
+        try:
+            _oid = ObjectId(pid)
+        except Exception:
+            continue
+        if tipo == "principal":
+            if pid not in reverted_pids:
+                payments_col.update_one(
+                    {"_id": _oid, "comprobante_id": comprobante_id},
+                    {"$set": {
+                        "estado": "debe",
+                        "num_comprobante": None,
+                        "comprobante_id": None,
+                        "tipo_comprobante": None,
+                        "fecha_emision_comprobante": None,
+                        "comprobante_emitido": False,
+                    }},
+                )
+                reverted_pids.add(pid)
+        elif tipo == "cuota":
+            cuota_num = item.get("cuota_numero")
+            if cuota_num is not None:
+                payments_col.update_one(
+                    {"_id": _oid, "cuotas.numero": cuota_num,
+                     "cuotas.comprobante_id": comprobante_id},
+                    {"$set": {
+                        "cuotas.$.estado": "pendiente",
+                        "cuotas.$.num_comprobante": None,
+                        "cuotas.$.comprobante_id": None,
+                        "cuotas.$.fecha_pago": None,
+                        "cuotas.$.fecha_emision_comprobante": None,
+                    }},
+                )
+                if pid not in reverted_pids:
+                    _sync_estado_from_cuotas(pid)
+        elif tipo == "parcial":
+            payments_col.update_many(
+                {"_id": _oid, "pagos_parciales.comprobante_id": comprobante_id},
+                {"$set": {
+                    "pagos_parciales.$.num_comprobante": None,
+                    "pagos_parciales.$.comprobante_id": None,
+                }},
+            )
+            if pid not in reverted_pids:
+                _sync_estado_from_parciales(pid)
+    # Fallback: clear payments linked by comprobante_id but not in items
+    payments_col.update_many(
+        {"comprobante_id": comprobante_id},
+        {"$set": {
+            "estado": "debe",
+            "num_comprobante": None,
+            "comprobante_id": None,
+            "tipo_comprobante": None,
+            "fecha_emision_comprobante": None,
+            "comprobante_emitido": False,
+        }},
+    )
 
 
 def get_comprobante_by_id(comprobante_id: str) -> dict | None:

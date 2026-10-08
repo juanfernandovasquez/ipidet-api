@@ -139,6 +139,8 @@
         "link_constancia": p.get("link_constancia") or "",
         "comprobante_emitido": p.get("comprobante_emitido") or false,
         "comprobante_id": p.get("comprobante_id") or "",
+        "producto_id": p.get("producto_id") or "",
+        "producto_nombre": p.get("producto_nombre") or "",
         "monto_objetivo": p.get("monto_objetivo"),
         "cuotas": p.get("cuotas") or [],
         "monto_total": p.get("monto_total"),
@@ -334,6 +336,13 @@
                         title="Buscar en comprobantes"
                         class="shrink-0 text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-2 py-2 hover:bg-blue-50 transition-colors">
                   <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                </button>
+                <button x-show="!form.comprobante_id" type="button"
+                        @click="crearPrecomprobante()"
+                        :disabled="creandoBorrador"
+                        title="Crear borrador de comprobante (sin número)"
+                        class="shrink-0 text-violet-600 hover:text-violet-800 border border-violet-200 rounded-lg px-2 py-2 hover:bg-violet-50 transition-colors disabled:opacity-40">
+                  <i class="fa-solid fa-file-circle-plus text-xs"></i>
                 </button>
                 <a x-show="form.comprobante_id" :href="'/comprobantes?send=' + form.comprobante_id" target="_blank"
                    title="Enviar comprobante por email"
@@ -836,13 +845,14 @@
 <script>
 function billingModal() {
   return {
-    id: '', guardando: false,
+    id: '', guardando: false, creandoBorrador: false,
     nombre: '', member_id: '', periodo: '', email: '', centro_trabajo: '',
     estado_socio: 'activo',
     form: {
       estado: '', fecha_pago: '', nc: '', tipoComp: '', fechaComp: '',
       link_constancia: '', medio: '', banco_origen: '',
       tipoPagador: 'socio', empresa: '', comprobante_emitido: 'false',
+      comprobante_id: null,
     },
     cuotas: [], monto_objetivo: null,
     editCuota: -1,
@@ -936,6 +946,20 @@ function billingModal() {
         });
         if (r.ok) { this.cerrar(); location.reload(); }
       } finally { this.guardando = false; }
+    },
+
+    async crearPrecomprobante() {
+      if (this.creandoBorrador) return;
+      this.creandoBorrador = true;
+      try {
+        const r = await fetch('/api/billing/' + this.id + '/crear-precomprobante', { method: 'POST' });
+        const d = await r.json();
+        if (r.ok && d.comprobante_id) {
+          this.form.comprobante_id = d.comprobante_id;
+        } else {
+          alert(d.error || 'Error al crear el borrador');
+        }
+      } finally { this.creandoBorrador = false; }
     },
 
     async fetchCompanies() {

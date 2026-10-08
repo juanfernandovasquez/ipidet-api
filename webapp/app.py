@@ -879,6 +879,60 @@ async def api_billing_update(payment_id: str, request: Request):
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/billing/{payment_id}/crear-precomprobante")
+async def api_billing_crear_precomprobante(payment_id: str):
+    from bson import ObjectId as _ObjId
+    pay = pdb.payments_col.find_one({"_id": _ObjId(payment_id)})
+    if not pay:
+        return JSONResponse({"error": "Pago no encontrado"}, status_code=404)
+    if pay.get("comprobante_id"):
+        return JSONResponse({"error": "Este pago ya tiene un comprobante vinculado"}, status_code=400)
+
+    member_id = pay.get("member_id", "")
+    member = pdb.members_col.find_one({"member_id": member_id}, {"nombres": 1, "apellidos": 1, "dni": 1}) or {}
+    nombre = f"{member.get('apellidos','').strip()} {member.get('nombres','').strip()}".strip() or member_id
+    dni = member.get("dni") or ""
+
+    producto_id = pay.get("producto_id") or ""
+    producto_nombre = ""
+    if producto_id:
+        try:
+            prod = pdb.productos_col.find_one({"_id": _ObjId(producto_id)}, {"nombre": 1})
+            if prod:
+                producto_nombre = prod.get("nombre", "")
+        except Exception:
+            pass
+
+    item = {
+        "member_id":      member_id,
+        "producto_nombre": producto_nombre or f"Cuota {pay.get('periodo','')}",
+        "monto":          0,
+        "payment_id":     payment_id,
+        "tipo_pago":      "principal",
+    }
+
+    comp_id = pdb.create_comprobante(
+        numero              = "",
+        tipo                = "boleta",
+        fecha_emision       = "",
+        monto_total         = 0,
+        producto_nombre     = item["producto_nombre"],
+        concepto            = "",
+        empresa             = pay.get("empresa_pagadora") or "",
+        socios              = [member_id],
+        items               = [item],
+        estado              = "pre_registrado",
+        destinatario_id     = member_id,
+        destinatario_nombre = nombre,
+        destinatario_dni    = dni,
+    )
+    pdb.payments_col.update_one(
+        {"_id": _ObjId(payment_id)},
+        {"$set": {"comprobante_id": comp_id}},
+    )
+    return JSONResponse({"ok": True, "comprobante_id": comp_id})
+
+
 @app.post("/api/billing/{payment_id}/cuotas/objetivo")
 async def api_billing_cuotas_objetivo(payment_id: str, request: Request):
     data = await request.json()
