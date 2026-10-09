@@ -20,6 +20,49 @@ import webapp.scheduler as scheduler
 from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN
 from knowledge_base import db as kb_db
 from billing import db as billing_db
+import threading as _threading
+import time as _time
+
+# ── Brute-force protection (in-memory, resets on redeploy) ────────────────────
+_login_attempts: dict = {}   # email → {"count": int, "locked_until": float}
+_login_lock = _threading.Lock()
+
+def _check_login_allowed(email: str) -> bool:
+    with _login_lock:
+        entry = _login_attempts.get(email)
+        if entry and entry["locked_until"] > _time.time():
+            return False
+        return True
+
+def _record_login_failure(email: str) -> int:
+    with _login_lock:
+        entry = _login_attempts.get(email, {"count": 0, "locked_until": 0.0})
+        entry["count"] += 1
+        if entry["count"] >= 5:
+            entry["locked_until"] = _time.time() + 900  # 15 min lockout
+        _login_attempts[email] = entry
+        return entry["count"]
+
+def _clear_login_attempts(email: str) -> None:
+    with _login_lock:
+        _login_attempts.pop(email, None)
+
+# ── Safe helpers ──────────────────────────────────────────────────────────────
+
+def _safe_float(val, default=None):
+    try:
+        return float(val) if val not in (None, "", "None") else default
+    except (ValueError, TypeError):
+        return default
+
+def _oid(val: str):
+    from bson import ObjectId as _ObjId
+    try:
+        return _ObjId(val)
+    except Exception:
+        raise HTTPException(status_code=404, detail="ID inválido")
+
+MAX_BULK_RECIPIENTS = 1000
 
 app = FastAPI(title="IPIDET Admin")
 
@@ -66,7 +109,7 @@ class _AuthMiddleware:
         await self.app(scope, receive, send)
 
 app.add_middleware(_AuthMiddleware)
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=False, same_site="lax")
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=True, same_site="lax", max_age=86400)
 templates = Jinja2Templates(directory="webapp/templates")
 
 _URL_RE = re.compile(r'(https?://[^\s\|\]>\"\']+)')
@@ -460,7 +503,7 @@ async def guardar_factura_empresa(request: Request):
     num_comprobante   = data.get("num_comprobante", "").strip()
     tipo_comprobante  = data.get("tipo_comprobante", "")
     fecha_emision     = data.get("fecha_emision", "")
-    monto             = float(data.get("monto") or 0)
+    monto             = _safe_float(data.get("monto"), 0)
     fecha_vencimiento = data.get("fecha_vencimiento", "")
     empresa           = data.get("empresa", "").strip()
     enviar_email      = data.get("enviar_email", False)
@@ -567,13 +610,13 @@ async def emitir_comprobante(
                     cuota_num = numero if tipo == "cuota" else None
                     comp_id = pdb.create_comprobante(
                         numero=num, tipo=tipo_comprobante or "boleta",
-                        fecha_emision=fe, monto_total=float(monto_val),
+                        fecha_emision=fe, monto_total=_safe_float(monto_val, 0),
                         producto_nombre=prod_name, concepto=concepto,
                         empresa=emp, socios=[mid] if mid else [],
                         items=[{
                             "member_id":       mid,
                             "producto_nombre": prod_name,
-                            "monto":           float(monto_val),
+                            "monto":           _safe_float(monto_val, 0),
                             "payment_id":      payment_id,
                             "tipo_pago":       tipo,
                             "cuota_numero":    cuota_num,
@@ -770,7 +813,7 @@ async def update_cuota(
     comprobante_id: str = Form(""),
     redirect_to: str = Form("/billing"),
 ):
-    monto_f = float(monto) if monto.strip() else None
+    monto_f = _safe_float(monto) if monto.strip() else None
     pdb.update_cuota(payment_id, numero, estado, fecha_pago or None,
                      medio or None, num_comprobante or None,
                      tipo_comprobante or None, link_constancia or None,
@@ -853,8 +896,7 @@ async def update_socio_estado_from_billing(
     estado_socio: str = Form(...),
     redirect_to: str = Form("/billing"),
 ):
-    from bson import ObjectId
-    p = pdb.payments_col.find_one({"_id": ObjectId(payment_id)}, {"member_id": 1})
+    p = pdb.payments_col.find_one({"_id": _oid(payment_id)}, {"member_id": 1})
     if p and p.get("member_id"):
         pdb.update_member_estado(p["member_id"], estado_socio)
     return RedirectResponse(redirect_to, status_code=303)
@@ -949,15 +991,15 @@ async def api_billing_crear_precomprobante(payment_id: str):
 @app.post("/api/billing/{payment_id}/cuotas/objetivo")
 async def api_billing_cuotas_objetivo(payment_id: str, request: Request):
     data = await request.json()
-    pdb.set_monto_objetivo(payment_id, float(data.get("monto_objetivo", 0) or 0))
+    pdb.set_monto_objetivo(payment_id, _safe_float(data.get("monto_objetivo"), 0))
     return JSONResponse({"ok": True})
 
 
 @app.post("/api/billing/{payment_id}/cuotas/add")
 async def api_billing_cuotas_add(payment_id: str, request: Request):
     data = await request.json()
-    monto = float(data.get("monto", 0) or 0)
-    if monto <= 0:
+    monto = _safe_float(data.get("monto"), 0)
+    if not monto or monto <= 0:
         return JSONResponse({"error": "monto inválido"}, status_code=422)
     cuota = pdb.add_cuota(payment_id, monto, data.get("fecha_venc") or None,
                           producto_nombre=data.get("producto_nombre") or None)
@@ -968,7 +1010,7 @@ async def api_billing_cuotas_add(payment_id: str, request: Request):
 async def api_billing_cuota_update(payment_id: str, numero: int, request: Request):
     data = await request.json()
     monto_raw = data.get("monto")
-    monto_f = float(monto_raw) if monto_raw is not None else None
+    monto_f = _safe_float(monto_raw) if monto_raw is not None else None
     pdb.update_cuota(
         payment_id, numero,
         estado           = data.get("estado", "pendiente"),
@@ -994,8 +1036,8 @@ async def api_billing_cuota_delete(payment_id: str, numero: int):
 @app.post("/api/billing/{payment_id}/parciales/init")
 async def api_billing_parciales_init(payment_id: str, request: Request):
     data = await request.json()
-    monto_total = float(data.get("monto_total", 0) or 0)
-    if monto_total <= 0:
+    monto_total = _safe_float(data.get("monto_total"), 0)
+    if not monto_total or monto_total <= 0:
         return JSONResponse({"error": "monto_total inválido"}, status_code=422)
     pdb.set_monto_total(payment_id, monto_total)
     return JSONResponse({"ok": True})
@@ -1004,8 +1046,8 @@ async def api_billing_parciales_init(payment_id: str, request: Request):
 @app.post("/api/billing/{payment_id}/parciales/add")
 async def api_billing_parciales_add(payment_id: str, request: Request):
     data = await request.json()
-    monto = float(data.get("monto", 0) or 0)
-    if monto <= 0:
+    monto = _safe_float(data.get("monto"), 0)
+    if not monto or monto <= 0:
         return JSONResponse({"error": "monto inválido"}, status_code=422)
     parcial = pdb.add_pago_parcial(
         payment_id, monto,
@@ -1026,7 +1068,7 @@ async def api_billing_parcial_update(payment_id: str, numero: int, request: Requ
     monto_raw = data.get("monto")
     pdb.update_pago_parcial(
         payment_id, numero,
-        monto            = float(monto_raw) if monto_raw is not None else None,
+        monto            = _safe_float(monto_raw) if monto_raw is not None else None,
         fecha_pago       = data.get("fecha_pago") or None,
         medio            = data.get("medio") or None,
         num_comprobante  = data.get("num_comprobante"),
@@ -1219,9 +1261,8 @@ async def frac_emitir_comprobante(
     fecha_emision: str = Form(""),
     redirect_to: str = Form("/fraccionamientos"),
 ):
-    from bson import ObjectId
     from datetime import date as _date_cls
-    pmt = pdb.payments_col.find_one({"_id": ObjectId(payment_id)})
+    pmt = pdb.payments_col.find_one({"_id": _oid(payment_id)})
     if not pmt:
         return RedirectResponse(redirect_to, status_code=303)
     cuota = next((c for c in pmt.get("cuotas", []) if c["numero"] == cuota_n), None)
@@ -1662,8 +1703,8 @@ async def credito_delete_comentario(factura_id: str, idx: int):
 @app.post("/billing/credito/{factura_id}/cuotas/add")
 async def credito_add_cuota(factura_id: str, request: Request):
     data = await request.json()
-    monto = float(data.get("monto") or 0)
-    if monto <= 0:
+    monto = _safe_float(data.get("monto"), 0)
+    if not monto or monto <= 0:
         return JSONResponse({"error": "Monto inválido"}, status_code=422)
     cuota = pdb.add_cuota_credito(factura_id, monto, data.get("fecha_venc", "") or "")
     return {"ok": True, "cuota": cuota}
@@ -1894,7 +1935,7 @@ async def comprobante_add(request: Request):
     items   = data.get("items", [])
     empresa = data.get("empresa", "").strip()
     numero  = data.get("numero", "").strip()
-    monto_total = float(data.get("monto_total") or 0)
+    monto_total = _safe_float(data.get("monto_total"), 0)
 
     _resolve_payment_ids(items)
 
@@ -1978,10 +2019,10 @@ async def comprobante_complete(comp_id: str, request: Request):
         numero        = numero,
         tipo          = data.get("tipo") or comp["tipo"],
         fecha_emision = data.get("fecha_emision") or comp.get("fecha_emision", ""),
-        monto_total   = float(monto_raw) if monto_raw is not None else None,
+        monto_total   = _safe_float(monto_raw) if monto_raw is not None else None,
         ruc           = data.get("ruc") or None,
     )
-    comp = pdb.comprobantes_col.find_one({"_id": ObjectId(comp_id)})
+    comp = pdb.comprobantes_col.find_one({"_id": _oid(comp_id)})
     items = comp.get("items", [])
     cruce = pdb.sync_comprobante_to_payments(
         items          = items,
@@ -2219,7 +2260,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
         "fecha_emision":     data.get("fecha_emision", ""),
         "empresa":           empresa,
         "concepto":          data.get("concepto", ""),
-        "monto_total":       float(data.get("monto_total") or 0),
+        "monto_total":       _safe_float(data.get("monto_total"), 0),
         "medio_pago":        data.get("medio_pago", ""),
         "fecha_vencimiento": fecha_vencimiento,
         "items":             items,
@@ -2494,6 +2535,11 @@ async def comunicaciones_enviar(request: Request):
         return JSONResponse({"error": "Asunto y mensaje son obligatorios."}, status_code=422)
     if not destinatarios:
         return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
+    if len(destinatarios) > MAX_BULK_RECIPIENTS:
+        return JSONResponse(
+            {"error": f"Demasiados destinatarios ({len(destinatarios)}). Máximo {MAX_BULK_RECIPIENTS} por envío. Usa filtros más específicos."},
+            status_code=400,
+        )
 
     disclaimer      = data.get("disclaimer", True)
     attachments_raw = data.get("attachments", [])
@@ -2671,10 +2717,11 @@ async def comunicaciones_list_programados():
 @app.post("/webhook/brevo/bounce")
 async def brevo_bounce(request: Request):
     """Recibe eventos de rebote de Brevo y marca el email en MongoDB."""
-    if BREVO_WEBHOOK_TOKEN:
-        token = request.headers.get("X-Mailin-Token", "") or request.headers.get("X-Brevo-Token", "")
-        if token != BREVO_WEBHOOK_TOKEN:
-            return JSONResponse({"error": "token inválido"}, status_code=401)
+    if not BREVO_WEBHOOK_TOKEN:
+        return JSONResponse({"error": "Webhook no configurado en servidor"}, status_code=503)
+    token = request.headers.get("X-Mailin-Token", "") or request.headers.get("X-Brevo-Token", "")
+    if token != BREVO_WEBHOOK_TOKEN:
+        return JSONResponse({"error": "token inválido"}, status_code=401)
     try:
         payload = await request.json()
     except Exception:
@@ -2888,8 +2935,7 @@ async def pendiente_estado(
     estado: str = Form(...),
     redirect_to: str = Form("/pendientes"),
 ):
-    from bson import ObjectId
-    p = pdb.pendientes_col.find_one({"_id": ObjectId(pendiente_id)})
+    p = pdb.pendientes_col.find_one({"_id": _oid(pendiente_id)})
     if p:
         pdb.update_pendiente(
             pendiente_id,
@@ -2976,7 +3022,7 @@ async def producto_add(
     codigo_sunat:  str = Form(""),
     cuota_numero:  str = Form(""),
 ):
-    precio_val     = float(precio) if precio.strip() else None
+    precio_val     = _safe_float(precio) if precio.strip() else None
     cuota_num_val  = int(cuota_numero) if cuota_numero.strip().isdigit() else None
     pdb.create_producto(nombre, tipo, precio_val, periodo, descripcion,
                         codigo_wc, codigo_sunat, cuota_num_val)
@@ -2997,7 +3043,7 @@ async def producto_update(
     codigo_sunat:  str = Form(""),
     cuota_numero:  str = Form(""),
 ):
-    precio_val    = float(precio) if precio.strip() else None
+    precio_val    = _safe_float(precio) if precio.strip() else None
     wc_id_val     = int(wc_product_id) if wc_product_id.strip().isdigit() else None
     cuota_num_val = int(cuota_numero) if cuota_numero.strip().isdigit() else None
     pdb.update_producto(producto_id, nombre, tipo, precio_val, periodo, descripcion,
@@ -3007,11 +3053,10 @@ async def producto_update(
 
 @app.post("/productos/{producto_id}/toggle")
 async def producto_toggle(producto_id: str):
-    from bson import ObjectId
-    doc = pdb.productos_col.find_one({"_id": ObjectId(producto_id)})
+    doc = pdb.productos_col.find_one({"_id": _oid(producto_id)})
     if doc:
         pdb.productos_col.update_one(
-            {"_id": ObjectId(producto_id)},
+            {"_id": _oid(producto_id)},
             {"$set": {"activo": not doc.get("activo", True)}},
         )
     return RedirectResponse("/productos", status_code=303)
@@ -3050,7 +3095,7 @@ async def portal_member_status(
 ):
     from config.settings import PORTAL_SECRET
     auth_header = request.headers.get("authorization", "")
-    if PORTAL_SECRET and auth_header != f"Bearer {PORTAL_SECRET}":
+    if not PORTAL_SECRET or auth_header != f"Bearer {PORTAL_SECRET}":
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     if not email or "@" not in email:
         return JSONResponse({"error": "Email inválido"}, status_code=400)
@@ -3246,7 +3291,7 @@ async def wc_vincular(order_id: int, request: Request):
 async def portal_update_alt_email(request: Request):
     from config.settings import PORTAL_SECRET
     auth_header = request.headers.get("authorization", "")
-    if PORTAL_SECRET and auth_header != f"Bearer {PORTAL_SECRET}":
+    if not PORTAL_SECRET or auth_header != f"Bearer {PORTAL_SECRET}":
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     try:
         body = await request.json()
@@ -3269,7 +3314,7 @@ async def portal_update_alt_email(request: Request):
 async def portal_update_dni(request: Request):
     from config.settings import PORTAL_SECRET
     auth_header = request.headers.get("authorization", "")
-    if PORTAL_SECRET and auth_header != f"Bearer {PORTAL_SECRET}":
+    if not PORTAL_SECRET or auth_header != f"Bearer {PORTAL_SECRET}":
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     try:
         body = await request.json()
@@ -3304,12 +3349,25 @@ async def login_post(
     password: str = Form(...),
     next: str = Form("/"),
 ):
-    user = auth.get_user(email)
-    if not user or not auth.verify_password(password, user["password_hash"]):
+    email_norm = email.strip().lower()
+    if not _check_login_allowed(email_norm):
         return templates.TemplateResponse(request, "login.html", {
             "next": next,
-            "error": "Correo o contraseña incorrectos.",
+            "error": "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos.",
         })
+    user = auth.get_user(email)
+    if not user or not auth.verify_password(password, user["password_hash"]):
+        count = _record_login_failure(email_norm)
+        remaining = max(0, 5 - count)
+        msg = "Correo o contraseña incorrectos."
+        if remaining < 3:
+            msg += f" {remaining} intento(s) restante(s) antes del bloqueo."
+        return templates.TemplateResponse(request, "login.html", {
+            "next": next,
+            "error": msg,
+        })
+    _clear_login_attempts(email_norm)
+    request.session.clear()  # prevent session fixation
     request.session["user_email"]   = user["email"]
     request.session["user_role"]    = user["role"]
     request.session["user_permisos"]= user.get("permisos", auth.ALL_SECTIONS)
@@ -3491,9 +3549,20 @@ async def publico_template_excel():
 
 @app.post("/publico/importar")
 async def publico_importar(request: Request, archivo: UploadFile = File(...)):
-    contents = await archivo.read()
-    wb = openpyxl.load_workbook(io.BytesIO(contents))
+    filename = (archivo.filename or "").lower()
+    if not filename.endswith(".xlsx"):
+        return RedirectResponse("/publico?error=tipo_invalido", status_code=303)
+    _MAX_UPLOAD = 5 * 1024 * 1024  # 5 MB
+    contents = await archivo.read(_MAX_UPLOAD + 1)
+    if len(contents) > _MAX_UPLOAD:
+        return RedirectResponse("/publico?error=archivo_grande", status_code=303)
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+    except Exception:
+        return RedirectResponse("/publico?error=archivo_invalido", status_code=303)
     ws = wb.active
+    if ws.max_row and ws.max_row > 5001:
+        return RedirectResponse("/publico?error=demasiadas_filas", status_code=303)
     rows_iter = ws.iter_rows(values_only=True)
     headers_row = next(rows_iter, None)
     if not headers_row:
@@ -3652,6 +3721,11 @@ async def api_publico_enviar(request: Request):
         return JSONResponse({"error": "Asunto y mensaje son obligatorios."}, status_code=422)
     if not destinatarios:
         return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
+    if len(destinatarios) > MAX_BULK_RECIPIENTS:
+        return JSONResponse(
+            {"error": f"Máximo {MAX_BULK_RECIPIENTS} destinatarios por envío."},
+            status_code=400,
+        )
 
     mensajes = []
     for d in destinatarios:

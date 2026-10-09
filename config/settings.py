@@ -24,7 +24,16 @@ BILLING_OVERDUE_ALERT_HOURS = int(os.getenv("BILLING_OVERDUE_ALERT_HOURS", "24")
 BILLING_CHECK_INTERVAL_HOURS = int(os.getenv("BILLING_CHECK_INTERVAL_HOURS", "6"))
 
 # Auth
-SECRET_KEY  = os.getenv("SECRET_KEY", "cambia-esto-en-produccion")
+SECRET_KEY  = os.getenv("SECRET_KEY", "")
+_INSECURE_DEFAULTS = {"", "cambia-esto-en-produccion", "secret", "changeme", "dev"}
+if SECRET_KEY in _INSECURE_DEFAULTS:
+    import sys
+    print(
+        "ERROR CRÍTICO: SECRET_KEY no está configurado o usa un valor inseguro. "
+        "Configura SECRET_KEY en .env antes de arrancar.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 

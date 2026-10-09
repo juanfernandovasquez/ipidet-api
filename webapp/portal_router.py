@@ -201,16 +201,17 @@ async def handle_wc_webhook(request: Request):
     body = await request.body()
 
     # Verificar firma HMAC-SHA256 de WooCommerce
-    if WC_WEBHOOK_SECRET:
-        sig_header = request.headers.get("x-wc-webhook-signature", "")
-        expected_sig = hmac.new(
-            WC_WEBHOOK_SECRET.encode("utf-8"),
-            body,
-            hashlib.sha256,
-        ).digest()
-        expected_b64 = base64.b64encode(expected_sig).decode()
-        if not hmac.compare_digest(expected_b64, sig_header):
-            return JSONResponse({"error": "Firma inválida"}, status_code=401)
+    if not WC_WEBHOOK_SECRET:
+        return JSONResponse({"error": "Webhook no configurado en servidor"}, status_code=503)
+    sig_header = request.headers.get("x-wc-webhook-signature", "")
+    expected_sig = hmac.new(
+        WC_WEBHOOK_SECRET.encode("utf-8"),
+        body,
+        hashlib.sha256,
+    ).digest()
+    expected_b64 = base64.b64encode(expected_sig).decode()
+    if not hmac.compare_digest(expected_b64, sig_header):
+        return JSONResponse({"error": "Firma inválida"}, status_code=401)
 
     try:
         order = json.loads(body)
