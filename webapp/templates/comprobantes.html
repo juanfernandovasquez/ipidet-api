@@ -382,7 +382,7 @@
            return this.items.reduce((s, it) => s + (parseFloat(it.monto) || 0), 0);
          },
          agregarItem() {
-           this.items.push({ sid: '', snombre: '', sdni: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '' });
+           this.items.push({ sid: '', snombre: '', sdni: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '', payment_id: null, tipo_pago: 'principal' });
          },
          quitarItem(idx) { this.items.splice(idx, 1); },
          async buscarSocio(item) {
@@ -397,6 +397,7 @@
            item.sSearch = item.snombre;
            item.sdni    = s.dni || '';
            item.sResults = [];
+           this.resolvePago(item);
          },
          cambiarProducto(item) {
            const p = this.productos.find(p => p.id === item.pid);
@@ -409,6 +410,18 @@
              item.pnombre = '';
              item.pcode   = '';
            }
+           this.resolvePago(item);
+         },
+         async resolvePago(item) {
+           if (!item.sid || !item.pid) { item.payment_id = null; return; }
+           try {
+             const r = await fetch('/api/billing/find-payment?member_id=' + encodeURIComponent(item.sid) + '&producto_id=' + encodeURIComponent(item.pid));
+             if (r.ok) {
+               const d = await r.json();
+               item.payment_id = d.payment_id || null;
+               item.tipo_pago  = d.tipo_pago  || 'principal';
+             }
+           } catch (e) { /* silent — server fallback handles resolution */ }
          },
          get canGuardar() {
            if (!this.form.tipo || !this.form.fecha_emision) return false;
@@ -446,7 +459,7 @@
                const pid = (this.productos.find(p => p.nombre === it.producto_nombre) || {}).id || '';
                const sid = it.member_id || '';
                const snombre = sid ? (sm[sid] || sid) : '';
-               return { sid, snombre, sdni: '', sSearch: snombre, sResults: [], pid, pnombre: it.producto_nombre || '', monto: it.monto || '' };
+               return { sid, snombre, sdni: '', sSearch: snombre, sResults: [], pid, pnombre: it.producto_nombre || '', monto: it.monto || '', payment_id: it.payment_id || null, tipo_pago: it.tipo_pago || 'principal' };
              });
            } else {
              this.items = [];
@@ -460,7 +473,9 @@
            const items = this.items.filter(it => it.pid || it.pnombre).map(it => ({
              member_id: it.sid || null, producto_id: it.pid || null,
              producto_nombre: it.pnombre, codigo_sunat: it.pcode || '',
-             monto: parseFloat(it.monto) || 0
+             monto: parseFloat(it.monto) || 0,
+             payment_id: it.payment_id || null,
+             tipo_pago:  it.tipo_pago  || 'principal',
            }));
            // Para boletas a persona natural: auto-rellenar destinatario desde el ítem único
            const soloSocios = this.items.filter(it => it.sid && it.sdni);
@@ -610,12 +625,26 @@
                 </div>
 
                 <!-- Producto -->
-                <select x-model="item.pid" @change="cambiarProducto(item)" class="input w-full text-xs py-1.5">
-                  <option value="">— Producto —</option>
-                  <template x-for="p in productos" :key="p.id">
-                    <option :value="p.id" x-text="p.nombre"></option>
-                  </template>
-                </select>
+                <div class="relative">
+                  <select x-model="item.pid" @change="cambiarProducto(item)"
+                          :class="item.payment_id ? 'border-emerald-400 bg-emerald-50/50' : ''"
+                          class="input w-full text-xs py-1.5">
+                    <option value="">— Producto —</option>
+                    <template x-for="p in productos" :key="p.id">
+                      <option :value="p.id" x-text="p.nombre"></option>
+                    </template>
+                  </select>
+                  <span x-show="item.payment_id" x-cloak
+                        title="Vinculado a cobranza"
+                        class="absolute right-6 top-1/2 -translate-y-1/2 text-emerald-500 text-[9px] pointer-events-none">
+                    <i class="fa-solid fa-link"></i>
+                  </span>
+                  <span x-show="!item.payment_id && item.pid" x-cloak
+                        title="Sin vinculación a cobranza encontrada"
+                        class="absolute right-6 top-1/2 -translate-y-1/2 text-amber-400 text-[9px] pointer-events-none">
+                    <i class="fa-solid fa-link-slash"></i>
+                  </span>
+                </div>
 
                 <!-- Monto -->
                 <input type="number" step="0.01" x-model="item.monto"

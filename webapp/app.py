@@ -1821,12 +1821,22 @@ def _resolve_payment_ids(items: list) -> None:
                 prod = pdb.productos_col.find_one({"_id": _OId(item["producto_id"])})
             except Exception:
                 pass
-        if prod and prod.get("tipo") in ("cuota_anual", "cuota_provincia") and prod.get("periodo"):
-            pmt_id = pdb.get_or_create_payment(item["member_id"], prod["periodo"])
-            item["payment_id"]  = pmt_id
-            item["tipo_pago"]   = "principal"
-            item["producto_id"] = str(prod["_id"])
-            continue
+        if prod and prod.get("periodo"):
+            periodo = prod["periodo"]
+            if prod.get("tipo") in ("cuota_anual", "cuota_provincia"):
+                # These may not exist yet — create on demand (expected flow)
+                pmt_id = pdb.get_or_create_payment(item["member_id"], periodo)
+            else:
+                # Other product types: only link if payment already exists
+                pmt = pdb.payments_col.find_one(
+                    {"member_id": item["member_id"], "periodo": periodo}, {"_id": 1}
+                )
+                pmt_id = str(pmt["_id"]) if pmt else None
+            if pmt_id:
+                item["payment_id"]  = pmt_id
+                item["tipo_pago"]   = "principal"
+                item["producto_id"] = str(prod["_id"])
+                continue
 
         # Path 2: codigo_sunat encodes a fraccionamiento cuota reference
         if item.get("codigo_sunat"):
@@ -1856,6 +1866,26 @@ def _derive_periodo_from_items(items: list) -> str:
             except Exception:
                 pass
     return ""
+
+
+@app.get("/api/billing/find-payment")
+async def api_find_payment(member_id: str = "", producto_id: str = "",
+                           _: dict = Depends(get_current_user)):
+    """Resolve payment_id for a member + product pair. Used by the comprobante item form."""
+    if not member_id or not producto_id:
+        return JSONResponse({"payment_id": None, "tipo_pago": "principal", "periodo": ""})
+    from bson import ObjectId as _OId
+    try:
+        prod = pdb.productos_col.find_one({"_id": _OId(producto_id)}, {"periodo": 1, "tipo": 1})
+    except Exception:
+        return JSONResponse({"payment_id": None, "tipo_pago": "principal", "periodo": ""})
+    if not prod or not prod.get("periodo"):
+        return JSONResponse({"payment_id": None, "tipo_pago": "principal", "periodo": ""})
+    periodo = prod["periodo"]
+    pay = pdb.payments_col.find_one({"member_id": member_id, "periodo": periodo}, {"_id": 1})
+    if not pay:
+        return JSONResponse({"payment_id": None, "tipo_pago": "principal", "periodo": periodo})
+    return JSONResponse({"payment_id": str(pay["_id"]), "tipo_pago": "principal", "periodo": periodo})
 
 
 @app.post("/comprobantes/add")
