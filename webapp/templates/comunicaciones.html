@@ -1219,7 +1219,7 @@
                   <p class="text-xs text-slate-400 mt-0.5 truncate"
                      x-text="p.asunto || '(sin asunto)'"></p>
                   <p class="text-xs text-slate-500 mt-1.5 line-clamp-2"
-                     x-html="(p.cuerpo || '').replace(/<[^>]*>/g, ' ').trim() || '—'"></p>
+                     x-text="(p.cuerpo || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180) || '—'"></p>
                 </div>
                 <div class="flex items-center gap-1 shrink-0 mt-0.5">
                   <button type="button" @click="iniciarEditPlantilla(p)"

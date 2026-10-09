@@ -4,6 +4,14 @@ from bson import ObjectId
 from config.settings import DB_NAME
 
 
+def _sf(val, default: float = 0.0) -> float:
+    """Conversión segura a float — devuelve default si el valor es inválido."""
+    try:
+        return float(val) if val not in (None, "", "None") else default
+    except (ValueError, TypeError):
+        return default
+
+
 def _clean(obj):
     """Convierte ObjectId y datetime a tipos serializables por JSON."""
     if isinstance(obj, dict):
@@ -112,23 +120,23 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
         if len(words) > 1:
             query["$and"] = [
                 {"$or": [
-                    {"apellidos": {"$regex": w, "$options": "i"}},
-                    {"nombres":   {"$regex": w, "$options": "i"}},
+                    {"apellidos": {"$regex": _re.escape(w), "$options": "i"}},
+                    {"nombres":   {"$regex": _re.escape(w), "$options": "i"}},
                 ]}
                 for w in words
             ]
         else:
             query["$or"] = [
-                {"apellidos":   {"$regex": search, "$options": "i"}},
-                {"nombres":     {"$regex": search, "$options": "i"}},
-                {"emails.email": {"$regex": search, "$options": "i"}},
-                {"member_id":   {"$regex": search, "$options": "i"}},
-                {"dni":         {"$regex": search, "$options": "i"}},
+                {"apellidos":   {"$regex": _re.escape(search), "$options": "i"}},
+                {"nombres":     {"$regex": _re.escape(search), "$options": "i"}},
+                {"emails.email": {"$regex": _re.escape(search), "$options": "i"}},
+                {"member_id":   {"$regex": _re.escape(search), "$options": "i"}},
+                {"dni":         {"$regex": _re.escape(search), "$options": "i"}},
             ]
     if estado:
         query["estado"] = estado
     if ubicacion:
-        query["ubicacion"] = {"$regex": ubicacion, "$options": "i"}
+        query["ubicacion"] = {"$regex": _re.escape(ubicacion), "$options": "i"}
     if wp == "con":
         query["wp_user_id"] = {"$exists": True}
     elif wp == "sin":
@@ -357,10 +365,10 @@ def mark_email_bounce(email: str, bounce_type: str = "hard", reason: str = ""):
     }}
     if bounce_type == "hard":
         update["$set"]["emails.$.estado"] = "inhabilitado"
-    members_col.update_one({"emails.email": {"$regex": f"^{email}$", "$options": "i"}}, update)
+    members_col.update_one({"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}}, update)
     if bounce_type == "hard":
         member = members_col.find_one(
-            {"emails.email": {"$regex": f"^{email}$", "$options": "i"}}, {"member_id": 1}
+            {"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}}, {"member_id": 1}
         )
         if member:
             _maybe_promote_secondary(member["member_id"])
@@ -524,17 +532,24 @@ def generar_cobros_periodo(periodo: str) -> dict:
         for p in payments_col.find({"periodo": periodo}, {"member_id": 1})
     }
     faltantes = [m for m in activos if m["member_id"] not in existentes]
-    if faltantes:
-        docs = []
-        for m in faltantes:
-            es_lima = (m.get("ubicacion") or "").strip().lower() == "lima"
-            prod_id = pid_lima if es_lima else pid_prov
-            doc = {"member_id": m["member_id"], "periodo": periodo, "estado": "debe"}
-            if prod_id:
-                doc["producto_id"] = prod_id
-            docs.append(doc)
-        payments_col.insert_many(docs)
-    return {"creados": len(faltantes), "ya_existian": len(existentes), "total_activos": len(activos)}
+    creados = 0
+    ya_existian = len(existentes)
+    for m in faltantes:
+        es_lima = (m.get("ubicacion") or "").strip().lower() == "lima"
+        prod_id = pid_lima if es_lima else pid_prov
+        doc: dict = {"member_id": m["member_id"], "periodo": periodo, "estado": "debe"}
+        if prod_id:
+            doc["producto_id"] = prod_id
+        result = payments_col.update_one(
+            {"member_id": m["member_id"], "periodo": periodo},
+            {"$setOnInsert": doc},
+            upsert=True,
+        )
+        if result.upserted_id:
+            creados += 1
+        else:
+            ya_existian += 1
+    return {"creados": creados, "ya_existian": ya_existian, "total_activos": len(activos)}
 
 
 def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
@@ -553,7 +568,7 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
         query["$or"] = [{"comprobante_emitido": False}, {"comprobante_emitido": {"$exists": False}}]
 
     if search:
-        rx = {"$regex": search, "$options": "i"}
+        rx = {"$regex": _re.escape(search), "$options": "i"}
         # IDs desde members (nombre, ID, centro de trabajo, email)
         ids_members = {
             m["member_id"] for m in members_col.find(
@@ -665,7 +680,7 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
     member_ids = list(by_mid.keys())
     member_query: dict = {"member_id": {"$in": member_ids}}
     if search:
-        rx = {"$regex": search, "$options": "i"}
+        rx = {"$regex": _re.escape(search), "$options": "i"}
         member_query["$and"] = [
             {"member_id": {"$in": member_ids}},
             {"$or": [
@@ -682,7 +697,7 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
 
     # Also search in empresa_pagadora field of payments
     if search:
-        rx = {"$regex": search, "$options": "i"}
+        rx = {"$regex": _re.escape(search), "$options": "i"}
         extra_mids = {p["member_id"] for p in payments_col.find(
             {"member_id": {"$in": member_ids},
              "periodo": {"$in": YEARS},
@@ -764,7 +779,7 @@ def get_payments_export(periodo: str = "2026", estado: str = "", empresa: str = 
     if empresa:
         query.update(_build_empresa_filter(empresa))
     if search:
-        rx = {"$regex": search, "$options": "i"}
+        rx = {"$regex": _re.escape(search), "$options": "i"}
         ids_members = {
             m["member_id"] for m in members_col.find(
                 {"$or": [
@@ -917,7 +932,7 @@ def add_cuotas_batch(payment_id: str, cuotas: list) -> list:
         max_num += 1
         new_cuotas.append({
             "numero":          max_num,
-            "monto":           float(c["monto"]),
+            "monto":           _sf(c["monto"]),
             "fecha_venc":      c.get("fecha_venc") or None,
             "fecha_pago":      None,
             "estado":          "pendiente",
@@ -1160,7 +1175,7 @@ def get_fraccionamientos(periodo: str = "2026", alerta: str = "",
     if periodo:
         query["periodo"] = periodo
     if search:
-        rx = {"$regex": search, "$options": "i"}
+        rx = {"$regex": _re.escape(search), "$options": "i"}
         ids = {m["member_id"] for m in members_col.find(
             {"$or": [{"apellidos": rx}, {"nombres": rx}, {"member_id": rx},
                      {"emails.email": rx}]}, {"member_id": 1}
@@ -1274,11 +1289,11 @@ def get_faqs(search: str = "", category: str = "") -> list:
     query = {"active": True}
     if search:
         query["$or"] = [
-            {"question": {"$regex": search, "$options": "i"}},
-            {"answer":   {"$regex": search, "$options": "i"}},
+            {"question": {"$regex": _re.escape(search), "$options": "i"}},
+            {"answer":   {"$regex": _re.escape(search), "$options": "i"}},
         ]
     if category:
-        query["category"] = {"$regex": category, "$options": "i"}
+        query["category"] = {"$regex": _re.escape(category), "$options": "i"}
     docs = list(faqs_col.find(query).sort("category", 1))
     return [_clean(d) for d in docs]
 
@@ -1626,7 +1641,7 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
         if not mid:
             continue
 
-        monto        = float(item.get("monto") or 0)
+        monto        = _sf(item.get("monto"))
         direct_pid   = item.get("payment_id")
         direct_tipo  = item.get("tipo_pago")
         direct_cuota = item.get("cuota_numero")
@@ -2609,8 +2624,8 @@ def get_eventos(search: str = "", estado: str = "", page: int = 1, per_page: int
     q: dict = {}
     if search:
         q["$or"] = [
-            {"titulo": {"$regex": search, "$options": "i"}},
-            {"lugar":  {"$regex": search, "$options": "i"}},
+            {"titulo": {"$regex": _re.escape(search), "$options": "i"}},
+            {"lugar":  {"$regex": _re.escape(search), "$options": "i"}},
         ]
     if estado:
         q["estado"] = estado
@@ -3076,19 +3091,20 @@ def get_comprobantes_unified(
         if tipo and tipo not in ("credito",):
             q["tipo"] = tipo
         if empresa:
-            q["empresa"] = {"$regex": empresa, "$options": "i"}
+            q["empresa"] = {"$regex": _re.escape(empresa), "$options": "i"}
         if fecha:
             q["fecha_emision"] = fecha
         if search:
+            _srx = _re.escape(search)
             or_c: list = [
-                {"numero":          {"$regex": search, "$options": "i"}},
-                {"empresa":         {"$regex": search, "$options": "i"}},
-                {"producto_nombre": {"$regex": search, "$options": "i"}},
-                {"concepto":        {"$regex": search, "$options": "i"}},
+                {"numero":          {"$regex": _srx, "$options": "i"}},
+                {"empresa":         {"$regex": _srx, "$options": "i"}},
+                {"producto_nombre": {"$regex": _srx, "$options": "i"}},
+                {"concepto":        {"$regex": _srx, "$options": "i"}},
             ]
             mtch = list(members_col.find(
-                {"$or": [{"nombres": {"$regex": search, "$options": "i"}},
-                         {"apellidos": {"$regex": search, "$options": "i"}}]},
+                {"$or": [{"nombres": {"$regex": _srx, "$options": "i"}},
+                         {"apellidos": {"$regex": _srx, "$options": "i"}}]},
                 {"member_id": 1},
             ))
             if mtch:
@@ -3122,14 +3138,15 @@ def get_comprobantes_unified(
     if include_cred:
         qc: dict = {}
         if empresa:
-            qc["empresa"] = {"$regex": empresa, "$options": "i"}
+            qc["empresa"] = {"$regex": _re.escape(empresa), "$options": "i"}
         if fecha:
             qc["fecha_emision"] = fecha
         if search:
+            _srx = _re.escape(search)
             qc["$or"] = [
-                {"numero_factura": {"$regex": search, "$options": "i"}},
-                {"empresa":        {"$regex": search, "$options": "i"}},
-                {"concepto":       {"$regex": search, "$options": "i"}},
+                {"numero_factura": {"$regex": _srx, "$options": "i"}},
+                {"empresa":        {"$regex": _srx, "$options": "i"}},
+                {"concepto":       {"$regex": _srx, "$options": "i"}},
             ]
         for d in credito_col.find(qc):
             numero_fac = d.get("numero_factura") or ""
@@ -3142,7 +3159,7 @@ def get_comprobantes_unified(
             d["_tipo_doc"] = "credito"
             d["tipo"] = "credito"
             d["numero"] = numero_fac
-            d["monto_total"] = float(d.get("monto") or 0)
+            d["monto_total"] = _sf(d.get("monto"))
             d["estado_credito"] = _sync_credito_estado(d)
             d["display_producto"] = d.get("concepto") or "—"
             d["lineas"] = []
@@ -3175,20 +3192,21 @@ def get_comprobantes(search: str = "", tipo: str = "", empresa: str = "",
     if tipo:
         q["tipo"] = tipo
     if empresa:
-        q["empresa"] = {"$regex": empresa, "$options": "i"}
+        q["empresa"] = {"$regex": _re.escape(empresa), "$options": "i"}
     if fecha:
         q["fecha_emision"] = fecha
     if search:
+        _srx = _re.escape(search)
         or_conds: list = [
-            {"numero":          {"$regex": search, "$options": "i"}},
-            {"empresa":         {"$regex": search, "$options": "i"}},
-            {"producto_nombre": {"$regex": search, "$options": "i"}},
-            {"concepto":        {"$regex": search, "$options": "i"}},
+            {"numero":          {"$regex": _srx, "$options": "i"}},
+            {"empresa":         {"$regex": _srx, "$options": "i"}},
+            {"producto_nombre": {"$regex": _srx, "$options": "i"}},
+            {"concepto":        {"$regex": _srx, "$options": "i"}},
         ]
         matching = list(members_col.find(
             {"$or": [
-                {"nombres":   {"$regex": search, "$options": "i"}},
-                {"apellidos": {"$regex": search, "$options": "i"}},
+                {"nombres":   {"$regex": _srx, "$options": "i"}},
+                {"apellidos": {"$regex": _srx, "$options": "i"}},
             ]}, {"member_id": 1}
         ))
         if matching:
@@ -3545,9 +3563,9 @@ def get_factura_credito_email_info(factura_id: str) -> dict | None:
         "empresa_email":    empresa_email,
         "empresa_contacto": empresa_contacto,
         "has_xml":          False,
-        "monto_total":      float(fac.get("monto") or 0),
+        "monto_total":      _sf(fac.get("monto")),
         "items":            [{"producto_nombre": fac.get("concepto") or f"Membresía {fac.get('periodo', '')}".strip(),
-                              "monto": float(fac.get("monto") or 0)}],
+                              "monto": _sf(fac.get("monto"))}],
         "concepto":         fac.get("concepto") or "",
         "socios_info":      socios_info,
         "para_sugerido":    para_sugerido,
@@ -4043,7 +4061,7 @@ def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
     if estado:
         query["estado"] = estado
     if ciudad:
-        query["ciudad"] = {"$regex": ciudad, "$options": "i"}
+        query["ciudad"] = {"$regex": _re.escape(ciudad), "$options": "i"}
     if titulo:
         query["titulo"] = titulo
     if fuente:
@@ -4051,7 +4069,7 @@ def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
     if tag:
         query["tags"] = tag
     if search:
-        rx = {"$regex": search, "$options": "i"}
+        rx = {"$regex": _re.escape(search), "$options": "i"}
         query["$or"] = [{"nombre": rx}, {"apellido": rx}, {"email": rx},
                         {"empresa": rx}, {"celular": rx}]
     per_page = 50
@@ -4070,7 +4088,7 @@ def get_prospectos_all(estado: str = "", ciudad: str = "", titulo: str = "",
     if estado:
         query["estado"] = estado
     if ciudad:
-        query["ciudad"] = {"$regex": ciudad, "$options": "i"}
+        query["ciudad"] = {"$regex": _re.escape(ciudad), "$options": "i"}
     if titulo:
         query["titulo"] = titulo
     if fuente:
@@ -4213,3 +4231,40 @@ def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str = "2026")
     )
     update_prospecto(prospecto_id, {"estado": "convertido", "member_id": mid})
     return mid
+
+
+# ── Índices MongoDB ───────────────────────────────────────────────────────────
+
+def _ensure_indexes() -> None:
+    """Crea índices en startup. Idempotente — seguro llamar múltiples veces."""
+    from pymongo import ASCENDING, DESCENDING
+    # members
+    members_col.create_index([("member_id", ASCENDING)], unique=True, background=True)
+    members_col.create_index([("emails.email", ASCENDING)], background=True)
+    members_col.create_index([("apellidos", ASCENDING)], background=True)
+    members_col.create_index([("estado", ASCENDING)], background=True)
+    # payments
+    payments_col.create_index([("member_id", ASCENDING), ("periodo", ASCENDING)],
+                               unique=True, background=True)
+    payments_col.create_index([("estado", ASCENDING)], background=True)
+    payments_col.create_index([("empresa_id", ASCENDING)], background=True)
+    payments_col.create_index([("comprobante_id", ASCENDING)], background=True)
+    # comprobantes
+    comprobantes_col.create_index([("numero", ASCENDING)], background=True)
+    comprobantes_col.create_index([("fecha_emision", DESCENDING)], background=True)
+    comprobantes_col.create_index([("empresa_id", ASCENDING)], background=True)
+    # publico
+    publico_col.create_index([("email", ASCENDING)], unique=True, background=True)
+    publico_col.create_index([("estado", ASCENDING)], background=True)
+    # faqs
+    faqs_col.create_index([("active", ASCENDING)], background=True)
+    # eventos
+    eventos_col.create_index([("fecha", DESCENDING)], background=True)
+    # comunicaciones
+    comunicaciones_col.create_index([("fecha_envio", DESCENDING)], background=True)
+
+
+try:
+    _ensure_indexes()
+except Exception as _idx_err:
+    print(f"[db] Warning: no se pudieron crear índices: {_idx_err}")
