@@ -2340,6 +2340,46 @@ async def comprobante_cobrar(comprobante_id: str, request: Request):
     return {"ok": True}
 
 
+# ── SUNAT preflight (validación pre-emisión) ──────────────────────────────────
+
+@app.get("/api/sunat/preflight/{comp_id}")
+async def sunat_preflight(comp_id: str, request: Request):
+    """Validates a comprobante before SUNAT emission. Returns errors/warnings + summary."""
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    from webapp.sunat_client import validate_comprobante
+    from bson import ObjectId as _OID
+
+    comp = pdb.get_comprobante_by_id(comp_id)
+    if not comp:
+        raise HTTPException(404, "Comprobante no encontrado")
+
+    tipo = comp.get("tipo", "boleta")
+    member = None
+    empresa = None
+
+    if tipo == "boleta":
+        socios = comp.get("socios") or []
+        if socios:
+            member = pdb.get_member(socios[0])
+    elif tipo == "factura":
+        if comp.get("empresa_id"):
+            try:
+                empresa = pdb.companies_col.find_one({"_id": _OID(comp["empresa_id"])})
+            except Exception:
+                pass
+
+    ultimo_correlativo = None
+    try:
+        serie = (comp.get("numero") or "").split("-", 1)[0]
+        if serie:
+            ultimo_correlativo = pdb.get_ultimo_correlativo_emitido(serie)
+    except Exception:
+        pass
+
+    return validate_comprobante(comp, member, empresa, ultimo_correlativo)
+
+
 # ── SUNAT / APISPERU ──────────────────────────────────────────────────────────
 
 @app.post("/comprobantes/{comp_id}/sunat/emitir")
@@ -2358,7 +2398,32 @@ async def sunat_emitir(comp_id: str, request: Request):
     if comp.get("estado") == "anulado":
         return {"ok": False, "error": "No se puede emitir un comprobante anulado"}
     if comp.get("sunat_estado") == "emitido":
-        return {"ok": False, "error": "Este comprobante ya fue emitido a SUNAT"}
+        return {"ok": False, "error": "Este comprobante ya fue emitido a SUNAT. Si necesitas anularlo, usa el flujo de anulación."}
+
+    # Server-side pre-emission validation
+    from webapp.sunat_client import validate_comprobante
+    _member_pre = None
+    _empresa_pre = None
+    _tipo_pre = comp.get("tipo", "boleta")
+    if _tipo_pre == "boleta":
+        _socios_pre = comp.get("socios") or []
+        if _socios_pre:
+            _member_pre = pdb.get_member(_socios_pre[0])
+    elif _tipo_pre == "factura" and comp.get("empresa_id"):
+        try:
+            _empresa_pre = pdb.companies_col.find_one({"_id": _OID(comp["empresa_id"])})
+        except Exception:
+            pass
+    _ultimo_pre = None
+    try:
+        _serie_pre = (comp.get("numero") or "").split("-", 1)[0]
+        if _serie_pre:
+            _ultimo_pre = pdb.get_ultimo_correlativo_emitido(_serie_pre)
+    except Exception:
+        pass
+    _val = validate_comprobante(comp, _member_pre, _empresa_pre, _ultimo_pre)
+    if not _val["puede_emitir"]:
+        return {"ok": False, "error": "Validación fallida: " + " | ".join(_val["errores"])}
 
     tipo = comp.get("tipo", "boleta")
     resultado: dict

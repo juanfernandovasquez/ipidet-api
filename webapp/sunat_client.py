@@ -1,5 +1,6 @@
 """Cliente APISPERU — facturación electrónica SUNAT (UBL 2.1)."""
 import httpx
+import re
 from datetime import datetime
 
 from config.settings import (
@@ -261,9 +262,8 @@ def anular_boleta(comprobante: dict, correlativo_nc: str,
     monto = float(comprobante.get("monto_total") or 0)
     fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
-    # NC serie: BB01 para B001, BB02 para B002, etc.
-    nc_serie = serie[0] + serie[1:2] + "0" + serie[-1] if len(serie) == 4 else "BB01"
-    nc_serie = nc_serie.replace("B", "B", 1)  # stays as BB01
+    # B001 → BB01, B002 → BB02 (SUNAT convention for NC de boleta)
+    nc_serie = "BB" + serie[2:] if len(serie) == 4 else "BB01"
 
     dni = comprobante.get("destinatario_dni") or "00000000"
     nombre = (comprobante.get("destinatario_nombre") or "CLIENTE").upper()
@@ -345,6 +345,176 @@ def anular_factura(comprobante: dict, correlativo_baja: str,
         return {"ok": False, "error": f"Error de conexión con APISPERU: {e}"}
 
     return _process_response(r)
+
+
+def validate_comprobante(
+    comp: dict,
+    member: dict | None,
+    empresa: dict | None,
+    ultimo_correlativo: int | None,
+) -> dict:
+    """
+    Pre-emission validation. Returns:
+    {errores, advertencias, puede_emitir, resumen}
+    errores block emission; advertencias are warnings only.
+    """
+    errores: list[str] = []
+    advertencias: list[str] = []
+
+    tipo  = comp.get("tipo", "")
+    monto = float(comp.get("monto_total") or 0)
+    numero = (comp.get("numero") or "").strip()
+
+    # ── Número / serie / correlativo ────────────────────────────────────
+    serie = correlativo_str = ""
+    correlativo_num = 0
+    try:
+        serie, correlativo_str = _parse_numero(numero)
+        correlativo_num = int(correlativo_str)
+        if correlativo_num <= 0:
+            errores.append("El correlativo debe ser mayor a 0.")
+    except (ValueError, Exception) as exc:
+        errores.append(str(exc))
+
+    if serie:
+        if tipo == "boleta" and not re.match(r"^B\d{3}$", serie):
+            errores.append(
+                f"Serie inválida '{serie}'. Para boletas debe ser B001, B002, etc."
+            )
+        elif tipo == "factura" and not re.match(r"^F\d{3}$", serie):
+            errores.append(
+                f"Serie inválida '{serie}'. Para facturas debe ser F001, F002, etc."
+            )
+
+    # ── Monto ───────────────────────────────────────────────────────────
+    if monto <= 0:
+        errores.append(f"El monto debe ser mayor a 0 (actual: S/ {monto:.2f}).")
+
+    # ── Fecha ───────────────────────────────────────────────────────────
+    fecha = (comp.get("fecha_emision") or "").strip()
+    if not fecha:
+        errores.append("La fecha de emisión es requerida.")
+    else:
+        try:
+            fecha_dt = datetime.strptime(fecha, "%Y-%m-%d")
+            dias_atras = (datetime.now() - fecha_dt).days
+            if dias_atras < 0:
+                errores.append("La fecha de emisión no puede ser futura.")
+            elif dias_atras > 7:
+                advertencias.append(
+                    f"La fecha de emisión tiene {dias_atras} días de antigüedad. "
+                    "SUNAT puede rechazar documentos con más de 7 días."
+                )
+        except ValueError:
+            errores.append(f"Fecha de emisión inválida: '{fecha}'.")
+
+    # ── Validaciones por tipo ────────────────────────────────────────────
+    destinatario_display = ""
+    if tipo == "boleta":
+        dni = (
+            comp.get("destinatario_dni")
+            or (member or {}).get("dni")
+            or ""
+        ).strip()
+        nombre = (
+            comp.get("destinatario_nombre")
+            or " ".join(filter(None, [
+                (member or {}).get("nombres", ""),
+                (member or {}).get("apellidos", ""),
+            ])).strip()
+            or ""
+        )
+        if not dni or dni == "00000000":
+            advertencias.append(
+                "Sin DNI del destinatario — se enviará '00000000'. "
+                "Carga el DNI del socio para un comprobante correcto."
+            )
+            destinatario_display = nombre or "SIN NOMBRE"
+        elif not re.match(r"^\d{8}$", dni):
+            errores.append(f"DNI inválido: '{dni}'. Debe tener exactamente 8 dígitos.")
+            destinatario_display = nombre or "SIN NOMBRE"
+        else:
+            destinatario_display = f"{nombre or 'SIN NOMBRE'} / DNI {dni}"
+
+    elif tipo == "factura":
+        if not empresa:
+            errores.append(
+                "No se encontró la empresa vinculada. "
+                "Verifica que el comprobante tenga una empresa asignada."
+            )
+        else:
+            ruc = empresa.get("ruc", "").strip()
+            razon = (empresa.get("razon_social") or empresa.get("nombre") or "").strip()
+            if not ruc:
+                errores.append(
+                    "La empresa no tiene RUC. Ve a Empresas y completa el RUC antes de emitir."
+                )
+            elif not re.match(r"^\d{11}$", ruc):
+                errores.append(f"RUC inválido: '{ruc}'. Debe tener exactamente 11 dígitos.")
+            if not razon:
+                advertencias.append(
+                    "La empresa no tiene razón social. Se usará el nombre comercial."
+                )
+            destinatario_display = f"{razon or empresa.get('nombre', '')} / RUC {ruc}"
+    else:
+        errores.append(
+            f"Tipo '{tipo}' no soportado para emisión electrónica. Solo boleta o factura."
+        )
+
+    # ── Secuencia de correlativos ────────────────────────────────────────
+    siguiente_esperado = (ultimo_correlativo + 1) if ultimo_correlativo is not None else 1
+    if correlativo_num > 0:
+        if ultimo_correlativo is not None:
+            if correlativo_num < siguiente_esperado:
+                errores.append(
+                    f"El correlativo {correlativo_str} ya fue emitido "
+                    f"(último emitido en {serie}: {ultimo_correlativo:05d}). "
+                    "SUNAT rechazará este número como duplicado."
+                )
+            elif correlativo_num > siguiente_esperado:
+                gap = correlativo_num - siguiente_esperado
+                advertencias.append(
+                    f"Salto en secuencia: se esperaba {siguiente_esperado:05d} "
+                    f"pero este es {correlativo_num:05d} (salto de {gap}). "
+                    "SUNAT puede rechazar o generar inconsistencias."
+                )
+        elif correlativo_num > 1:
+            advertencias.append(
+                f"No hay comprobantes previos emitidos en la serie {serie} en esta plataforma. "
+                f"Si ya emitiste comprobantes fuera de la plataforma, "
+                f"asegúrate de que el correlativo {correlativo_str} sea el siguiente en tu serie."
+            )
+
+    # ── Config APISPERU ─────────────────────────────────────────────────
+    if not APISPERU_TOKEN:
+        errores.append(
+            "APISPERU_TOKEN no configurado. Agrega el token en las variables de entorno."
+        )
+    if not IPIDET_RUC:
+        errores.append(
+            "IPIDET_RUC no configurado. Agrega el RUC de IPIDET en las variables de entorno."
+        )
+
+    # ── Estado del comprobante ──────────────────────────────────────────
+    if comp.get("estado") == "anulado":
+        errores.append("No se puede emitir un comprobante anulado en la plataforma.")
+
+    return {
+        "errores":      errores,
+        "advertencias": advertencias,
+        "puede_emitir": len(errores) == 0,
+        "resumen": {
+            "tipo":               tipo,
+            "numero":             numero,
+            "serie":              serie,
+            "correlativo":        correlativo_str,
+            "monto":              monto,
+            "fecha_emision":      fecha,
+            "destinatario":       destinatario_display,
+            "ultimo_emitido":     ultimo_correlativo,
+            "siguiente_esperado": siguiente_esperado,
+        },
+    }
 
 
 def check_configured() -> bool:

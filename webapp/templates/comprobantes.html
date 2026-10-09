@@ -162,13 +162,7 @@
           if (r.ok) location.reload();
         },
         async emitirSunat() {
-          if (!confirm('¿Emitir este comprobante a SUNAT vía APISPERU?')) return;
-          this.emitandoSunat = true;
-          const r = await fetch('/comprobantes/{{ c._id }}/sunat/emitir', { method: 'POST' });
-          const d = await r.json();
-          this.emitandoSunat = false;
-          if (d.ok) location.reload();
-          else alert('Error SUNAT: ' + (d.error || 'Error desconocido'));
+          window.dispatchEvent(new CustomEvent('sunat-abrir', {detail: '{{ c._id | string }}'}));
         },
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
@@ -2218,5 +2212,205 @@ function sendCompModal() {
   }
 })();
 </script>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL GLOBAL SUNAT — PRE-EMISIÓN
+     ══════════════════════════════════════════════════════════ -->
+<div x-data="{
+  abierto: false,
+  compId: '',
+  cargando: false,
+  preflight: null,
+  emitiendo: false,
+  resultado: null,
+
+  async abrir(id) {
+    this.compId = id;
+    this.preflight = null;
+    this.resultado = null;
+    this.abierto = true;
+    this.cargando = true;
+    try {
+      const r = await fetch('/api/sunat/preflight/' + id);
+      this.preflight = await r.json();
+    } catch(e) {
+      this.preflight = {errores: ['Error al cargar validaciones: ' + e.message], advertencias: [], puede_emitir: false, resumen: {}};
+    }
+    this.cargando = false;
+  },
+
+  async confirmar() {
+    if (!this.preflight?.puede_emitir) return;
+    this.emitiendo = true;
+    this.resultado = null;
+    try {
+      const r = await fetch('/comprobantes/' + this.compId + '/sunat/emitir', {method: 'POST'});
+      this.resultado = await r.json();
+    } catch(e) {
+      this.resultado = {ok: false, error: 'Error de red: ' + e.message};
+    }
+    this.emitiendo = false;
+    if (this.resultado?.ok) setTimeout(() => location.reload(), 2000);
+  },
+
+  cerrar() { this.abierto = false; }
+}"
+@sunat-abrir.window="abrir($event.detail)"
+x-show="abierto"
+x-cloak
+class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+
+  <div @click.outside="cerrar()"
+       class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-slate-100 bg-emerald-50">
+      <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center flex-shrink-0">
+        <i class="fa-solid fa-stamp text-white text-sm"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-slate-800 text-sm">Emitir a SUNAT</p>
+        <p class="text-xs text-slate-500" x-text="preflight?.resumen?.numero || '...'"></p>
+      </div>
+      <button @click="cerrar()" class="text-slate-400 hover:text-slate-600 p-1">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+      <!-- Loading -->
+      <div x-show="cargando" class="flex items-center justify-center py-8 gap-3 text-slate-400">
+        <i class="fa-solid fa-circle-notch fa-spin"></i>
+        <span class="text-sm">Validando comprobante…</span>
+      </div>
+
+      <!-- Resultado exitoso -->
+      <template x-if="resultado?.ok">
+        <div class="flex flex-col items-center gap-3 py-4 text-center">
+          <div class="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
+            <i class="fa-solid fa-circle-check text-emerald-600 text-2xl"></i>
+          </div>
+          <p class="font-semibold text-slate-800">¡Emitido correctamente!</p>
+          <p class="text-xs text-slate-500" x-text="resultado.cdr_description || 'SUNAT aceptó el comprobante.'"></p>
+          <p class="text-xs text-emerald-600 font-mono" x-show="resultado.cdr_code" x-text="'CDR: ' + resultado.cdr_code"></p>
+          <p class="text-xs text-slate-400">Recargando…</p>
+        </div>
+      </template>
+
+      <!-- Resultado con error -->
+      <template x-if="resultado && !resultado.ok">
+        <div class="rounded-xl bg-red-50 border border-red-200 p-4 space-y-1">
+          <p class="text-sm font-semibold text-red-700 flex items-center gap-2">
+            <i class="fa-solid fa-triangle-exclamation"></i> Error al emitir
+          </p>
+          <p class="text-xs text-red-600" x-text="resultado.error || 'Error desconocido'"></p>
+        </div>
+      </template>
+
+      <!-- Preflight cargado -->
+      <template x-if="!cargando && preflight && !resultado?.ok">
+        <div class="space-y-4">
+
+          <!-- Resumen del documento -->
+          <div class="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Documento a emitir</p>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              <span class="text-slate-400">Número</span>
+              <span class="font-mono font-semibold text-slate-700" x-text="preflight.resumen?.numero || '—'"></span>
+              <span class="text-slate-400">Tipo</span>
+              <span class="capitalize text-slate-700" x-text="preflight.resumen?.tipo || '—'"></span>
+              <span class="text-slate-400">Monto</span>
+              <span class="font-mono text-slate-700" x-text="'S/ ' + (preflight.resumen?.monto || 0).toFixed(2)"></span>
+              <span class="text-slate-400">Fecha</span>
+              <span class="font-mono text-slate-700" x-text="preflight.resumen?.fecha_emision || '—'"></span>
+              <span class="text-slate-400">Destinatario</span>
+              <span class="text-slate-700 break-all" x-text="preflight.resumen?.destinatario || '—'"></span>
+            </div>
+          </div>
+
+          <!-- Secuencia de correlativos -->
+          <template x-if="preflight.resumen?.ultimo_emitido !== null && preflight.resumen?.ultimo_emitido !== undefined">
+            <div class="rounded-xl bg-sky-50 border border-sky-200 p-3 text-xs text-sky-700 flex items-start gap-2">
+              <i class="fa-solid fa-list-ol mt-0.5 flex-shrink-0"></i>
+              <span>Último emitido en <span class="font-mono font-semibold" x-text="preflight.resumen.serie"></span>:
+              <span class="font-mono font-semibold" x-text="String(preflight.resumen.ultimo_emitido).padStart(5,'0')"></span>.
+              Se esperaba el <span class="font-mono font-semibold" x-text="String(preflight.resumen.siguiente_esperado).padStart(5,'0')"></span>.</span>
+            </div>
+          </template>
+          <template x-if="preflight.resumen?.ultimo_emitido === null || preflight.resumen?.ultimo_emitido === undefined">
+            <div class="rounded-xl bg-sky-50 border border-sky-200 p-3 text-xs text-sky-700 flex items-start gap-2">
+              <i class="fa-solid fa-circle-info mt-0.5 flex-shrink-0"></i>
+              <span>No hay comprobantes previos emitidos en la serie <span class="font-mono font-semibold" x-text="preflight.resumen?.serie || '—'"></span> desde esta plataforma.</span>
+            </div>
+          </template>
+
+          <!-- Errores -->
+          <template x-if="preflight.errores?.length > 0">
+            <div class="rounded-xl bg-red-50 border border-red-200 p-4 space-y-2">
+              <p class="text-xs font-semibold text-red-700 flex items-center gap-2">
+                <i class="fa-solid fa-circle-xmark"></i>
+                <span x-text="preflight.errores.length + ' error(es) — no se puede emitir'"></span>
+              </p>
+              <ul class="space-y-1">
+                <template x-for="e in preflight.errores" :key="e">
+                  <li class="text-xs text-red-600 flex items-start gap-1.5">
+                    <i class="fa-solid fa-xmark mt-0.5 flex-shrink-0"></i>
+                    <span x-text="e"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </template>
+
+          <!-- Advertencias -->
+          <template x-if="preflight.advertencias?.length > 0">
+            <div class="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-2">
+              <p class="text-xs font-semibold text-amber-700 flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span x-text="preflight.advertencias.length + ' advertencia(s)'"></span>
+              </p>
+              <ul class="space-y-1">
+                <template x-for="a in preflight.advertencias" :key="a">
+                  <li class="text-xs text-amber-700 flex items-start gap-1.5">
+                    <i class="fa-solid fa-circle-exclamation mt-0.5 flex-shrink-0"></i>
+                    <span x-text="a"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </template>
+
+          <!-- Todo OK -->
+          <template x-if="preflight.errores?.length === 0 && preflight.advertencias?.length === 0">
+            <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-700 flex items-center gap-2">
+              <i class="fa-solid fa-circle-check flex-shrink-0"></i>
+              <span>Todas las validaciones pasaron. El comprobante está listo para emitir.</span>
+            </div>
+          </template>
+
+        </div>
+      </template>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-slate-100 flex justify-between items-center gap-3">
+      <button @click="cerrar()"
+              class="text-sm text-slate-500 hover:text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+        Cancelar
+      </button>
+      <button @click="confirmar()"
+              :disabled="!preflight?.puede_emitir || emitiendo || resultado?.ok"
+              x-show="!resultado?.ok"
+              class="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+        <i class="fa-solid text-xs" :class="emitiendo ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
+        <span x-text="emitiendo ? 'Emitiendo…' : 'Emitir a SUNAT'"></span>
+      </button>
+    </div>
+
+  </div>
+</div>
 
 {% endblock %}

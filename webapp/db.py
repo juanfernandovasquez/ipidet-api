@@ -3425,6 +3425,24 @@ def get_comprobante_by_id(comprobante_id: str) -> dict | None:
     return doc
 
 
+def get_ultimo_correlativo_emitido(serie: str) -> int | None:
+    """Returns the highest correlativo (as int) emitted to SUNAT for a given serie.
+    serie = 'B001', 'F001', etc.  Returns None if no emitted docs for that serie."""
+    import re as _re
+    pattern = f"^{_re.escape(serie)}-\\d+$"
+    docs = list(comprobantes_col.find(
+        {"sunat_estado": "emitido", "numero": {"$regex": pattern}},
+        {"numero": 1},
+    ))
+    nums = []
+    for doc in docs:
+        try:
+            nums.append(int(doc["numero"].split("-", 1)[1]))
+        except (ValueError, IndexError):
+            pass
+    return max(nums) if nums else None
+
+
 def update_sunat_estado(
     comprobante_id: str,
     estado: str,
