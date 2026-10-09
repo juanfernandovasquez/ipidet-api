@@ -117,8 +117,23 @@ def _process_response(r: httpx.Response) -> dict:
     # DocumentResponse: {xml, hash, sunatResponse: {success, error, cdrZip, cdrResponse}}
     sr = data.get("sunatResponse") or {}
     cdr = sr.get("cdrResponse") or {}
-    accepted = bool(cdr.get("accepted", False))
-    sunat_ok = bool(sr.get("success", False)) and accepted
+
+    # APISPERU beta no devuelve cdr.accepted — usar sr.success como indicador primario.
+    # CDR code "0" = aceptado; códigos 2xxx = observaciones (aceptado con notas); resto = rechazado.
+    apisperu_success = bool(sr.get("success", False))
+    cdr_code = str(cdr.get("code", ""))
+    cdr_accepted_field = cdr.get("accepted")  # presente solo en algunos entornos
+
+    if cdr_accepted_field is not None:
+        accepted = bool(cdr_accepted_field)
+    else:
+        # Si APISPERU reporta success=True o CDR code es 0/2xxx, consideramos aceptado
+        try:
+            accepted = apisperu_success or (cdr_code != "" and int(cdr_code) < 3000)
+        except (ValueError, TypeError):
+            accepted = apisperu_success
+
+    sunat_ok = apisperu_success or accepted
 
     err_msg = None
     if not sunat_ok:
@@ -126,13 +141,13 @@ def _process_response(r: httpx.Response) -> dict:
             e = sr["error"]
             err_msg = f"[{e.get('code', '')}] {e.get('message', str(e))}"
         if not err_msg:
-            err_msg = cdr.get("description") or ("Rechazado por SUNAT" if not accepted else None)
+            err_msg = cdr.get("description") or "Rechazado por SUNAT"
 
     return {
         "ok": sunat_ok,
         "xml": data.get("xml", ""),
         "hash": data.get("hash", ""),
-        "cdr_code": cdr.get("code", ""),
+        "cdr_code": cdr_code,
         "cdr_description": cdr.get("description", ""),
         "cdr_notes": cdr.get("notes") or [],
         "accepted": accepted,
