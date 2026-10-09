@@ -159,7 +159,8 @@ async def dashboard(request: Request):
                 return RedirectResponse(path, status_code=302)
         return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>Sin acceso asignado. Contacta al administrador.</h2>")
     stats = pdb.get_stats()
-    return templates.TemplateResponse(request, "dashboard.html", _ctx(request, stats=stats))
+    stats_publico = pdb.get_publico_stats()
+    return templates.TemplateResponse(request, "dashboard.html", _ctx(request, stats=stats, stats_publico=stats_publico))
 
 
 # ── Padrón ────────────────────────────────────────────────────────────────────
@@ -1869,8 +1870,7 @@ def _derive_periodo_from_items(items: list) -> str:
 
 
 @app.get("/api/billing/find-payment")
-async def api_find_payment(member_id: str = "", producto_id: str = "",
-                           _: dict = Depends(get_current_user)):
+async def api_find_payment(member_id: str = "", producto_id: str = ""):
     """Resolve payment_id for a member + product pair. Used by the comprobante item form."""
     if not member_id or not producto_id:
         return JSONResponse({"payment_id": None, "tipo_pago": "principal", "periodo": ""})
@@ -2376,8 +2376,8 @@ async def comunicaciones(
 
 
 @app.get("/api/plantillas")
-async def api_get_plantillas():
-    return pdb.get_plantillas()
+async def api_get_plantillas(tipo: str = ""):
+    return pdb.get_plantillas(tipo=tipo)
 
 
 @app.post("/api/plantillas")
@@ -2386,9 +2386,10 @@ async def api_create_plantilla(request: Request):
     nombre = (data.get("nombre") or "").strip()
     asunto = (data.get("asunto") or "").strip()
     cuerpo = (data.get("cuerpo") or "").strip()
+    tipo   = (data.get("tipo") or "socios").strip()
     if not nombre:
         raise HTTPException(status_code=400, detail="nombre requerido")
-    pid = pdb.create_plantilla(nombre=nombre, asunto=asunto, cuerpo=cuerpo)
+    pid = pdb.create_plantilla(nombre=nombre, asunto=asunto, cuerpo=cuerpo, tipo=tipo)
     return {"ok": True, "id": pid}
 
 
@@ -2400,6 +2401,7 @@ async def api_update_plantilla(plantilla_id: str, request: Request):
         nombre=data.get("nombre"),
         asunto=data.get("asunto"),
         cuerpo=data.get("cuerpo"),
+        tipo=data.get("tipo"),
     )
     return {"ok": True}
 
@@ -3435,3 +3437,259 @@ async def inbox_proof_vincular(
 async def inbox_proof_dismiss(proof_id: str):
     billing_db.update_proof_status(proof_id, "dismissed")
     return RedirectResponse("/inbox", status_code=303)
+
+
+# ── Público (Prospectos) ───────────────────────────────────────────────────────
+
+@app.get("/publico", response_class=HTMLResponse)
+async def publico_list(
+    request: Request,
+    search:  str = "", estado: str = "", ciudad: str = "",
+    titulo:  str = "", fuente: str = "", tag: str = "", page: int = 1,
+):
+    docs, total = pdb.get_prospectos(search=search, estado=estado, ciudad=ciudad,
+                                     titulo=titulo, fuente=fuente, tag=tag, page=page)
+    stats   = pdb.get_publico_stats()
+    titulos = pdb.get_member_titulos()
+    return templates.TemplateResponse(request, "publico.html", _ctx(request,
+        prospectos=docs, total=total, page=page,
+        stats_publico=stats,
+        titulos=titulos,
+        search=search, estado=estado, ciudad=ciudad,
+        titulo=titulo, fuente=fuente, tag=tag,
+    ))
+
+
+@app.get("/publico/template-excel")
+async def publico_template_excel():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Prospectos"
+    headers = ["nombre", "apellido", "email", "celular", "titulo",
+               "empresa", "ciudad", "notas", "fuente_detalle", "tags"]
+    header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 18
+    # Example row
+    ws.append(["Juan", "Pérez", "juan@ejemplo.com", "999000001",
+               "Contador", "Mi Empresa S.A.", "Lima",
+               "Interesado en membresía ordinaria", "Feria 2026", "feria,lima"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=plantilla_prospectos.xlsx"},
+    )
+
+
+@app.post("/publico/importar")
+async def publico_importar(request: Request, archivo: UploadFile = File(...)):
+    contents = await archivo.read()
+    wb = openpyxl.load_workbook(io.BytesIO(contents))
+    ws = wb.active
+    rows_iter = ws.iter_rows(values_only=True)
+    headers_row = next(rows_iter, None)
+    if not headers_row:
+        return RedirectResponse("/publico?error=archivo_vacio", status_code=303)
+    headers = [str(h).strip().lower() if h else "" for h in headers_row]
+    rows = []
+    for row in rows_iter:
+        if not any(row):
+            continue
+        row_dict = {headers[i]: (str(v).strip() if v is not None else "") for i, v in enumerate(row) if i < len(headers)}
+        rows.append(row_dict)
+    result = pdb.import_prospectos_bulk(rows)
+    return RedirectResponse(
+        f"/publico?ok=importado&insertados={result['insertados']}&actualizados={result['actualizados']}&errores={result['errores']}",
+        status_code=303,
+    )
+
+
+@app.post("/publico/nuevo")
+async def publico_nuevo(
+    request:         Request,
+    nombre:          str = Form(...),
+    apellido:        str = Form(""),
+    email:           str = Form(...),
+    celular:         str = Form(""),
+    titulo:          str = Form(""),
+    empresa:         str = Form(""),
+    ciudad:          str = Form(""),
+    notas:           str = Form(""),
+    fuente:          str = Form("manual"),
+    fuente_detalle:  str = Form(""),
+    tags:            str = Form(""),
+):
+    tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+    try:
+        pid = pdb.create_prospecto(
+            nombre=nombre, apellido=apellido, email=email.lower().strip(),
+            celular=celular, titulo=titulo, empresa=empresa,
+            ciudad=ciudad, notas=notas, fuente=fuente,
+            fuente_detalle=fuente_detalle, tags=tags_list,
+        )
+    except Exception:
+        return RedirectResponse("/publico?error=duplicado", status_code=303)
+    return RedirectResponse(f"/publico/{pid}?ok=creado", status_code=303)
+
+
+@app.get("/publico/{prospecto_id}", response_class=HTMLResponse)
+async def publico_detalle(request: Request, prospecto_id: str):
+    p = pdb.get_prospecto(prospecto_id)
+    if not p:
+        return RedirectResponse("/publico", status_code=303)
+    titulos = pdb.get_member_titulos()
+    return templates.TemplateResponse(request, "publico_detalle.html", _ctx(request,
+        prospecto=p, titulos=titulos,
+    ))
+
+
+@app.post("/publico/{prospecto_id}/update")
+async def publico_update(
+    request:        Request,
+    prospecto_id:   str,
+    nombre:         str = Form(...),
+    apellido:       str = Form(""),
+    email:          str = Form(...),
+    celular:        str = Form(""),
+    titulo:         str = Form(""),
+    empresa:        str = Form(""),
+    ciudad:         str = Form(""),
+    notas:          str = Form(""),
+    fuente:         str = Form(""),
+    fuente_detalle: str = Form(""),
+    tags:           str = Form(""),
+):
+    tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+    pdb.update_prospecto(prospecto_id, {
+        "nombre": nombre, "apellido": apellido, "email": email.lower().strip(),
+        "celular": celular, "titulo": titulo, "empresa": empresa,
+        "ciudad": ciudad, "notas": notas, "fuente": fuente,
+        "fuente_detalle": fuente_detalle, "tags": tags_list,
+    })
+    return RedirectResponse(f"/publico/{prospecto_id}?ok=actualizado", status_code=303)
+
+
+@app.post("/publico/{prospecto_id}/estado")
+async def publico_estado(request: Request, prospecto_id: str, estado: str = Form(...)):
+    pdb.update_prospecto(prospecto_id, {"estado": estado})
+    return RedirectResponse(f"/publico/{prospecto_id}?ok=estado", status_code=303)
+
+
+@app.post("/publico/{prospecto_id}/postulacion")
+async def publico_postulacion(
+    request:       Request,
+    prospecto_id:  str,
+    tipo_postulacion: str = Form("ordinario"),
+    notas_postulacion: str = Form(""),
+):
+    from datetime import date as _date
+    pdb.update_prospecto(prospecto_id, {
+        "estado": "postulante",
+        "postulacion": {
+            "tipo":  tipo_postulacion,
+            "notas": notas_postulacion,
+            "fecha": _date.today().isoformat(),
+        },
+    })
+    return RedirectResponse(f"/publico/{prospecto_id}?ok=postulacion", status_code=303)
+
+
+@app.post("/publico/{prospecto_id}/convertir")
+async def publico_convertir(
+    request:       Request,
+    prospecto_id:  str,
+    periodo_actual: str = Form("2026"),
+):
+    try:
+        member_id = pdb.convert_prospecto_to_member(prospecto_id, periodo_actual=periodo_actual)
+    except Exception as exc:
+        return RedirectResponse(f"/publico/{prospecto_id}?error={str(exc)}", status_code=303)
+    return RedirectResponse(f"/members/{member_id}?ok=convertido", status_code=303)
+
+
+@app.post("/publico/{prospecto_id}/delete")
+async def publico_delete(request: Request, prospecto_id: str):
+    pdb.delete_prospecto(prospecto_id)
+    return RedirectResponse("/publico?ok=eliminado", status_code=303)
+
+
+@app.post("/api/publico/preview")
+async def api_publico_preview(request: Request):
+    data    = await request.json()
+    estado  = data.get("estado", "")
+    ciudad  = data.get("ciudad", "")
+    titulo  = data.get("titulo", "")
+    fuente  = data.get("fuente", "")
+    tag     = data.get("tag", "")
+    docs    = pdb.get_prospectos_all(estado=estado, ciudad=ciudad, titulo=titulo,
+                                     fuente=fuente, tag=tag)
+    result  = [{"nombre": f"{d.get('nombre','')} {d.get('apellido','')}".strip(),
+                "email": d.get("email", "")} for d in docs if d.get("email")]
+    return {"total": len(result), "destinatarios": result}
+
+
+@app.post("/api/publico/enviar-comunicacion")
+async def api_publico_enviar(request: Request):
+    data          = await request.json()
+    asunto        = (data.get("asunto") or "").strip()
+    cuerpo        = (data.get("cuerpo") or "").strip()
+    plantilla     = data.get("plantilla", "libre")
+    destinatarios = data.get("destinatarios", [])
+    filtros       = data.get("filtros", {})
+    disclaimer    = data.get("disclaimer", True)
+    attachments_raw  = data.get("attachments", [])
+    imagenesInline   = data.get("imagenesInline", [])
+
+    if not asunto or not cuerpo:
+        return JSONResponse({"error": "Asunto y mensaje son obligatorios."}, status_code=422)
+    if not destinatarios:
+        return JSONResponse({"error": "No hay destinatarios seleccionados."}, status_code=422)
+
+    mensajes = []
+    for d in destinatarios:
+        if not d.get("email"):
+            continue
+        nombre   = d.get("nombre", "")
+        asunto_p = asunto.replace("{{nombre}}", nombre)
+        cuerpo_p = cuerpo.replace("{{nombre}}", nombre)
+        cuerpo_html = mailer._render_body(cuerpo_p)
+        full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
+        if imagenesInline:
+            full_html, inline_atts = _process_inline_images(full_html, imagenesInline)
+        else:
+            inline_atts = []
+        html_body = mailer._base_html(full_html, disclaimer=disclaimer)
+        mensajes.append({"to": d["email"], "nombre": nombre, "subject": asunto_p, "html_body": html_body})
+
+    all_attachments = list(attachments_raw) + inline_atts if imagenesInline else list(attachments_raw)
+    enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(
+        mensajes, attachments=all_attachments or None
+    )
+
+    if enviados == 0 and fallidos > 0:
+        return JSONResponse(
+            {"error": f"No se pudo enviar ningún correo. Error: {errores[0] if errores else 'desconocido'}"},
+            status_code=500,
+        )
+
+    usuario = request.session.get("user_email", "")
+    # Log to each prospecto
+    for d in destinatarios:
+        if d.get("_id"):
+            try:
+                pdb.log_comunicacion_prospecto(d["_id"], asunto, plantilla_nombre=plantilla)
+            except Exception:
+                pass
+    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario, fallidos_detalle)
+
+    return {"ok": True, "enviados": enviados, "fallidos": fallidos,
+            "errores": errores if errores else [],
+            "fallidos_detalle": fallidos_detalle}

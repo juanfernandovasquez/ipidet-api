@@ -27,7 +27,7 @@
           <label class="block text-xs font-medium text-slate-600 mb-2">Modo de segmentación</label>
           <div class="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
             <button type="button"
-                    @click="filtros.modo = 'padron'"
+                    @click="filtros.modo = 'padron'; cargarPlantillas()"
                     :class="filtros.modo === 'padron'
                       ? 'bg-blue-600 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-50'"
@@ -35,17 +35,26 @@
               <i class="fa-solid fa-users mr-1"></i> Padrón completo
             </button>
             <button type="button"
-                    @click="filtros.modo = 'periodo'"
+                    @click="filtros.modo = 'periodo'; cargarPlantillas()"
                     :class="filtros.modo === 'periodo'
                       ? 'bg-blue-600 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-50'"
                     class="flex-1 px-3 py-2 border-l border-slate-200 transition-colors text-center">
               <i class="fa-solid fa-coins mr-1"></i> Por período de pago
             </button>
+            <button type="button"
+                    @click="filtros.modo = 'publico'; showPreview=false; destinatarios=[]; cargarPlantillas()"
+                    :class="filtros.modo === 'publico'
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    class="flex-1 px-3 py-2 border-l border-slate-200 transition-colors text-center">
+              <i class="fa-solid fa-user-magnifying-glass mr-1"></i> Público
+            </button>
           </div>
           <p class="text-xs text-slate-400 mt-1.5">
             <span x-show="filtros.modo === 'padron'">Todos los socios activos con email habilitado, independientemente de su deuda.</span>
             <span x-show="filtros.modo === 'periodo'">Filtra por estado de pago de un período específico.</span>
+            <span x-show="filtros.modo === 'publico'">Prospectos del público — personas interesadas en IPIDET que aún no son socios.</span>
           </p>
         </div>
 
@@ -106,8 +115,8 @@
           </div>
         </div>
 
-        <!-- Ubicación -->
-        <div class="mb-4">
+        <!-- Ubicación (solo socios) -->
+        <div x-show="filtros.modo !== 'publico'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Ubicación</label>
           <select x-model="filtros.ubicacion" class="input w-full text-sm">
             <option value="">Todas las ubicaciones</option>
@@ -117,8 +126,8 @@
           </select>
         </div>
 
-        <!-- Título profesional -->
-        <div class="mb-4">
+        <!-- Título profesional (solo socios) -->
+        <div x-show="filtros.modo !== 'publico'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Título profesional</label>
           <select x-model="filtros.titulo" class="input w-full text-sm">
             <option value="">Todos los títulos</option>
@@ -128,23 +137,64 @@
           </select>
         </div>
 
-        <!-- Centro de trabajo -->
-        <div class="mb-4">
+        <!-- Centro de trabajo (solo socios) -->
+        <div x-show="filtros.modo !== 'publico'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Centro de trabajo</label>
           <input x-model="filtros.centro_trabajo" type="text"
                  placeholder="Ej. Ministerio, SUNAT, EY…"
                  class="input w-full text-sm">
         </div>
 
-        <!-- Palabras clave -->
-        <div class="mb-5">
+        <!-- Palabras clave (solo socios) -->
+        <div x-show="filtros.modo !== 'publico'" x-cloak class="mb-5">
           <label class="block text-xs font-medium text-slate-600 mb-1">Palabras clave</label>
           <input x-model="filtros.keywords" type="text"
                  placeholder="Busca en nombre, apellido, centro de trabajo, notas…"
                  class="input w-full text-sm">
         </div>
 
-        <!-- Criterios de exclusión (solo modo periodo, collapsible) -->
+        <!-- Filtros Público -->
+        <div x-show="filtros.modo === 'publico'" x-cloak class="space-y-4 mb-5">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Estado del prospecto</label>
+            <select x-model="filtrosPublico.estado" class="input w-full text-sm">
+              <option value="">Todos los estados</option>
+              <option value="nuevo">Nuevo</option>
+              <option value="interesado">Interesado</option>
+              <option value="postulante">Postulante</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Ciudad</label>
+            <input x-model="filtrosPublico.ciudad" type="text" class="input w-full text-sm" placeholder="Lima, Arequipa…">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Título profesional</label>
+            <select x-model="filtrosPublico.titulo" class="input w-full text-sm">
+              <option value="">Todos los títulos</option>
+              {% for t in titulos %}
+              <option value="{{ t }}">{{ t }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Fuente</label>
+            <select x-model="filtrosPublico.fuente" class="input w-full text-sm">
+              <option value="">Todas las fuentes</option>
+              <option value="manual">Manual</option>
+              <option value="excel">Excel</option>
+              <option value="portal">Portal</option>
+              <option value="evento">Evento</option>
+              <option value="referido">Referido</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Tag</label>
+            <input x-model="filtrosPublico.tag" type="text" class="input w-full text-sm" placeholder="feria2026, lima…">
+          </div>
+        </div>
+
+        <!-- Criterios de exclusión (solo modo socios, collapsible) -->
         <div x-show="filtros.modo === 'periodo'" x-cloak
              class="mb-5 border border-slate-200 rounded-xl overflow-hidden">
           <button type="button" @click="showExclusiones = !showExclusiones"
@@ -239,9 +289,9 @@
         </div>
 
         <!-- Botón preview -->
-        <button type="button" @click="preview()"
+        <button type="button" @click="filtros.modo === 'publico' ? previewPublico() : preview()"
           :disabled="previewing"
-          class="btn-primary w-full disabled:opacity-40">
+          :class="filtros.modo === 'publico' ? 'bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors w-full disabled:opacity-40' : 'btn-primary w-full disabled:opacity-40'">
           <i class="fa-solid fa-magnifying-glass mr-1.5" x-show="!previewing"></i>
           <i class="fa-solid fa-spinner fa-spin mr-1.5" x-show="previewing" x-cloak></i>
           <span x-text="previewing ? 'Buscando…' : 'Ver destinatarios'"></span>
@@ -1317,6 +1367,10 @@ function comunicaciones() {
     asunto:         '',
     cuerpo:         '',
 
+    filtrosPublico: {
+      estado: '', ciudad: '', titulo: '', fuente: '', tag: '',
+    },
+
     showGestorPlantillas:  false,
     editandoPlantilla:     null,
     editPlantillaNombre:   '',
@@ -1410,7 +1464,8 @@ function comunicaciones() {
     },
 
     async cargarPlantillas() {
-      const r = await fetch('/api/plantillas');
+      const tipo = this.filtros.modo === 'publico' ? 'publico' : 'socios';
+      const r = await fetch('/api/plantillas?tipo=' + tipo);
       this.plantillasList = await r.json();
     },
 
@@ -1517,6 +1572,21 @@ function comunicaciones() {
       this.showPreview  = true;
     },
 
+    async previewPublico() {
+      this.previewing = true;
+      this.resultado  = null;
+      this.errorMsg   = '';
+      const r = await fetch('/api/publico/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...this.filtrosPublico }),
+      });
+      const data = await r.json();
+      this.destinatarios = (data.destinatarios || []).map(d => ({ ...d, selected: true }));
+      this.previewing   = false;
+      this.showPreview  = true;
+    },
+
     iniciarEditPlantilla(p) {
       this.editandoPlantilla   = p._id;
       this.editPlantillaNombre = p.nombre;
@@ -1581,6 +1651,7 @@ function comunicaciones() {
       if (!this.nuevaPlantillaNombre.trim()) return;
       const el = this.$refs.tplNuevaEditor;
       const cuerpo = el ? el.innerHTML : this.nuevaPlantillaCuerpo;
+      const tipo = this.filtros.modo === 'publico' ? 'publico' : 'socios';
       await fetch('/api/plantillas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1588,6 +1659,7 @@ function comunicaciones() {
           nombre: this.nuevaPlantillaNombre,
           asunto: this.nuevaPlantillaAsunto,
           cuerpo: cuerpo,
+          tipo:   tipo,
         }),
       });
       this.nuevaPlantillaAbierta = false;
@@ -1651,8 +1723,11 @@ function comunicaciones() {
 
     async enviar() {
       this.enviando = true;
+      const endpoint = this.filtros.modo === 'publico'
+        ? '/api/publico/enviar-comunicacion'
+        : '/api/comunicaciones/enviar';
       try {
-        const r = await fetch('/api/comunicaciones/enviar', {
+        const r = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1661,7 +1736,7 @@ function comunicaciones() {
             plantilla:     this.plantilla,
             disclaimer:     this.disclaimer,
             destinatarios:  this.seleccionados,
-            filtros:        { ...this.filtros, periodo: this._periodoParaFiltro() },
+            filtros:        this.filtros.modo === 'publico' ? { ...this.filtrosPublico } : { ...this.filtros, periodo: this._periodoParaFiltro() },
             attachments:    this.adjuntos,
             imagenesInline: this.imagenesInline,
           }),

@@ -27,6 +27,7 @@ credito_col = _db.facturas_credito
 productos_col = _db.productos
 comprobantes_col = _db.comprobantes
 config_col = _db.config
+publico_col = _db.publico
 
 MEDIOS_PAGO = [
     "Transferencia bancaria",
@@ -1950,11 +1951,14 @@ _PLANTILLAS_DEFAULT = [
 ]
 
 
-def get_plantillas() -> list:
-    docs = list(plantillas_col.find({"activa": {"$ne": False}}).sort("orden", 1))
-    if not docs:
+def get_plantillas(tipo: str = "") -> list:
+    q: dict = {"activa": {"$ne": False}}
+    if tipo:
+        q["$or"] = [{"tipo": tipo}, {"tipo": {"$exists": False}}] if tipo == "socios" else [{"tipo": tipo}]
+    docs = list(plantillas_col.find(q).sort("orden", 1))
+    if not docs and not tipo:
         _seed_plantillas()
-        docs = list(plantillas_col.find({"activa": {"$ne": False}}).sort("orden", 1))
+        docs = list(plantillas_col.find(q).sort("orden", 1))
     return [_clean(d) for d in docs]
 
 
@@ -1968,7 +1972,7 @@ def _seed_plantillas():
         )
 
 
-def create_plantilla(nombre: str, asunto: str, cuerpo: str) -> str:
+def create_plantilla(nombre: str, asunto: str, cuerpo: str, tipo: str = "socios") -> str:
     max_orden = plantillas_col.find_one(sort=[("orden", -1)]) or {}
     orden = (max_orden.get("orden") or 0) + 1
     import uuid as _uuid
@@ -1978,6 +1982,7 @@ def create_plantilla(nombre: str, asunto: str, cuerpo: str) -> str:
         "nombre": nombre,
         "asunto": asunto,
         "cuerpo": cuerpo,
+        "tipo": tipo,
         "orden": orden,
         "activa": True,
         "created_at": datetime.now(timezone.utc),
@@ -1985,7 +1990,7 @@ def create_plantilla(nombre: str, asunto: str, cuerpo: str) -> str:
     return str(result.inserted_id)
 
 
-def update_plantilla(plantilla_id: str, nombre: str = None, asunto: str = None, cuerpo: str = None):
+def update_plantilla(plantilla_id: str, nombre: str = None, asunto: str = None, cuerpo: str = None, tipo: str = None):
     fields: dict = {"updated_at": datetime.now(timezone.utc)}
     if nombre is not None:
         fields["nombre"] = nombre
@@ -1993,6 +1998,8 @@ def update_plantilla(plantilla_id: str, nombre: str = None, asunto: str = None, 
         fields["asunto"] = asunto
     if cuerpo is not None:
         fields["cuerpo"] = cuerpo
+    if tipo is not None:
+        fields["tipo"] = tipo
     plantillas_col.update_one({"_id": ObjectId(plantilla_id)}, {"$set": fields})
 
 
@@ -4015,3 +4022,194 @@ def get_envios_programados(limit: int = 30) -> list:
         d.setdefault("destinatarios_count", len(d.get("destinatarios", [])))
         d.pop("destinatarios", None)  # don't serialize the full list
     return docs
+
+
+# ── Público (Prospectos) ──────────────────────────────────────────────────────
+
+def get_publico_stats() -> dict:
+    total       = publico_col.count_documents({})
+    nuevos      = publico_col.count_documents({"estado": "nuevo"})
+    interesados = publico_col.count_documents({"estado": "interesado"})
+    postulantes = publico_col.count_documents({"estado": "postulante"})
+    convertidos = publico_col.count_documents({"estado": "convertido"})
+    return {"total": total, "nuevos": nuevos, "interesados": interesados,
+            "postulantes": postulantes, "convertidos": convertidos}
+
+
+def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
+                   titulo: str = "", fuente: str = "", tag: str = "",
+                   page: int = 1) -> tuple:
+    query: dict = {}
+    if estado:
+        query["estado"] = estado
+    if ciudad:
+        query["ciudad"] = {"$regex": ciudad, "$options": "i"}
+    if titulo:
+        query["titulo"] = titulo
+    if fuente:
+        query["fuente"] = fuente
+    if tag:
+        query["tags"] = tag
+    if search:
+        rx = {"$regex": search, "$options": "i"}
+        query["$or"] = [{"nombre": rx}, {"apellido": rx}, {"email": rx},
+                        {"empresa": rx}, {"celular": rx}]
+    per_page = 50
+    skip = (page - 1) * per_page
+    total = publico_col.count_documents(query)
+    docs  = list(publico_col.find(query).sort("created_at", -1).skip(skip).limit(per_page))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return docs, total
+
+
+def get_prospectos_all(estado: str = "", ciudad: str = "", titulo: str = "",
+                        fuente: str = "", tag: str = "") -> list:
+    """Sin paginación — para envíos masivos."""
+    query: dict = {}
+    if estado:
+        query["estado"] = estado
+    if ciudad:
+        query["ciudad"] = {"$regex": ciudad, "$options": "i"}
+    if titulo:
+        query["titulo"] = titulo
+    if fuente:
+        query["fuente"] = fuente
+    if tag:
+        query["tags"] = tag
+    docs = list(publico_col.find(query).sort("created_at", -1))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return docs
+
+
+def get_prospecto(prospecto_id: str) -> dict | None:
+    try:
+        d = publico_col.find_one({"_id": ObjectId(prospecto_id)})
+    except Exception:
+        return None
+    if d:
+        d["_id"] = str(d["_id"])
+    return d
+
+
+def create_prospecto(nombre: str, apellido: str, email: str,
+                     celular: str = "", titulo: str = "", empresa: str = "",
+                     ciudad: str = "", notas: str = "", fuente: str = "manual",
+                     fuente_detalle: str = "", tags: list | None = None) -> str:
+    email = email.strip().lower()
+    existing = publico_col.find_one({"email": email}, {"_id": 1})
+    if existing:
+        return str(existing["_id"])
+    doc = {
+        "nombre":         nombre.strip(),
+        "apellido":       apellido.strip(),
+        "email":          email,
+        "celular":        celular.strip(),
+        "titulo":         titulo.strip(),
+        "empresa":        empresa.strip(),
+        "ciudad":         ciudad.strip(),
+        "notas":          notas.strip(),
+        "fuente":         fuente,
+        "fuente_detalle": fuente_detalle.strip(),
+        "tags":           tags or [],
+        "estado":         "nuevo",
+        "postulacion":    None,
+        "member_id":      None,
+        "comunicaciones": [],
+        "created_at":     datetime.now(timezone.utc),
+        "updated_at":     datetime.now(timezone.utc),
+    }
+    result = publico_col.insert_one(doc)
+    return str(result.inserted_id)
+
+
+def update_prospecto(prospecto_id: str, fields: dict) -> None:
+    allowed = {"nombre", "apellido", "email", "celular", "titulo", "empresa",
+               "ciudad", "notas", "fuente", "fuente_detalle", "tags", "estado",
+               "postulacion", "member_id"}
+    update = {k: v for k, v in fields.items() if k in allowed}
+    update["updated_at"] = datetime.now(timezone.utc)
+    publico_col.update_one({"_id": ObjectId(prospecto_id)}, {"$set": update})
+
+
+def delete_prospecto(prospecto_id: str) -> None:
+    publico_col.update_one(
+        {"_id": ObjectId(prospecto_id)},
+        {"$set": {"estado": "inactivo", "updated_at": datetime.now(timezone.utc)}},
+    )
+
+
+def log_comunicacion_prospecto(prospecto_id: str, asunto: str, plantilla_nombre: str = "") -> None:
+    publico_col.update_one(
+        {"_id": ObjectId(prospecto_id)},
+        {"$push": {"comunicaciones": {
+            "fecha":    datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+            "asunto":   asunto,
+            "plantilla": plantilla_nombre,
+        }}},
+    )
+
+
+def import_prospectos_bulk(rows: list) -> dict:
+    """Upsert list of dicts by email. Returns {insertados, actualizados, errores}."""
+    insertados = actualizados = errores = 0
+    for row in rows:
+        email = (row.get("email") or "").strip().lower()
+        if not email:
+            errores += 1
+            continue
+        try:
+            existing = publico_col.find_one({"email": email}, {"_id": 1})
+            tags_raw = row.get("tags") or ""
+            tags = [t.strip() for t in str(tags_raw).split(",") if t.strip()]
+            doc: dict = {
+                "nombre":         (row.get("nombre") or "").strip(),
+                "apellido":       (row.get("apellido") or "").strip(),
+                "email":          email,
+                "celular":        str(row.get("celular") or "").strip(),
+                "titulo":         (row.get("titulo") or "").strip(),
+                "empresa":        (row.get("empresa") or "").strip(),
+                "ciudad":         (row.get("ciudad") or "").strip(),
+                "notas":          (row.get("notas") or "").strip(),
+                "fuente_detalle": (row.get("fuente_detalle") or "").strip(),
+                "tags":           tags,
+                "updated_at":     datetime.now(timezone.utc),
+            }
+            if existing:
+                publico_col.update_one({"_id": existing["_id"]}, {"$set": doc})
+                actualizados += 1
+            else:
+                doc["fuente"]        = "excel"
+                doc["estado"]        = "nuevo"
+                doc["postulacion"]   = None
+                doc["member_id"]     = None
+                doc["comunicaciones"] = []
+                doc["created_at"]    = datetime.now(timezone.utc)
+                publico_col.insert_one(doc)
+                insertados += 1
+        except Exception:
+            errores += 1
+    return {"insertados": insertados, "actualizados": actualizados, "errores": errores}
+
+
+def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str = "2026") -> str:
+    """Crea un socio desde el prospecto y lo marca como convertido. Devuelve el member_id."""
+    p = publico_col.find_one({"_id": ObjectId(prospecto_id)})
+    if not p:
+        raise ValueError("Prospecto no encontrado")
+    if p.get("member_id"):
+        return p["member_id"]
+    mid = create_member(
+        apellidos      = p.get("apellido") or "",
+        nombres        = p.get("nombre") or "",
+        titulo         = p.get("titulo") or "",
+        email          = p.get("email") or "",
+        celular        = p.get("celular") or "",
+        centro_trabajo = p.get("empresa") or "",
+        ubicacion      = p.get("ciudad") or "",
+        notas          = p.get("notas") or "",
+        periodo_actual = periodo_actual,
+    )
+    update_prospecto(prospecto_id, {"estado": "convertido", "member_id": mid})
+    return mid

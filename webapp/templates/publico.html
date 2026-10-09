@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}Público — IPIDET{% endblock %}
+{% block heading %}Público / Prospectos{% endblock %}
+
+{% block header_actions %}
+<button @click="$dispatch('open-nuevo')"
+        class="btn-primary flex items-center gap-2">
+  <i class="fa-solid fa-plus"></i> Nuevo prospecto
+</button>
+<a href="/publico/template-excel"
+   class="btn-ghost flex items-center gap-2 text-sm">
+  <i class="fa-solid fa-file-arrow-down"></i> Plantilla Excel
+</a>
+<button @click="$dispatch('open-importar')"
+        class="btn-ghost flex items-center gap-2 text-sm">
+  <i class="fa-solid fa-file-arrow-up"></i> Importar
+</button>
+{% endblock %}
+
+{% block content %}
+<div x-data="publicoPage()" @open-nuevo.window="modalNuevo=true" @open-importar.window="modalImportar=true">
+
+  {% if request.query_params.get('ok') == 'importado' %}
+  <div class="mb-4 flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+    <i class="fa-solid fa-circle-check text-green-500"></i>
+    Importación completada:
+    <strong>{{ request.query_params.get('insertados', 0) }}</strong> nuevos,
+    <strong>{{ request.query_params.get('actualizados', 0) }}</strong> actualizados,
+    <strong>{{ request.query_params.get('errores', 0) }}</strong> errores.
+  </div>
+  {% elif request.query_params.get('ok') == 'eliminado' %}
+  <div class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+    <i class="fa-solid fa-circle-check mr-1.5 text-amber-500"></i> Prospecto desactivado.
+  </div>
+  {% elif request.query_params.get('error') %}
+  <div class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+    <i class="fa-solid fa-circle-exclamation mr-1.5 text-red-500"></i>
+    Error: {{ request.query_params.get('error') }}.
+  </div>
+  {% endif %}
+
+  <!-- Stats bar -->
+  <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+    {% for lbl, val, color in [
+      ("Total",       stats_publico.total,       "violet"),
+      ("Nuevos",      stats_publico.nuevos,       "slate"),
+      ("Interesados", stats_publico.interesados,  "blue"),
+      ("Postulantes", stats_publico.postulantes,  "amber"),
+      ("Convertidos", stats_publico.convertidos,  "green"),
+    ] %}
+    <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-{{ color }}-100 flex items-center justify-center flex-shrink-0">
+        <span class="text-sm font-bold text-{{ color }}-700">{{ val }}</span>
+      </div>
+      <div class="text-xs text-slate-500">{{ lbl }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Filtros -->
+  <form method="get" x-ref="filterForm" class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+    <div class="flex flex-wrap gap-2 items-end">
+      <input type="text" name="search" value="{{ search }}" placeholder="Nombre, email, empresa…"
+             class="input text-sm w-52"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }"
+             @input="clearTimeout(_t); _t=setTimeout(()=>$refs.filterForm.submit(),450)">
+      <select name="estado" class="input text-sm" @change="$refs.filterForm.submit()">
+        <option value="">Todos los estados</option>
+        {% for v, l in [("nuevo","Nuevo"),("interesado","Interesado"),("postulante","Postulante"),("convertido","Convertido"),("inactivo","Inactivo")] %}
+        <option value="{{ v }}" {% if estado == v %}selected{% endif %}>{{ l }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="ciudad" value="{{ ciudad }}" placeholder="Ciudad"
+             class="input text-sm w-32"
+             @input="clearTimeout(_t2); _t2=setTimeout(()=>$refs.filterForm.submit(),450)">
+      <select name="titulo" class="input text-sm" @change="$refs.filterForm.submit()">
+        <option value="">Cualquier título</option>
+        {% for t in titulos %}
+        <option value="{{ t }}" {% if titulo == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+      <select name="fuente" class="input text-sm" @change="$refs.filterForm.submit()">
+        <option value="">Cualquier fuente</option>
+        {% for v, l in [("manual","Manual"),("excel","Excel"),("portal","Portal"),("evento","Evento")] %}
+        <option value="{{ v }}" {% if fuente == v %}selected{% endif %}>{{ l }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="tag" value="{{ tag }}" placeholder="Tag"
+             class="input text-sm w-28"
+             @input="clearTimeout(_t3); _t3=setTimeout(()=>$refs.filterForm.submit(),450)">
+      {% if search or estado or ciudad or titulo or fuente or tag %}
+      <a href="/publico" class="btn-ghost text-sm">Limpiar</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <!-- Tabla -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+      <span class="text-sm text-slate-500">{{ total }} prospecto{% if total != 1 %}s{% endif %}</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Nombre</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Título / Empresa</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Ciudad</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Fuente</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tags</th>
+            <th class="px-4 py-2.5"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for p in prospectos %}
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-4 py-3 font-medium text-slate-800">
+              <a href="/publico/{{ p._id }}" class="hover:text-blue-600">
+                {{ p.apellido }} {{ p.nombre }}
+              </a>
+            </td>
+            <td class="px-4 py-3 text-slate-600 font-mono text-xs">{{ p.email }}</td>
+            <td class="px-4 py-3 text-slate-600">
+              {{ p.titulo }}{% if p.titulo and p.empresa %} · {% endif %}{{ p.empresa }}
+            </td>
+            <td class="px-4 py-3 text-slate-600">{{ p.ciudad or '—' }}</td>
+            <td class="px-4 py-3">
+              {% set fuente_colors = {"manual": "slate", "excel": "blue", "portal": "green", "evento": "purple"} %}
+              <span class="badge badge-{{ fuente_colors.get(p.fuente, 'gray') }}">{{ p.fuente or 'manual' }}</span>
+            </td>
+            <td class="px-4 py-3">
+              {% set estado_colors = {"nuevo": "slate", "interesado": "blue", "postulante": "amber", "convertido": "green", "inactivo": "gray"} %}
+              <span class="badge badge-{{ estado_colors.get(p.estado, 'gray') }}">{{ p.estado or 'nuevo' }}</span>
+            </td>
+            <td class="px-4 py-3">
+              {% for tag in (p.tags or [])[:3] %}
+              <span class="inline-block text-[10px] bg-violet-100 text-violet-700 rounded px-1.5 py-0.5 mr-0.5">{{ tag }}</span>
+              {% endfor %}
+            </td>
+            <td class="px-4 py-3">
+              <a href="/publico/{{ p._id }}" class="text-slate-400 hover:text-blue-500 text-xs px-2 py-1 rounded hover:bg-blue-50 transition-colors">
+                <i class="fa-solid fa-arrow-right"></i>
+              </a>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="px-4 py-12 text-center text-slate-400">
+              <i class="fa-solid fa-user-magnifying-glass text-3xl mb-3 block opacity-25"></i>
+              No se encontraron prospectos.
+              <a href="#" @click.prevent="modalNuevo=true" class="text-blue-500 hover:underline ml-1">Agregar el primero</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Paginación -->
+    {% if total > 50 %}
+    <div class="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
+      <span>Página {{ page }} de {{ ((total - 1) // 50 + 1) }}</span>
+      <div class="flex gap-2">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}"
+           class="btn-ghost text-xs">← Anterior</a>
+        {% endif %}
+        {% if page * 50 < total %}
+        <a href="?page={{ page + 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}"
+           class="btn-ghost text-xs">Siguiente →</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Modal Nuevo Prospecto ── -->
+  <div x-show="modalNuevo" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @keydown.escape.window="modalNuevo=false">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg" @click.stop>
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+        <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-user-plus text-violet-500"></i> Nuevo prospecto
+        </h3>
+        <button @click="modalNuevo=false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
+      </div>
+      <form method="post" action="/publico/nuevo" class="px-6 py-5 space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Nombre <span class="text-red-500">*</span></label>
+            <input type="text" name="nombre" required class="input w-full text-sm" placeholder="Juan">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Apellido</label>
+            <input type="text" name="apellido" class="input w-full text-sm" placeholder="Pérez">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Email <span class="text-red-500">*</span></label>
+          <input type="email" name="email" required class="input w-full text-sm" placeholder="juan@ejemplo.com">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Celular</label>
+            <input type="text" name="celular" class="input w-full text-sm" placeholder="999 000 001">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Ciudad</label>
+            <input type="text" name="ciudad" class="input w-full text-sm" placeholder="Lima">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Título</label>
+            <select name="titulo" class="input w-full text-sm">
+              <option value="">Sin especificar</option>
+              {% for t in titulos %}
+              <option value="{{ t }}">{{ t }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Fuente</label>
+            <select name="fuente" class="input w-full text-sm">
+              <option value="manual">Manual</option>
+              <option value="portal">Portal web</option>
+              <option value="evento">Evento</option>
+              <option value="referido">Referido</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
+          <input type="text" name="empresa" class="input w-full text-sm" placeholder="Mi Empresa S.A.">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Notas</label>
+          <textarea name="notas" rows="2" class="input w-full text-sm resize-none" placeholder="Comentarios adicionales…"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Tags <span class="text-slate-400 font-normal">(separados por coma)</span></label>
+          <input type="text" name="tags" class="input w-full text-sm" placeholder="feria2026, lima, contador">
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" @click="modalNuevo=false" class="btn-ghost">Cancelar</button>
+          <button type="submit" class="btn-primary">
+            <i class="fa-solid fa-plus mr-1.5"></i> Guardar prospecto
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Modal Importar Excel ── -->
+  <div x-show="modalImportar" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @keydown.escape.window="modalImportar=false">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md" @click.stop>
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+        <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-file-arrow-up text-blue-500"></i> Importar desde Excel
+        </h3>
+        <button @click="modalImportar=false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
+      </div>
+      <div class="px-6 py-5 space-y-4">
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
+          <i class="fa-solid fa-circle-info mr-1.5"></i>
+          El archivo debe tener las columnas de la <a href="/publico/template-excel" class="underline font-medium">plantilla Excel</a>.
+          Si un email ya existe se actualiza; si es nuevo se inserta.
+        </div>
+        <form method="post" action="/publico/importar" enctype="multipart/form-data">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Archivo Excel (.xlsx)</label>
+          <input type="file" name="archivo" accept=".xlsx"
+                 class="block w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+          <div class="flex justify-end gap-2 mt-4">
+            <button type="button" @click="modalImportar=false" class="btn-ghost">Cancelar</button>
+            <button type="submit" class="btn-primary">
+              <i class="fa-solid fa-upload mr-1.5"></i> Importar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function publicoPage() {
+  return {
+    modalNuevo: {{ 'true' if request.query_params.get('ok') == 'creado' else 'false' }},
+    modalImportar: false,
+    _t: null, _t2: null, _t3: null,
+  };
+}
+</script>
+{% endblock %}

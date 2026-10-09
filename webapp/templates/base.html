@@ -129,6 +129,9 @@
       <a href="/members" class="sidebar-link {% if '/members' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-users"></i> Socios
       </a>
+      <a href="/publico" class="sidebar-link {% if '/publico' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-user-magnifying-glass"></i> Público
+      </a>
       {% endif %}
       {% if is_admin or 'empresas' in p %}
       <a href="/empresas" class="sidebar-link {% if '/empresas' in request.url.path %}active{% endif %}">
@@ -378,5 +381,6 @@
     </div>
   </div>
 
+  {% block scripts %}{% endblock %}
 </body>
 </html>

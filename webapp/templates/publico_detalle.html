@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block title %}{{ prospecto.apellido }} {{ prospecto.nombre }} — Público IPIDET{% endblock %}
+{% block heading %}Prospecto: {{ prospecto.apellido }} {{ prospecto.nombre }}{% endblock %}
+
+{% block header_actions %}
+<a href="/publico" class="btn-ghost flex items-center gap-2 text-sm">
+  <i class="fa-solid fa-arrow-left"></i> Volver
+</a>
+{% endblock %}
+
+{% block content %}
+<div x-data="prospectoDetalle()" class="space-y-5">
+
+  {% if request.query_params.get('ok') %}
+  <div class="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+    <i class="fa-solid fa-circle-check text-green-500"></i>
+    {% if request.query_params.get('ok') == 'actualizado' %}Datos actualizados correctamente.
+    {% elif request.query_params.get('ok') == 'estado' %}Estado actualizado.
+    {% elif request.query_params.get('ok') == 'postulacion' %}Postulación registrada.
+    {% else %}Operación exitosa.{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+    <!-- ── Columna principal ── -->
+    <div class="xl:col-span-2 space-y-5">
+
+      <!-- Datos personales -->
+      <div class="bg-white rounded-2xl border border-slate-200">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 class="font-semibold text-slate-800 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-violet-100 text-violet-700 text-xs font-bold flex items-center justify-center">1</span>
+            Datos del prospecto
+          </h2>
+          <button @click="editando=!editando"
+                  class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1.5">
+            <i :class="editando ? 'fa-solid fa-times' : 'fa-solid fa-pen'"></i>
+            <span x-text="editando ? 'Cancelar' : 'Editar'"></span>
+          </button>
+        </div>
+
+        <!-- Vista lectura -->
+        <div x-show="!editando" class="px-6 py-5">
+          <dl class="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Nombre completo</dt>
+              <dd class="text-slate-800 font-medium">{{ prospecto.apellido }} {{ prospecto.nombre }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Email</dt>
+              <dd class="font-mono text-slate-700 text-xs">{{ prospecto.email }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Celular</dt>
+              <dd class="text-slate-700">{{ prospecto.celular or '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Ciudad</dt>
+              <dd class="text-slate-700">{{ prospecto.ciudad or '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Título</dt>
+              <dd class="text-slate-700">{{ prospecto.titulo or '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Empresa</dt>
+              <dd class="text-slate-700">{{ prospecto.empresa or '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Fuente</dt>
+              <dd class="text-slate-700">{{ prospecto.fuente or 'manual' }}{% if prospecto.fuente_detalle %} — {{ prospecto.fuente_detalle }}{% endif %}</dd>
+            </div>
+            <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Tags</dt>
+              <dd>
+                {% for tag in (prospecto.tags or []) %}
+                <span class="inline-block text-[10px] bg-violet-100 text-violet-700 rounded px-1.5 py-0.5 mr-0.5">{{ tag }}</span>
+                {% else %}
+                <span class="text-slate-400">—</span>
+                {% endfor %}
+              </dd>
+            </div>
+            <div class="col-span-2">
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">Notas</dt>
+              <dd class="text-slate-700 whitespace-pre-wrap">{{ prospecto.notas or '—' }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <!-- Vista edición -->
+        <div x-show="editando" x-cloak>
+          <form method="post" action="/publico/{{ prospecto._id }}/update" class="px-6 py-5 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Nombre</label>
+                <input type="text" name="nombre" value="{{ prospecto.nombre }}" class="input w-full text-sm">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Apellido</label>
+                <input type="text" name="apellido" value="{{ prospecto.apellido }}" class="input w-full text-sm">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Email</label>
+                <input type="email" name="email" value="{{ prospecto.email }}" class="input w-full text-sm">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Celular</label>
+                <input type="text" name="celular" value="{{ prospecto.celular or '' }}" class="input w-full text-sm">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Título</label>
+                <select name="titulo" class="input w-full text-sm">
+                  <option value="">Sin especificar</option>
+                  {% for t in titulos %}
+                  <option value="{{ t }}" {% if prospecto.titulo == t %}selected{% endif %}>{{ t }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Ciudad</label>
+                <input type="text" name="ciudad" value="{{ prospecto.ciudad or '' }}" class="input w-full text-sm">
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Empresa</label>
+              <input type="text" name="empresa" value="{{ prospecto.empresa or '' }}" class="input w-full text-sm">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Fuente</label>
+                <select name="fuente" class="input w-full text-sm">
+                  {% for v, l in [("manual","Manual"),("excel","Excel"),("portal","Portal"),("evento","Evento"),("referido","Referido")] %}
+                  <option value="{{ v }}" {% if prospecto.fuente == v %}selected{% endif %}>{{ l }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Detalle fuente</label>
+                <input type="text" name="fuente_detalle" value="{{ prospecto.fuente_detalle or '' }}" class="input w-full text-sm" placeholder="Feria 2026…">
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Tags <span class="text-slate-400 font-normal">(separados por coma)</span></label>
+              <input type="text" name="tags" value="{{ (prospecto.tags or []) | join(', ') }}" class="input w-full text-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Notas</label>
+              <textarea name="notas" rows="3" class="input w-full text-sm resize-none">{{ prospecto.notas or '' }}</textarea>
+            </div>
+            <div class="flex justify-end gap-2 pt-1">
+              <button type="button" @click="editando=false" class="btn-ghost">Cancelar</button>
+              <button type="submit" class="btn-primary">
+                <i class="fa-solid fa-check mr-1.5"></i> Guardar cambios
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Historial de comunicaciones -->
+      <div class="bg-white rounded-2xl border border-slate-200">
+        <div class="px-6 py-4 border-b border-slate-100">
+          <h2 class="font-semibold text-slate-800 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">3</span>
+            Historial de comunicaciones
+          </h2>
+        </div>
+        <div class="px-6 py-4">
+          {% if prospecto.comunicaciones %}
+          <ul class="space-y-2">
+            {% for c in prospecto.comunicaciones | reverse %}
+            <li class="flex items-start gap-3 text-sm">
+              <div class="mt-0.5 w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-envelope text-blue-500 text-[10px]"></i>
+              </div>
+              <div>
+                <div class="font-medium text-slate-700">{{ c.asunto }}</div>
+                <div class="text-xs text-slate-400">{{ c.fecha }}{% if c.plantilla %} · {{ c.plantilla }}{% endif %}</div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-sm text-slate-400 py-4 text-center">Sin comunicaciones enviadas aún.</p>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Columna lateral ── -->
+    <div class="space-y-5">
+
+      <!-- Estado y acciones rápidas -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 class="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-circle-half-stroke text-slate-400"></i> Estado actual
+        </h2>
+        <div class="mb-4">
+          {% set estado_colors = {"nuevo": "slate", "interesado": "blue", "postulante": "amber", "convertido": "green", "inactivo": "gray"} %}
+          <span class="badge badge-{{ estado_colors.get(prospecto.estado, 'gray') }} text-sm px-3 py-1">
+            {{ prospecto.estado or 'nuevo' }}
+          </span>
+        </div>
+        <form method="post" action="/publico/{{ prospecto._id }}/estado" class="flex gap-2">
+          <select name="estado" class="input flex-1 text-sm">
+            {% for v, l in [("nuevo","Nuevo"),("interesado","Interesado"),("postulante","Postulante"),("inactivo","Inactivo")] %}
+            <option value="{{ v }}" {% if prospecto.estado == v %}selected{% endif %}>{{ l }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn-primary text-sm px-3">
+            <i class="fa-solid fa-check"></i>
+          </button>
+        </form>
+      </div>
+
+      <!-- Postulación -->
+      {% if prospecto.estado != 'convertido' %}
+      <div class="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 class="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-xs font-bold flex items-center justify-center">2</span>
+          Postulación a IPIDET
+        </h2>
+        {% if prospecto.postulacion %}
+        <div class="mb-3 text-sm bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <div class="font-medium text-amber-800">Tipo: {{ prospecto.postulacion.tipo }}</div>
+          {% if prospecto.postulacion.fecha %}<div class="text-xs text-amber-600 mt-0.5">{{ prospecto.postulacion.fecha }}</div>{% endif %}
+          {% if prospecto.postulacion.notas %}<div class="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{{ prospecto.postulacion.notas }}</div>{% endif %}
+        </div>
+        {% endif %}
+        <form method="post" action="/publico/{{ prospecto._id }}/postulacion" class="space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de membresía</label>
+            <select name="tipo_postulacion" class="input w-full text-sm">
+              {% for v, l in [("ordinario","Ordinario"),("afiliado","Afiliado"),("honorario","Honorario"),("estudiante","Estudiante")] %}
+              <option value="{{ v }}" {% if prospecto.postulacion and prospecto.postulacion.tipo == v %}selected{% endif %}>{{ l }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Notas</label>
+            <textarea name="notas_postulacion" rows="2" class="input w-full text-sm resize-none"
+                      placeholder="Observaciones adicionales…">{{ prospecto.postulacion.notas if prospecto.postulacion else '' }}</textarea>
+          </div>
+          <button type="submit" class="btn-primary w-full text-sm">
+            <i class="fa-solid fa-paper-plane mr-1.5"></i> Registrar postulación
+          </button>
+        </form>
+      </div>
+
+      <!-- Convertir a socio -->
+      {% if prospecto.estado in ('postulante', 'interesado') %}
+      <div class="bg-white rounded-2xl border border-green-200 p-5">
+        <h2 class="font-semibold text-green-800 text-sm mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-user-check text-green-600"></i> Convertir a socio
+        </h2>
+        <p class="text-xs text-slate-500 mb-3">Crea un nuevo socio en el padrón con los datos de este prospecto.</p>
+        <form method="post" action="/publico/{{ prospecto._id }}/convertir"
+              onsubmit="return confirm('¿Convertir este prospecto en socio? Esta acción no se puede deshacer.')">
+          <div class="mb-3">
+            <label class="block text-xs font-medium text-slate-600 mb-1">Período inicial</label>
+            <select name="periodo_actual" class="input w-full text-sm">
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+            </select>
+          </div>
+          <button type="submit"
+                  class="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+            <i class="fa-solid fa-user-plus"></i> Convertir a socio IPIDET
+          </button>
+        </form>
+      </div>
+      {% endif %}
+      {% else %}
+      <!-- Ya convertido -->
+      <div class="bg-green-50 border border-green-200 rounded-2xl p-5 text-sm text-green-800">
+        <i class="fa-solid fa-circle-check text-green-500 mr-2"></i>
+        Este prospecto ya fue convertido en socio.
+        {% if prospecto.member_id %}
+        <a href="/members/{{ prospecto.member_id }}" class="underline font-medium ml-1">Ver perfil →</a>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Peligro -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5">
+        <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Zona de peligro</h2>
+        <form method="post" action="/publico/{{ prospecto._id }}/delete"
+              onsubmit="return confirm('¿Desactivar este prospecto?')">
+          <button type="submit"
+                  class="w-full text-red-600 hover:text-red-800 hover:bg-red-50 border border-red-200 text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+            <i class="fa-solid fa-user-slash"></i> Desactivar prospecto
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function prospectoDetalle() {
+  return {
+    editando: false,
+  };
+}
+</script>
+{% endblock %}

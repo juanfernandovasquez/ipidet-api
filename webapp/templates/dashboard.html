@@ -27,6 +27,28 @@
     {% endfor %}
   </div>
 
+  <!-- Público mini-card -->
+  {% if stats_publico is defined and stats_publico.total > 0 %}
+  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-6">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
+        <i class="fa-solid fa-user-magnifying-glass text-violet-600 text-sm"></i>
+      </div>
+      <div>
+        <div class="text-xl font-bold text-slate-800">{{ stats_publico.total }}</div>
+        <div class="text-xs text-slate-500">Prospectos totales</div>
+      </div>
+    </div>
+    <div class="flex gap-4 text-sm flex-wrap">
+      <span class="text-slate-500">Nuevos: <strong class="text-slate-800">{{ stats_publico.nuevos }}</strong></span>
+      <span class="text-slate-500">Interesados: <strong class="text-slate-800">{{ stats_publico.interesados }}</strong></span>
+      <span class="text-slate-500">Postulantes: <strong class="text-amber-700">{{ stats_publico.postulantes }}</strong></span>
+      <span class="text-slate-500">Convertidos: <strong class="text-green-700">{{ stats_publico.convertidos }}</strong></span>
+    </div>
+    <a href="/publico" class="ml-auto btn-ghost text-xs flex-shrink-0">Ver todos →</a>
+  </div>
+  {% endif %}
+
   <!-- Quick links grid -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     <div class="bg-white rounded-xl border border-slate-200 p-6">
