@@ -246,6 +246,9 @@ def create_member(
 ) -> str:
     """Crea un socio nuevo y su registro de pago del período actual. Devuelve el member_id."""
     member_id = _next_member_id()
+    # Guard against race condition where two requests call _next_member_id() simultaneously
+    if member_id != "IPIDET-?" and members_col.find_one({"member_id": member_id}, {"_id": 1}):
+        return member_id
     emails = []
     if email.strip():
         emails = [{"email": email.strip().lower(), "estado": "habilitado", "principal": True}]
@@ -542,11 +545,7 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
     if estado:
         query["estado"] = estado
     if empresa:
-        nombres = _resolve_empresa_nombres(empresa)
-        if nombres:
-            query["empresa_pagadora"] = {"$in": nombres}
-        else:
-            query["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
+        query.update(_build_empresa_filter(empresa))
     if comprobante_emitido == "emitido":
         query["comprobante_emitido"] = True
     elif comprobante_emitido == "pendiente":
@@ -635,11 +634,7 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
     # 1. Fetch all 2025+2026 payments (empresa filter applied here)
     pay_match: dict = {"periodo": {"$in": YEARS}}
     if empresa:
-        nombres = _resolve_empresa_nombres(empresa)
-        if nombres:
-            pay_match["empresa_pagadora"] = {"$in": nombres}
-        else:
-            pay_match["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
+        pay_match.update(_build_empresa_filter(empresa))
 
     all_pays = list(payments_col.find(pay_match))
 
@@ -766,11 +761,7 @@ def get_payments_export(periodo: str = "2026", estado: str = "", empresa: str = 
     if estado:
         query["estado"] = estado
     if empresa:
-        nombres = _resolve_empresa_nombres(empresa)
-        if nombres:
-            query["empresa_pagadora"] = {"$in": nombres}
-        else:
-            query["empresa_pagadora"] = {"$regex": empresa.strip(), "$options": "i"}
+        query.update(_build_empresa_filter(empresa))
     if search:
         rx = {"$regex": search, "$options": "i"}
         ids_members = {
@@ -1028,12 +1019,23 @@ def delete_cuota(payment_id: str, numero: int):
     )
     doc = payments_col.find_one({"_id": ObjectId(payment_id)}, {"cuotas": 1})
     if doc is not None:
-        if not doc.get("cuotas"):
+        cuotas = doc.get("cuotas") or []
+        if not cuotas:
             # Last cuota deleted — revert to "debe"
             payments_col.update_one(
                 {"_id": ObjectId(payment_id)},
                 {"$set": {"estado": "debe"}},
             )
+        else:
+            # Renumber remaining cuotas consecutively starting at 1
+            cuotas_sorted = sorted(cuotas, key=lambda c: c.get("numero", 0))
+            for i, c in enumerate(cuotas_sorted, 1):
+                c["numero"] = i
+            payments_col.update_one(
+                {"_id": ObjectId(payment_id)},
+                {"$set": {"cuotas": cuotas_sorted}},
+            )
+            _sync_estado_from_cuotas(payment_id)
 
 
 # ── Pagos parciales ───────────────────────────────────────────────────────────
@@ -1344,6 +1346,28 @@ def _resolve_empresa_nombres(search: str) -> list[str] | None:
     ))
     return [m["nombre"] for m in matches] if matches else None
 
+
+def _build_empresa_filter(empresa: str) -> dict:
+    """Builds a MongoDB filter matching empresa_pagadora (text) OR empresa_id (FK).
+    Using $or ensures renamed empresas are still found via their FK."""
+    nombres = _resolve_empresa_nombres(empresa)
+    conditions: list = []
+    if nombres:
+        conditions.append({"empresa_pagadora": {"$in": nombres}})
+    else:
+        conditions.append({"empresa_pagadora": {"$regex": _re.escape(empresa.strip()), "$options": "i"}})
+    # Also match by empresa_id FK so renamed companies are found
+    emp_doc = companies_col.find_one(
+        {"$or": [{"nombre": {"$in": nombres}}, {"ruc": {"$regex": _re.escape(empresa.strip()), "$options": "i"}}]}
+        if nombres else {"ruc": {"$regex": _re.escape(empresa.strip()), "$options": "i"}},
+        {"_id": 1},
+    ) if empresa.strip() else None
+    if emp_doc:
+        conditions.append({"empresa_id": str(emp_doc["_id"])})
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$or": conditions}
+
 def add_company(nombre: str, ruc: str = "", razon_social: str = "",
                 tipo: str = "empresa", contacto_nombre: str = "",
                 contacto_email: str = "", contacto_telefono: str = "") -> str:
@@ -1531,12 +1555,28 @@ def emitir_comprobante(payment_id: str, tipo: str, numero: int | None,
 
 
 def get_or_create_payment(member_id: str, periodo: str) -> str:
-    """Devuelve el payment_id del socio para el período; lo crea si no existe."""
-    p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
-    if p:
-        return str(p["_id"])
-    result = payments_col.insert_one({"member_id": member_id, "periodo": periodo, "estado": "pendiente"})
-    return str(result.inserted_id)
+    """Devuelve el payment_id del socio para el período; lo crea si no existe.
+    Usa upsert atómico para evitar duplicados bajo concurrencia."""
+    existing = payments_col.find_one({"member_id": member_id, "periodo": periodo}, {"_id": 1})
+    if existing:
+        return str(existing["_id"])
+    new_id = ObjectId()
+    result = payments_col.update_one(
+        {"member_id": member_id, "periodo": periodo},
+        {"$setOnInsert": {
+            "_id": new_id,
+            "member_id": member_id,
+            "periodo": periodo,
+            "estado": "pendiente",
+            "created_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+    if result.upserted_id:
+        return str(result.upserted_id)
+    # Another process inserted it first
+    p = payments_col.find_one({"member_id": member_id, "periodo": periodo}, {"_id": 1})
+    return str(p["_id"]) if p else str(new_id)
 
 
 _TIPOS_CUOTA_COMPLETA = ("cuota_anual", "cuota_provincia")
@@ -1739,15 +1779,6 @@ def get_pendientes_socio(member_id: str, periodo: str) -> list:
                            "monto": pp.get("monto"), "fecha_pago": pp.get("fecha_pago"),
                            "medio_pago": pp.get("medio_pago", "")})
     return result
-
-
-def emitir_comprobante_batch(items: list, num_comprobante: str,
-                              tipo_comprobante: str, fecha_emision: str):
-    """Aplica el mismo comprobante a múltiples ítems."""
-    for item in items:
-        emitir_comprobante(item["payment_id"], item["tipo"],
-                           item.get("numero"), num_comprobante,
-                           tipo_comprobante, fecha_emision)
 
 
 # ── Marketing ─────────────────────────────────────────────────────────────────
@@ -2327,7 +2358,8 @@ def get_facturas_credito(empresa: str = "", estado: str = "") -> list:
 def create_factura_credito(empresa: str, numero_factura: str, monto: float,
                             fecha_emision: str, fecha_vencimiento: str,
                             concepto: str = "", socios: list | None = None,
-                            periodo: str = "") -> str:
+                            periodo: str = "",
+                            comprobante_id: str = "") -> str:
     emp = empresa.strip()
     empresa_id = None
     if emp:
@@ -2343,21 +2375,31 @@ def create_factura_credito(empresa: str, numero_factura: str, monto: float,
             empresa_id = str(existing["_id"])
         else:
             add_company(nombre=emp)
+    # Pre-resolve payment_ids FK for each socio in this period
+    socios_list = socios or []
+    payment_ids: list[str] = []
+    if socios_list and periodo:
+        for mid in socios_list:
+            p = payments_col.find_one({"member_id": mid, "periodo": periodo}, {"_id": 1})
+            if p:
+                payment_ids.append(str(p["_id"]))
     doc = {
-        "empresa":    emp,
-        "empresa_id": empresa_id,
-        "numero_factura": numero_factura.strip(),
-        "monto": monto,
-        "fecha_emision": fecha_emision,
+        "empresa":           emp,
+        "empresa_id":        empresa_id,
+        "numero_factura":    numero_factura.strip(),
+        "monto":             monto,
+        "fecha_emision":     fecha_emision,
         "fecha_vencimiento": fecha_vencimiento,
-        "concepto": concepto.strip(),
-        "socios": socios or [],
-        "periodo": periodo,
-        "estado": "pendiente",
-        "created_at": datetime.now(timezone.utc),
+        "concepto":          concepto.strip(),
+        "socios":            socios_list,
+        "periodo":           periodo,
+        "estado":            "pendiente",
+        "payment_ids":       payment_ids,
+        "comprobante_id":    comprobante_id.strip() if comprobante_id else "",
+        "created_at":        datetime.now(timezone.utc),
     }
     factura_id = str(credito_col.insert_one(doc).inserted_id)
-    if socios and periodo:
+    if socios_list and periodo:
         sync_credito_to_cobranzas(factura_id)
     return factura_id
 
@@ -2400,8 +2442,24 @@ def sync_credito_to_cobranzas(factura_id: str) -> None:
         new_estado = "por_cobrar"
         fecha = None
 
+    # Build fast-path map: member_id → payment ObjectId from FK list
+    payment_ids_fk = f.get("payment_ids") or []
+    fk_map: dict[str, ObjectId] = {}
+    if payment_ids_fk:
+        for pay in payments_col.find(
+            {"_id": {"$in": [ObjectId(x) for x in payment_ids_fk if x]},
+             "member_id": {"$in": socios}},
+            {"_id": 1, "member_id": 1},
+        ):
+            fk_map[pay["member_id"]] = pay["_id"]
+
     for member_id in socios:
-        p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
+        if member_id in fk_map:
+            p_id = fk_map[member_id]
+            p = payments_col.find_one({"_id": p_id}, {"_id": 1})
+        else:
+            # Fallback: text-pair lookup for legacy docs without payment_ids
+            p = payments_col.find_one({"member_id": member_id, "periodo": periodo})
         if p:
             upd: dict = {"estado": new_estado, "factura_credito_id": factura_id}
             if new_estado == "pagado":
@@ -3000,9 +3058,11 @@ def get_comprobantes_unified(
         doc["socios_info"] = info
 
     all_docs: list = []
-    # Track comprobante numbers that have a fecha_vencimiento (crédito self-contained)
-    # so facturas_credito with matching numero are skipped (dedup).
+    # Track self-contained crédito comprobantes for deduplication against facturas_credito.
+    # credito_numeros: text fallback (numero string match)
+    # credito_comp_ids: FK match (_id of comprobante stored as comprobante_id on factura_credito)
     credito_numeros: set = set()
+    credito_comp_ids: set = set()
 
     if include_comp:
         q: dict = {"estado": {"$ne": "anulado"}}
@@ -3043,6 +3103,7 @@ def get_comprobantes_unified(
             # If this comprobante has a fecha_vencimiento it is self-contained crédito
             if d.get("fecha_vencimiento"):
                 credito_numeros.add(d["numero"])
+                credito_comp_ids.add(d["_id"])  # FK dedup
                 # Derive estado_credito dynamically if not stored
                 if not d.get("estado_credito"):
                     d["estado_credito"] = _sync_credito_estado({
@@ -3065,8 +3126,10 @@ def get_comprobantes_unified(
             ]
         for d in credito_col.find(qc):
             numero_fac = d.get("numero_factura") or ""
-            # Skip facturas_credito that are already represented by a self-contained comprobante
-            if numero_fac and numero_fac in credito_numeros:
+            fc_comp_id = d.get("comprobante_id") or ""
+            # Skip facturas_credito already represented by a self-contained crédito comprobante
+            # Prefer FK match (comprobante_id), fall back to numero text match
+            if (fc_comp_id and fc_comp_id in credito_comp_ids) or (numero_fac and numero_fac in credito_numeros):
                 continue
             d["_id"] = str(d["_id"])
             d["_tipo_doc"] = "credito"
@@ -3841,7 +3904,8 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
 
 def update_factura_credito_fields(factura_id: str, fields: dict) -> None:
     allowed = {"empresa", "numero_factura", "monto", "fecha_emision",
-               "fecha_vencimiento", "concepto", "periodo", "socios"}
+               "fecha_vencimiento", "concepto", "periodo", "socios",
+               "payment_ids", "comprobante_id"}
     update: dict = {}
     for k, v in fields.items():
         if k not in allowed or v is None:
