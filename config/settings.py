@@ -29,6 +29,7 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 # Brevo (correos transaccionales)
+BREVO_WEBHOOK_TOKEN = os.getenv("BREVO_WEBHOOK_TOKEN", "")    # token para verificar webhooks de rebotes
 BREVO_API_KEY       = os.getenv("BREVO_API_KEY", "")          # preferido: HTTP API (sin restricciones de IP)
 BREVO_SMTP_HOST     = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
 BREVO_SMTP_PORT     = int(os.getenv("BREVO_SMTP_PORT", "587"))

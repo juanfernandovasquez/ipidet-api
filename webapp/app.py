@@ -17,7 +17,7 @@ import webapp.portal_router as portal_routes
 import webapp.auth as auth
 import webapp.mailer as mailer
 import webapp.scheduler as scheduler
-from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD
+from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN
 from knowledge_base import db as kb_db
 from billing import db as billing_db
 
@@ -468,11 +468,35 @@ async def guardar_factura_empresa(request: Request):
     if not socios or not empresa or not num_comprobante or not tipo_comprobante or not fecha_emision:
         return JSONResponse({"error": "Faltan datos obligatorios"}, status_code=422)
 
-    member_ids = []
+    # Resolve payment_ids first so we can build comprobante items with FKs
+    resolved = []
     for s in socios:
         member_id  = s.get("member_id")
         payment_id = s.get("payment_id") or pdb.get_or_create_payment(member_id, periodo)
-        pdb.mark_payment_empresa(payment_id, empresa, num_comprobante, tipo_comprobante, fecha_emision)
+        resolved.append((member_id, payment_id))
+
+    # Create one comprobante document covering all members before marking payments
+    items_comp = [{"member_id": mid, "producto_nombre": "Cuota anual",
+                   "monto": round(monto / len(resolved), 2) if len(resolved) else 0,
+                   "payment_id": pid, "tipo_pago": "principal", "cuota_numero": None}
+                  for mid, pid in resolved]
+    existing_comp = pdb.comprobantes_col.find_one({"numero": num_comprobante}, {"_id": 1})
+    if existing_comp:
+        comp_id = str(existing_comp["_id"])
+    else:
+        comp_id = pdb.create_comprobante(
+            numero=num_comprobante, tipo=tipo_comprobante,
+            fecha_emision=fecha_emision, monto_total=monto,
+            producto_nombre="Cuota anual", concepto=f"Membresías {periodo}",
+            empresa=empresa, socios=[mid for mid, _ in resolved],
+            items=items_comp,
+            fecha_vencimiento=fecha_vencimiento,
+        )
+
+    member_ids = []
+    for member_id, payment_id in resolved:
+        pdb.mark_payment_empresa(payment_id, empresa, num_comprobante, tipo_comprobante,
+                                 fecha_emision, comprobante_id=comp_id)
         member_ids.append(member_id)
         if enviar_email:
             pay = pdb.get_payment_with_member(payment_id)
@@ -493,22 +517,7 @@ async def guardar_factura_empresa(request: Request):
                 except Exception:
                     pass
 
-    # Crear registro de crédito automáticamente
-    if fecha_vencimiento and monto > 0:
-        n = len(member_ids)
-        concepto = f"Membresías {periodo} — {n} socio{'s' if n != 1 else ''}"
-        pdb.create_factura_credito(
-            empresa=empresa,
-            numero_factura=num_comprobante,
-            monto=monto,
-            fecha_emision=fecha_emision,
-            fecha_vencimiento=fecha_vencimiento,
-            concepto=concepto,
-            socios=member_ids,
-            periodo=periodo,
-        )
-
-    return {"ok": True, "registrados": len(socios)}
+    return {"ok": True, "registrados": len(socios), "comprobante_id": comp_id}
 
 
 @app.post("/billing/{payment_id}/emitir-comprobante")
@@ -527,8 +536,11 @@ async def emitir_comprobante(
     from datetime import date as _date_cls
     num = num_comprobante.strip()
     comp_id = None
-    # Create formal comprobante first so we can store the FK
-    if num and not pdb.comprobantes_col.find_one({"numero": num}):
+    # Capture FK from existing comprobante or create a new one
+    _existing = pdb.comprobantes_col.find_one({"numero": num}, {"_id": 1}) if num else None
+    if _existing:
+        comp_id = str(_existing["_id"])
+    if num and not _existing:
         try:
             pmt = pdb.payments_col.find_one({"_id": _OId(payment_id)})
             if pmt:
@@ -2627,6 +2639,10 @@ async def comunicaciones_list_programados():
 @app.post("/webhook/brevo/bounce")
 async def brevo_bounce(request: Request):
     """Recibe eventos de rebote de Brevo y marca el email en MongoDB."""
+    if BREVO_WEBHOOK_TOKEN:
+        token = request.headers.get("X-Mailin-Token", "") or request.headers.get("X-Brevo-Token", "")
+        if token != BREVO_WEBHOOK_TOKEN:
+            return JSONResponse({"error": "token inválido"}, status_code=401)
     try:
         payload = await request.json()
     except Exception:

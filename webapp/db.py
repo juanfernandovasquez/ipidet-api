@@ -439,8 +439,10 @@ def get_excluidos_comunicaciones() -> list:
     return sorted(result, key=lambda x: x["nombre"])
 
 
+_TIPOS_SOCIO = ("ordinario", "filial", "afiliado", "honorario", "jubilado", "estudiante", "retirado")
+
 def update_member_tipo_socio(member_id: str, tipo_socio: str):
-    if tipo_socio not in ("ordinario", "filial"):
+    if tipo_socio not in _TIPOS_SOCIO:
         return
     members_col.update_one(
         {"member_id": member_id},
@@ -1119,13 +1121,16 @@ def _sync_estado_from_parciales(payment_id: str):
     parciales = doc.get("pagos_parciales", [])
     monto_total = doc.get("monto_total") or 0
     monto_pagado = sum(p.get("monto", 0) for p in parciales)
+    current = doc.get("estado", "")
     if not parciales:
-        new_estado = "debe"
+        # Only revert to "debe" if we were actively in parcial mode; don't clobber
+        # manual states like "pagado", "fraccionamiento", "exonerado", etc.
+        new_estado = "debe" if current in ("parcial", "debe") else current
     elif monto_total and monto_pagado >= monto_total:
         new_estado = "pagado"
     else:
         new_estado = "parcial"
-    if doc.get("estado") != new_estado:
+    if current != new_estado:
         payments_col.update_one({"_id": ObjectId(payment_id)}, {"$set": {"estado": new_estado}})
 
 
@@ -1656,12 +1661,26 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                     results.append(_res(item, "ok", f"Cuota #{direct_cuota} marcada como pagada"))
 
             elif direct_tipo == "parcial":
-                add_pago_parcial(direct_pid, monto=monto,
-                                 fecha_pago=fecha_emision or None,
-                                 num_comprobante=numero, tipo_comprobante=tipo,
-                                 medio=medio_pago or None,
-                                 comprobante_id=comprobante_id)
-                results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado"))
+                # Idempotency: if a partial with this comprobante_id already exists, update it
+                existing_pay = payments_col.find_one(
+                    {"_id": ObjectId(direct_pid), "pagos_parciales.comprobante_id": comprobante_id},
+                    {"pagos_parciales.$": 1},
+                ) if comprobante_id else None
+                if existing_pay and existing_pay.get("pagos_parciales"):
+                    existing_num = existing_pay["pagos_parciales"][0].get("numero")
+                    update_pago_parcial(direct_pid, existing_num, monto=monto,
+                                        fecha_pago=fecha_emision or None,
+                                        num_comprobante=numero, tipo_comprobante=tipo,
+                                        medio=medio_pago or None,
+                                        comprobante_id=comprobante_id)
+                    results.append(_res(item, "ok", f"Pago parcial #{existing_num} actualizado"))
+                else:
+                    add_pago_parcial(direct_pid, monto=monto,
+                                     fecha_pago=fecha_emision or None,
+                                     num_comprobante=numero, tipo_comprobante=tipo,
+                                     medio=medio_pago or None,
+                                     comprobante_id=comprobante_id)
+                    results.append(_res(item, "ok", f"Pago parcial de S/ {monto:.2f} registrado"))
             continue
 
         # ── SIN FK: no se sincroniza ─────────────────────────────────────────
@@ -1672,7 +1691,8 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
 
 
 def mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
-                          tipo_comprobante: str, fecha_emision: str):
+                          tipo_comprobante: str, fecha_emision: str,
+                          comprobante_id: str | None = None):
     """Marca el pago principal como pagado por empresa y registra el comprobante."""
     from bson import ObjectId
     empresa_id = None
@@ -1689,6 +1709,7 @@ def mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
             "empresa_pagadora":   empresa,
             "empresa_id":         empresa_id,
             "num_comprobante":    num_comprobante or None,
+            "comprobante_id":     comprobante_id or None,
             "tipo_comprobante":   tipo_comprobante or None,
             "fecha_emision_comprobante": fecha_emision or None,
             "comprobante_emitido": bool(num_comprobante),
