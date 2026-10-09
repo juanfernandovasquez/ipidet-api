@@ -3303,7 +3303,9 @@ def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
                "socios", "items", "estado", "medio_pago", "xml_raw", "fecha_vencimiento",
-               "estado_credito", "fecha_cobro"}
+               "estado_credito", "fecha_cobro",
+               "sunat_estado", "sunat_xml", "sunat_hash", "sunat_cdr_code",
+               "sunat_cdr_desc", "sunat_accepted", "sunat_error", "sunat_emitido_at"}
     update = {k: v for k, v in fields.items() if k in allowed}
     if "empresa" in update:
         emp = (update["empresa"] or "").strip()
@@ -3421,6 +3423,30 @@ def get_comprobante_by_id(comprobante_id: str) -> dict | None:
     if doc:
         doc["_id"] = str(doc["_id"])
     return doc
+
+
+def update_sunat_estado(
+    comprobante_id: str,
+    estado: str,
+    xml: str = "",
+    hash_: str = "",
+    cdr_code: str = "",
+    cdr_desc: str = "",
+    accepted: bool = False,
+    error: str = "",
+) -> None:
+    """Persiste el resultado de la emisión SUNAT en el comprobante."""
+    update: dict = {
+        "sunat_estado":     estado,
+        "sunat_xml":        xml,
+        "sunat_hash":       hash_,
+        "sunat_cdr_code":   cdr_code,
+        "sunat_cdr_desc":   cdr_desc,
+        "sunat_accepted":   accepted,
+        "sunat_error":      error,
+        "sunat_emitido_at": datetime.now(timezone.utc) if estado == "emitido" else None,
+    }
+    comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": update})
 
 
 def get_comprobante_email_info(comp_id: str) -> dict | None:

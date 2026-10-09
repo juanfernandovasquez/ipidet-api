@@ -128,6 +128,7 @@
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Socios / Concepto</th>
           {{ sort_th("Monto", "monto", align='right') }}
           <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">SUNAT</th>
           <th class="px-4 py-3"></th>
         </tr>
       </thead>
@@ -140,6 +141,7 @@
       <tbody x-data="{
         sincronizando: false,
         cobrando: false,
+        emitandoSunat: false,
         async sincronizar() {
           this.sincronizando = true;
           const r = await fetch('/comprobantes/{{ c._id }}/sync', { method: 'POST' });
@@ -158,6 +160,15 @@
           });
           this.cobrando = false;
           if (r.ok) location.reload();
+        },
+        async emitirSunat() {
+          if (!confirm('¿Emitir este comprobante a SUNAT vía APISPERU?')) return;
+          this.emitandoSunat = true;
+          const r = await fetch('/comprobantes/{{ c._id }}/sunat/emitir', { method: 'POST' });
+          const d = await r.json();
+          this.emitandoSunat = false;
+          if (d.ok) location.reload();
+          else alert('Error SUNAT: ' + (d.error || 'Error desconocido'));
         },
         async eliminar() {
           if (!confirm('¿Anular este comprobante?')) return;
@@ -228,6 +239,23 @@
           <span class="text-xs text-slate-300">—</span>
           {% endif %}
         </td>
+        <td class="px-4 py-3">
+          {% if c.sunat_estado == 'emitido' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-stamp text-[9px]"></i> Emitido
+          </span>
+          {% elif c.sunat_estado == 'error' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full" title="{{ c.sunat_error or '' }}">
+            <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> Error
+          </span>
+          {% elif c.sunat_estado == 'anulado_sunat' %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">
+            <i class="fa-solid fa-ban text-[9px]"></i> Anulado
+          </span>
+          {% else %}
+          <span class="text-xs text-slate-300">—</span>
+          {% endif %}
+        </td>
         <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
           <div class="flex items-center justify-end gap-1">
             <button @click="sincronizar()" :disabled="sincronizando"
@@ -240,6 +268,19 @@
                     title="Marcar como cobrado"
                     class="text-slate-300 hover:text-amber-500 transition-colors p-1 disabled:opacity-40">
               <i class="fa-solid fa-sack-dollar text-xs"></i>
+            </button>
+            {% endif %}
+            {% if c.sunat_estado == 'emitido' %}
+            <a href="/comprobantes/{{ c._id }}/sunat/xml" target="_blank"
+               title="Descargar XML SUNAT"
+               class="text-slate-300 hover:text-sky-500 transition-colors p-1">
+              <i class="fa-solid fa-file-code text-xs"></i>
+            </a>
+            {% elif c.estado != 'anulado' and c.tipo in ('boleta', 'factura') %}
+            <button @click="emitirSunat()" :disabled="emitandoSunat"
+                    title="Emitir a SUNAT"
+                    class="text-slate-300 hover:text-emerald-500 transition-colors p-1 disabled:opacity-40">
+              <i class="fa-solid text-xs" :class="emitandoSunat ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
             </button>
             {% endif %}
             <button onclick="window.dispatchEvent(new CustomEvent('comp-enviar', {detail: '{{ c._id }}'}))"

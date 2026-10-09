@@ -63,6 +63,15 @@ SCHEDULER_INTERVAL_HOURS = int(os.getenv("SCHEDULER_INTERVAL_HOURS", "24"))
 SCHEDULER_PERIODO        = os.getenv("SCHEDULER_PERIODO", "2026")
 SCHEDULER_ESTADOS        = os.getenv("SCHEDULER_ESTADOS", "debe,fraccionamiento,parcial").split(",")
 
+# SUNAT / APISPERU — facturación electrónica
+APISPERU_TOKEN         = os.getenv("APISPERU_TOKEN", "")          # Bearer token company-level (no expira)
+IPIDET_RUC             = os.getenv("IPIDET_RUC", "")              # RUC de IPIDET (20 dígitos)
+IPIDET_RAZON_SOCIAL    = os.getenv("IPIDET_RAZON_SOCIAL", "IPIDET")
+IPIDET_NOMBRE_COMERCIAL= os.getenv("IPIDET_NOMBRE_COMERCIAL", "IPIDET")
+IPIDET_DIRECCION       = os.getenv("IPIDET_DIRECCION", "")
+IPIDET_UBIGUEO         = os.getenv("IPIDET_UBIGUEO", "150101")    # ubigeo Lima Centro
+SUNAT_ENVIRONMENT      = os.getenv("SUNAT_ENVIRONMENT", "beta")   # "beta" | "produccion"
+
 CRITICAL_KEYWORDS = [
     "amenaza legal", "demanda", "abogado", "tribunal",
     "prensa", "medios", "periodista", "queja formal",

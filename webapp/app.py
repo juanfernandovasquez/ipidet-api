@@ -2340,6 +2340,122 @@ async def comprobante_cobrar(comprobante_id: str, request: Request):
     return {"ok": True}
 
 
+# ── SUNAT / APISPERU ──────────────────────────────────────────────────────────
+
+@app.post("/comprobantes/{comp_id}/sunat/emitir")
+async def sunat_emitir(comp_id: str, request: Request):
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    from webapp.sunat_client import emitir_boleta, emitir_factura, check_configured
+    from bson import ObjectId as _OID
+
+    if not check_configured():
+        return {"ok": False, "error": "Integración SUNAT no configurada. Agrega APISPERU_TOKEN e IPIDET_RUC en .env"}
+
+    comp = pdb.get_comprobante_by_id(comp_id)
+    if not comp:
+        raise HTTPException(404, "Comprobante no encontrado")
+    if comp.get("estado") == "anulado":
+        return {"ok": False, "error": "No se puede emitir un comprobante anulado"}
+    if comp.get("sunat_estado") == "emitido":
+        return {"ok": False, "error": "Este comprobante ya fue emitido a SUNAT"}
+
+    tipo = comp.get("tipo", "boleta")
+    resultado: dict
+
+    if tipo == "boleta":
+        member = None
+        socios = comp.get("socios") or []
+        if socios:
+            member = pdb.get_member(socios[0])
+        resultado = emitir_boleta(comp, member)
+
+    elif tipo == "factura":
+        empresa = None
+        if comp.get("empresa_id"):
+            try:
+                empresa = pdb.companies_col.find_one({"_id": _OID(comp["empresa_id"])})
+            except Exception:
+                pass
+        resultado = emitir_factura(comp, empresa)
+
+    else:
+        return {"ok": False, "error": f"Tipo '{tipo}' no soportado para emisión electrónica (solo boleta/factura)"}
+
+    if resultado["ok"]:
+        pdb.update_sunat_estado(
+            comp_id,
+            estado    = "emitido",
+            xml       = resultado.get("xml", ""),
+            hash_     = resultado.get("hash", ""),
+            cdr_code  = resultado.get("cdr_code", ""),
+            cdr_desc  = resultado.get("cdr_description", ""),
+            accepted  = resultado.get("accepted", False),
+        )
+    else:
+        pdb.update_sunat_estado(
+            comp_id,
+            estado = "error",
+            error  = resultado.get("error", ""),
+        )
+
+    return resultado
+
+
+@app.get("/comprobantes/{comp_id}/sunat/xml")
+async def sunat_download_xml(comp_id: str, request: Request):
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    from fastapi.responses import Response as _FResponse
+    comp = pdb.get_comprobante_by_id(comp_id)
+    if not comp:
+        raise HTTPException(404, "Comprobante no encontrado")
+    xml_raw = comp.get("sunat_xml") or ""
+    if not xml_raw:
+        raise HTTPException(404, "XML SUNAT no disponible para este comprobante")
+    xml_bytes = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
+    numero = (comp.get("numero") or comp_id).replace("/", "-")
+    return _FResponse(
+        content=xml_bytes,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{numero}.xml"'},
+    )
+
+
+@app.post("/comprobantes/{comp_id}/sunat/anular")
+async def sunat_anular(comp_id: str, request: Request):
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    from webapp.sunat_client import anular_boleta, anular_factura, check_configured
+
+    if not check_configured():
+        return {"ok": False, "error": "Integración SUNAT no configurada. Agrega APISPERU_TOKEN e IPIDET_RUC en .env"}
+
+    comp = pdb.get_comprobante_by_id(comp_id)
+    if not comp:
+        raise HTTPException(404, "Comprobante no encontrado")
+    if comp.get("sunat_estado") != "emitido":
+        return {"ok": False, "error": "Solo se pueden anular comprobantes ya emitidos a SUNAT"}
+
+    data = await request.json()
+    motivo = (data.get("motivo") or "ANULACION DE LA OPERACION").strip().upper()
+    correlativo_nc = str(data.get("correlativo") or "1")
+
+    tipo = comp.get("tipo", "boleta")
+    if tipo == "boleta":
+        resultado = anular_boleta(comp, correlativo_nc, motivo)
+    elif tipo == "factura":
+        resultado = anular_factura(comp, correlativo_nc, motivo)
+    else:
+        return {"ok": False, "error": "Tipo de comprobante no soportado para anulación"}
+
+    if resultado["ok"]:
+        pdb.update_sunat_estado(comp_id, estado="anulado_sunat")
+        pdb.update_comprobante(comp_id, {"estado": "anulado"})
+
+    return resultado
+
+
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
