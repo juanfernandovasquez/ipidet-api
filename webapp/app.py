@@ -457,6 +457,71 @@ async def member_update(member_id: str, request: Request):
     return {"ok": True}
 
 
+@app.post("/members/{member_id}/constancia/enviar")
+async def enviar_constancia(
+    member_id: str,
+    tratamiento: str = Form("el señor"),
+):
+    from datetime import date
+    from webapp.constancia import generar_constancia_pdf
+
+    doc = pdb.get_member(member_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Socio no encontrado")
+
+    email_dest = next(
+        (e["email"] for e in doc.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
+        next((e["email"] for e in doc.get("emails", []) if e.get("estado") == "habilitado"), None),
+    )
+    if not email_dest:
+        raise HTTPException(status_code=400, detail="El socio no tiene email habilitado")
+
+    year = date.today().year
+    numero = pdb.get_next_constancia_number(year)
+    fecha_emision = date.today()
+
+    nombre_completo = f"{doc.get('apellidos', '')} {doc.get('nombres', '')}".strip().upper()
+
+    pdf_bytes = generar_constancia_pdf(
+        numero=numero,
+        nombre_completo=nombre_completo,
+        titulo=doc.get("titulo", ""),
+        dni=doc.get("dni") or None,
+        tipo_socio=doc.get("tipo_socio", "ordinario"),
+        tratamiento=tratamiento,
+        fecha_emision=fecha_emision,
+    )
+
+    asunto = f"Constancia de Asociado Nº {numero} — IPIDET"
+    cuerpo = (
+        f"<p>Estimado(a) {doc.get('nombres', '')} {doc.get('apellidos', '')},</p>"
+        f"<p>Adjuntamos su constancia de asociado al Instituto Peruano de Investigación "
+        f"y Desarrollo Tributario — IPIDET, con número <strong>{numero}</strong>.</p>"
+        f"<p>Atentamente,<br>Secretaría — IPIDET</p>"
+    )
+
+    await mailer.send_email(
+        email_dest,
+        asunto,
+        cuerpo,
+        attachments=[{
+            "filename": f"Constancia-{numero}.pdf",
+            "data": pdf_bytes,
+            "mime": "application/pdf",
+        }],
+    )
+
+    pdb.save_constancia(
+        member_id=member_id,
+        numero=numero,
+        fecha_emision=fecha_emision.isoformat(),
+        email_destino=email_dest,
+        tratamiento=tratamiento,
+    )
+
+    return RedirectResponse(f"/members/{member_id}?msg=constancia_enviada", status_code=303)
+
+
 # ── Cobranzas ─────────────────────────────────────────────────────────────────
 
 @app.get("/billing/facturacion", response_class=HTMLResponse)

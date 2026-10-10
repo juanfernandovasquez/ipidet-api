@@ -100,6 +100,13 @@
                 <i class="fa-solid fa-layer-group text-blue-500 text-xs w-4 text-center"></i>
                 Ver Fraccionamientos
               </a>
+              <div class="my-1 border-t border-slate-100"></div>
+              <button type="button"
+                      @click="open = false; $dispatch('open-constancia')"
+                      class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                <i class="fa-solid fa-certificate text-violet-500 text-xs w-4 text-center"></i>
+                Enviar Constancia
+              </button>
             </div>
           </div>
         </div>
@@ -565,5 +572,110 @@ function memberPage() {
   };
 }
 </script>
+
+<!-- ══ Modal: Enviar Constancia de Asociado ══ -->
+<div x-data="{ open: false, enviando: false }"
+     @open-constancia.window="open = true"
+     x-show="open" x-cloak
+     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+     @keydown.escape.window="open = false">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="open = false"></div>
+
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
+
+    {# Header #}
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-slate-100 shrink-0">
+      <div class="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+        <i class="fa-solid fa-certificate text-sm"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-slate-800 text-sm">Enviar Constancia de Asociado</div>
+        <div class="text-xs text-slate-400 mt-0.5">Se generará un PDF y se enviará por email al socio</div>
+      </div>
+      <button @click="open = false"
+              class="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-100">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+
+    {# Body #}
+    <form method="post" action="/members/{{ member.member_id }}/constancia/enviar"
+          @submit="enviando = true">
+      <div class="px-6 py-5 space-y-4">
+
+        {# Info del destinatario #}
+        <div class="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <i class="fa-solid fa-user text-slate-400 mt-0.5 shrink-0"></i>
+          <div class="min-w-0">
+            <div class="text-sm font-semibold text-slate-800">{{ member.apellidos }} {{ member.nombres }}</div>
+            <div class="text-xs text-slate-400 font-mono mt-0.5">{{ member.member_id }}</div>
+            {% set email_hab = member.emails | selectattr('estado', 'eq', 'habilitado') | list %}
+            {% if email_hab %}
+            <div class="text-xs text-slate-500 mt-1">
+              <i class="fa-solid fa-envelope text-[10px] mr-1"></i>
+              {{ (email_hab | selectattr('principal') | list | first or email_hab[0]).email }}
+            </div>
+            {% else %}
+            <div class="text-xs text-red-500 mt-1">
+              <i class="fa-solid fa-triangle-exclamation text-[10px] mr-1"></i>Sin email habilitado
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Tratamiento #}
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1.5">Tratamiento en el documento</label>
+          <div class="flex gap-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="tratamiento" value="el señor"
+                     {% if not member.titulo or not member.titulo.lower().endswith('a') %}checked{% endif %}
+                     class="accent-violet-600">
+              <span class="text-sm text-slate-700">el señor</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="tratamiento" value="la señora"
+                     {% if member.titulo and member.titulo.lower().endswith('a') %}checked{% endif %}
+                     class="accent-violet-600">
+              <span class="text-sm text-slate-700">la señora</span>
+            </label>
+          </div>
+        </div>
+
+        {# Nota informativa #}
+        <div class="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+          <i class="fa-solid fa-circle-info mr-1"></i>
+          El número de constancia se asignará automáticamente. El PDF se adjuntará al email.
+        </div>
+
+      </div>
+
+      {# Footer #}
+      <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between shrink-0">
+        <button type="button" @click="open = false" class="btn-ghost text-sm">Cancelar</button>
+        <button type="submit" :disabled="enviando"
+                class="inline-flex items-center gap-2 px-5 py-2 bg-violet-600 hover:bg-violet-700 active:bg-violet-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
+          <i class="fa-solid fa-spinner fa-spin text-xs" x-show="enviando" x-cloak></i>
+          <i class="fa-solid fa-paper-plane text-xs" x-show="!enviando"></i>
+          <span x-text="enviando ? 'Enviando…' : 'Generar y enviar'"></span>
+        </button>
+      </div>
+    </form>
+
+  </div>
+</div>
+
+{# Toast de confirmación #}
+{% if request.query_params.get('msg') == 'constancia_enviada' %}
+<div x-data="{ show: true }" x-show="show" x-cloak
+     x-init="setTimeout(() => show = false, 5000)"
+     class="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-violet-700 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg">
+  <i class="fa-solid fa-circle-check text-lg shrink-0"></i>
+  <span>Constancia enviada correctamente</span>
+  <button @click="show = false" class="ml-2 opacity-70 hover:opacity-100">
+    <i class="fa-solid fa-xmark"></i>
+  </button>
+</div>
+{% endif %}
 
 {% endblock %}

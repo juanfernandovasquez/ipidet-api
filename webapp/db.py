@@ -3028,6 +3028,46 @@ def toggle_ia_tarea_stand_by(tarea_id: str) -> None:
         update_ia_tarea(tarea_id, stand_by=not bool(doc.get("stand_by")))
 
 
+# ── Constancias de asociado ───────────────────────────────────────────────────
+
+constancias_col = _db.constancias
+
+
+def get_next_constancia_number(year: int) -> str:
+    """Devuelve el siguiente número correlativo en formato NNN-YYYY."""
+    suffix = f"-{year}"
+    last = constancias_col.find_one(
+        {"numero": {"$regex": f"{suffix}$"}},
+        sort=[("numero", -1)],
+    )
+    if last:
+        try:
+            n = int(last["numero"].split("-")[0]) + 1
+        except (ValueError, IndexError):
+            n = 1
+    else:
+        n = 1
+    return f"{n:03d}-{year}"
+
+
+def save_constancia(
+    member_id: str,
+    numero: str,
+    fecha_emision: str,
+    email_destino: str,
+    tratamiento: str,
+) -> str:
+    doc = {
+        "member_id":    member_id,
+        "numero":       numero,
+        "fecha_emision": fecha_emision,
+        "email_destino": email_destino,
+        "tratamiento":  tratamiento,
+        "created_at":   datetime.now(timezone.utc),
+    }
+    return str(constancias_col.insert_one(doc).inserted_id)
+
+
 def delete_ia_tarea(tarea_id: str) -> None:
     ia_col.delete_one({"_id": ObjectId(tarea_id)})
 
