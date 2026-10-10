@@ -574,8 +574,8 @@ function memberPage() {
 </script>
 
 <!-- ══ Modal: Enviar Constancia de Asociado ══ -->
-<div x-data="{ open: false, enviando: false }"
-     @open-constancia.window="open = true"
+<div x-data="{ open: false, enviando: false, error: '' }"
+     @open-constancia.window="open = true; error = ''"
      x-show="open" x-cloak
      class="fixed inset-0 z-50 flex items-center justify-center p-4"
      @keydown.escape.window="open = false">
@@ -599,9 +599,25 @@ function memberPage() {
     </div>
 
     {# Body #}
-    <form method="post" action="/members/{{ member.member_id }}/constancia/enviar"
-          @submit="enviando = true">
+    <form x-ref="constanciaForm"
+          @submit.prevent="
+            enviando = true; error = '';
+            fetch('/members/{{ member.member_id }}/constancia/enviar', {
+              method: 'POST',
+              body: new FormData($refs.constanciaForm),
+            }).then(r => {
+              if (r.ok || r.redirected) { location.href = '/members/{{ member.member_id }}?msg=constancia_enviada'; }
+              else { return r.json().then(d => { error = d.detail || 'Error al enviar.'; enviando = false; }); }
+            }).catch(() => { error = 'Error de red al conectar con Brevo.'; enviando = false; })
+          ">
       <div class="px-6 py-5 space-y-4">
+
+        {# Error inline #}
+        <div x-show="error" x-cloak
+             class="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+          <i class="fa-solid fa-circle-exclamation shrink-0"></i>
+          <span x-text="error"></span>
+        </div>
 
         {# Info del destinatario #}
         <div class="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">

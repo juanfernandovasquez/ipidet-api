@@ -500,16 +500,19 @@ async def enviar_constancia(
         f"<p>Atentamente,<br>Secretaría — IPIDET</p>"
     )
 
-    await mailer.send_email(
-        email_dest,
-        asunto,
-        cuerpo,
-        attachments=[{
-            "filename": f"Constancia-{numero}.pdf",
-            "data": pdf_bytes,
-            "mime": "application/pdf",
-        }],
-    )
+    try:
+        await mailer.send_email(
+            email_dest,
+            asunto,
+            cuerpo,
+            attachments=[{
+                "filename": f"Constancia-{numero}.pdf",
+                "data": pdf_bytes,
+                "mime": "application/pdf",
+            }],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Error al enviar email: {exc}")
 
     pdb.save_constancia(
         member_id=member_id,
