@@ -127,4 +127,4 @@ def generar_constancia_pdf(
     pdf.set_x(30)
     pdf.cell(0, 4, "Lima, Perú")
 
-    return pdf.output()
+    return bytes(pdf.output())

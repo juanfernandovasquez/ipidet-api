@@ -83,7 +83,7 @@ def _send_api(to: str | list[str], subject: str, html_body: str,
         raw = a.get("data") or b""
         item = {
             "name":    a["filename"],
-            "content": _b64.b64encode(raw).decode() if isinstance(raw, bytes) else a.get("data_b64", ""),
+            "content": _b64.b64encode(raw).decode() if isinstance(raw, (bytes, bytearray)) else a.get("data_b64", ""),
         }
         if a.get("content_id"):
             item["contentId"] = a["content_id"]
