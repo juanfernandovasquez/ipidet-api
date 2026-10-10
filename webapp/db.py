@@ -1618,7 +1618,8 @@ _CRUCE_LABELS: dict = {
 def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                   fecha_emision: str, empresa: str = "",
                                   comprobante_id: str = None,
-                                  medio_pago: str = "") -> list[dict]:
+                                  medio_pago: str = "",
+                                  fecha_pago: str = "") -> list[dict]:
     """Cruza cada item del comprobante con el payment exacto via FK directa.
     Requiere payment_id + tipo_pago en cada item. Sin ellos el item queda sin sincronizar."""
     results: list[dict] = []
@@ -1665,7 +1666,8 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                 current_estado = pay.get("estado")
                 if current_estado in _ESTADOS_NO_MODIFICAR:
                     # Ya finalizado: solo vincular el comprobante, sin cambiar estado.
-                    fp = (fecha_emision or None) if not pay.get("fecha_pago") else None
+                    fp_new = fecha_pago or fecha_emision or None
+                    fp = fp_new if not pay.get("fecha_pago") else None
                     update_payment(direct_pid, estado=current_estado,
                                    num_comprobante=numero, tipo_comprobante=tipo,
                                    fecha_emision_comprobante=fecha_emision or None,
@@ -1686,7 +1688,7 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                 {"$set": {"cuotas": []}},
                             )
                     update_payment(direct_pid, estado="pagado",
-                                   fecha_pago=fecha_emision or None,
+                                   fecha_pago=fecha_pago or fecha_emision or None,
                                    num_comprobante=numero, tipo_comprobante=tipo,
                                    fecha_emision_comprobante=fecha_emision or None,
                                    empresa=empresa,
@@ -1710,7 +1712,7 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                         f"Comprobante vinculado en cuota #{direct_cuota} (ya estaba pagada)"))
                 else:
                     update_cuota(direct_pid, direct_cuota, estado="pagado",
-                                 fecha_pago=fecha_emision or None,
+                                 fecha_pago=fecha_pago or fecha_emision or None,
                                  num_comprobante=numero, tipo_comprobante=tipo,
                                  medio_pago=medio_pago or None,
                                  comprobante_id=comprobante_id)
@@ -1725,14 +1727,14 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                 if existing_pay and existing_pay.get("pagos_parciales"):
                     existing_num = existing_pay["pagos_parciales"][0].get("numero")
                     update_pago_parcial(direct_pid, existing_num, monto=monto,
-                                        fecha_pago=fecha_emision or None,
+                                        fecha_pago=fecha_pago or fecha_emision or None,
                                         num_comprobante=numero, tipo_comprobante=tipo,
                                         medio=medio_pago or None,
                                         comprobante_id=comprobante_id)
                     results.append(_res(item, "ok", f"Pago parcial #{existing_num} actualizado"))
                 else:
                     add_pago_parcial(direct_pid, monto=monto,
-                                     fecha_pago=fecha_emision or None,
+                                     fecha_pago=fecha_pago or fecha_emision or None,
                                      num_comprobante=numero, tipo_comprobante=tipo,
                                      medio=medio_pago or None,
                                      comprobante_id=comprobante_id)
@@ -3676,6 +3678,7 @@ def backfill_comprobantes_payment_ids() -> dict:
                 fecha_emision=comp.get("fecha_emision", ""),
                 empresa=comp.get("empresa", ""),
                 comprobante_id=comp_id,
+                fecha_pago=comp.get("fecha_pago", ""),
             )
             fixed_comps += 1
     return {"fixed_comprobantes": fixed_comps, "fixed_items": fixed_items}
@@ -3707,6 +3710,7 @@ def backfill_resync_comprobantes_with_payment_id() -> dict:
             empresa        = comp.get("empresa", ""),
             comprobante_id = comp_id,
             medio_pago     = medio_pago,
+            fecha_pago     = comp.get("fecha_pago", ""),
         )
         synced += 1
     return {"resynced_comprobantes": synced}

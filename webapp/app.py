@@ -1986,6 +1986,7 @@ async def comprobante_add(request: Request):
             empresa        = empresa,
             comprobante_id = comp_id,
             medio_pago     = data.get("medio_pago", ""),
+            fecha_pago     = data.get("fecha_pago", ""),
         )
         cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -2033,6 +2034,7 @@ async def comprobante_complete(comp_id: str, request: Request):
         empresa        = comp.get("empresa", ""),
         comprobante_id = comp_id,
         medio_pago     = comp.get("medio_pago", ""),
+        fecha_pago     = comp.get("fecha_pago", ""),
     )
     cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
     cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -2152,6 +2154,7 @@ async def comprobantes_import_xml(
                 empresa        = pre_match.get("empresa", empresa_nombre),
                 comprobante_id = pre_comp_id,
                 medio_pago     = pre_match.get("medio_pago", ""),
+                fecha_pago     = pre_match.get("fecha_pago", ""),
             )
             cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
             cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -2226,6 +2229,7 @@ async def comprobantes_import_xml(
             empresa        = empresa_nombre,
             comprobante_id = comp_id,
             medio_pago     = "",
+            fecha_pago     = "",
         )
         cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
         cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
@@ -2291,6 +2295,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
             empresa=empresa,
             comprobante_id=comprobante_id,
             medio_pago=fields.get("medio_pago", ""),
+            fecha_pago=fields.get("fecha_pago", ""),
         )
 
     return {"ok": True}
@@ -2327,6 +2332,7 @@ async def comprobante_sync(comprobante_id: str):
         fecha_emision = comp.get("fecha_emision", ""),
         empresa       = comp.get("empresa", ""),
         comprobante_id = comprobante_id,
+        fecha_pago    = comp.get("fecha_pago", ""),
     )
     cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
     cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok",))
