@@ -1195,6 +1195,8 @@ def get_fraccionamientos(periodo: str = "2026", alerta: str = "",
     for d in docs:
         m = member_map.get(d["member_id"], {})
         d["nombre_completo"] = f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
+        d["apellidos"]       = m.get("apellidos", "")
+        d["titulo"]          = m.get("titulo", "")
         d["email_principal"] = next(
             (e["email"] for e in m.get("emails", [])
              if e.get("principal") and e.get("estado") == "habilitado"),

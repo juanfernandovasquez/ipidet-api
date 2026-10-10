@@ -1146,6 +1146,224 @@ async def finanzas_mockup(request: Request):
 
 # ── Fraccionamientos ─────────────────────────────────────────────────────────
 
+def _tratamiento_titulo(titulo: str) -> str:
+    return {
+        "Contador":    "C.P.C.",
+        "Contadora":   "C.P.C.",
+        "Abogado":     "Dr.",
+        "Abogada":     "Dra.",
+        "Economista":  "Econ.",
+    }.get((titulo or "").strip(), "")
+
+
+def _build_recordatorio_email(frac: dict, today) -> dict:
+    """Genera asunto + HTML personalizado para recordatorio de cuotas vencidas."""
+    from datetime import datetime as _dt
+
+    titulo          = (frac.get("titulo") or "").strip()
+    apellidos       = (frac.get("apellidos") or frac.get("nombre_completo") or "Asociado(a)").split()[0]
+    periodo         = frac.get("periodo", "")
+    cuotas_vencidas = frac.get("cuotas_vencidas_lista", [])
+    cuotas_total    = frac.get("cuotas_total", 0)
+    cuotas_pagadas  = frac.get("cuotas_pagadas_count", 0)
+    total_cobrado   = frac.get("total_cobrado", 0.0)
+    monto_objetivo  = frac.get("monto_objetivo") or 0
+    empresa         = frac.get("empresa_pagadora") or ""
+    proxima         = frac.get("proxima_cuota")
+    proxima_dias    = frac.get("proxima_cuota_dias")
+    convenio_link   = frac.get("convenio_link") or ""
+
+    # Calcular días de atraso por cuota
+    detalle = []
+    max_dias = 0
+    for c in cuotas_vencidas:
+        fv_str = c.get("fecha_venc") or ""
+        dias = 0
+        if fv_str:
+            try:
+                fv = _dt.strptime(fv_str, "%Y-%m-%d").date()
+                dias = (today - fv).days
+                max_dias = max(max_dias, dias)
+            except Exception:
+                pass
+        detalle.append({"numero": c.get("numero"), "monto": c.get("monto", 0),
+                         "fecha_venc": fv_str, "dias": dias})
+
+    n = len(detalle)
+    total_vencido = sum(d["monto"] for d in detalle)
+
+    # Saludo
+    trat = _tratamiento_titulo(titulo)
+    saludo = f"Estimado(a) {trat} {apellidos}".strip() if trat else f"Estimado(a) {apellidos}"
+
+    # Tono según antigüedad del vencimiento
+    if max_dias <= 7:
+        tag     = "Recordatorio de pago"
+        intro   = "Le recordamos que tiene una cuota de su plan de fraccionamiento pendiente de pago."
+        cierre  = "Le agradecemos regularizar su pago a la brevedad posible."
+        color   = "#f59e0b"
+    elif max_dias <= 30:
+        tag     = "Aviso: cuota vencida"
+        intro   = (f"Le comunicamos que tiene {'una cuota' if n == 1 else f'{n} cuotas'} "
+                   f"de su plan de fraccionamiento con fecha de vencimiento superada.")
+        cierre  = "Le solicitamos realizar el pago a la brevedad para evitar inconvenientes con su membresía."
+        color   = "#f97316"
+    else:
+        tag     = "Urgente: cuota(s) vencida(s)"
+        intro   = (f"Le informamos que su plan de fraccionamiento presenta "
+                   f"{'una cuota' if n == 1 else f'{n} cuotas'} vencida(s) "
+                   f"con más de 30 días de atraso.")
+        cierre  = ("Le solicitamos ponerse en contacto con nosotros a la brevedad "
+                   "para regularizar su situación y mantener activa su condición de asociado(a) de IPIDET.")
+        color   = "#dc2626"
+
+    subject = f"{tag} — Fraccionamiento IPIDET {periodo}"
+
+    # Filas de cuotas vencidas
+    filas = ""
+    for d in detalle:
+        dias_txt = f"{d['dias']} días" if d["dias"] > 0 else "Vencida hoy"
+        filas += (f"<tr>"
+                  f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;'>Cuota #{d['numero']}</td>"
+                  f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;"
+                  f"font-weight:600;'>S/ {d['monto']:,.2f}</td>"
+                  f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;'>Vence: {d['fecha_venc'] or '—'}</td>"
+                  f"<td style='padding:8px 12px;border-bottom:1px solid #f1f5f9;color:{color};"
+                  f"font-weight:600;'>{dias_txt}</td>"
+                  f"</tr>")
+
+    # Fila total (solo si hay más de 1 cuota)
+    if n > 1:
+        filas += (f"<tr style='background:#f8fafc;font-weight:700;'>"
+                  f"<td style='padding:8px 12px;'>Total vencido</td>"
+                  f"<td style='padding:8px 12px;text-align:right;color:{color};'>S/ {total_vencido:,.2f}</td>"
+                  f"<td colspan='2' style='padding:8px 12px;'></td></tr>")
+
+    # Bloque empresa pagadora
+    empresa_bloque = ""
+    if empresa:
+        empresa_bloque = (f"<div style='background:#fef9c3;border:1px solid #fde047;border-radius:6px;"
+                          f"padding:12px;margin:16px 0;font-size:13px;'>"
+                          f"<strong>Nota:</strong> Su cuota está registrada como pagada por empresa "
+                          f"(<strong>{empresa}</strong>). Si el pago ya fue procesado, confirme con "
+                          f"el equipo administrativo de IPIDET para actualizar su estado.</div>")
+
+    # Progreso del plan
+    progreso = (f"<div style='background:#f8fafc;border-radius:6px;padding:12px;margin:16px 0;"
+                f"font-size:13px;color:#475569;'>"
+                f"Progreso del plan: <strong>{cuotas_pagadas} de {cuotas_total} cuotas pagadas</strong>"
+                f"{f' — S/ {total_cobrado:,.2f} cobrado de S/ {monto_objetivo:,.2f} objetivo' if monto_objetivo else f' — S/ {total_cobrado:,.2f} cobrado'}"
+                f"</div>")
+
+    # Próxima cuota (si existe y vence en ≤ 30 días)
+    proxima_bloque = ""
+    if proxima and proxima_dias is not None and 0 < proxima_dias <= 30:
+        proxima_bloque = (f"<p style='margin:16px 0 6px;font-size:13px;color:#475569;'>"
+                          f"<strong>Próxima cuota por vencer:</strong></p>"
+                          f"<p style='margin:0;font-size:13px;color:#64748b;'>"
+                          f"• Cuota #{proxima.get('numero')} — S/ {proxima.get('monto', 0):,.2f}"
+                          f" — Vence: {proxima.get('fecha_venc') or '(sin fecha)'}</p>")
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:20px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+<div style="max-width:600px;margin:0 auto;">
+  <div style="background:#7c3aed;padding:24px 32px;border-radius:12px 12px 0 0;text-align:center;">
+    <h1 style="color:white;margin:0;font-size:22px;letter-spacing:1px;">IPIDET</h1>
+    <p style="color:#e9d5ff;margin:4px 0 0;font-size:12px;">Instituto Peruano de Investigación y Desarrollo Tributario</p>
+  </div>
+  <div style="background:white;padding:32px;border:1px solid #e2e8f0;border-radius:0 0 12px 12px;">
+    <p style="font-size:15px;margin:0 0 16px;">{saludo},</p>
+    <p style="font-size:14px;color:#475569;margin:0 0 16px;">{intro}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin:16px 0;
+                  border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+      <thead>
+        <tr style="background:{color};color:white;">
+          <th style="padding:10px 12px;text-align:left;">Cuota</th>
+          <th style="padding:10px 12px;text-align:right;">Monto</th>
+          <th style="padding:10px 12px;text-align:left;">Fecha venc.</th>
+          <th style="padding:10px 12px;text-align:left;">Días vencida</th>
+        </tr>
+      </thead>
+      <tbody>{filas}</tbody>
+    </table>
+    {empresa_bloque}{progreso}{proxima_bloque}
+    <p style="font-size:14px;color:#475569;margin:16px 0;">{cierre}</p>
+    <div style="border-top:1px solid #e2e8f0;margin-top:24px;padding-top:16px;
+                font-size:12px;color:#94a3b8;text-align:center;">
+      <p style="margin:0;">Para consultas o coordinar su pago:</p>
+      <p style="margin:4px 0;"><strong>administracion@ipidet.org</strong></p>
+      <p style="margin:4px 0;">IPIDET — Período {periodo}</p>
+    </div>
+  </div>
+</div>
+</body></html>"""
+
+    return {"subject": subject, "html": html}
+
+
+@app.get("/api/fraccionamientos/recordatorios")
+async def api_recordatorios_preview(request: Request, periodo: str = "2026"):
+    from datetime import date as _d
+    today = _d.today()
+    docs, _, _ = pdb.get_fraccionamientos(periodo=periodo, alerta="vencida", page=1, per_page=9999)
+    result = []
+    for frac in docs:
+        email   = frac.get("email_principal", "")
+        empresa = frac.get("empresa_pagadora") or ""
+        email_data = _build_recordatorio_email(frac, today)
+        result.append({
+            "member_id":            frac["member_id"],
+            "nombre_completo":      frac.get("nombre_completo", ""),
+            "email":                email,
+            "email_ok":             bool(email),
+            "empresa_pagadora":     empresa,
+            "periodo":              periodo,
+            "cuotas_vencidas_count": frac.get("cuotas_vencidas_count", 0),
+            "total_vencido":        round(sum(c.get("monto", 0) for c in frac.get("cuotas_vencidas_lista", [])), 2),
+            "cuotas_total":         frac.get("cuotas_total", 0),
+            "cuotas_pagadas_count": frac.get("cuotas_pagadas_count", 0),
+            "subject":              email_data["subject"],
+            "html":                 email_data["html"],
+        })
+    return result
+
+
+@app.post("/fraccionamientos/enviar-recordatorios")
+async def enviar_recordatorios(request: Request):
+    from datetime import date as _d
+    from webapp.mailer import send_email as _send_mail
+    data     = await request.json()
+    selected = data.get("selected", [])
+    periodo  = data.get("periodo", "2026")
+    if not selected:
+        return {"ok": False, "error": "No hay socios seleccionados"}
+    today = _d.today()
+    docs, _, _ = pdb.get_fraccionamientos(periodo=periodo, alerta="vencida", page=1, per_page=9999)
+    docs_map = {d["member_id"]: d for d in docs}
+    results = []
+    for mid in selected:
+        frac = docs_map.get(mid)
+        if not frac:
+            results.append({"member_id": mid, "ok": False, "msg": "No encontrado"})
+            continue
+        email = frac.get("email_principal", "")
+        if not email:
+            results.append({"member_id": mid, "nombre": frac.get("nombre_completo", ""),
+                            "ok": False, "msg": "Sin email habilitado"})
+            continue
+        ed = _build_recordatorio_email(frac, today)
+        try:
+            await _send_mail(to=email, subject=ed["subject"], html_body=ed["html"])
+            results.append({"member_id": mid, "nombre": frac.get("nombre_completo", ""),
+                            "email": email, "ok": True})
+        except Exception as exc:
+            results.append({"member_id": mid, "nombre": frac.get("nombre_completo", ""),
+                            "email": email, "ok": False, "msg": str(exc)})
+    return {"ok": True, "enviados": sum(1 for r in results if r["ok"]),
+            "total": len(results), "results": results}
+
+
 @app.get("/fraccionamientos", response_class=HTMLResponse)
 async def fraccionamientos(
     request: Request,
