@@ -96,7 +96,11 @@ def _send_api(to: str | list[str], subject: str, html_body: str,
         headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"},
         method="POST",
     )
-    urllib.request.urlopen(req, timeout=30)
+    try:
+        urllib.request.urlopen(req, timeout=30)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Brevo {exc.code}: {body}") from exc
 
 
 async def send_email(
