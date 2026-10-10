@@ -1367,20 +1367,22 @@ async def enviar_recordatorios(request: Request):
 @app.get("/fraccionamientos", response_class=HTMLResponse)
 async def fraccionamientos(
     request: Request,
-    periodo: str = "2026",
+    periodo: str = "",
     alerta: str = "",
     search: str = "",
     page: int = 1,
 ):
     from datetime import date as _date_cls
-    docs, total, stats = pdb.get_fraccionamientos(periodo, alerta, search, page)
+    miembros, total, stats = pdb.get_fraccionamientos_agrupados(
+        search=search, alerta=alerta, periodo=periodo, page=page, per_page=50
+    )
     productos_raw = pdb.get_productos(solo_activos=True)
     productos_list = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio")}
         for p in productos_raw
     ]
     return templates.TemplateResponse(request, "fraccionamientos.html", _ctx(request,
-        fraccionamientos=docs, total=total, stats=stats,
+        miembros=miembros, total=total, stats=stats,
         periodo=periodo, alerta=alerta, search=search,
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),

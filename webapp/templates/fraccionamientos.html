@@ -49,6 +49,7 @@
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
         <select name="periodo" class="input" @change="$refs.filterForm.submit()">
+          <option value="" {% if not periodo %}selected{% endif %}>Todos</option>
           {% for yr in ["2027","2026","2025","2024"] %}
           <option value="{{ yr }}" {% if periodo == yr %}selected{% endif %}>{{ yr }}</option>
           {% endfor %}
@@ -66,7 +67,7 @@
         </select>
       </div>
       <button type="submit" class="sr-only">Filtrar</button>
-      {% if search or alerta or periodo != "2026" %}
+      {% if search or alerta or periodo %}
       <a href="/fraccionamientos" class="btn-ghost">Limpiar</a>
       {% endif %}
       <div class="ml-auto">
@@ -82,13 +83,12 @@
     </form>
   </div>
 
-  <!-- Table -->
+  <!-- Table: miembros como filas principales, períodos como sub-filas -->
   <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
     <table class="w-full text-sm">
       <thead>
         <tr class="bg-slate-50 border-b border-slate-200 text-left">
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Socio</th>
-          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Período</th>
+          <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Socio / Período</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Empresa</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Progreso</th>
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Cobrado</th>
@@ -97,48 +97,76 @@
           <th class="px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider">Alerta</th>
         </tr>
       </thead>
+
+      {% for m in miembros %}
       <tbody>
-      {% for f in fraccionamientos %}
-      {% set pct = ((f.cuotas_pagadas_count / f.cuotas_total * 100) | int) if f.cuotas_total > 0 else 0 %}
+        <!-- Fila cabecera de socio -->
+        <tr class="bg-slate-50 border-t-2 border-slate-300 select-none">
+          <td colspan="7" class="px-4 py-2.5">
+            <div class="flex items-center gap-2.5 flex-wrap">
+              {% if m.worst_alerta == 'vencida' %}
+                <span class="w-2 h-2 rounded-full bg-red-500 shrink-0"></span>
+              {% elif m.worst_alerta in ('proxima_7d', 'proxima_30d') %}
+                <span class="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+              {% else %}
+                <span class="w-2 h-2 rounded-full bg-slate-300 shrink-0"></span>
+              {% endif %}
+              <a href="/members/{{ m.member_id }}"
+                 class="font-semibold text-slate-800 text-sm hover:text-blue-600 transition-colors"
+                 onclick="event.stopPropagation()">{{ m.nombre_completo }}</a>
+              <span class="text-xs font-mono text-slate-400">{{ m.member_id }}</span>
+              {% if m.email_principal %}
+              <span class="text-xs text-slate-400 truncate max-w-[200px]">{{ m.email_principal }}</span>
+              {% endif %}
+              {% if m.periodos_count > 1 %}
+              <span class="text-[10px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full shrink-0">{{ m.periodos_count }} períodos</span>
+              {% endif %}
+              {% if m.cuotas_vencidas > 0 %}
+              <span class="text-[10px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full shrink-0">
+                <i class="fa-solid fa-triangle-exclamation text-[9px]"></i> {{ m.cuotas_vencidas }} vencida{% if m.cuotas_vencidas > 1 %}s{% endif %}
+              </span>
+              {% endif %}
+              <div class="ml-auto text-xs flex items-center gap-1.5">
+                <span class="font-semibold text-green-700">S/ {{ m.total_cobrado | int }}</span>
+                <span class="text-slate-300">·</span>
+                <span class="font-semibold text-blue-700">S/ {{ m.total_pendiente | int }} pendiente</span>
+              </div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Sub-filas: una por período fraccionado -->
+        {% for f in m.fraccionamientos %}
+        {% set pct = ((f.cuotas_pagadas_count / f.cuotas_total * 100) | int) if f.cuotas_total > 0 else 0 %}
         <tr class="border-b border-slate-100 cursor-pointer transition-colors select-none
-                   {% if f.alerta == 'vencida' %}bg-red-50 hover:bg-red-100{% else %}hover:bg-violet-50{% endif %}"
+                   {% if f.alerta == 'vencida' %}bg-red-50/60 hover:bg-red-100{% else %}hover:bg-violet-50{% endif %}"
             onclick="document.getElementById('frac-modal-{{ f._id }}').classList.remove('hidden')">
 
-          <td class="px-4 py-3">
-            <div class="font-medium text-slate-800 text-xs">{{ f.get('nombre_completo','') }}</div>
-            <div class="text-slate-400 text-xs font-mono">{{ f.get('member_id','') }}</div>
-            {% if f.get('email_principal') %}
-            <div class="text-slate-400 text-xs truncate max-w-[180px]">{{ f.email_principal }}</div>
-            {% endif %}
-          </td>
-
-          <td class="px-4 py-3">
+          <td class="px-4 py-2.5 pl-8">
             <span class="inline-flex items-center gap-1 text-xs font-bold text-violet-700 bg-violet-100 px-2 py-1 rounded-full">
               <i class="fa-solid fa-calendar text-[9px]"></i> {{ f.periodo }}
             </span>
           </td>
 
-          <td class="px-4 py-3 text-slate-500 text-xs">{{ f.get('empresa_pagadora') or '—' }}</td>
+          <td class="px-4 py-2.5 text-slate-500 text-xs">{{ f.get('empresa_pagadora') or '—' }}</td>
 
-          <td class="px-4 py-3">
+          <td class="px-4 py-2.5">
             <div class="flex items-center gap-2">
               <span class="text-xs font-medium text-slate-700">{{ f.cuotas_pagadas_count }}/{{ f.cuotas_total }}</span>
-              <div class="w-20 bg-slate-200 rounded-full h-1.5">
+              <div class="w-16 bg-slate-200 rounded-full h-1.5">
                 <div class="h-1.5 rounded-full {% if pct == 100 %}bg-green-500{% elif f.cuotas_vencidas_count > 0 %}bg-red-500{% else %}bg-violet-500{% endif %}"
                      style="width: {{ pct }}%"></div>
               </div>
             </div>
             {% if f.cuotas_vencidas_count > 0 %}
-            <div class="text-xs text-red-600 font-medium mt-0.5">
-              {{ f.cuotas_vencidas_count }} vencida{% if f.cuotas_vencidas_count > 1 %}s{% endif %}
-            </div>
+            <div class="text-[11px] text-red-600 font-medium mt-0.5">{{ f.cuotas_vencidas_count }} vencida{% if f.cuotas_vencidas_count > 1 %}s{% endif %}</div>
             {% endif %}
           </td>
 
-          <td class="px-4 py-3 text-green-700 font-semibold text-xs">S/ {{ f.total_cobrado | int }}</td>
-          <td class="px-4 py-3 text-blue-700 font-semibold text-xs">S/ {{ f.total_pendiente | int }}</td>
+          <td class="px-4 py-2.5 text-green-700 font-semibold text-xs">S/ {{ f.total_cobrado | int }}</td>
+          <td class="px-4 py-2.5 text-blue-700 font-semibold text-xs">S/ {{ f.total_pendiente | int }}</td>
 
-          <td class="px-4 py-3 text-xs">
+          <td class="px-4 py-2.5 text-xs">
             {% if f.get('proxima_cuota') %}
               <div class="font-medium text-slate-700">S/ {{ f.proxima_cuota.monto }}</div>
               {% if f.get('proxima_cuota_fecha_iso') %}
@@ -164,7 +192,7 @@
             {% endif %}
           </td>
 
-          <td class="px-4 py-3">
+          <td class="px-4 py-2.5">
             {% if f.alerta == 'vencida' %}
               <span class="badge badge-red">🔴 Vencida</span>
             {% elif f.alerta == 'proxima_7d' %}
@@ -178,20 +206,23 @@
             {% endif %}
           </td>
         </tr>
+        {% endfor %}
+      </tbody>
       {% else %}
+      <tbody>
         <tr>
-          <td colspan="8" class="px-4 py-12 text-center text-slate-400">
+          <td colspan="7" class="px-4 py-12 text-center text-slate-400">
             <i class="fa-solid fa-calendar-days text-2xl mb-2 block text-slate-300"></i>
             No hay fraccionamientos activos con estos filtros.
           </td>
         </tr>
-      {% endfor %}
       </tbody>
+      {% endfor %}
     </table>
 
     {% if total_pages > 1 %}
     <div class="border-t border-slate-200 px-4 py-3 flex items-center justify-between bg-slate-50">
-      <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }}</span>
+      <span class="text-xs text-slate-500">Página {{ page }} de {{ total_pages }} ({{ total }} socios)</span>
       <div class="flex gap-2">
         {% if page > 1 %}
         <a href="?periodo={{ periodo }}&alerta={{ alerta }}&search={{ search }}&page={{ page - 1 }}" class="btn-ghost text-xs py-1">← Anterior</a>
@@ -208,10 +239,11 @@
 
 
 <!-- ══════════════════════════════════════════════════════════════
-     Modales por fraccionamiento (uno por fila)
+     Modales por fraccionamiento (uno por período por socio)
      ══════════════════════════════════════════════════════════════ -->
-{% for f in fraccionamientos %}
-{% set rf = "/fraccionamientos?search=" ~ f.member_id ~ "&periodo=" ~ f.periodo ~ "&alerta=" ~ alerta ~ "&page=" ~ page %}
+{% for m in miembros %}
+{% for f in m.fraccionamientos %}
+{% set rf = "/fraccionamientos?search=" ~ f.member_id ~ "&alerta=" ~ alerta %}
 {% set pct2 = ((f.cuotas_pagadas_count / f.cuotas_total * 100) | int) if f.cuotas_total > 0 else 0 %}
 
 <div id="frac-modal-{{ f._id }}"
@@ -788,6 +820,7 @@
   </div>
 </div>
 {% endfor %}
+{% endfor %}
 
 
 <!-- ── Modal: Nuevo fraccionamiento ──────────────────────────────────────── -->
@@ -982,7 +1015,7 @@ document.addEventListener('keydown', function(e) {
 function nuevoFraccModal() {
   return {
     sSearch: '', sResults: [], socio: null, sTimer: null,
-    periodo: '{{ periodo }}', empresa: '',
+    periodo: '{{ periodo or "2026" }}', empresa: '',
     numCuotas: 3, montoCuota: '', fechaPrimera: '', frecuencia: '1',
 
     get canCrear() {

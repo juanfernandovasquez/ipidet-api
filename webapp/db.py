@@ -1285,6 +1285,151 @@ def get_fraccionamientos(periodo: str = "2026", alerta: str = "",
     return [_clean(d) for d in docs_sorted[skip:skip + per_page]], total, stats
 
 
+def _enrich_fracc_doc(d: dict, m: dict, today) -> dict:
+    """Enriquece un doc de payments (fraccionamiento) con campos calculados."""
+    d["nombre_completo"] = f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
+    d["apellidos"]       = m.get("apellidos", "")
+    d["titulo"]          = m.get("titulo", "")
+    d["email_principal"] = next(
+        (e["email"] for e in m.get("emails", [])
+         if e.get("principal") and e.get("estado") == "habilitado"),
+        next((e["email"] for e in m.get("emails", [])
+              if e.get("estado") == "habilitado"), "")
+    )
+    cuotas     = d.get("cuotas", [])
+    pagadas    = [c for c in cuotas if c.get("estado") == "pagado"]
+    pendientes = [c for c in cuotas if c.get("estado") != "pagado"]
+
+    d["cuotas_total"]         = len(cuotas)
+    d["cuotas_pagadas_count"] = len(pagadas)
+    d["total_cobrado"]        = round(sum(c.get("monto", 0) for c in pagadas), 2)
+    d["total_pendiente"]      = round(sum(c.get("monto", 0) for c in pendientes), 2)
+    d["suma_cuotas"]          = round(sum(c.get("monto", 0) for c in cuotas), 2)
+    monto_obj = d.get("monto_objetivo") or 0
+    d["monto_objetivo"]       = monto_obj
+    d["gap_cuotas"]           = round(max(0.0, monto_obj - d["suma_cuotas"]), 2) if monto_obj else None
+    todas_pagadas = len(cuotas) > 0 and len(pendientes) == 0
+    monto_ok = (not monto_obj) or (d["gap_cuotas"] is not None and d["gap_cuotas"] <= 0.01)
+    d["cuotas_completo"]      = todas_pagadas and monto_ok
+
+    vencidas, proximas, sin_fecha = [], [], []
+    for c in pendientes:
+        fv = _parse_fecha_cuota(c.get("fecha_venc"))
+        if fv is None:
+            sin_fecha.append(c)
+        elif fv < today:
+            vencidas.append((fv, c))
+        else:
+            proximas.append((fv, c))
+
+    proximas.sort(key=lambda x: x[0])
+    vencidas.sort(key=lambda x: x[0])
+
+    d["cuotas_vencidas_count"] = len(vencidas)
+    d["cuotas_vencidas_lista"] = [c for _, c in vencidas]
+
+    if proximas:
+        d["proxima_cuota"]           = proximas[0][1]
+        d["proxima_cuota_fecha_iso"] = proximas[0][0].isoformat()
+        d["proxima_cuota_dias"]      = (proximas[0][0] - today).days
+    elif sin_fecha and pendientes:
+        d["proxima_cuota"]           = sin_fecha[0]
+        d["proxima_cuota_fecha_iso"] = None
+        d["proxima_cuota_dias"]      = None
+    else:
+        d["proxima_cuota"]           = None
+        d["proxima_cuota_fecha_iso"] = None
+        d["proxima_cuota_dias"]      = None
+
+    if vencidas:
+        d["alerta"] = "vencida"
+    elif proximas and proximas[0][0] <= today + _timedelta(days=7):
+        d["alerta"] = "proxima_7d"
+    elif proximas and proximas[0][0] <= today + _timedelta(days=30):
+        d["alerta"] = "proxima_30d"
+    elif pendientes and not proximas and not vencidas:
+        d["alerta"] = "sin_fechas"
+    else:
+        d["alerta"] = "al_dia"
+    return d
+
+
+_ALERTA_ORDER = {"vencida": 0, "proxima_7d": 1, "proxima_30d": 2, "sin_fechas": 3, "al_dia": 4}
+
+
+def get_fraccionamientos_agrupados(search: str = "", alerta: str = "",
+                                    periodo: str = "", page: int = 1,
+                                    per_page: int = 50):
+    """Devuelve fraccionamientos agrupados por socio, paginando por socio."""
+    query: dict = {"estado": "fraccionamiento"}
+    if periodo:
+        query["periodo"] = periodo
+    if search:
+        rx = {"$regex": _re.escape(search), "$options": "i"}
+        ids = {m["member_id"] for m in members_col.find(
+            {"$or": [{"apellidos": rx}, {"nombres": rx}, {"member_id": rx},
+                     {"emails.email": rx}]}, {"member_id": 1}
+        )}
+        if not ids:
+            return [], 0, {"total": 0, "cuotas_vencidas": 0,
+                           "total_cobrado": 0.0, "total_pendiente": 0.0}
+        query["member_id"] = {"$in": list(ids)}
+
+    docs = list(payments_col.find(query))
+    member_ids = list({d["member_id"] for d in docs})
+    member_map = {m["member_id"]: m for m in
+                  members_col.find({"member_id": {"$in": member_ids}})}
+
+    today = _date.today()
+    enriched = [_enrich_fracc_doc(d, member_map.get(d["member_id"], {}), today)
+                for d in docs]
+
+    if alerta:
+        enriched = [d for d in enriched if d.get("alerta") == alerta]
+
+    groups: dict[str, list] = {}
+    for d in enriched:
+        groups.setdefault(d["member_id"], []).append(d)
+
+    miembros = []
+    for mid, fracs in groups.items():
+        fracs_sorted = sorted(fracs, key=lambda x: x.get("periodo", ""), reverse=True)
+        worst_alerta = min(
+            (f.get("alerta", "al_dia") for f in fracs_sorted),
+            key=lambda a: _ALERTA_ORDER.get(a, 4),
+            default="al_dia",
+        )
+        miembros.append({
+            "member_id":       mid,
+            "nombre_completo": fracs_sorted[0].get("nombre_completo", ""),
+            "apellidos":       fracs_sorted[0].get("apellidos", ""),
+            "titulo":          fracs_sorted[0].get("titulo", ""),
+            "email_principal": fracs_sorted[0].get("email_principal", ""),
+            "fraccionamientos": [_clean(f) for f in fracs_sorted],
+            "worst_alerta":    worst_alerta,
+            "total_pendiente": round(sum(f.get("total_pendiente", 0) for f in fracs_sorted), 2),
+            "total_cobrado":   round(sum(f.get("total_cobrado", 0) for f in fracs_sorted), 2),
+            "cuotas_vencidas": sum(f.get("cuotas_vencidas_count", 0) for f in fracs_sorted),
+            "periodos_count":  len(fracs_sorted),
+        })
+
+    miembros.sort(key=lambda m: (
+        _ALERTA_ORDER.get(m["worst_alerta"], 4),
+        m.get("apellidos", ""),
+    ))
+
+    stats = {
+        "total":           len(miembros),
+        "cuotas_vencidas": sum(m["cuotas_vencidas"] for m in miembros),
+        "total_cobrado":   round(sum(m["total_cobrado"] for m in miembros), 2),
+        "total_pendiente": round(sum(m["total_pendiente"] for m in miembros), 2),
+    }
+
+    total = len(miembros)
+    skip = (page - 1) * per_page
+    return miembros[skip:skip + per_page], total, stats
+
+
 # ── FAQs ──────────────────────────────────────────────────────────────────────
 
 def get_faqs(search: str = "", category: str = "") -> list:
