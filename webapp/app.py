@@ -1965,6 +1965,7 @@ async def comprobante_add(request: Request):
         ruc                  = data.get("empresa_ruc", ""),
         estado               = estado,
         medio_pago           = data.get("medio_pago", ""),
+        fecha_pago           = data.get("fecha_pago", ""),
         destinatario_id      = data.get("destinatario_id", ""),
         destinatario_nombre  = data.get("destinatario_nombre", ""),
         destinatario_dni     = data.get("destinatario_dni", ""),
@@ -2262,6 +2263,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
         "concepto":          data.get("concepto", ""),
         "monto_total":       _safe_float(data.get("monto_total"), 0),
         "medio_pago":        data.get("medio_pago", ""),
+        "fecha_pago":        data.get("fecha_pago", ""),
         "fecha_vencimiento": fecha_vencimiento,
         "items":             items,
     }

@@ -3252,7 +3252,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
                         medio_pago: str = "",
                         xml_raw: str = "",
                         fecha_vencimiento: str = "",
-                        estado_credito: str = "") -> str:
+                        estado_credito: str = "",
+                        fecha_pago: str = "") -> str:
     # Derive socios from items if provided
     if items:
         seen = set()
@@ -3287,6 +3288,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "items":                items or [],
         "estado":               estado,
         "medio_pago":           medio_pago.strip() if medio_pago else "",
+        "fecha_pago":           fecha_pago.strip() if fecha_pago else "",
         "xml_raw":              xml_raw or "",
         "fecha_vencimiento":    fecha_vencimiento.strip() if fecha_vencimiento else "",
         "estado_credito":       estado_credito or ("pendiente" if fecha_vencimiento else ""),
@@ -3302,7 +3304,7 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
-               "socios", "items", "estado", "medio_pago", "xml_raw", "fecha_vencimiento",
+               "socios", "items", "estado", "medio_pago", "fecha_pago", "xml_raw", "fecha_vencimiento",
                "estado_credito", "fecha_cobro",
                "sunat_estado", "sunat_xml", "sunat_hash", "sunat_cdr_code",
                "sunat_cdr_desc", "sunat_accepted", "sunat_error", "sunat_emitido_at"}

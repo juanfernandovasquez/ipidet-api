@@ -137,7 +137,7 @@
 
       {# ── Fila COMPROBANTE (boleta / factura / recibo) ─────────────────────── #}
       {% if c._tipo_doc == 'comprobante' %}
-      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "fecha_vencimiento": c.fecha_vencimiento or "", "estado_credito": c.estado_credito or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
+      {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_pago": c.fecha_pago or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "fecha_vencimiento": c.fecha_vencimiento or "", "estado_credito": c.estado_credito or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
       <tbody x-data="{
         sincronizando: false,
         cobrando: false,
@@ -395,7 +395,7 @@
          editId: null,
          guardando: false,
          form: {
-           numero: '', tipo: 'boleta', fecha_emision: '', fecha_carga: '',
+           numero: '', tipo: 'boleta', fecha_emision: '', fecha_pago: '', fecha_carga: '',
            empresa: '', concepto: '',
            modalidad: 'contado', fecha_vencimiento: '', periodo: '',
            medio_pago: '',
@@ -466,7 +466,7 @@
          },
          resetForm() {
            this.editId = null;
-           this.form = { numero: '', tipo: 'boleta', fecha_emision: '', fecha_carga: new Date().toISOString().slice(0,10),
+           this.form = { numero: '', tipo: 'boleta', fecha_emision: '', fecha_pago: '', fecha_carga: new Date().toISOString().slice(0,10),
                          empresa: '', concepto: '', modalidad: 'contado', fecha_vencimiento: '', periodo: '', medio_pago: '' };
            this.items = [];
            this.empFormSugg = [];
@@ -478,6 +478,7 @@
            this.form.numero          = comp.numero || '';
            this.form.tipo            = comp.tipo || 'boleta';
            this.form.fecha_emision   = comp.fecha_emision || '';
+           this.form.fecha_pago      = comp.fecha_pago || '';
            this.form.empresa         = comp.empresa || '';
            this.form.fecha_carga     = comp.fecha_carga || new Date().toISOString().slice(0,10);
            this.empFormSugg = [];
@@ -590,7 +591,7 @@
               </button>
             </div>
           </div>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">N° Comprobante</label>
               <input type="text" x-model="form.numero" placeholder="B001-00001" class="input w-full text-sm">
@@ -598,6 +599,12 @@
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Fecha emisión <span class="text-red-500">*</span></label>
               <input type="date" x-model="form.fecha_emision" class="input w-full text-sm">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de pago</label>
+              <input type="date" x-model="form.fecha_pago" class="input w-full text-sm">
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de carga</label>
