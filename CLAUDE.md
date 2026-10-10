@@ -88,6 +88,30 @@ Comportamiento real de cada función (verificado en código):
 | `_sync_estado_from_cuotas` | Si hay cuotas → fuerza `"fraccionamiento"`. **Nunca cambia a `"pagado"`** — ese cambio es manual. |
 | `_sync_estado_from_parciales` | Sin parciales → `"debe"`; monto_pagado ≥ monto_total → `"pagado"`; parcial → `"parcial"`. |
 
+**Patrón en `portal_db.py` (cross-module, sin acceso a las funciones privadas de `webapp/db.py`):**
+
+`portal_db.py` escribe directamente en MongoDB sin poder llamar a `_sync_estado_from_cuotas()`. La solución correcta es hacer el sync condicionalmente en dos operaciones separadas:
+
+```python
+# 1. Primero push la cuota
+payments_col.update_one(
+    {"member_id": member_id, "periodo": periodo},
+    {"$push": {"cuotas": nueva_cuota}},
+)
+# 2. Luego sincronizar estado — solo si aún no es "fraccionamiento"
+pay_doc = payments_col.find_one(
+    {"member_id": member_id, "periodo": periodo},
+    {"_id": 1, "estado": 1, "cuotas": 1},
+)
+if pay_doc and pay_doc.get("cuotas") and pay_doc.get("estado") != "fraccionamiento":
+    payments_col.update_one(
+        {"_id": pay_doc["_id"]},
+        {"$set": {"estado": "fraccionamiento"}},
+    )
+```
+
+Nunca combinar `$push` y `$set: {estado: ...}` en una sola operación atómica — eso viola R3 porque fuerza el estado sin verificar las cuotas existentes.
+
 ### R4 — _id de MongoDB en templates
 
 `_id` es un `ObjectId` de PyMongo, no un string. En templates Jinja2 usar siempre el filtro `| string` o pasar por `_clean()`:
@@ -470,7 +494,8 @@ Comprobantes de pago emitidos por IPIDET (boletas/facturas) — documentos tribu
 ```
 numero           string    "B001-000123" — número del comprobante
 tipo             string    "boleta" | "factura" | "recibo"
-fecha_emision    string    "YYYY-MM-DD"
+fecha_emision    string    "YYYY-MM-DD" — fecha del documento tributario
+fecha_pago       string    "YYYY-MM-DD" — fecha en que se recibió el pago (puede diferir de fecha_emision)
 fecha_carga      string    "YYYY-MM-DD" — fecha en que se registró en la plataforma
 monto_total      float
 producto_nombre  string    nombre del producto/servicio facturado (denormalizado)
@@ -497,8 +522,9 @@ created_at          datetime
 ```
 
 **Comportamiento de sync (`sync_comprobante_to_payments`):**
-- **Fast path**: si `items[].payment_id` + `items[].tipo_pago` están presentes → FK directa, O(1).
-- **Slow path** (legacy): si faltan → inferencia por `codigo_sunat` / `producto_nombre` → producto → período → payment.
+- **Fast path**: si `items[].payment_id` + `items[].tipo_pago` están presentes → FK directa, O(1). Único camino correcto para documentos nuevos.
+- **Slow path** (legacy para `migrate_fks.py`): si faltan → inferencia por `codigo_sunat` / `producto_nombre` → producto → período → payment.
+- Propaga `fecha_pago` del comprobante al campo `fecha_pago` del payment vinculado. Si `fecha_pago` está vacío, usa `fecha_emision` como fallback.
 - Se llama automáticamente al crear (`/comprobantes/add`, `/comprobantes/import-xml`) y al editar (`/comprobantes/{id}/update`).
 - **No hay botón "Sincronizar" en la UI** — el sync es siempre automático.
 
@@ -694,7 +720,7 @@ WC_CONSUMER_SECRET          — Consumer secret de WooCommerce
 | `members.html` | `/members` | Padrón paginado con filtros |
 | `member.html` | `/members/{id}` | Detalle de socio: emails, comentarios, pagos |
 | `billing.html` | `/billing` | Cobranzas: tabla, edición inline, cuotas, parciales |
-| `fraccionamientos.html` | `/fraccionamientos` | Vista de todos los fraccionamientos activos |
+| `fraccionamientos.html` | `/fraccionamientos` | Fraccionamientos agrupados por socio; períodos como sub-filas; modal de cuotas por período |
 | `comprobantes.html` | `/comprobantes` | Comprobantes emitidos (boletas/facturas) |
 | `credito.html` | `/billing/credito` | Facturas empresa en crédito |
 | `ingresos.html` | `/billing/ingresos` | Dashboard de ingresos por período/fecha |
@@ -762,10 +788,12 @@ Templates no productivos (mockup): `finanzas_mockup.html`.
 | `POST` | `/billing/facturacion/empresa/guardar` | Emite comprobante batch para una empresa |
 | `GET` | `/api/facturacion/pendientes` | JSON con pagos pendientes de comprobante |
 | `GET` | `/api/facturacion/socio-info` | JSON con info del socio para modal de facturación |
-| `GET` | `/fraccionamientos` | Vista de fraccionamientos activos; filtros: periodo, alerta, search |
+| `GET` | `/fraccionamientos` | Vista agrupada por socio; filtros: search, alerta, periodo (opcional — default = todos) |
 | `POST` | `/fraccionamientos/nuevo` | Crea fraccionamiento + cuotas en batch desde el wizard del modal |
 | `POST` | `/fraccionamientos/{id}/cuotas/generar` | Genera calendario de cuotas automático para un fraccionamiento existente |
 | `POST` | `/fraccionamientos/{id}/cuotas/{n}/emitir-comprobante` | Crea comprobante formal + marca cuota como pagada (atómico) |
+| `GET` | `/api/fraccionamientos/recordatorios` | JSON con preview de recordatorios para socios con cuotas vencidas; param: periodo |
+| `POST` | `/fraccionamientos/enviar-recordatorios` | Envía recordatorios vía Brevo; body: `{selected: [member_ids], periodo}` |
 
 #### Comprobantes
 
@@ -901,9 +929,20 @@ Templates no productivos (mockup): `finanzas_mockup.html`.
 | `POST` | `/api/email/test` | Test de envío de email |
 
 **Productos WooCommerce mapeados** (en `webapp/portal_db.py::WC_PRODUCT_MAP`):
-- `8882` → pago ordinario completo (cuota anual Lima)
-- `19105` → cuota anual provincia
-- `8880` → fraccionamiento (registra una cuota)
+
+| wc_product_id | action | periodo | ubicacion | descripción |
+|--------------|--------|---------|-----------|-------------|
+| `8882` | `pagar` | dinámico | lima | Pago Ordinario (genérico) |
+| `19105` | `pagar` | dinámico | provincia | Cuota anual provincia (genérico) |
+| `8880` | `fraccionamiento` | dinámico | — | Fraccionamiento 3 cuotas (genérico) |
+| `19364` | `pagar` | 2025 | lima | Pago 2025 |
+| `19361` | `pagar` | 2026 | lima | Pago 2026 |
+| `19363` | `pagar` | 2027 | lima | Pago 2027 |
+| `19359` | `pagar` | 2025 | provincia | Cuota Filial 2025 |
+| `19360` | `pagar` | 2026 | provincia | Cuota Filial 2026 |
+| `19362` | `pagar` | 2027 | provincia | Cuota Filial 2027 |
+
+Los productos con `periodo` fijo lo usan directamente. Los genéricos (periodo `None`) buscan el año pendiente más antiguo del socio en `PERIODOS_ACTIVOS = ["2025", "2026", "2027"]`.
 
 ---
 
@@ -1001,19 +1040,22 @@ mark_payment_empresa(payment_id: str, empresa: str, num_comprobante: str,
 get_comprobantes(search="", tipo="", empresa="", fecha="", page=1) → (docs[], total)
 create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: float,
                    producto_nombre: str, concepto: str, empresa: str,
-                   socios: list, items: list = None, ruc: str = "") → str
+                   socios: list, items: list = None, ruc: str = "",
+                   fecha_pago: str = "") → str
   # items[]: [{member_id, producto_nombre, monto, payment_id, tipo_pago, cuota_numero}]
   # auto-resuelve empresa_id desde companies; llama sync_comprobante_to_payments() si items
 update_comprobante(comprobante_id: str, fields: dict)
-  # fields permitidos: numero, tipo, fecha_emision, monto_total,
+  # fields permitidos: numero, tipo, fecha_emision, fecha_pago, monto_total,
   #   producto_nombre, concepto, empresa, empresa_id, socios, estado
   # auto-resuelve empresa_id si se pasa "empresa"
   # llama sync_comprobante_to_payments() automáticamente si hay items
 sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                               fecha_emision: str, empresa: str = "",
-                              comprobante_id: str = None) → list[dict]
+                              comprobante_id: str = None,
+                              fecha_pago: str = "") → list[dict]
   # Fast path: item.payment_id + item.tipo_pago → FK directa, O(1)
-  # Slow path: inferencia por codigo_sunat/producto_nombre → producto → período → payment
+  # Propaga fecha_pago al payment; si vacío usa fecha_emision como fallback
+  # Slow path (solo migrate_fks.py): inferencia por codigo_sunat/producto_nombre
   # Llamada automáticamente por create_comprobante y update_comprobante
 delete_comprobante(comprobante_id: str)  # soft delete: estado="anulado"
 get_comprobante_stats() → dict
@@ -1042,7 +1084,28 @@ sync_credito_to_cobranzas(factura_id: str)  # sincroniza estado en payments
 ### Vista fraccionamientos
 
 ```python
-get_fraccionamientos(periodo="", alerta="", search="", page=1) → (docs[], total)
+# Vista plana (usada internamente por los endpoints de recordatorios)
+get_fraccionamientos(periodo="", alerta="", search="", page=1) → (docs[], total, stats)
+
+# Vista agrupada por socio (usada por GET /fraccionamientos)
+get_fraccionamientos_agrupados(search="", alerta="", periodo="",
+                                page=1, per_page=50) → (miembros[], total, stats)
+  # miembros[]: [{
+  #   member_id, nombre_completo, apellidos, titulo, email_principal,
+  #   fraccionamientos: [payment_doc enriquecido],   ← ordenados por periodo desc
+  #   worst_alerta, total_pendiente, total_cobrado, cuotas_vencidas, periodos_count
+  # }]
+  # Ordenados: worst_alerta primero (_ALERTA_ORDER), luego apellidos
+  # Paginación por socio (no por fraccionamiento)
+
+# Helper privado — enriquece un doc de payments con campos calculados
+_enrich_fracc_doc(d: dict, m: dict, today) → dict
+  # Agrega: nombre_completo, email_principal, cuotas_total, cuotas_pagadas_count,
+  #         total_cobrado, total_pendiente, cuotas_vencidas_count,
+  #         proxima_cuota, proxima_cuota_fecha_iso, proxima_cuota_dias, alerta
+
+# Constante de orden de alertas (menor = más urgente)
+_ALERTA_ORDER = {"vencida": 0, "proxima_7d": 1, "proxima_30d": 2, "sin_fechas": 3, "al_dia": 4}
 ```
 
 ### Ingresos
@@ -1204,7 +1267,7 @@ Normalización que aplica:
 
 ## 16. Decisiones de diseño relevantes {#diseno}
 
-- **Múltiples `<tbody>` por tabla:** En `billing.html` cada pago usa su propio `<tbody x-data='billingRow(...)'>` para compartir estado Alpine.js entre el `<tr>` de datos y el `<tr>` de edición. → ver R2.
+- **Múltiples `<tbody>` por tabla:** En `billing.html` cada pago usa su propio `<tbody x-data='billingRow(...)'>` para compartir estado Alpine.js entre el `<tr>` de datos y el `<tr>` de edición. En `fraccionamientos.html` cada socio usa su propio `<tbody>` que agrupa sus filas de período. Múltiples `<tbody>` por tabla es HTML5 válido. → ver R2.
 - **`_sync_estado_from_cuotas` nunca cambia a `"pagado"`:** Ese cambio es siempre manual. → ver sección 7.2 para la máquina de estados completa.
 - **Soft delete en FAQs:** `active: false` desactiva sin borrar, para mantener historial de aprendizaje del agente.
 - **Soft delete en comprobantes:** `estado: "anulado"` en lugar de borrar físicamente.
@@ -1220,3 +1283,6 @@ Normalización que aplica:
 - **`certifi` en Atlas:** → ver R6.
 - **Paginación por defecto:** `per_page=50` en `get_members`; `page_size=50` implícito en la mayoría de endpoints paginados. El parámetro se llama `page` (1-indexed).
 - **`MEDIOS_PAGO` y `BANCOS`:** Listas canónicas definidas en `webapp/db.py` al inicio del archivo. Usarlas en cualquier formulario o validación.
+- **`fecha_pago` vs `fecha_emision` en comprobantes:** Son tres fechas distintas — `fecha_emision` (fecha del documento tributario), `fecha_pago` (fecha en que se recibió el dinero, puede ser anterior o posterior), `fecha_carga` (fecha de registro en la plataforma). El sync a `payments` usa `fecha_pago or fecha_emision` para rellenar la fecha del pago en cobranzas.
+- **Vista de fraccionamientos agrupada por socio:** `fraccionamientos.html` usa `miembros` (no `fraccionamientos`) como variable principal. Cada socio aparece como cabecera `<tr>` de color gris que agrupa sus períodos fraccionados como sub-filas indentadas. El filtro de período es opcional (default vacío = todos). Los modales de cuotas se generan en un loop anidado `{% for m in miembros %}{% for f in m.fraccionamientos %}`. → Ver `get_fraccionamientos_agrupados()` y `_enrich_fracc_doc()`.
+- **Recordatorios de fraccionamientos:** El email de recordatorio se genera server-side en `_build_recordatorio_email()` (en `app.py`). Usa `_tratamiento_titulo()` para el saludo, ajusta el tono según días vencidos (≤7d suave, 8-30d medio, >30d urgente), e incluye tabla de cuotas vencidas, bloque empresa pagadora, progreso y próxima cuota. El preview en el modal usa `iframe srcdoc` para aislar el HTML sin riesgo XSS.
