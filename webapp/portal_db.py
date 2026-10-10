@@ -158,19 +158,31 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
             if payment:
                 cuotas = payment.get("cuotas", [])
                 numero = max((c.get("numero", 0) for c in cuotas), default=0) + 1
+                nueva_cuota = {
+                    "numero": numero,
+                    "monto": monto,
+                    "fecha_pago": fecha_pago,
+                    "fecha_venc": None,
+                    "estado": "pagado",
+                    "medio_pago": "WooCommerce",
+                    "pagado_por": f"WC#{order_id}",
+                    "producto_nombre": cfg.get("descripcion") or None,
+                    "link_constancia": None,
+                }
                 payments_col.update_one(
                     {"member_id": member_id, "periodo": periodo},
-                    {
-                        "$push": {"cuotas": {
-                            "numero": numero,
-                            "monto": monto,
-                            "fecha_pago": fecha_pago,
-                            "fecha_venc": None,
-                            "estado": "pagado",
-                        }},
-                        "$set": {"estado": "fraccionamiento"},
-                    }
+                    {"$push": {"cuotas": nueva_cuota}},
                 )
+                # Sync estado through proper channel (R3)
+                pay_doc = payments_col.find_one(
+                    {"member_id": member_id, "periodo": periodo},
+                    {"_id": 1, "estado": 1, "cuotas": 1},
+                )
+                if pay_doc and pay_doc.get("cuotas") and pay_doc.get("estado") != "fraccionamiento":
+                    payments_col.update_one(
+                        {"_id": pay_doc["_id"]},
+                        {"$set": {"estado": "fraccionamiento"}},
+                    )
             else:
                 payments_col.insert_one({
                     "member_id": member_id,
@@ -187,6 +199,10 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
                         "fecha_pago": fecha_pago,
                         "fecha_venc": None,
                         "estado": "pagado",
+                        "medio_pago": "WooCommerce",
+                        "pagado_por": f"WC#{order_id}",
+                        "producto_nombre": cfg.get("descripcion") or None,
+                        "link_constancia": None,
                     }],
                 })
             results.append({"product_id": product_id, "action": "cuota_registrada", "periodo": periodo})

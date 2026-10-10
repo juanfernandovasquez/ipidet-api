@@ -43,14 +43,28 @@ credito_col      = db.facturas_credito
 def _find_empresa_id(nombre: str) -> str | None:
     if not nombre:
         return None
+    # 1. Exact match (nombre o razon_social)
     doc = companies_col.find_one(
         {"$or": [
-            {"nombre":      {"$regex": f"^{re.escape(nombre)}$", "$options": "i"}},
+            {"nombre":       {"$regex": f"^{re.escape(nombre)}$", "$options": "i"}},
             {"razon_social": {"$regex": f"^{re.escape(nombre)}$", "$options": "i"}},
         ]},
         {"_id": 1},
     )
-    return str(doc["_id"]) if doc else None
+    if doc:
+        return str(doc["_id"])
+    # 2. Prefix match — solo si hay exactamente UNA empresa que empieza con ese nombre
+    matches = list(companies_col.find(
+        {"$or": [
+            {"nombre":       {"$regex": f"^{re.escape(nombre)}", "$options": "i"}},
+            {"razon_social": {"$regex": f"^{re.escape(nombre)}", "$options": "i"}},
+        ]},
+        {"_id": 1},
+    ))
+    if len(matches) == 1:
+        return str(matches[0]["_id"])
+    # Ambiguous or no match
+    return None
 
 
 def _find_comprobante_id(numero: str) -> str | None:
