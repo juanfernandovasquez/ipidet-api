@@ -57,11 +57,13 @@ def _send_sync(
                         filename=att["filename"])
         msg.attach(part)
 
+    print(f"[mailer] SMTP login user={BREVO_SMTP_USER!r} pass_set={bool(BREVO_SMTP_PASSWORD)} host={BREVO_SMTP_HOST}:{BREVO_SMTP_PORT}", flush=True)
     with smtplib.SMTP(BREVO_SMTP_HOST, BREVO_SMTP_PORT, timeout=20) as server:
         server.ehlo()
         server.starttls()
         server.login(BREVO_SMTP_USER, BREVO_SMTP_PASSWORD)
         server.sendmail(BREVO_FROM_EMAIL, recipients + cc_list, msg.as_bytes())
+    print(f"[mailer] SMTP sendmail OK -> {recipients}", flush=True)
 
 
 def _send_api(to: str | list[str], subject: str, html_body: str,
