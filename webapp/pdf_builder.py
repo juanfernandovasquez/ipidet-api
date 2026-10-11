@@ -1,5 +1,5 @@
 """Genera PDFs de comprobantes de pago usando fpdf2."""
-from fpdf import FPDF
+from fpdf import FPDF, XPos, YPos
 from datetime import datetime
 from pathlib import Path
 
@@ -16,7 +16,7 @@ _TIPO_LABELS = {
     "recibo":  "RECIBO POR HONORARIOS",
 }
 
-_COLOR_PRIMARY   = (30,  58, 95)   # azul IPIDET
+_COLOR_PRIMARY   = (30,  58, 95)
 _COLOR_LIGHT_BG  = (241, 245, 249)
 _COLOR_BORDER    = (226, 232, 240)
 _COLOR_GRAY_TEXT = (100, 116, 139)
@@ -27,7 +27,6 @@ _LOGO_PATH = Path(__file__).parent / "static" / "logo.png"
 
 
 def _fmt_fecha(fecha: str) -> str:
-    """'2026-10-11' → '11/10/2026'"""
     try:
         return datetime.strptime(fecha, "%Y-%m-%d").strftime("%d/%m/%Y")
     except Exception:
@@ -40,6 +39,22 @@ def _hr(pdf: FPDF, lm: float, rm: float) -> None:
     pdf.line(lm, pdf.get_y(), rm, pdf.get_y())
 
 
+def _cell(pdf: FPDF, w: float, h: float, txt: str, *,
+          align: str = "L", fill: bool = False, bold: bool = False) -> None:
+    """Celda que avanza a la derecha (misma línea)."""
+    if bold:
+        pdf.set_font("Helvetica", "B", pdf.font_size_pt)
+    pdf.cell(w, h, txt, align=align, fill=fill,
+             new_x=XPos.RIGHT, new_y=YPos.TOP)
+
+
+def _cell_nl(pdf: FPDF, w: float, h: float, txt: str, *,
+             align: str = "L", fill: bool = False) -> None:
+    """Celda que salta a la siguiente línea."""
+    pdf.cell(w, h, txt, align=align, fill=fill,
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+
 def build_comprobante_pdf(
     comp: dict,
     socios_info: list,
@@ -47,183 +62,146 @@ def build_comprobante_pdf(
 ) -> bytes:
     if logo_path is None and _LOGO_PATH.exists():
         logo_path = str(_LOGO_PATH)
-    """Genera el PDF del comprobante. Devuelve bytes."""
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
 
-    LM = 20          # left margin
-    RM = 20          # right margin
-    PW = pdf.w       # page width
-    CW = PW - LM - RM  # content width
+    LM = 20
+    RM = 20
+    PW = pdf.w
+    CW = PW - LM - RM
 
     tipo       = comp.get("tipo", "boleta")
     tipo_label = _TIPO_LABELS.get(tipo, tipo.upper())
     numero     = comp.get("numero") or ""
 
-    # ════════════════════════════════════════════════════════════
-    # CABECERA — dos columnas: emisor (izq) | tipo+número (der)
-    # ════════════════════════════════════════════════════════════
+    # ── CABECERA ─────────────────────────────────────────────────────────────
     header_top = pdf.get_y()
+    col_left   = CW * 0.56
+    col_right  = CW * 0.44
+    x_right    = LM + col_left
 
-    # Columna izquierda: logo + datos del emisor
-    col_left  = CW * 0.55
-    col_right = CW * 0.45
-    x_right   = LM + col_left
-
-    pdf.set_xy(LM, header_top)
-
-    logo_h_used = 0
+    # Logo
+    logo_bottom = header_top
     if logo_path:
         try:
             pdf.image(logo_path, x=LM, y=header_top, w=38)
-            logo_h_used = pdf.get_y() - header_top
-            pdf.set_xy(LM, header_top + logo_h_used + 2)
+            logo_bottom = pdf.get_y()
         except Exception:
-            pass
+            logo_bottom = header_top
 
-    # Nombre comercial (omitir si el logo ya lleva el nombre)
-    if not logo_h_used:
+    # Datos emisor (debajo del logo)
+    y_emisor = logo_bottom + (2 if logo_bottom > header_top else 0)
+    pdf.set_xy(LM, y_emisor)
+
+    if not logo_path or logo_bottom == header_top:
+        # Sin logo: mostrar nombre grande
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*_COLOR_PRIMARY)
-        pdf.set_x(LM)
-        pdf.cell(col_left, 7, IPIDET_NOMBRE_COMERCIAL or "IPIDET", ln=False)
-        pdf.ln(7)
+        _cell_nl(pdf, col_left, 7, IPIDET_NOMBRE_COMERCIAL or "IPIDET")
 
-    # Razón social
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
-    pdf.set_x(LM)
+
     razon = IPIDET_RAZON_SOCIAL or ""
-    # Partir en dos líneas si es muy largo
-    if len(razon) > 48:
-        mid = razon.rfind(" ", 0, 48)
-        pdf.cell(col_left, 4.5, razon[:mid], ln=False)
-        pdf.ln(4.5)
+    pdf.set_x(LM)
+    if len(razon) > 50:
+        mid = razon.rfind(" ", 0, 50)
+        _cell_nl(pdf, col_left, 4.5, razon[:mid])
         pdf.set_x(LM)
-        pdf.cell(col_left, 4.5, razon[mid+1:], ln=False)
-        pdf.ln(4.5)
+        _cell_nl(pdf, col_left, 4.5, razon[mid+1:])
     else:
-        pdf.cell(col_left, 4.5, razon, ln=False)
-        pdf.ln(4.5)
+        _cell_nl(pdf, col_left, 4.5, razon)
 
     pdf.set_x(LM)
-    pdf.cell(col_left, 4.5, f"RUC: {IPIDET_RUC or '—'}", ln=False)
-    pdf.ln(4.5)
-
+    _cell_nl(pdf, col_left, 4.5, f"RUC: {IPIDET_RUC or '—'}")
     if IPIDET_DIRECCION:
         pdf.set_x(LM)
-        pdf.cell(col_left, 4.5, IPIDET_DIRECCION, ln=False)
-        pdf.ln(4.5)
-
+        _cell_nl(pdf, col_left, 4.5, IPIDET_DIRECCION)
     pdf.set_x(LM)
-    pdf.cell(col_left, 4.5, "administracion@ipidet.org", ln=False)
-    pdf.ln(4.5)
+    _cell_nl(pdf, col_left, 4.5, "administracion@ipidet.org")
 
     header_bottom_left = pdf.get_y()
 
-    # Columna derecha: recuadro azul con tipo y número
-    box_h = header_bottom_left - header_top + 2
-    if box_h < 28:
-        box_h = 28
+    # Recuadro azul derecho (tipo + número)
+    box_h = max(header_bottom_left - header_top, 28)
     pdf.set_fill_color(*_COLOR_PRIMARY)
     pdf.rect(x_right, header_top, col_right, box_h, "F")
 
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_text_color(*_COLOR_WHITE)
     pdf.set_xy(x_right, header_top + 5)
-    pdf.cell(col_right, 6, tipo_label, align="C", ln=False)
-    pdf.set_xy(x_right, header_top + 13)
+    _cell_nl(pdf, col_right, 6, tipo_label, align="C")
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(col_right, 7, f"N° {numero}", align="C", ln=False)
+    pdf.set_xy(x_right, header_top + 14)
+    _cell_nl(pdf, col_right, 7, f"Nro. {numero}", align="C")
 
     pdf.set_y(max(header_bottom_left, header_top + box_h) + 5)
 
-    # ════════════════════════════════════════════════════════════
-    # FILA DE FECHAS
-    # ════════════════════════════════════════════════════════════
+    # ── FECHAS ────────────────────────────────────────────────────────────────
     _hr(pdf, LM, PW - RM)
     pdf.ln(3)
-
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
     fecha_emision = _fmt_fecha(comp.get("fecha_emision") or "")
     fecha_pago    = _fmt_fecha(comp.get("fecha_pago") or "")
-
     pdf.set_x(LM)
-    pdf.cell(CW / 3, 5.5, f"Fecha de emisión: {fecha_emision}")
-    pdf.cell(CW / 3, 5.5, f"Fecha de pago: {fecha_pago}")
-    pdf.cell(CW / 3, 5.5, "Moneda: SOLES", align="R")
-    pdf.ln(5.5)
+    _cell(pdf, CW / 3, 5.5, f"Fecha emisión: {fecha_emision}")
+    _cell(pdf, CW / 3, 5.5, f"Fecha pago: {fecha_pago}")
+    _cell_nl(pdf, CW / 3, 5.5, "Moneda: SOLES", align="R")
     pdf.ln(4)
 
-    # ════════════════════════════════════════════════════════════
-    # DATOS DEL ADQUIRIENTE / DESTINATARIO
-    # ════════════════════════════════════════════════════════════
+    # ── RECEPTOR ─────────────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_text_color(*_COLOR_PRIMARY)
     pdf.set_x(LM)
-    label_receptor = "DATOS DEL ADQUIRIENTE / USUARIO"
-    if tipo == "factura":
-        label_receptor = "DATOS DEL ADQUIRIENTE"
-    pdf.cell(CW, 5.5, label_receptor)
-    pdf.ln(5.5)
+    lbl_rec = "DATOS DEL ADQUIRIENTE" if tipo == "factura" else "DATOS DEL RECEPTOR"
+    _cell_nl(pdf, CW, 5.5, lbl_rec)
     _hr(pdf, LM, PW - RM)
     pdf.ln(3)
 
     empresa = comp.get("empresa") or ""
     if empresa:
-        # Receptor empresa (factura)
         _row_receptor(pdf, LM, CW, "Razón social", empresa)
         if comp.get("ruc_empresa"):
             _row_receptor(pdf, LM, CW, "RUC", comp["ruc_empresa"])
+    elif socios_info:
+        s = socios_info[0]
+        _row_receptor(pdf, LM, CW, "Nombre", s.get("nombre") or "—")
+        if s.get("dni"):
+            _row_receptor(pdf, LM, CW, "Tipo / Nro. doc.", f"DNI / {s['dni']}")
+        if s.get("email"):
+            _row_receptor(pdf, LM, CW, "Email", s["email"])
     else:
-        # Receptor persona (boleta)
-        for s in socios_info[:3]:
-            nombre = s.get("nombre") or "—"
-            _row_receptor(pdf, LM, CW, "Nombre", nombre)
-            if s.get("dni"):
-                _row_receptor(pdf, LM, CW, "DNI", s["dni"])
-            if s.get("email"):
-                _row_receptor(pdf, LM, CW, "Email", s["email"])
-            break  # solo primera persona si es boleta individual
-
-        # Fallback si no hay socios_info pero hay destinatario en el comprobante
-        if not socios_info:
-            if comp.get("destinatario_nombre"):
-                _row_receptor(pdf, LM, CW, "Nombre", comp["destinatario_nombre"])
-            if comp.get("destinatario_dni"):
-                _row_receptor(pdf, LM, CW, "DNI", comp["destinatario_dni"])
+        if comp.get("destinatario_nombre"):
+            _row_receptor(pdf, LM, CW, "Nombre", comp["destinatario_nombre"])
+        if comp.get("destinatario_dni"):
+            _row_receptor(pdf, LM, CW, "Tipo / Nro. doc.", f"DNI / {comp['destinatario_dni']}")
 
     pdf.ln(5)
 
-    # ════════════════════════════════════════════════════════════
-    # TABLA DE ÍTEMS
-    # ════════════════════════════════════════════════════════════
+    # ── TABLA DE ÍTEMS ───────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_text_color(*_COLOR_PRIMARY)
     pdf.set_x(LM)
-    pdf.cell(CW, 5.5, "DESCRIPCIÓN DEL SERVICIO")
-    pdf.ln(5.5)
+    _cell_nl(pdf, CW, 5.5, "DESCRIPCIÓN DEL SERVICIO")
     _hr(pdf, LM, PW - RM)
     pdf.ln(2)
 
-    # Encabezado de tabla
-    col_desc  = CW * 0.50
-    col_socio = CW * 0.25
-    col_cant  = CW * 0.10
-    col_pu    = CW * 0.15
+    c_desc  = CW * 0.50
+    c_ref   = CW * 0.25
+    c_cant  = CW * 0.10
+    c_monto = CW * 0.15
 
     pdf.set_fill_color(*_COLOR_PRIMARY)
     pdf.set_text_color(*_COLOR_WHITE)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_x(LM)
-    pdf.cell(col_desc,  6, "DESCRIPCIÓN",      fill=True)
-    pdf.cell(col_socio, 6, "SOCIO/REFERENCIA", fill=True)
-    pdf.cell(col_cant,  6, "CANT.",             fill=True, align="C")
-    pdf.cell(col_pu,    6, "PRECIO (S/)",       fill=True, align="R")
-    pdf.ln(6)
+    _cell(pdf, c_desc,  6, "DESCRIPCIÓN",       fill=True)
+    _cell(pdf, c_ref,   6, "REFERENCIA",         fill=True)
+    _cell(pdf, c_cant,  6, "CANT.",              fill=True, align="C")
+    _cell_nl(pdf, c_monto, 6, "IMPORTE (S/)",    fill=True, align="R")
 
     items = comp.get("items") or []
     if not items:
@@ -233,7 +211,6 @@ def build_comprobante_pdf(
             "member_id": (comp.get("socios") or [""])[0],
         }]
 
-    # Mapa member_id → nombre de socios_info
     nombre_map = {s.get("member_id", ""): s.get("nombre", "") for s in socios_info}
 
     pdf.set_font("Helvetica", "", 8)
@@ -241,90 +218,83 @@ def build_comprobante_pdf(
         bg = _COLOR_LIGHT_BG if i % 2 == 0 else _COLOR_WHITE
         pdf.set_fill_color(*bg)
         pdf.set_text_color(*_COLOR_BODY_TEXT)
-
-        desc   = str(item.get("producto_nombre") or item.get("codigo_sunat") or "—")
+        desc   = str(item.get("producto_nombre") or "—")[:50]
         mid    = str(item.get("member_id") or "")
-        nombre = nombre_map.get(mid, mid)[:28]
+        ref    = (nombre_map.get(mid, mid) or mid)[:28]
         monto  = float(item.get("monto") or 0)
-
         pdf.set_x(LM)
-        pdf.cell(col_desc,  6, desc[:48],  fill=True)
-        pdf.cell(col_socio, 6, nombre,     fill=True)
-        pdf.cell(col_cant,  6, "1",        fill=True, align="C")
-        pdf.cell(col_pu,    6, f"{monto:.2f}", fill=True, align="R")
-        pdf.ln(6)
+        _cell(pdf, c_desc,  6, desc,           fill=True)
+        _cell(pdf, c_ref,   6, ref,             fill=True)
+        _cell(pdf, c_cant,  6, "1",             fill=True, align="C")
+        _cell_nl(pdf, c_monto, 6, f"{monto:.2f}", fill=True, align="R")
 
     pdf.ln(3)
     _hr(pdf, LM, PW - RM)
     pdf.ln(3)
 
-    # ════════════════════════════════════════════════════════════
-    # TOTALES
-    # ════════════════════════════════════════════════════════════
+    # ── TOTALES ──────────────────────────────────────────────────────────────
     monto_total = float(comp.get("monto_total") or 0)
-    x_total = LM + CW * 0.50
+    x_tot = LM + CW * 0.50
+    cw_lbl = CW * 0.35
+    cw_val = CW * 0.15
 
-    def _total_row(label: str, valor: str, bold: bool = False) -> None:
-        pdf.set_x(x_total)
-        if bold:
-            pdf.set_font("Helvetica", "B", 9)
+    def _tot(label: str, valor: str, *, resaltar: bool = False) -> None:
+        pdf.set_x(x_tot)
+        if resaltar:
             pdf.set_fill_color(*_COLOR_PRIMARY)
             pdf.set_text_color(*_COLOR_WHITE)
-            pdf.cell(CW * 0.35, 7, label, fill=True, align="R")
-            pdf.cell(CW * 0.15, 7, valor, fill=True, align="R")
+            pdf.set_font("Helvetica", "B", 9)
+            _cell(pdf, cw_lbl, 7, label, fill=True, align="R")
+            _cell_nl(pdf, cw_val, 7, valor, fill=True, align="R")
         else:
-            pdf.set_font("Helvetica", "", 8)
             pdf.set_text_color(*_COLOR_GRAY_TEXT)
-            pdf.cell(CW * 0.35, 5.5, label, align="R")
-            pdf.cell(CW * 0.15, 5.5, valor, align="R")
-        pdf.ln(7 if bold else 5.5)
+            pdf.set_font("Helvetica", "", 8)
+            _cell(pdf, cw_lbl, 5.5, label, align="R")
+            _cell_nl(pdf, cw_val, 5.5, valor, align="R")
 
-    _total_row("Op. inafectas / exoneradas:", f"S/ {monto_total:.2f}")
-    _total_row("IGV (0%):", "S/ 0.00")
-    _total_row("TOTAL A PAGAR:", f"S/ {monto_total:.2f}", bold=True)
+    _tot("Op. exoneradas / inafectas:", f"S/ {monto_total:.2f}")
+    _tot("IGV (0%):", "S/ 0.00")
+    _tot("TOTAL A PAGAR:", f"S/ {monto_total:.2f}", resaltar=True)
 
     pdf.ln(6)
 
-    # ════════════════════════════════════════════════════════════
-    # LEYENDA EN LETRAS
-    # ════════════════════════════════════════════════════════════
-    from webapp.sunat_client import _monto_a_letras
-    leyenda = _monto_a_letras(monto_total)
+    # ── LEYENDA EN LETRAS ────────────────────────────────────────────────────
+    try:
+        from webapp.sunat_client import _monto_a_letras
+        leyenda = _monto_a_letras(monto_total)
+    except Exception:
+        leyenda = f"SON S/ {monto_total:.2f}"
+
     pdf.set_fill_color(*_COLOR_LIGHT_BG)
     pdf.set_text_color(*_COLOR_BODY_TEXT)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_x(LM)
-    pdf.cell(CW, 6, f"  {leyenda}", fill=True)
-    pdf.ln(10)
+    _cell_nl(pdf, CW, 6, f"  {leyenda}", fill=True)
+    pdf.ln(8)
 
-    # ════════════════════════════════════════════════════════════
-    # PIE — hash SUNAT y nota legal
-    # ════════════════════════════════════════════════════════════
+    # ── PIE ──────────────────────────────────────────────────────────────────
     _hr(pdf, LM, PW - RM)
     pdf.ln(3)
-
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
-    pdf.set_x(LM)
 
     sunat_hash = comp.get("sunat_hash") or ""
     if sunat_hash:
-        pdf.cell(CW, 4, f"Hash SUNAT: {sunat_hash[:60]}", align="C")
-        pdf.ln(4)
         pdf.set_x(LM)
+        _cell_nl(pdf, CW, 4, f"Hash SUNAT: {sunat_hash[:70]}", align="C")
 
     ambiente = comp.get("sunat_ambiente") or ""
     if ambiente == "produccion":
-        sunat_nota = "Comprobante electrónico emitido y aceptado por SUNAT."
+        nota = "Comprobante electrónico emitido y aceptado por SUNAT."
     elif ambiente:
-        sunat_nota = f"Documento de referencia — emitido en ambiente {ambiente}."
+        nota = f"Documento de referencia — emitido en ambiente {ambiente}."
     else:
-        sunat_nota = "Representación impresa del comprobante. El documento oficial es el XML SUNAT."
+        nota = "Representación impresa del comprobante. Documento oficial: XML SUNAT."
 
-    pdf.cell(CW, 4, sunat_nota, align="C")
-    pdf.ln(4)
     pdf.set_x(LM)
-    pdf.cell(CW, 4,
+    _cell_nl(pdf, CW, 4, nota, align="C")
+    pdf.set_x(LM)
+    _cell_nl(pdf, CW, 4,
              f"RUC Emisor: {IPIDET_RUC}  ·  {IPIDET_NOMBRE_COMERCIAL}  ·  administracion@ipidet.org",
              align="C")
 
@@ -335,8 +305,7 @@ def _row_receptor(pdf: FPDF, lm: float, cw: float, label: str, valor: str) -> No
     pdf.set_x(lm)
     pdf.set_font("Helvetica", "B", 8)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
-    pdf.cell(cw * 0.22, 5.5, label + ":", ln=False)
+    _cell(pdf, cw * 0.22, 5.5, label + ":")
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*_COLOR_BODY_TEXT)
-    pdf.cell(cw * 0.78, 5.5, valor, ln=False)
-    pdf.ln(5.5)
+    _cell_nl(pdf, cw * 0.78, 5.5, valor)
