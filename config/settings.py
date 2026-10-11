@@ -43,7 +43,7 @@ BREVO_API_KEY       = os.getenv("BREVO_API_KEY", "")          # preferido: HTTP 
 BREVO_SMTP_HOST     = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
 BREVO_SMTP_PORT     = int(os.getenv("BREVO_SMTP_PORT", "587"))
 BREVO_SMTP_USER     = os.getenv("BREVO_SMTP_USER", "")
-BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD", "")
+BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD") or os.getenv("BREVO_SMTP_PASS", "")
 BREVO_FROM_EMAIL    = os.getenv("BREVO_FROM_EMAIL", "administracion@ipidet.org")
 BREVO_FROM_NAME     = os.getenv("BREVO_FROM_NAME", "IPIDET")
 

@@ -500,6 +500,8 @@ async def enviar_constancia(
         f"<p>Atentamente,<br>Secretaría — IPIDET</p>"
     )
 
+    import logging as _logging
+    _logging.info("[constancia] Intentando enviar %s a %s via SMTP", numero, email_dest)
     try:
         await mailer.send_email(
             email_dest,
@@ -511,7 +513,9 @@ async def enviar_constancia(
                 "mime": "application/pdf",
             }],
         )
+        _logging.info("[constancia] Email enviado correctamente: %s", numero)
     except Exception as exc:
+        _logging.error("[constancia] ERROR al enviar %s: %s", numero, exc)
         raise HTTPException(status_code=502, detail=f"Error al enviar email: {exc}")
 
     pdb.save_constancia(
