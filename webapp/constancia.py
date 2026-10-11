@@ -7,7 +7,8 @@ from datetime import date as _date
 
 from fpdf import FPDF
 
-_LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "mockup_assets", "logo.png")
+_LOGO_PATH  = os.path.join(os.path.dirname(__file__), "..", "mockup_assets", "logo.png")
+_FIRMA_PATH = os.path.join(os.path.dirname(__file__), "..", "mockup_assets", "firma_presidenta.png")
 
 _MESES = {
     1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
@@ -94,10 +95,15 @@ def generar_constancia_pdf(
     pdf.ln(24)
 
     # ── Firma ────────────────────────────────────────────────────────────────
-    pdf.set_draw_color(30, 30, 30)
-    pdf.set_line_width(0.6)
-    firma_w = 80
+    firma_w = 60   # ancho de la imagen de firma en mm
     firma_x = (210 - firma_w) / 2
+    if os.path.exists(_FIRMA_PATH):
+        pdf.image(_FIRMA_PATH, x=firma_x, y=pdf.get_y(), w=firma_w)
+        firma_h = firma_w * (167 / 291)  # altura proporcional (291×167 px originales)
+        pdf.set_y(pdf.get_y() + firma_h)
+    # Línea bajo la firma (o sola si no hay imagen)
+    pdf.set_draw_color(30, 30, 30)
+    pdf.set_line_width(0.5)
     pdf.line(firma_x, pdf.get_y(), firma_x + firma_w, pdf.get_y())
     pdf.ln(4)
 
