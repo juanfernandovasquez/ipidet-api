@@ -20,6 +20,7 @@ from config.settings import (
     BREVO_SMTP_USER, BREVO_SMTP_PASSWORD,
     BREVO_FROM_EMAIL, BREVO_FROM_NAME,
     BREVO_API_KEY,
+    GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
 )
 
 
@@ -57,12 +58,21 @@ def _send_sync(
                         filename=att["filename"])
         msg.attach(part)
 
-    print(f"[mailer] SMTP login user={BREVO_SMTP_USER!r} pass_set={bool(BREVO_SMTP_PASSWORD)} host={BREVO_SMTP_HOST}:{BREVO_SMTP_PORT}", flush=True)
-    with smtplib.SMTP(BREVO_SMTP_HOST, BREVO_SMTP_PORT, timeout=20) as server:
+    # Usar Gmail si está disponible; si no, Brevo SMTP
+    if GMAIL_ADDRESS and GMAIL_APP_PASSWORD:
+        _host, _port = "smtp.gmail.com", 587
+        _user, _pass = GMAIL_ADDRESS, GMAIL_APP_PASSWORD
+    else:
+        _host, _port = BREVO_SMTP_HOST, BREVO_SMTP_PORT
+        _user, _pass = BREVO_SMTP_USER, BREVO_SMTP_PASSWORD
+
+    envelope_from = _user  # Gmail requiere que el envelope sender sea la cuenta autenticada
+    print(f"[mailer] SMTP via={'gmail' if _host=='smtp.gmail.com' else 'brevo'} user={_user!r} pass_set={bool(_pass)}", flush=True)
+    with smtplib.SMTP(_host, _port, timeout=20) as server:
         server.ehlo()
         server.starttls()
-        server.login(BREVO_SMTP_USER, BREVO_SMTP_PASSWORD)
-        server.sendmail(BREVO_FROM_EMAIL, recipients + cc_list, msg.as_bytes())
+        server.login(_user, _pass)
+        server.sendmail(envelope_from, recipients + cc_list, msg.as_bytes())
     print(f"[mailer] SMTP sendmail OK -> {recipients}", flush=True)
 
 
