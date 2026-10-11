@@ -21,6 +21,7 @@ from config.settings import (
     BREVO_FROM_EMAIL, BREVO_FROM_NAME,
     BREVO_API_KEY,
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
+    PORTAL_API_BASE,
 )
 
 
@@ -275,10 +276,7 @@ async def send_bulk(mensajes: list[dict],
 # ── Plantillas ────────────────────────────────────────────────────────────────
 
 def _base_html(contenido: str, disclaimer: bool = True) -> str:
-    disclaimer_line = (
-        "<br>Este correo fue generado automáticamente. No responder directamente a este mensaje."
-        if disclaimer else ""
-    )
+    logo_url = f"{PORTAL_API_BASE.rstrip('/')}/static/logo.png"
     return f"""
 <!DOCTYPE html>
 <html lang="es">
@@ -287,10 +285,12 @@ def _base_html(contenido: str, disclaimer: bool = True) -> str:
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:32px 16px">
     <tr><td align="center">
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
-        <!-- Header -->
-        <tr><td style="background:#1e3a5f;padding:24px 32px">
-          <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff">IPIDET</p>
-          <p style="margin:4px 0 0;font-size:12px;color:#94a3b8">Instituto Peruano de Investigación y Desarrollo Tributario</p>
+        <!-- Barra de color superior -->
+        <tr><td style="background:#1e3a5f;height:6px;font-size:0;line-height:0">&nbsp;</td></tr>
+        <!-- Header con logo -->
+        <tr><td style="background:#ffffff;padding:20px 32px;border-bottom:1px solid #e2e8f0">
+          <img src="{logo_url}" alt="IPIDET" height="38"
+               style="display:block;border:0;outline:none;max-width:200px">
         </td></tr>
         <!-- Body -->
         <tr><td style="padding:32px">
@@ -299,7 +299,7 @@ def _base_html(contenido: str, disclaimer: bool = True) -> str:
         <!-- Footer -->
         <tr><td style="background:#f1f5f9;padding:16px 32px;border-top:1px solid #e2e8f0">
           <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center">
-            IPIDET · administracion@ipidet.org{disclaimer_line}
+            IPIDET · administracion@ipidet.org
           </p>
         </td></tr>
       </table>
