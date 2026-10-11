@@ -282,8 +282,9 @@
             {% elif c.estado != 'anulado' and c.tipo in ('boleta', 'factura') %}
             <button @click="emitirSunat()" :disabled="emitandoSunat"
                     title="Emitir a SUNAT"
-                    class="text-slate-300 hover:text-emerald-500 transition-colors p-1 disabled:opacity-40">
-              <i class="fa-solid text-xs" :class="emitandoSunat ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
+                    class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-40">
+              <i class="fa-solid" :class="emitandoSunat ? 'fa-circle-notch fa-spin' : 'fa-stamp'"></i>
+              <span>SUNAT</span>
             </button>
             {% endif %}
             <button onclick="window.dispatchEvent(new CustomEvent('comp-enviar', {detail: '{{ c._id }}'}))"
@@ -2412,17 +2413,17 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
     </div>
 
     <!-- Footer -->
-    <div class="px-6 py-4 border-t border-slate-100 flex justify-between items-center gap-3">
+    <div class="px-6 py-5 border-t border-slate-100 flex gap-3">
       <button @click="cerrar()"
-              class="text-sm text-slate-500 hover:text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+              class="flex-1 text-sm font-medium text-slate-600 hover:text-slate-800 px-4 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors">
         Cancelar
       </button>
       <button @click="confirmar()"
               :disabled="!preflight?.puede_emitir || emitiendo || resultado?.ok"
               x-show="!resultado?.ok"
-              class="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-        <i class="fa-solid text-xs" :class="emitiendo ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'"></i>
-        <span x-text="emitiendo ? 'Emitiendo…' : 'Emitir a SUNAT'"></span>
+              class="flex-[2] inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+        <i class="fa-solid" :class="emitiendo ? 'fa-circle-notch fa-spin' : 'fa-stamp'"></i>
+        <span x-text="emitiendo ? 'Emitiendo a SUNAT…' : 'Emitir ' + (preflight?.resumen?.tipo || '') + ' a SUNAT'"></span>
       </button>
     </div>
 
