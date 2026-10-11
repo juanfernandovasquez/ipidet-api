@@ -58,16 +58,21 @@ def _send_sync(
                         filename=att["filename"])
         msg.attach(part)
 
-    # Usar Gmail si está disponible; si no, Brevo SMTP
-    if GMAIL_ADDRESS and GMAIL_APP_PASSWORD:
-        _host, _port = "smtp.gmail.com", 587
-        _user, _pass = GMAIL_ADDRESS, GMAIL_APP_PASSWORD
-    else:
+    # Preferir Brevo; caer en Gmail si Brevo no está configurado
+    if BREVO_SMTP_USER and BREVO_SMTP_PASSWORD:
         _host, _port = BREVO_SMTP_HOST, BREVO_SMTP_PORT
         _user, _pass = BREVO_SMTP_USER, BREVO_SMTP_PASSWORD
+        envelope_from = BREVO_FROM_EMAIL
+        _via = "brevo"
+    elif GMAIL_ADDRESS and GMAIL_APP_PASSWORD:
+        _host, _port = "smtp.gmail.com", 587
+        _user, _pass = GMAIL_ADDRESS, GMAIL_APP_PASSWORD
+        envelope_from = GMAIL_ADDRESS
+        _via = "gmail"
+    else:
+        raise RuntimeError("No hay credenciales SMTP configuradas (BREVO_SMTP_USER/PASSWORD o GMAIL)")
 
-    envelope_from = _user  # Gmail requiere que el envelope sender sea la cuenta autenticada
-    print(f"[mailer] SMTP via={'gmail' if _host=='smtp.gmail.com' else 'brevo'} user={_user!r} pass_set={bool(_pass)}", flush=True)
+    print(f"[mailer] SMTP via={_via} user={_user!r} pass_set=True", flush=True)
     with smtplib.SMTP(_host, _port, timeout=20) as server:
         server.ehlo()
         server.starttls()
