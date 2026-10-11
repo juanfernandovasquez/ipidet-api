@@ -2663,15 +2663,19 @@ async def sunat_preflight(comp_id: str, request: Request):
             except Exception:
                 pass
 
-    ultimo_correlativo = None
+    ultimo_info = None
     try:
         serie = (comp.get("numero") or "").split("-", 1)[0]
         if serie:
-            ultimo_correlativo = pdb.get_ultimo_correlativo_emitido(serie)
+            ultimo_info = pdb.get_ultimo_correlativo_info(serie)
     except Exception:
         pass
 
-    return validate_comprobante(comp, member, empresa, ultimo_correlativo)
+    return validate_comprobante(
+        comp, member, empresa,
+        ultimo_info["numero"] if ultimo_info else None,
+        ultimo_info["ambiente"] if ultimo_info else None,
+    )
 
 
 @app.get("/api/sunat/siguiente-correlativo")
@@ -2679,14 +2683,18 @@ async def sunat_siguiente_correlativo(tipo: str = "boleta", request: Request = N
     """Devuelve el siguiente número de correlativo disponible para una serie."""
     if not request.session.get("user_email"):
         raise HTTPException(401, "No autenticado")
+    from config.settings import SUNAT_ENVIRONMENT
     serie = "B001" if tipo == "boleta" else "F001"
-    ultimo = pdb.get_ultimo_correlativo_emitido(serie)
+    ultimo_info = pdb.get_ultimo_correlativo_info(serie)
+    ultimo = ultimo_info["numero"] if ultimo_info else None
     siguiente = (ultimo + 1) if ultimo is not None else 1
     return {
-        "serie":    serie,
-        "ultimo":   ultimo,
-        "siguiente": siguiente,
-        "numero":   f"{serie}-{siguiente:05d}",
+        "serie":           serie,
+        "ultimo":          ultimo,
+        "ultimo_ambiente": ultimo_info["ambiente"] if ultimo_info else None,
+        "siguiente":       siguiente,
+        "numero":          f"{serie}-{siguiente:05d}",
+        "ambiente_actual": SUNAT_ENVIRONMENT,
     }
 
 
@@ -2757,6 +2765,7 @@ async def sunat_emitir(comp_id: str, request: Request):
     else:
         return {"ok": False, "error": f"Tipo '{tipo}' no soportado para emisión electrónica (solo boleta/factura)"}
 
+    from config.settings import SUNAT_ENVIRONMENT
     if resultado["ok"]:
         pdb.update_sunat_estado(
             comp_id,
@@ -2766,12 +2775,14 @@ async def sunat_emitir(comp_id: str, request: Request):
             cdr_code  = resultado.get("cdr_code", ""),
             cdr_desc  = resultado.get("cdr_description", ""),
             accepted  = resultado.get("accepted", False),
+            ambiente  = SUNAT_ENVIRONMENT,
         )
     else:
         pdb.update_sunat_estado(
             comp_id,
-            estado = "error",
-            error  = resultado.get("error", ""),
+            estado   = "error",
+            error    = resultado.get("error", ""),
+            ambiente = SUNAT_ENVIRONMENT,
         )
 
     return resultado

@@ -3626,22 +3626,36 @@ def get_comprobante_by_id(comprobante_id: str) -> dict | None:
     return doc
 
 
-def get_ultimo_correlativo_emitido(serie: str) -> int | None:
-    """Returns the highest correlativo (as int) emitted to SUNAT for a given serie.
-    serie = 'B001', 'F001', etc.  Returns None if no emitted docs for that serie."""
+def get_ultimo_correlativo_info(serie: str) -> dict | None:
+    """Returns {numero, ambiente} for the highest emitted correlativo in the serie, or None.
+    Counts ALL emitted docs regardless of ambiente to avoid number reuse."""
     import re as _re
     pattern = f"^{_re.escape(serie)}-\\d+$"
     docs = list(comprobantes_col.find(
         {"sunat_estado": "emitido", "numero": {"$regex": pattern}},
-        {"numero": 1},
+        {"numero": 1, "sunat_ambiente": 1},
     ))
-    nums = []
+    best_num = -1
+    best: dict | None = None
     for doc in docs:
         try:
-            nums.append(int(doc["numero"].split("-", 1)[1]))
+            n = int(doc["numero"].split("-", 1)[1])
+            if n > best_num:
+                best_num = n
+                best = {
+                    "numero":   n,
+                    "ambiente": doc.get("sunat_ambiente") or "desconocido",
+                }
         except (ValueError, IndexError):
             pass
-    return max(nums) if nums else None
+    return best
+
+
+def get_ultimo_correlativo_emitido(serie: str) -> int | None:
+    """Returns the highest correlativo (as int) emitted to SUNAT for a given serie.
+    serie = 'B001', 'F001', etc.  Returns None if no emitted docs for that serie."""
+    info = get_ultimo_correlativo_info(serie)
+    return info["numero"] if info else None
 
 
 def update_sunat_estado(
@@ -3653,6 +3667,7 @@ def update_sunat_estado(
     cdr_desc: str = "",
     accepted: bool = False,
     error: str = "",
+    ambiente: str = "beta",
 ) -> None:
     """Persiste el resultado de la emisión SUNAT en el comprobante."""
     update: dict = {
@@ -3664,6 +3679,7 @@ def update_sunat_estado(
         "sunat_accepted":   accepted,
         "sunat_error":      error,
         "sunat_emitido_at": datetime.now(timezone.utc) if estado == "emitido" else None,
+        "sunat_ambiente":   ambiente,
     }
     comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": update})
 

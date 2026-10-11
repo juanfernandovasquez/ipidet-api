@@ -333,6 +333,21 @@ def migrate_payments_producto_id():
         print(f"    (sin producto en BD para ese periodo/ubicacion: {skipped_no_prod} payments)")
 
 
+# ── 9: sunat_ambiente en comprobantes históricos ─────────────────────────────
+
+def migrate_sunat_ambiente():
+    """
+    Etiqueta como 'homologacion' todos los comprobantes emitidos a SUNAT
+    que aún no tienen el campo sunat_ambiente.
+    Seguro: solo escribe donde el campo no existe todavía.
+    """
+    result = comprobantes_col.update_many(
+        {"sunat_estado": "emitido", "sunat_ambiente": {"$exists": False}},
+        {"$set": {"sunat_ambiente": "homologacion"}},
+    )
+    print(f"  sunat_ambiente:        {result.modified_count} comprobantes etiquetados como 'homologacion'")
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -345,5 +360,6 @@ if __name__ == "__main__":
     migrate_comprobante_items()
     migrate_facturas_credito_empresa()
     migrate_payments_producto_id()
+    migrate_sunat_ambiente()
     print()
     print("Migración completada.")

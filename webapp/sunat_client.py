@@ -10,6 +10,7 @@ from config.settings import (
     IPIDET_NOMBRE_COMERCIAL,
     IPIDET_DIRECCION,
     IPIDET_UBIGUEO,
+    SUNAT_ENVIRONMENT,
 )
 
 _BASE = "https://facturacion.apisperu.com/api/v1"
@@ -367,6 +368,7 @@ def validate_comprobante(
     member: dict | None,
     empresa: dict | None,
     ultimo_correlativo: int | None,
+    ultimo_ambiente: str | None = None,
 ) -> dict:
     """
     Pre-emission validation. Returns:
@@ -488,11 +490,19 @@ def validate_comprobante(
                 )
             elif correlativo_num > siguiente_esperado:
                 gap = correlativo_num - siguiente_esperado
-                advertencias.append(
-                    f"Salto en secuencia: se esperaba {siguiente_esperado:05d} "
-                    f"pero este es {correlativo_num:05d} (salto de {gap}). "
-                    "SUNAT puede rechazar o generar inconsistencias."
-                )
+                if tipo == "factura":
+                    errores.append(
+                        f"Salto en secuencia: se esperaba {siguiente_esperado:05d} "
+                        f"pero este es {correlativo_num:05d} (salto de {gap}). "
+                        "SUNAT rechaza facturas con correlativos no consecutivos."
+                    )
+                else:
+                    advertencias.append(
+                        f"Salto en secuencia: se esperaba {siguiente_esperado:05d} "
+                        f"pero este es {correlativo_num:05d} (salto de {gap}). "
+                        "SUNAT es más tolerante con boletas pero se recomienda "
+                        "corregir la secuencia."
+                    )
         elif correlativo_num > 1:
             advertencias.append(
                 f"No hay comprobantes previos emitidos en la serie {serie} en esta plataforma. "
@@ -527,7 +537,9 @@ def validate_comprobante(
             "fecha_emision":      fecha,
             "destinatario":       destinatario_display,
             "ultimo_emitido":     ultimo_correlativo,
+            "ultimo_ambiente":    ultimo_ambiente,
             "siguiente_esperado": siguiente_esperado,
+            "ambiente_actual":    SUNAT_ENVIRONMENT,
         },
     }
 
