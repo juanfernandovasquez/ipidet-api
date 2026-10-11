@@ -273,6 +273,12 @@
               <i class="fa-solid fa-sack-dollar text-xs"></i>
             </button>
             {% endif %}
+            <a href="/comprobantes/{{ c._id }}/pdf" target="_blank"
+               title="Ver PDF"
+               class="inline-flex items-center gap-1 text-xs font-medium text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-1 rounded-lg transition-colors">
+              <i class="fa-solid fa-file-pdf"></i>
+              <span>PDF</span>
+            </a>
             {% if c.sunat_estado == 'emitido' %}
             <a href="/comprobantes/{{ c._id }}/sunat/xml"
                title="Descargar XML SUNAT"
@@ -2298,7 +2304,7 @@ function sendCompModal() {
     this._btnShow(false);
     if (this.resultado && this.resultado.ok) {
       if (this.$refs.resultadoOk) this.$refs.resultadoOk.style.display = '';
-      setTimeout(() => location.reload(), 4000);
+      this.reloadPending = true;
     } else {
       if (this.$refs.resultadoErr) this.$refs.resultadoErr.style.display = '';
       if (this.$refs.resultadoErrMsg)
@@ -2306,7 +2312,12 @@ function sendCompModal() {
     }
   },
 
-  cerrar() { this.abierto = false; }
+  cerrar() {
+    const recargar = this.reloadPending;
+    this.abierto = false;
+    if (recargar) location.reload();
+  },
+  reloadPending: false,
 }"
 @sunat-abrir.window="abrir($event.detail)"
 x-show="abierto"

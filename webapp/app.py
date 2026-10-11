@@ -2788,6 +2788,30 @@ async def sunat_emitir(comp_id: str, request: Request):
     return resultado
 
 
+@app.get("/comprobantes/{comp_id}/pdf")
+async def comprobante_pdf(comp_id: str, request: Request):
+    """Genera y devuelve el PDF del comprobante para visualizar/descargar."""
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    from fastapi.responses import Response as _FResp
+    from webapp.pdf_builder import build_comprobante_pdf
+
+    comp = pdb.get_comprobante_by_id(comp_id)
+    if not comp:
+        raise HTTPException(404, "Comprobante no encontrado")
+
+    info = pdb.get_comprobante_email_info(comp_id) or {}
+    socios_info = info.get("socios_info") or []
+
+    pdf_bytes = build_comprobante_pdf(comp, socios_info)
+    numero = (comp.get("numero") or comp_id).replace("/", "-")
+    return _FResp(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{numero}.pdf"'},
+    )
+
+
 @app.get("/comprobantes/{comp_id}/sunat/xml")
 async def sunat_download_xml(comp_id: str, request: Request):
     if not request.session.get("user_email"):
