@@ -111,16 +111,8 @@ async def send_email(
     reply_to: str | None = None,
     cc: list[str] | None = None,
 ):
-    """Intenta HTTP API si BREVO_API_KEY está configurada; si falla, fallback a SMTP."""
+    """Envía vía SMTP relay de Brevo (mismo canal que comunicaciones masivas)."""
     loop = asyncio.get_running_loop()
-    if BREVO_API_KEY:
-        try:
-            await loop.run_in_executor(
-                None, partial(_send_api, to, subject, html_body, attachments, reply_to, cc)
-            )
-            return
-        except Exception:
-            pass  # fallback a SMTP
     await loop.run_in_executor(
         None, partial(_send_sync, to, subject, html_body, attachments, reply_to, cc)
     )
