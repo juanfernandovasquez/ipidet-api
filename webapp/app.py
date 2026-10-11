@@ -64,6 +64,7 @@ def _oid(val: str):
 
 MAX_BULK_RECIPIENTS = 1000
 
+from fastapi.staticfiles import StaticFiles as _StaticFiles
 app = FastAPI(title="IPIDET Admin")
 
 # CORS: solo permite llamadas desde el servidor WordPress (server-to-server)
@@ -111,6 +112,10 @@ class _AuthMiddleware:
 app.add_middleware(_AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=True, same_site="lax", max_age=86400)
 templates = Jinja2Templates(directory="webapp/templates")
+import os as _os
+_static_dir = _os.path.join(_os.path.dirname(__file__), "static")
+if _os.path.isdir(_static_dir):
+    app.mount("/static", _StaticFiles(directory=_static_dir), name="static")
 
 _URL_RE = re.compile(r'(https?://[^\s\|\]>\"\']+)')
 

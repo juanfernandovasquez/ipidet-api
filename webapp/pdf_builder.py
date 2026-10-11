@@ -1,6 +1,7 @@
 """Genera PDFs de comprobantes de pago usando fpdf2."""
 from fpdf import FPDF
 from datetime import datetime
+from pathlib import Path
 
 from config.settings import (
     IPIDET_RUC,
@@ -22,6 +23,8 @@ _COLOR_GRAY_TEXT = (100, 116, 139)
 _COLOR_BODY_TEXT = (30,  41,  59)
 _COLOR_WHITE     = (255, 255, 255)
 
+_LOGO_PATH = Path(__file__).parent / "static" / "logo.png"
+
 
 def _fmt_fecha(fecha: str) -> str:
     """'2026-10-11' → '11/10/2026'"""
@@ -42,6 +45,8 @@ def build_comprobante_pdf(
     socios_info: list,
     logo_path: str | None = None,
 ) -> bytes:
+    if logo_path is None and _LOGO_PATH.exists():
+        logo_path = str(_LOGO_PATH)
     """Genera el PDF del comprobante. Devuelve bytes."""
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
@@ -69,19 +74,22 @@ def build_comprobante_pdf(
 
     pdf.set_xy(LM, header_top)
 
+    logo_h_used = 0
     if logo_path:
         try:
-            pdf.image(logo_path, x=LM, y=header_top, w=30, h=12)
-            pdf.set_xy(LM, header_top + 14)
+            pdf.image(logo_path, x=LM, y=header_top, w=38)
+            logo_h_used = pdf.get_y() - header_top
+            pdf.set_xy(LM, header_top + logo_h_used + 2)
         except Exception:
             pass
 
-    # Nombre comercial
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(*_COLOR_PRIMARY)
-    pdf.set_x(LM)
-    pdf.cell(col_left, 7, IPIDET_NOMBRE_COMERCIAL or "IPIDET", ln=False)
-    pdf.ln(7)
+    # Nombre comercial (omitir si el logo ya lleva el nombre)
+    if not logo_h_used:
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(*_COLOR_PRIMARY)
+        pdf.set_x(LM)
+        pdf.cell(col_left, 7, IPIDET_NOMBRE_COMERCIAL or "IPIDET", ln=False)
+        pdf.ln(7)
 
     # Razón social
     pdf.set_font("Helvetica", "", 8)
