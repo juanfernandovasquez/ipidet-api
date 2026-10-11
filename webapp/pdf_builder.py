@@ -102,66 +102,85 @@ def build_comprobante_pdf(
 
     # ── CABECERA ─────────────────────────────────────────────────────────────
     header_top = pdf.get_y()
-    col_left   = CW * 0.56
-    col_right  = CW * 0.44
-    x_right    = LM + col_left
+    col_l = CW * 0.56   # ~95 mm — columna emisor
+    col_r = CW * 0.44   # ~75 mm — columna tipo/número
+    x_r   = LM + col_l  # inicio columna derecha
 
-    # Logo
-    logo_bottom = header_top
+    # ── Columna izquierda: logo ───────────────────────────────────────────
+    LOGO_W    = 38   # mm de ancho del logo
+    LOGO_HMIN = 13   # altura mínima asumida si fpdf2 no avanza cursor
+
+    logo_loaded = False
+    logo_h      = 0
+
     if logo_path:
         try:
-            pdf.image(logo_path, x=LM, y=header_top, w=38)
-            logo_bottom = pdf.get_y()
+            pdf.image(logo_path, x=LM, y=header_top, w=LOGO_W)
+            logo_loaded = True
+            # fpdf2 debería avanzar el cursor al fondo del logo;
+            # si no lo hace (cursor sin cambio), usamos el mínimo estimado
+            y_after_img = pdf.get_y()
+            logo_h = max(y_after_img - header_top, LOGO_HMIN)
         except Exception:
-            logo_bottom = header_top
+            pass
 
-    # Datos emisor (debajo del logo)
-    y_emisor = logo_bottom + (2 if logo_bottom > header_top else 0)
-    pdf.set_xy(LM, y_emisor)
-
-    if not logo_path or logo_bottom == header_top:
-        # Sin logo: mostrar nombre grande
+    if not logo_loaded:
+        # Fallback: nombre IPIDET como texto si el logo no cargó
+        pdf.set_xy(LM, header_top)
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*_COLOR_PRIMARY)
-        _cell_nl(pdf, col_left, 7, IPIDET_NOMBRE_COMERCIAL or "IPIDET")
+        _cell_nl(pdf, col_l, 8, _safe(IPIDET_NOMBRE_COMERCIAL or "IPIDET"))
+        logo_h = 8
 
+    # ── Datos emisor debajo del logo ──────────────────────────────────────
+    y_company = header_top + logo_h + 2   # 2 mm de espacio tras el logo
+    pdf.set_xy(LM, y_company)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
 
-    razon = IPIDET_RAZON_SOCIAL or ""
-    pdf.set_x(LM)
+    razon = _safe(IPIDET_RAZON_SOCIAL or "")
     if len(razon) > 50:
-        mid = razon.rfind(" ", 0, 50)
-        _cell_nl(pdf, col_left, 4.5, razon[:mid])
-        pdf.set_x(LM)
-        _cell_nl(pdf, col_left, 4.5, razon[mid+1:])
+        split_at = razon.rfind(" ", 0, 50)
+        if split_at <= 0:
+            split_at = 50
+        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, razon[:split_at])
+        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, razon[split_at + 1:])
     else:
-        _cell_nl(pdf, col_left, 4.5, razon)
+        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, razon)
 
-    pdf.set_x(LM)
-    _cell_nl(pdf, col_left, 4.5, f"RUC: {IPIDET_RUC or '—'}")
+    pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(f"RUC: {IPIDET_RUC or '-'}"))
     if IPIDET_DIRECCION:
-        pdf.set_x(LM)
-        _cell_nl(pdf, col_left, 4.5, IPIDET_DIRECCION)
-    pdf.set_x(LM)
-    _cell_nl(pdf, col_left, 4.5, "administracion@ipidet.org")
+        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(IPIDET_DIRECCION))
+    pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, "administracion@ipidet.org")
 
-    header_bottom_left = pdf.get_y()
+    left_bottom = pdf.get_y()
+    header_h    = left_bottom - header_top   # altura total de la columna izquierda
 
-    # Recuadro azul derecho (tipo + número)
-    box_h = max(header_bottom_left - header_top, 28)
-    pdf.set_fill_color(*_COLOR_PRIMARY)
-    pdf.rect(x_right, header_top, col_right, box_h, "F")
+    # ── Columna derecha: tipo + número (sin relleno de color) ────────────
+    BOX_H  = 22   # altura del recuadro (mm)
+    box_top = header_top + (header_h - BOX_H) / 2
+    if box_top < header_top:
+        box_top = header_top + 2
 
+    # Solo borde (sin relleno)
+    pdf.set_draw_color(*_COLOR_PRIMARY)
+    pdf.set_line_width(0.6)
+    pdf.rect(x_r + 3, box_top, col_r - 5, BOX_H, "D")
+
+    # Tipo de documento
     pdf.set_font("Helvetica", "B", 9)
-    pdf.set_text_color(*_COLOR_WHITE)
-    pdf.set_xy(x_right, header_top + 5)
-    _cell_nl(pdf, col_right, 6, tipo_label, align="C")
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.set_xy(x_right, header_top + 14)
-    _cell_nl(pdf, col_right, 7, f"Nro. {numero}", align="C")
+    pdf.set_text_color(*_COLOR_PRIMARY)
+    pdf.set_xy(x_r, box_top + 3)
+    _cell_nl(pdf, col_r, 6, _safe(tipo_label), align="C")
 
-    pdf.set_y(max(header_bottom_left, header_top + box_h) + 5)
+    # Número
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_text_color(*_COLOR_BODY_TEXT)
+    pdf.set_xy(x_r, box_top + 11)
+    _cell_nl(pdf, col_r, 7, _safe(f"Nro. {numero}"), align="C")
+
+    # Avanzar cursor al final de la cabecera
+    pdf.set_y(left_bottom + 4)
 
     # ── FECHAS ────────────────────────────────────────────────────────────────
     _hr(pdf, LM, PW - RM)
