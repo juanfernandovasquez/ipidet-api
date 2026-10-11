@@ -72,13 +72,11 @@ def _send_sync(
     else:
         raise RuntimeError("No hay credenciales SMTP configuradas (BREVO_SMTP_USER/PASSWORD o GMAIL)")
 
-    print(f"[mailer] SMTP via={_via} user={_user!r} pass_set=True", flush=True)
     with smtplib.SMTP(_host, _port, timeout=20) as server:
         server.ehlo()
         server.starttls()
         server.login(_user, _pass)
         server.sendmail(envelope_from, recipients + cc_list, msg.as_bytes())
-    print(f"[mailer] SMTP sendmail OK -> {recipients}", flush=True)
 
 
 def _send_api(to: str | list[str], subject: str, html_body: str,
@@ -131,8 +129,7 @@ async def send_email(
     """Envía vía Brevo API (si BREVO_API_KEY configurada) o SMTP como fallback."""
     loop = asyncio.get_running_loop()
     if BREVO_API_KEY:
-        print(f"[mailer] send_email via API -> {to}", flush=True)
-        await loop.run_in_executor(
+            await loop.run_in_executor(
             None, partial(_send_api, to, subject, html_body, attachments, reply_to, cc)
         )
     else:
