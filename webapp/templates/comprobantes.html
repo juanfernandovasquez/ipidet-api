@@ -2238,26 +2238,31 @@ function sendCompModal() {
   compId: '',
   cargando: false,
   preflight: null,
+  puedeEmitir: false,
   emitiendo: false,
   resultado: null,
 
   async abrir(id) {
     this.compId = id;
     this.preflight = null;
+    this.puedeEmitir = false;
     this.resultado = null;
     this.abierto = true;
     this.cargando = true;
     try {
       const r = await fetch('/api/sunat/preflight/' + id);
-      this.preflight = await r.json();
+      const data = await r.json();
+      this.preflight = data;
+      this.puedeEmitir = !!data.puede_emitir;
     } catch(e) {
       this.preflight = {errores: ['Error al cargar validaciones: ' + e.message], advertencias: [], puede_emitir: false, resumen: {}};
+      this.puedeEmitir = false;
     }
     this.cargando = false;
   },
 
   async confirmar() {
-    if (!this.preflight?.puede_emitir) return;
+    if (!this.puedeEmitir) return;
     this.emitiendo = true;
     this.resultado = null;
     try {
@@ -2446,7 +2451,7 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
         Cancelar
       </button>
       <button @click="confirmar()"
-              :disabled="!preflight?.puede_emitir || emitiendo || resultado?.ok"
+              :disabled="!puedeEmitir || emitiendo || resultado?.ok"
               x-show="!resultado?.ok"
               class="flex-[2] inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
         <i class="fa-solid" :class="emitiendo ? 'fa-circle-notch fa-spin' : 'fa-stamp'"></i>
