@@ -1815,6 +1815,73 @@ async def comprobante_enviar_email(comp_id: str, request: Request):
     return JSONResponse({"ok": True, "enviados": len(to_emails)})
 
 
+@app.post("/comprobantes/{comp_id}/enviar-sunat-docs")
+async def comprobante_enviar_sunat_docs(comp_id: str, request: Request):
+    """Envía PDF y/o XML SUNAT al receptor del comprobante, detectando el email automáticamente."""
+    import base64 as _b64
+    from fastapi.responses import JSONResponse as _JR
+    from webapp.pdf_builder import build_comprobante_pdf
+
+    if not request.session.get("user_email"):
+        return _JR({"ok": False, "error": "No autenticado"}, status_code=401)
+
+    body     = await request.json()
+    send_pdf = bool(body.get("pdf", True))
+    send_xml = bool(body.get("xml", True))
+    if not send_pdf and not send_xml:
+        return _JR({"ok": False, "error": "Selecciona al menos un documento"})
+
+    comp = pdb.get_comprobante_by_id(comp_id)
+    if not comp:
+        return _JR({"ok": False, "error": "Comprobante no encontrado"}, status_code=404)
+
+    info        = pdb.get_comprobante_email_info(comp_id) or {}
+    socios_info = info.get("socios_info") or []
+
+    to_emails = [s["email"] for s in socios_info if s.get("email")]
+    if not to_emails:
+        return _JR({"ok": False, "error": "No se encontró email del destinatario"})
+
+    numero = comp.get("numero", comp_id)
+    tipo   = comp.get("tipo", "boleta")
+    attachments = []
+
+    if send_pdf:
+        pdf_bytes = build_comprobante_pdf(comp, socios_info)
+        attachments.append({"filename": f"{numero}.pdf", "data": pdf_bytes, "mime": "application/pdf"})
+
+    if send_xml:
+        xml_raw = comp.get("sunat_xml") or ""
+        if xml_raw:
+            raw = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
+            try:
+                decoded = _b64.b64decode(raw)
+                xml_bytes = decoded if decoded.lstrip().startswith(b"<") else raw
+            except Exception:
+                xml_bytes = raw
+            attachments.append({"filename": f"{numero}.xml", "data": xml_bytes, "mime": "application/xml"})
+
+    if not attachments:
+        return _JR({"ok": False, "error": "No hay documentos para enviar"})
+
+    # Plantilla: indicar si va el XML para el texto del adjunto
+    comp_tpl = dict(comp)
+    if any(a["filename"].endswith(".xml") for a in attachments):
+        comp_tpl["xml_raw"] = True  # activa la mención al XML en tpl_comprobante_pago
+
+    tipo_label = {"boleta": "Boleta de Venta", "factura": "Factura", "recibo": "Recibo"}.get(tipo, tipo.capitalize())
+    subject    = f"{tipo_label} N° {numero} — IPIDET"
+    html_body  = mailer.tpl_comprobante_pago(comp_tpl, socios_info)
+
+    try:
+        await mailer.send_email(to=to_emails, subject=subject,
+                                html_body=html_body, attachments=attachments)
+    except Exception as exc:
+        return _JR({"ok": False, "error": str(exc)}, status_code=500)
+
+    return _JR({"ok": True, "enviados": len(to_emails), "a": to_emails})
+
+
 @app.get("/api/facturas-credito/{factura_id}/email-info")
 async def api_factura_credito_email_info(factura_id: str):
     info = pdb.get_factura_credito_email_info(factura_id)
