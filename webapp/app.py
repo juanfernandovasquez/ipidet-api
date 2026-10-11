@@ -2792,6 +2792,7 @@ async def sunat_emitir(comp_id: str, request: Request):
 async def sunat_download_xml(comp_id: str, request: Request):
     if not request.session.get("user_email"):
         raise HTTPException(401, "No autenticado")
+    import base64 as _b64
     from fastapi.responses import Response as _FResponse
     comp = pdb.get_comprobante_by_id(comp_id)
     if not comp:
@@ -2799,7 +2800,14 @@ async def sunat_download_xml(comp_id: str, request: Request):
     xml_raw = comp.get("sunat_xml") or ""
     if not xml_raw:
         raise HTTPException(404, "XML SUNAT no disponible para este comprobante")
-    xml_bytes = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
+    # APISPERU devuelve el XML en base64; intentar decodificar primero
+    xml_bytes: bytes
+    raw_bytes = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
+    try:
+        decoded = _b64.b64decode(raw_bytes)
+        xml_bytes = decoded if decoded.lstrip().startswith(b"<") else raw_bytes
+    except Exception:
+        xml_bytes = raw_bytes
     numero = (comp.get("numero") or comp_id).replace("/", "-")
     return _FResponse(
         content=xml_bytes,

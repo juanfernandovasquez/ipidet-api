@@ -274,10 +274,11 @@
             </button>
             {% endif %}
             {% if c.sunat_estado == 'emitido' %}
-            <a href="/comprobantes/{{ c._id }}/sunat/xml" target="_blank"
+            <a href="/comprobantes/{{ c._id }}/sunat/xml"
                title="Descargar XML SUNAT"
-               class="text-slate-300 hover:text-sky-500 transition-colors p-1">
-              <i class="fa-solid fa-file-code text-xs"></i>
+               class="inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-800 hover:bg-sky-50 px-2 py-1 rounded-lg transition-colors">
+              <i class="fa-solid fa-file-code"></i>
+              <span>XML</span>
             </a>
             {% elif c.estado != 'anulado' and c.tipo in ('boleta', 'factura') %}
             <button @click="emitirSunat()" :disabled="emitandoSunat"
