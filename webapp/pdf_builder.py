@@ -138,19 +138,26 @@ def build_comprobante_pdf(
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
 
-    razon = _safe(IPIDET_RAZON_SOCIAL or "")
-    if len(razon) > 50:
-        split_at = razon.rfind(" ", 0, 50)
-        if split_at <= 0:
-            split_at = 50
-        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, razon[:split_at])
-        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, razon[split_at + 1:])
-    else:
-        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, razon)
+    def _emit_text(text: str) -> None:
+        """Escribe texto en la columna izquierda, wrapeando por palabras si no entra."""
+        max_w = col_l - 1   # 1 mm de margen de seguridad
+        words = text.split()
+        line = ""
+        for word in words:
+            candidate = (line + " " + word).strip() if line else word
+            if pdf.get_string_width(candidate) <= max_w:
+                line = candidate
+            else:
+                if line:
+                    pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, line)
+                line = word
+        if line:
+            pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, line)
 
+    _emit_text(_safe(IPIDET_RAZON_SOCIAL or ""))
     pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(f"RUC: {IPIDET_RUC or '-'}"))
     if IPIDET_DIRECCION:
-        pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(IPIDET_DIRECCION))
+        _emit_text(_safe(IPIDET_DIRECCION))
     pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, "administracion@ipidet.org")
 
     left_bottom = pdf.get_y()
