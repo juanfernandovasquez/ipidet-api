@@ -2798,17 +2798,21 @@ async def comprobante_pdf(comp_id: str, request: Request):
     """Genera y devuelve el PDF del comprobante para visualizar/descargar."""
     if not request.session.get("user_email"):
         raise HTTPException(401, "No autenticado")
-    from fastapi.responses import Response as _FResp
+    import traceback as _tb
+    from fastapi.responses import Response as _FResp, PlainTextResponse as _PTResp
     from webapp.pdf_builder import build_comprobante_pdf
 
     comp = pdb.get_comprobante_by_id(comp_id)
     if not comp:
         raise HTTPException(404, "Comprobante no encontrado")
 
-    info = pdb.get_comprobante_email_info(comp_id) or {}
-    socios_info = info.get("socios_info") or []
+    try:
+        info = pdb.get_comprobante_email_info(comp_id) or {}
+        socios_info = info.get("socios_info") or []
+        pdf_bytes = build_comprobante_pdf(comp, socios_info)
+    except Exception:
+        return _PTResp(_tb.format_exc(), status_code=500)
 
-    pdf_bytes = build_comprobante_pdf(comp, socios_info)
     numero = (comp.get("numero") or comp_id).replace("/", "-")
     return _FResp(
         content=pdf_bytes,
