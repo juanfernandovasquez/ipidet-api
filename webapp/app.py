@@ -2672,6 +2672,22 @@ async def sunat_preflight(comp_id: str, request: Request):
     return validate_comprobante(comp, member, empresa, ultimo_correlativo)
 
 
+@app.get("/api/sunat/siguiente-correlativo")
+async def sunat_siguiente_correlativo(tipo: str = "boleta", request: Request = None):
+    """Devuelve el siguiente número de correlativo disponible para una serie."""
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    serie = "B001" if tipo == "boleta" else "F001"
+    ultimo = pdb.get_ultimo_correlativo_emitido(serie)
+    siguiente = (ultimo + 1) if ultimo is not None else 1
+    return {
+        "serie":    serie,
+        "ultimo":   ultimo,
+        "siguiente": siguiente,
+        "numero":   f"{serie}-{siguiente:05d}",
+    }
+
+
 # ── SUNAT / APISPERU ──────────────────────────────────────────────────────────
 
 @app.post("/comprobantes/{comp_id}/sunat/emitir")

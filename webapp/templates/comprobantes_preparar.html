@@ -21,12 +21,12 @@
 
         <!-- Toggle boleta / factura -->
         <div class="inline-flex bg-slate-100 rounded-lg p-0.5 shrink-0">
-          <button type="button" @click="form.tipo = 'boleta'; empNewForm.show = false"
+          <button type="button" @click="form.tipo = 'boleta'; empNewForm.show = false; form.numero = ''; numeroAutoSugerido = false; cargarSiguienteCorrelativo()"
                   :class="form.tipo === 'boleta' ? 'bg-white shadow text-sky-600 font-semibold' : 'text-slate-500 hover:text-slate-700'"
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all whitespace-nowrap">
             <i class="fa-solid fa-file-lines text-xs"></i> Boleta
           </button>
-          <button type="button" @click="form.tipo = 'factura'; destinatario.member_id=''; destinatario.nombre=''; destinatario.dni=''; dniInput=''; dniGuardando=false"
+          <button type="button" @click="form.tipo = 'factura'; destinatario.member_id=''; destinatario.nombre=''; destinatario.dni=''; dniInput=''; dniGuardando=false; form.numero = ''; numeroAutoSugerido = false; cargarSiguienteCorrelativo()"
                   :class="form.tipo === 'factura' ? 'bg-white shadow text-violet-600 font-semibold' : 'text-slate-500 hover:text-slate-700'"
                   class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all whitespace-nowrap">
             <i class="fa-solid fa-file-invoice text-xs"></i> Factura
@@ -439,10 +439,35 @@
       </h2>
       <div class="space-y-3">
         <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">N° Comprobante</label>
-          <input type="text" x-model="form.numero" placeholder="B001-00001 (opcional para pre-registro)"
-                 class="input w-full text-sm font-mono">
-          <p class="text-[11px] text-slate-400 mt-0.5">Vacío → se guarda como pre-registro hasta importar el XML.</p>
+          <label class="block text-xs font-medium text-slate-600 mb-1 flex items-center gap-2">
+            N° Comprobante
+            <span x-show="numeroAutoSugerido && form.numero.trim()" x-cloak
+                  class="text-[10px] font-normal text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+              <i class="fa-solid fa-wand-magic-sparkles text-[9px]"></i> Sugerido automáticamente
+            </span>
+          </label>
+          <div class="relative">
+            <input type="text" x-model="form.numero"
+                   @input="if ($el.value !== (siguienteInfo?.numero || '')) numeroAutoSugerido = false"
+                   placeholder="B001-00001 (opcional para pre-registro)"
+                   class="input w-full text-sm font-mono">
+            <button x-show="siguienteInfo" x-cloak type="button"
+                    @click="form.numero = siguienteInfo.numero; numeroAutoSugerido = true"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-blue-500 hover:text-blue-700 transition-colors"
+                    :title="'Usar ' + (siguienteInfo?.numero || '')">
+              <i class="fa-solid fa-rotate-right"></i>
+            </button>
+          </div>
+          <p x-show="siguienteInfo && siguienteInfo.ultimo !== null" x-cloak
+             class="text-[11px] text-slate-400 mt-0.5">
+            Último emitido a SUNAT: <span class="font-mono font-medium" x-text="siguienteInfo?.serie + '-' + String(siguienteInfo?.ultimo || 0).padStart(5,'0')"></span>
+            — siguiente: <span class="font-mono font-medium text-slate-600" x-text="siguienteInfo?.numero"></span>
+          </p>
+          <p x-show="!siguienteInfo || siguienteInfo.ultimo === null" x-cloak
+             class="text-[11px] text-emerald-600 mt-0.5">
+            <i class="fa-solid fa-circle-check text-[10px]"></i>
+            Primera emisión en esta serie — se usará el número 00001.
+          </p>
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Medio de pago</label>
@@ -559,6 +584,8 @@ function preparar() {
     empSaving: false,
     dniInput: '',
     dniGuardando: false,
+    siguienteInfo: null,
+    numeroAutoSugerido: false,
 
     get total() {
       return this.lineas.reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
@@ -574,6 +601,21 @@ function preparar() {
     init() {
       this.productos = JSON.parse(document.getElementById('prep-productos').textContent);
       this.agregarLinea();
+      this.cargarSiguienteCorrelativo();
+    },
+
+    async cargarSiguienteCorrelativo() {
+      try {
+        const r = await fetch(`/api/sunat/siguiente-correlativo?tipo=${this.form.tipo}`);
+        const d = await r.json();
+        this.siguienteInfo = d;
+        if (!this.form.numero.trim()) {
+          this.form.numero = d.numero;
+          this.numeroAutoSugerido = true;
+        }
+      } catch (e) {
+        this.siguienteInfo = null;
+      }
     },
 
     agregarLinea() {
