@@ -2242,6 +2242,18 @@ function sendCompModal() {
   emitiendo: false,
   resultado: null,
 
+  _btnShow(show) {
+    if (!this.$refs.emitBtn) return;
+    this.$refs.emitBtn.style.display = show ? '' : 'none';
+  },
+  _btnText(icon, text) {
+    if (!this.$refs.emitBtn) return;
+    const i = this.$refs.emitBtn.querySelector('i');
+    const s = this.$refs.emitBtn.querySelector('span');
+    if (i) i.className = 'fa-solid ' + icon;
+    if (s) s.textContent = text;
+  },
+
   async abrir(id) {
     this.compId = id;
     this.preflight = null;
@@ -2249,11 +2261,18 @@ function sendCompModal() {
     this.resultado = null;
     this.abierto = true;
     this.cargando = true;
+    // Reset result divs y botón
+    if (this.$refs.resultadoOk)  this.$refs.resultadoOk.style.display  = 'none';
+    if (this.$refs.resultadoErr) this.$refs.resultadoErr.style.display = 'none';
+    this._btnShow(true);
+    this._btnText('fa-stamp', 'Emitir a SUNAT');
     try {
       const r = await fetch('/api/sunat/preflight/' + id);
       const data = await r.json();
       this.preflight = data;
       this.puedeEmitir = !!data.puede_emitir;
+      // DOM directo para texto del botón (preflight?.resumen?.tipo no flushea en Alpine async)
+      this._btnText('fa-stamp', 'Emitir ' + (data.resumen?.tipo || '') + ' a SUNAT');
     } catch(e) {
       this.preflight = {errores: ['Error al cargar validaciones: ' + e.message], advertencias: [], puede_emitir: false, resumen: {}};
       this.puedeEmitir = false;
@@ -2265,6 +2284,8 @@ function sendCompModal() {
     if (!this.puedeEmitir) return;
     this.emitiendo = true;
     this.resultado = null;
+    // DOM directo: spinner
+    this._btnText('fa-circle-notch fa-spin', 'Emitiendo a SUNAT…');
     try {
       const r = await fetch('/comprobantes/' + this.compId + '/sunat/emitir', {method: 'POST'});
       this.resultado = await r.json();
@@ -2272,7 +2293,16 @@ function sendCompModal() {
       this.resultado = {ok: false, error: 'Error de red: ' + e.message};
     }
     this.emitiendo = false;
-    if (this.resultado?.ok) setTimeout(() => location.reload(), 2000);
+    // DOM directo para resultado (Alpine no flushea tras await)
+    this._btnShow(false);
+    if (this.resultado && this.resultado.ok) {
+      if (this.$refs.resultadoOk) this.$refs.resultadoOk.style.display = '';
+      setTimeout(() => location.reload(), 4000);
+    } else {
+      if (this.$refs.resultadoErr) this.$refs.resultadoErr.style.display = '';
+      if (this.$refs.resultadoErrMsg)
+        this.$refs.resultadoErrMsg.textContent = (this.resultado && this.resultado.error) || 'Error desconocido';
+    }
   },
 
   cerrar() { this.abierto = false; }
@@ -2443,6 +2473,24 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
         </div>
       </template>
 
+      <!-- Resultado de la emisión (mostrado via DOM directo en confirmar()) -->
+      <div x-ref="resultadoOk" style="display:none"
+           class="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex items-start gap-3">
+        <i class="fa-solid fa-circle-check text-emerald-600 mt-0.5 flex-shrink-0 text-base"></i>
+        <div>
+          <p class="text-sm font-semibold text-emerald-800">Comprobante aceptado por SUNAT</p>
+          <p class="text-xs text-emerald-600 mt-1">La página se actualizará en unos segundos…</p>
+        </div>
+      </div>
+      <div x-ref="resultadoErr" style="display:none"
+           class="rounded-xl bg-red-50 border border-red-200 p-4 flex items-start gap-3">
+        <i class="fa-solid fa-circle-xmark text-red-600 mt-0.5 flex-shrink-0 text-base"></i>
+        <div>
+          <p class="text-sm font-semibold text-red-800">Error al emitir</p>
+          <p x-ref="resultadoErrMsg" class="text-xs text-red-600 mt-1 font-mono break-all"></p>
+        </div>
+      </div>
+
     </div>
 
     <!-- Footer -->
@@ -2453,10 +2501,9 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
       </button>
       <button x-ref="emitBtn"
               @click="confirmar()"
-              x-show="!resultado?.ok"
               class="flex-[2] inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
-        <i class="fa-solid" :class="emitiendo ? 'fa-circle-notch fa-spin' : 'fa-stamp'"></i>
-        <span x-text="emitiendo ? 'Emitiendo a SUNAT…' : 'Emitir ' + (preflight?.resumen?.tipo || '') + ' a SUNAT'"></span>
+        <i class="fa-solid fa-stamp"></i>
+        <span>Emitir a SUNAT</span>
       </button>
     </div>
 
