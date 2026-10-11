@@ -25,12 +25,36 @@ _COLOR_WHITE     = (255, 255, 255)
 
 _LOGO_PATH = Path(__file__).parent / "static" / "logo.png"
 
+# Caracteres fuera de Latin-1 que fpdf2 con fuentes core no puede encodear
+_UNICODE_MAP = {
+    "—": "-", "–": "-",          # em dash, en dash
+    "‘": "'", "’": "'",          # comillas simples tipograficas
+    "“": '"', "”": '"',          # comillas dobles tipograficas
+    "…": "...",                        # ellipsis
+    "·": ".", "•": "*",          # bullet points
+    "º": "o", "ª": "a",          # ordinal
+}
+
+
+def _safe(text: object) -> str:
+    """Convierte a str y reemplaza caracteres fuera de Latin-1."""
+    s = str(text or "")
+    out = []
+    for ch in s:
+        if ch in _UNICODE_MAP:
+            out.append(_UNICODE_MAP[ch])
+        elif ord(ch) > 255:
+            out.append("?")
+        else:
+            out.append(ch)
+    return "".join(out)
+
 
 def _fmt_fecha(fecha: str) -> str:
     try:
         return datetime.strptime(fecha, "%Y-%m-%d").strftime("%d/%m/%Y")
     except Exception:
-        return fecha or "—"
+        return fecha or "-"
 
 
 def _hr(pdf: FPDF, lm: float, rm: float) -> None:
@@ -41,17 +65,17 @@ def _hr(pdf: FPDF, lm: float, rm: float) -> None:
 
 def _cell(pdf: FPDF, w: float, h: float, txt: str, *,
           align: str = "L", fill: bool = False, bold: bool = False) -> None:
-    """Celda que avanza a la derecha (misma línea)."""
+    """Celda que avanza a la derecha (misma línea). Sanitiza texto a Latin-1."""
     if bold:
         pdf.set_font("Helvetica", "B", pdf.font_size_pt)
-    pdf.cell(w, h, txt, align=align, fill=fill,
+    pdf.cell(w, h, _safe(txt), align=align, fill=fill,
              new_x=XPos.RIGHT, new_y=YPos.TOP)
 
 
 def _cell_nl(pdf: FPDF, w: float, h: float, txt: str, *,
              align: str = "L", fill: bool = False) -> None:
-    """Celda que salta a la siguiente línea."""
-    pdf.cell(w, h, txt, align=align, fill=fill,
+    """Celda que salta a la siguiente línea. Sanitiza texto a Latin-1."""
+    pdf.cell(w, h, _safe(txt), align=align, fill=fill,
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
@@ -144,10 +168,10 @@ def build_comprobante_pdf(
     pdf.ln(3)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
-    fecha_emision = _fmt_fecha(comp.get("fecha_emision") or "")
-    fecha_pago    = _fmt_fecha(comp.get("fecha_pago") or "")
+    fecha_emision = _safe(_fmt_fecha(comp.get("fecha_emision") or ""))
+    fecha_pago    = _safe(_fmt_fecha(comp.get("fecha_pago") or ""))
     pdf.set_x(LM)
-    _cell(pdf, CW / 3, 5.5, f"Fecha emisión: {fecha_emision}")
+    _cell(pdf, CW / 3, 5.5, f"Fecha emision: {fecha_emision}")
     _cell(pdf, CW / 3, 5.5, f"Fecha pago: {fecha_pago}")
     _cell_nl(pdf, CW / 3, 5.5, "Moneda: SOLES", align="R")
     pdf.ln(4)
