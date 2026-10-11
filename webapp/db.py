@@ -3052,18 +3052,16 @@ def get_next_constancia_number(year: int) -> str:
 
 def save_constancia(
     member_id: str,
-    numero: str,
     fecha_emision: str,
     email_destino: str,
     tratamiento: str,
 ) -> str:
     doc = {
-        "member_id":    member_id,
-        "numero":       numero,
+        "member_id":     member_id,
         "fecha_emision": fecha_emision,
         "email_destino": email_destino,
-        "tratamiento":  tratamiento,
-        "created_at":   datetime.now(timezone.utc),
+        "tratamiento":   tratamiento,
+        "created_at":    datetime.now(timezone.utc),
     }
     return str(constancias_col.insert_one(doc).inserted_id)
 

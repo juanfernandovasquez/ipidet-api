@@ -476,14 +476,10 @@ async def enviar_constancia(
     if not email_dest:
         raise HTTPException(status_code=400, detail="El socio no tiene email habilitado")
 
-    year = date.today().year
-    numero = pdb.get_next_constancia_number(year)
     fecha_emision = date.today()
-
     nombre_completo = f"{doc.get('apellidos', '')} {doc.get('nombres', '')}".strip().upper()
 
     pdf_bytes = generar_constancia_pdf(
-        numero=numero,
         nombre_completo=nombre_completo,
         titulo=doc.get("titulo", ""),
         dni=doc.get("dni") or None,
@@ -492,11 +488,12 @@ async def enviar_constancia(
         fecha_emision=fecha_emision,
     )
 
-    asunto = f"Constancia de Asociado Nº {numero} — IPIDET"
+    fecha_str = fecha_emision.strftime("%Y%m%d")
+    asunto = "Constancia de Asociado — IPIDET"
     cuerpo = (
         f"<p>Estimado(a) {doc.get('nombres', '')} {doc.get('apellidos', '')},</p>"
         f"<p>Adjuntamos su constancia de asociado al Instituto Peruano de Investigación "
-        f"y Desarrollo Tributario — IPIDET, con número <strong>{numero}</strong>.</p>"
+        f"y Desarrollo Tributario — IPIDET.</p>"
         f"<p>Atentamente,<br>Secretaría — IPIDET</p>"
     )
 
@@ -506,7 +503,7 @@ async def enviar_constancia(
             asunto,
             cuerpo,
             attachments=[{
-                "filename": f"Constancia-{numero}.pdf",
+                "filename": f"Constancia_IPIDET_{member_id}_{fecha_str}.pdf",
                 "data": pdf_bytes,
                 "mime": "application/pdf",
             }],
@@ -516,7 +513,6 @@ async def enviar_constancia(
 
     pdb.save_constancia(
         member_id=member_id,
-        numero=numero,
         fecha_emision=fecha_emision.isoformat(),
         email_destino=email_dest,
         tratamiento=tratamiento,

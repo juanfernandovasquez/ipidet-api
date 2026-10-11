@@ -21,7 +21,6 @@ def _fecha_larga(d: _date) -> str:
 
 
 def generar_constancia_pdf(
-    numero: str,
     nombre_completo: str,   # en MAYÚSCULAS
     titulo: str,            # "Contador", "Abogada", etc.
     dni: str | None,
@@ -47,8 +46,6 @@ def generar_constancia_pdf(
     # ── Título ─────────────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 15)
     pdf.cell(0, 8, "CERTIFICADO DE ASOCIADO", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 7, f"Nº {numero}", align="C", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(6)
 
@@ -94,11 +91,11 @@ def generar_constancia_pdf(
     # ── Institución ─────────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 6, "INSTITUTO PERUANO DE INVESTIGACION Y DESARROLLO TRIBUTARIO", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(22)
+    pdf.ln(24)
 
-    # ── Firma (línea) ────────────────────────────────────────────────────────
-    pdf.set_draw_color(80, 80, 80)
-    pdf.set_line_width(0.4)
+    # ── Firma ────────────────────────────────────────────────────────────────
+    pdf.set_draw_color(30, 30, 30)
+    pdf.set_line_width(0.6)
     firma_w = 80
     firma_x = (210 - firma_w) / 2
     pdf.line(firma_x, pdf.get_y(), firma_x + firma_w, pdf.get_y())
@@ -106,6 +103,7 @@ def generar_constancia_pdf(
 
     # ── Nombre y cargo ──────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(30, 30, 30)
     pdf.cell(0, 6, "KATARZYNA DUNIN BORKOWSKI", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(0, 6, "Presidenta del Consejo Directivo", align="C", new_x="LMARGIN", new_y="NEXT")
