@@ -104,6 +104,15 @@
         {% endfor %}
       </select>
     </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">SUNAT</label>
+      <select name="sunat" class="input text-sm">
+        <option value="">Todos</option>
+        <option value="emitido"  {% if sunat == 'emitido'  %}selected{% endif %}>✓ Emitido</option>
+        <option value="pendiente"{% if sunat == 'pendiente'%}selected{% endif %}>⏳ Pendiente</option>
+        <option value="error"    {% if sunat == 'error'    %}selected{% endif %}>✗ Error</option>
+      </select>
+    </div>
     <div class="flex gap-2 self-end">
       <button type="submit" class="btn-primary text-sm">Filtrar</button>
       <a href="/comprobantes" class="btn-ghost text-sm">Limpiar</a>

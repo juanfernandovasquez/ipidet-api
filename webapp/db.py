@@ -3246,7 +3246,8 @@ def get_comprobante_stats() -> dict:
 
 def get_comprobantes_unified(
     search: str = "", tipo: str = "", empresa: str = "",
-    fecha: str = "", sort_by: str = "fecha_emision", sort_dir: str = "desc",
+    fecha: str = "", sunat: str = "",
+    sort_by: str = "fecha_emision", sort_dir: str = "desc",
     page: int = 1, per_page: int = 50,
 ) -> tuple:
     """Lista unificada de comprobantes (boletas/facturas) + facturas_credito."""
@@ -3273,6 +3274,10 @@ def get_comprobantes_unified(
     credito_numeros: set = set()
     credito_comp_ids: set = set()
 
+    # Filtro SUNAT implica excluir crédito (no aplica)
+    if sunat:
+        include_cred = False
+
     if include_comp:
         q: dict = {"estado": {"$ne": "anulado"}}
         if tipo and tipo not in ("credito",):
@@ -3281,6 +3286,13 @@ def get_comprobantes_unified(
             q["empresa"] = {"$regex": _re.escape(empresa), "$options": "i"}
         if fecha:
             q["fecha_emision"] = fecha
+        if sunat == "emitido":
+            q["sunat_estado"] = "emitido"
+        elif sunat == "pendiente":
+            q["tipo"] = {"$in": ["boleta", "factura"]}
+            q["sunat_estado"] = {"$not": {"$in": ["emitido", "anulado_sunat"]}}
+        elif sunat == "error":
+            q["sunat_estado"] = "error"
         if search:
             _srx = _re.escape(search)
             or_c: list = [

@@ -2086,12 +2086,13 @@ async def comprobantes_list(
     search:   str = "",
     tipo:     str = "",
     empresa:  str = "",
+    sunat:    str = "",
     sort_by:  str = "fecha_emision",
     sort_dir: str = "desc",
     page:     int = 1,
 ):
     docs, total = pdb.get_comprobantes_unified(
-        search=search, tipo=tipo, empresa=empresa,
+        search=search, tipo=tipo, empresa=empresa, sunat=sunat,
         sort_by=sort_by, sort_dir=sort_dir, page=page,
     )
     stats         = pdb.get_comprobante_stats()
@@ -2115,6 +2116,7 @@ async def comprobantes_list(
         search         = search,
         tipo           = tipo,
         empresa        = empresa,
+        sunat          = sunat,
         sort_by        = sort_by,
         sort_dir       = sort_dir,
         page           = page,
