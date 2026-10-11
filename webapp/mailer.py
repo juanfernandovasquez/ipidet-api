@@ -128,11 +128,17 @@ async def send_email(
     reply_to: str | None = None,
     cc: list[str] | None = None,
 ):
-    """Envía vía SMTP relay de Brevo (mismo canal que comunicaciones masivas)."""
+    """Envía vía Brevo API (si BREVO_API_KEY configurada) o SMTP como fallback."""
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(
-        None, partial(_send_sync, to, subject, html_body, attachments, reply_to, cc)
-    )
+    if BREVO_API_KEY:
+        print(f"[mailer] send_email via API -> {to}", flush=True)
+        await loop.run_in_executor(
+            None, partial(_send_api, to, subject, html_body, attachments, reply_to, cc)
+        )
+    else:
+        await loop.run_in_executor(
+            None, partial(_send_sync, to, subject, html_body, attachments, reply_to, cc)
+        )
 
 
 _HAS_HTML = _re.compile(r'<[a-zA-Z/!]')
