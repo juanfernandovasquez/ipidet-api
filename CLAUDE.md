@@ -1229,11 +1229,33 @@ Flujo server-to-server: WordPress llama a FastAPI para verificar si un email es 
 
 ## 13. Comunicaciones masivas (Brevo) {#brevo}
 
-`webapp/mailer.py` envía emails via Brevo SMTP. Los bounces (hard y soft) llegan via webhook a `POST /webhook/brevo/bounce` y se registran en `members.emails[].estado = "rebotado"`. La vista `/comunicaciones/rebotes` muestra el historial.
+`webapp/mailer.py` envía emails via Brevo. Los bounces (hard y soft) llegan via webhook a `POST /webhook/brevo/bounce` y se registran en `members.emails[].estado = "rebotado"`. La vista `/comunicaciones/rebotes` muestra el historial.
 
 El agente de email consulta solo emails con `estado: "habilitado"`. Los rebotes de Brevo marcan el email automáticamente.
 
 Filtros disponibles al enviar: título, ubicación, estado de socio, estado de pago, periodo.
+
+### Arquitectura de transporte en `webapp/mailer.py`
+
+| Función | Canal | Cuándo se usa |
+|---------|-------|---------------|
+| `send_email(...)` | **Brevo HTTP API** (`BREVO_API_KEY`) | Emails individuales: constancia, boleta, cualquier envío one-shot |
+| `send_bulk(...)` | Brevo HTTP API si `BREVO_API_KEY`; sino SMTP | Comunicaciones masivas a listas de socios |
+| `_send_sync(...)` | SMTP (`smtp-relay.brevo.com:587`) | Solo se llama como fallback de `send_bulk` si no hay API key |
+
+**Credenciales en Render (producción):**
+- `BREVO_API_KEY` — API/MCP key de Brevo "ERP - IPIDET" (activa, sin vencimiento). **Esta es la key que hace funcionar todos los emails individuales.**
+- `BREVO_SMTP_USER` / `BREVO_SMTP_PASSWORD` — NO están configuradas en Render. El SMTP relay no se usa en producción.
+
+### R9 — No cambiar el canal de transporte de `send_email`
+
+`send_email` usa `BREVO_API_KEY` (HTTP API). **Nunca cambiar esto a SMTP** — las credenciales SMTP no están en Render y no son el canal de producción. Si un email no llega, diagnosticar en este orden:
+
+1. ¿`BREVO_API_KEY` está activa en Render? (Render → Environment)
+2. ¿El adjunto es `bytes` y no `bytearray`? (`isinstance(raw, (bytes, bytearray))` en `_send_api`)
+3. ¿La API devuelve error HTTP? (ver bloque `except` en `_send_api`)
+
+No tocar el transporte hasta haber descartado los tres puntos anteriores.
 
 ---
 
