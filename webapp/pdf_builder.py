@@ -306,6 +306,16 @@ def build_comprobante_pdf(
     _tot("IGV (0%):", "S/ 0.00")
     _tot("TOTAL A PAGAR:", f"S/ {monto_total:.2f}", resaltar=True)
 
+    medio_pago = (comp.get("medio_pago") or "").strip()
+    if medio_pago:
+        pdf.ln(3)
+        pdf.set_x(LM)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(*_COLOR_GRAY_TEXT)
+        _cell(pdf, CW * 0.22, 5, "Forma de pago:")
+        pdf.set_text_color(*_COLOR_BODY_TEXT)
+        _cell_nl(pdf, CW * 0.78, 5, _safe(medio_pago))
+
     pdf.ln(6)
 
     # ── LEYENDA EN LETRAS ────────────────────────────────────────────────────

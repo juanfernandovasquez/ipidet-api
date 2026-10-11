@@ -422,6 +422,13 @@
           </div>
         </div>
 
+        <!-- Forma de pago -->
+        <div x-show="form.medio_pago" x-cloak
+             class="flex items-center justify-between mt-2 pt-2 border-t border-dashed border-slate-200">
+          <span class="text-[10px] text-slate-400 uppercase tracking-wide">Forma de pago</span>
+          <span class="text-[11px] font-medium text-slate-700" x-text="form.medio_pago"></span>
+        </div>
+
         <!-- Placeholder vacío -->
         <div x-show="!lineas.some(l => l.sid || l.pid)" x-cloak
              class="text-center py-6 text-slate-300">
