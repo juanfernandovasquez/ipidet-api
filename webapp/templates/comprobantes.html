@@ -2280,6 +2280,7 @@ function sendCompModal() {
 @sunat-abrir.window="abrir($event.detail)"
 x-show="abierto"
 x-cloak
+x-effect="$refs.emitBtn && ($refs.emitBtn.disabled = !puedeEmitir || emitiendo || !!(resultado && resultado.ok))"
 class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
 
   <div @click.outside="cerrar()"
@@ -2450,8 +2451,8 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
               class="flex-1 text-sm font-medium text-slate-600 hover:text-slate-800 px-4 py-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors">
         Cancelar
       </button>
-      <button @click="confirmar()"
-              :disabled="!puedeEmitir || emitiendo || resultado?.ok"
+      <button x-ref="emitBtn"
+              @click="confirmar()"
               x-show="!resultado?.ok"
               class="flex-[2] inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
         <i class="fa-solid" :class="emitiendo ? 'fa-circle-notch fa-spin' : 'fa-stamp'"></i>
