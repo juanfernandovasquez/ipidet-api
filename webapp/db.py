@@ -3749,7 +3749,7 @@ def get_comprobante_email_info(comp_id: str) -> dict | None:
         "empresa":          empresa,
         "empresa_email":    empresa_email,
         "empresa_contacto": empresa_contacto,
-        "has_xml":          bool(comp.get("xml_raw")),
+        "has_xml":          bool(comp.get("xml_raw") or comp.get("sunat_xml")),
         "monto_total":      comp.get("monto_total") or 0,
         "items":            comp.get("items") or [],
         "concepto":         comp.get("concepto") or comp.get("producto_nombre") or "",
