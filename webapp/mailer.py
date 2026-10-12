@@ -372,6 +372,8 @@ def tpl_comprobante_pago(comp: dict, socios_info: list) -> str:
         for i, it in enumerate(items)
     )
 
+    medio_pago = (comp.get("medio_pago") or "").strip()
+
     receptor_rows = ""
     if empresa:
         if comp.get("ruc_empresa"):
@@ -391,6 +393,11 @@ def tpl_comprobante_pago(comp: dict, socios_info: list) -> str:
                     f'<tr style="background:#f8fafc"><td style="padding:6px 12px;font-size:13px;color:#64748b;font-weight:600">DNI</td>'
                     f'<td style="padding:6px 12px;font-size:13px;color:#1e293b">{s["dni"]}</td></tr>'
                 )
+    if medio_pago:
+        receptor_rows += (
+            f'<tr style="background:#f8fafc"><td style="padding:6px 12px;font-size:13px;color:#64748b;font-weight:600">Forma de pago</td>'
+            f'<td style="padding:6px 12px;font-size:13px;color:#1e293b">{medio_pago}</td></tr>'
+        )
 
     adjuntos_note = (
         '<p style="color:#64748b;font-size:12px;margin:8px 0 0">Adjunto encontrará el comprobante en formato PDF y el archivo XML para sistemas contables (SUNAT).</p>'

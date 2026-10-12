@@ -1776,6 +1776,8 @@ async def comprobante_enviar_email(comp_id: str, request: Request):
     data       = await request.json()
     to_emails  = [e.strip() for e in (data.get("to") or []) if e.strip()]
     cc_emails  = [e.strip() for e in (data.get("cc") or []) if e.strip()]
+    send_pdf   = bool(data.get("pdf", True))
+    send_xml   = bool(data.get("xml", True))
 
     if not to_emails:
         return JSONResponse({"ok": False, "error": "Sin destinatarios"}, status_code=400)
@@ -1787,17 +1789,26 @@ async def comprobante_enviar_email(comp_id: str, request: Request):
     info        = pdb.get_comprobante_email_info(comp_id)
     socios_info = info["socios_info"] if info else []
 
-    pdf_bytes = build_comprobante_pdf(comp, socios_info)
-    numero    = comp.get("numero", comp_id)
-    tipo      = comp.get("tipo", "boleta")
+    numero = comp.get("numero", comp_id)
+    tipo   = comp.get("tipo", "boleta")
 
-    attachments = [{"filename": f"{numero}.pdf", "data": pdf_bytes, "mime": "application/pdf"}]
+    attachments = []
+    if send_pdf:
+        pdf_bytes = build_comprobante_pdf(comp, socios_info)
+        attachments.append({"filename": f"{numero}.pdf", "data": pdf_bytes, "mime": "application/pdf"})
     xml_raw = comp.get("xml_raw") or ""
-    if xml_raw:
+    if send_xml and xml_raw:
         xml_bytes = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
         attachments.append({"filename": f"{numero}.xml", "data": xml_bytes, "mime": "application/xml"})
 
-    html_body  = mailer.tpl_comprobante_pago(comp, socios_info)
+    if not attachments:
+        return JSONResponse({"ok": False, "error": "Selecciona al menos un documento"}, status_code=400)
+
+    comp_tpl = dict(comp)
+    if any(a["filename"].endswith(".xml") for a in attachments):
+        comp_tpl["xml_raw"] = True
+
+    html_body  = mailer.tpl_comprobante_pago(comp_tpl, socios_info)
     tipo_label = {"boleta": "Boleta de Venta", "factura": "Factura", "recibo": "Recibo"}.get(tipo, tipo.capitalize())
     subject    = f"{tipo_label} N° {numero} — IPIDET"
 

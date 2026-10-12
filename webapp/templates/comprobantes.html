@@ -2078,18 +2078,26 @@ function credModal() {
 
           <!-- Adjuntos -->
           <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1.5">Adjuntos</label>
-            <div class="flex gap-2 flex-wrap">
-              <span class="inline-flex items-center gap-1.5 text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg">
-                <i class="fa-solid fa-file-pdf text-red-500"></i>
-                <span x-text="(info.numero || 'comprobante') + '.pdf'"></span>
-              </span>
-              <span x-show="info.has_xml" class="inline-flex items-center gap-1.5 text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg">
-                <i class="fa-solid fa-file-code text-orange-500"></i>
-                <span x-text="(info.numero || 'comprobante') + '.xml'"></span>
-              </span>
+            <label class="block text-xs font-semibold text-slate-600 mb-2">Adjuntos a enviar</label>
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 cursor-pointer select-none">
+                <input type="checkbox" x-model="enviarPdf"
+                       class="w-4 h-4 rounded accent-emerald-600 cursor-pointer">
+                <span class="text-sm text-slate-700 flex items-center gap-1.5">
+                  <i class="fa-solid fa-file-pdf text-rose-500 text-xs"></i>
+                  PDF del comprobante
+                </span>
+              </label>
+              <label class="flex items-center gap-3 cursor-pointer select-none" x-show="info.has_xml">
+                <input type="checkbox" x-model="enviarXml"
+                       class="w-4 h-4 rounded accent-emerald-600 cursor-pointer">
+                <span class="text-sm text-slate-700 flex items-center gap-1.5">
+                  <i class="fa-solid fa-file-code text-sky-500 text-xs"></i>
+                  XML SUNAT
+                </span>
+              </label>
               <span x-show="!info.has_xml" class="inline-flex items-center gap-1.5 text-xs bg-amber-50 text-amber-600 px-2.5 py-1 rounded-lg">
-                <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Sin XML original
+                <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Sin XML de SUNAT (aún no emitido)
               </span>
             </div>
           </div>
@@ -2141,12 +2149,14 @@ function sendCompModal() {
     open: false, loading: false, compId: null, tipoDoc: 'comprobante', info: null,
     toEmails: [], ccEmails: [], toInput: '', ccInput: '',
     sending: false, sent: false, sentCount: 0, error: '',
+    enviarPdf: true, enviarXml: true,
 
     _reset(compId, tipoDoc) {
       this.compId = compId; this.tipoDoc = tipoDoc;
       this.toEmails = []; this.ccEmails = [];
       this.toInput = ''; this.ccInput = '';
       this.sent = false; this.sentCount = 0; this.error = ''; this.info = null;
+      this.enviarPdf = true; this.enviarXml = true;
       this.open = true; this.loading = true;
     },
 
@@ -2211,7 +2221,7 @@ function sendCompModal() {
         const r = await fetch(url, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ to: this.toEmails, cc: this.ccEmails }),
+          body: JSON.stringify({ to: this.toEmails, cc: this.ccEmails, pdf: this.enviarPdf, xml: this.enviarXml }),
         });
         const d = await r.json();
         if (d.ok) {
