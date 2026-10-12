@@ -1796,10 +1796,17 @@ async def comprobante_enviar_email(comp_id: str, request: Request):
     if send_pdf:
         pdf_bytes = build_comprobante_pdf(comp, socios_info)
         attachments.append({"filename": f"{numero}.pdf", "data": pdf_bytes, "mime": "application/pdf"})
-    xml_raw = comp.get("xml_raw") or ""
-    if send_xml and xml_raw:
-        xml_bytes = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
-        attachments.append({"filename": f"{numero}.xml", "data": xml_bytes, "mime": "application/xml"})
+    if send_xml:
+        import base64 as _b64
+        xml_raw = comp.get("xml_raw") or comp.get("sunat_xml") or ""
+        if xml_raw:
+            raw = xml_raw.encode("utf-8") if isinstance(xml_raw, str) else xml_raw
+            try:
+                decoded = _b64.b64decode(raw)
+                xml_bytes = decoded if decoded.lstrip().startswith(b"<") else raw
+            except Exception:
+                xml_bytes = raw
+            attachments.append({"filename": f"{numero}.xml", "data": xml_bytes, "mime": "application/xml"})
 
     if not attachments:
         return JSONResponse({"ok": False, "error": "Selecciona al menos un documento"}, status_code=400)
