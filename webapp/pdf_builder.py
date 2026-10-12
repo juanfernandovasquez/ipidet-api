@@ -1,6 +1,7 @@
 """Genera PDFs de comprobantes de pago usando fpdf2."""
 from fpdf import FPDF, XPos, YPos
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 from config.settings import (
@@ -77,6 +78,49 @@ def _cell_nl(pdf: FPDF, w: float, h: float, txt: str, *,
     """Celda que salta a la siguiente línea. Sanitiza texto a Latin-1."""
     pdf.cell(w, h, _safe(txt), align=align, fill=fill,
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+
+def _qr_content(comp: dict, socios_info: list) -> str:
+    """Construye el string QR en formato SUNAT: RUC|TipoDoc|Nro|IGV|Total|Fecha|TipoDocRec|NroDocRec|Hash4"""
+    tipo     = comp.get("tipo", "boleta")
+    tipo_num = "03" if tipo == "boleta" else "01"
+    numero   = comp.get("numero", "")
+    total    = f"{float(comp.get('monto_total') or 0):.2f}"
+    fecha    = comp.get("fecha_emision", "")
+    hash4    = (comp.get("sunat_hash") or "")[:4]
+
+    if tipo == "factura":
+        tipo_doc_rec = "6"
+        nro_doc_rec  = comp.get("ruc_empresa", "") or ""
+    else:
+        tipo_doc_rec = "1"
+        nro_doc_rec  = ""
+        if socios_info:
+            nro_doc_rec = (socios_info[0].get("dni") or "")
+        if not nro_doc_rec:
+            nro_doc_rec = comp.get("destinatario_dni", "") or ""
+
+    return f"{IPIDET_RUC}|{tipo_num}|{numero}|0.00|{total}|{fecha}|{tipo_doc_rec}|{nro_doc_rec}|{hash4}"
+
+
+def _build_qr_png(content: str) -> bytes | None:
+    """Genera PNG del QR en memoria. Retorna None si qrcode no está disponible."""
+    try:
+        import qrcode
+        qr = qrcode.QRCode(
+            version=None,
+            box_size=4,
+            border=2,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+        )
+        qr.add_data(content)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
 
 
 def build_comprobante_pdf(
@@ -335,28 +379,43 @@ def build_comprobante_pdf(
     # ── PIE ──────────────────────────────────────────────────────────────────
     _hr(pdf, LM, PW - RM)
     pdf.ln(3)
+
+    QR_W  = 27   # mm — lado del QR
+    GAP   = 4    # mm entre texto y QR
+    txt_w = CW - QR_W - GAP
+    qr_x  = PW - RM - QR_W
+
+    # Generar QR una sola vez
+    qr_png     = _build_qr_png(_qr_content(comp, socios_info))
+    footer_y   = pdf.get_y()
+
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*_COLOR_GRAY_TEXT)
 
     sunat_hash = comp.get("sunat_hash") or ""
     if sunat_hash:
         pdf.set_x(LM)
-        _cell_nl(pdf, CW, 4, f"Hash SUNAT: {sunat_hash[:70]}", align="C")
+        pdf.cell(txt_w, 4, _safe(f"Hash: {sunat_hash[:55]}"),
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     ambiente = comp.get("sunat_ambiente") or ""
     if ambiente == "produccion":
-        nota = "Comprobante electrónico emitido y aceptado por SUNAT."
+        nota = "Comprobante electronico emitido y aceptado por SUNAT."
     elif ambiente:
-        nota = f"Documento de referencia — emitido en ambiente {ambiente}."
+        nota = f"Documento de referencia - emitido en ambiente {ambiente}."
     else:
-        nota = "Representación impresa del comprobante. Documento oficial: XML SUNAT."
+        nota = "Representacion impresa del comprobante. Documento oficial: XML SUNAT."
 
     pdf.set_x(LM)
-    _cell_nl(pdf, CW, 4, nota, align="C")
+    pdf.cell(txt_w, 4, _safe(nota), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_x(LM)
-    _cell_nl(pdf, CW, 4,
-             f"RUC Emisor: {IPIDET_RUC}  ·  {IPIDET_NOMBRE_COMERCIAL}  ·  administracion@ipidet.org",
-             align="C")
+    pdf.cell(txt_w, 4,
+             _safe(f"RUC: {IPIDET_RUC}  -  {IPIDET_NOMBRE_COMERCIAL}  -  administracion@ipidet.org"),
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # QR a la derecha, alineado con el inicio del pie
+    if qr_png:
+        pdf.image(BytesIO(qr_png), x=qr_x, y=footer_y, w=QR_W)
 
     return bytes(pdf.output())
 
