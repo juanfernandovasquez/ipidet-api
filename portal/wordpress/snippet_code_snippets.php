@@ -92,7 +92,19 @@ function ipidet_clear_portal_cache($order_id) {
 add_action('woocommerce_order_status_completed',  'ipidet_clear_portal_cache');
 add_action('woocommerce_order_status_processing', 'ipidet_clear_portal_cache');
 
-// ── 3. OCULTAR BARRA DE ADMIN A USUARIOS NO-ADMINISTRADORES ─────────────────
+// ── 3. REDIRIGIR /biblioteca-ipidet/ AL LOGIN SI EL USUARIO NO ESTÁ LOGUEADO ─
+
+add_action('init', function() {
+    if (is_user_logged_in()) return;
+    $path = isset($_SERVER['REQUEST_URI']) ? trim($_SERVER['REQUEST_URI'], '/') : '';
+    $path = strtok($path, '?');
+    if ($path === 'biblioteca-ipidet') {
+        wp_redirect(home_url('/asociados/'));
+        exit;
+    }
+}, 1);
+
+// ── 4. OCULTAR BARRA DE ADMIN A USUARIOS NO-ADMINISTRADORES ─────────────────
 
 add_filter('show_admin_bar', function($show) {
     if (!current_user_can('manage_options')) return false;
@@ -126,11 +138,9 @@ add_action('woocommerce_account_dashboard', function() {
 // ── 6. JS + CSS EN PÁGINAS DE MI CUENTA ─────────────────────────────────────
 
 add_action('wp_footer', function() {
-    if (!is_user_logged_in()) return;
     if (!is_account_page()) return;
 
-    $nonce    = wp_create_nonce('wp_rest');
-    $rest_url = esc_url(rest_url('ipidet/v1/member-status'));
+    $is_logged_in = is_user_logged_in();
     ?>
     <style>
     #ipidet-portal-widget {
@@ -282,6 +292,30 @@ add_action('wp_footer', function() {
     </style>
 
     <script>
+    // Wrap password inputs with their toggle buttons so the eye icon
+    // sits inside the field. Runs on window.load because WooCommerce
+    // injects .show-password-input buttons after DOMContentLoaded.
+    function wrapPasswordFields() {
+        document.querySelectorAll('.show-password-input').forEach(function(btn) {
+            var input = btn.previousElementSibling;
+            if (!input || input.tagName !== 'INPUT') return;
+            if (input.parentNode.classList.contains('ipidet-pw-wrap')) return;
+            var wrap = document.createElement('div');
+            wrap.className = 'ipidet-pw-wrap';
+            input.parentNode.insertBefore(wrap, input);
+            wrap.appendChild(input);
+            wrap.appendChild(btn);
+        });
+    }
+    window.addEventListener('load', wrapPasswordFields);
+    </script>
+
+    <?php if ($is_logged_in) : ?>
+    <?php
+    $nonce    = wp_create_nonce('wp_rest');
+    $rest_url = esc_url(rest_url('ipidet/v1/member-status'));
+    ?>
+    <script>
     (function() {
         var NONCE    = <?php echo json_encode($nonce); ?>;
         var REST_URL = <?php echo json_encode($rest_url); ?>;
@@ -426,25 +460,9 @@ add_action('wp_footer', function() {
             loadPortalData();
         }
 
-        // Wrap password inputs with their toggle buttons so the eye icon
-        // sits inside the field. Runs on window.load because WooCommerce
-        // injects .show-password-input buttons after DOMContentLoaded.
-        function wrapPasswordFields() {
-            document.querySelectorAll('.show-password-input').forEach(function(btn) {
-                var input = btn.previousElementSibling;
-                if (!input || input.tagName !== 'INPUT') return;
-                if (input.parentNode.classList.contains('ipidet-pw-wrap')) return;
-                var wrap = document.createElement('div');
-                wrap.className = 'ipidet-pw-wrap';
-                input.parentNode.insertBefore(wrap, input);
-                wrap.appendChild(input);
-                wrap.appendChild(btn);
-            });
-        }
-        window.addEventListener('load', wrapPasswordFields);
-
     })();
     </script>
+    <?php endif; ?>
     <?php
 }, 20);
 
