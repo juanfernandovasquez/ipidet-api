@@ -158,7 +158,38 @@ def _process_response(r: httpx.Response) -> dict:
 
 # ── Payload builder (exonerado de IGV — servicios de membresía) ───────────
 
-def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict) -> dict:
+def _build_details(items: list, fallback_monto: float, fallback_concepto: str) -> list:
+    """Build SUNAT details[] — one line per item, or a single fallback line."""
+    _def = lambda mto, desc, cod: {
+        "codProducto": cod or "CUOTA-IPIDET",
+        "unidad": "ZZ",
+        "descripcion": desc,
+        "cantidad": 1,
+        "mtoValorUnitario": mto,
+        "mtoValorVenta": mto,
+        "mtoBaseIgv": mto,
+        "porcentajeIgv": 0,
+        "igv": 0,
+        "tipAfeIgv": 20,
+        "totalImpuestos": 0,
+        "mtoPrecioUnitario": mto,
+    }
+    if not items:
+        return [_def(fallback_monto, fallback_concepto, "CUOTA-IPIDET")]
+    lines = [
+        _def(
+            float(it.get("monto") or 0),
+            (it.get("producto_nombre") or fallback_concepto).upper(),
+            it.get("codigo_sunat") or "CUOTA-IPIDET",
+        )
+        for it in items
+        if float(it.get("monto") or 0) > 0
+    ]
+    return lines or [_def(fallback_monto, fallback_concepto, "CUOTA-IPIDET")]
+
+
+def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict,
+                           credito_cuotas: list | None = None) -> dict:
     serie, correlativo = _parse_numero(comprobante["numero"])
     monto = float(comprobante.get("monto_total") or 0)
     fecha = comprobante.get("fecha_emision") or datetime.now().strftime("%Y-%m-%d")
@@ -167,14 +198,22 @@ def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict) -> 
         comprobante.get("concepto") or comprobante.get("producto_nombre") or "CUOTA MEMBRESIA IPIDET"
     ).upper()
 
-    return {
+    details = _build_details(comprobante.get("items") or [], monto, concepto)
+
+    forma_pago: dict
+    if credito_cuotas:
+        forma_pago = {"moneda": "PEN", "tipo": "Credito", "monto": monto}
+    else:
+        forma_pago = {"moneda": "PEN", "tipo": "Contado"}
+
+    payload = {
         "ublVersion": "2.1",
         "tipoOperacion": "0101",
         "tipoDoc": tipo_sunat,
         "serie": serie,
         "correlativo": correlativo,
         "fechaEmision": fecha_iso,
-        "formaPago": {"moneda": "PEN", "tipo": "Contado"},
+        "formaPago": forma_pago,
         "tipoMoneda": "PEN",
         "client": client,
         "company": _ipidet_company(),
@@ -185,22 +224,12 @@ def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict) -> 
         "valorVenta": monto,
         "subTotal": monto,
         "mtoImpVenta": monto,
-        "details": [{
-            "codProducto": "CUOTA-IPIDET",
-            "unidad": "ZZ",
-            "descripcion": concepto,
-            "cantidad": 1,
-            "mtoValorUnitario": monto,
-            "mtoValorVenta": monto,
-            "mtoBaseIgv": monto,
-            "porcentajeIgv": 0,
-            "igv": 0,
-            "tipAfeIgv": 20,
-            "totalImpuestos": 0,
-            "mtoPrecioUnitario": monto,
-        }],
+        "details": details,
         "legends": [{"code": "1000", "value": _monto_a_letras(monto)}],
     }
+    if credito_cuotas:
+        payload["cuotas"] = credito_cuotas
+    return payload
 
 
 # ── Emisión ────────────────────────────────────────────────────────────────
@@ -240,7 +269,11 @@ def emitir_boleta(comprobante: dict, member: dict | None) -> dict:
 
 
 def emitir_factura(comprobante: dict, empresa: dict | None) -> dict:
-    """Envía factura a SUNAT vía APISPERU. Retorna dict {ok, xml, hash, cdr_*, error}."""
+    """Envía factura a SUNAT vía APISPERU. Retorna dict {ok, xml, hash, cdr_*, error}.
+
+    Si comprobante.es_credito=True y tiene fecha_vencimiento, emite como Crédito.
+    Si además tiene cuotas_credito (lista de {fecha_venc, monto}), las incluye todas.
+    """
     if not APISPERU_TOKEN:
         return {"ok": False, "error": "APISPERU_TOKEN no configurado en .env"}
     if not IPIDET_RUC:
@@ -252,8 +285,30 @@ def emitir_factura(comprobante: dict, empresa: dict | None) -> dict:
     if not ruc:
         return {"ok": False, "error": "RUC de la empresa no encontrado. Completa el campo RUC en Empresas."}
 
+    # Detect credit payment mode — factura a crédito when fecha_vencimiento is set
+    credito_cuotas: list | None = None
+    fecha_venc = (comprobante.get("fecha_vencimiento") or "").strip()
+    if fecha_venc:
+        monto = float(comprobante.get("monto_total") or 0)
+        # Multi-cuota: passed explicitly as cuotas_credito [{fecha_venc, monto}]
+        cuotas_raw = comprobante.get("cuotas_credito") or []
+        if cuotas_raw:
+            credito_cuotas = [
+                {
+                    "moneda": "PEN",
+                    "monto": float(c.get("monto") or 0),
+                    "fechaPago": f"{c['fecha_venc']}T00:00:00-05:00",
+                }
+                for c in cuotas_raw
+                if c.get("fecha_venc") and float(c.get("monto") or 0) > 0
+            ]
+        # Single due date
+        if not credito_cuotas:
+            credito_cuotas = [{"moneda": "PEN", "monto": monto,
+                               "fechaPago": f"{fecha_venc}T00:00:00-05:00"}]
+
     client = {"tipoDoc": "6", "numDoc": ruc, "rznSocial": razon.upper()}
-    payload = _build_invoice_payload(comprobante, "01", client)
+    payload = _build_invoice_payload(comprobante, "01", client, credito_cuotas=credito_cuotas)
 
     try:
         with httpx.Client(timeout=30) as http:
@@ -301,20 +356,11 @@ def anular_boleta(comprobante: dict, correlativo_nc: str,
         "mtoIGV": 0,
         "totalImpuestos": 0,
         "mtoImpVenta": monto,
-        "details": [{
-            "codProducto": "CUOTA-IPIDET",
-            "unidad": "ZZ",
-            "descripcion": (comprobante.get("concepto") or "ANULACION").upper(),
-            "cantidad": 1,
-            "mtoValorUnitario": monto,
-            "mtoValorVenta": monto,
-            "mtoBaseIgv": monto,
-            "porcentajeIgv": 0,
-            "igv": 0,
-            "tipAfeIgv": 20,
-            "totalImpuestos": 0,
-            "mtoPrecioUnitario": monto,
-        }],
+        "details": _build_details(
+            comprobante.get("items") or [],
+            monto,
+            (comprobante.get("concepto") or "ANULACION").upper(),
+        ),
         "legends": [{"code": "1000", "value": _monto_a_letras(monto)}],
     }
 
@@ -509,6 +555,13 @@ def validate_comprobante(
                 f"Si ya emitiste comprobantes fuera de la plataforma, "
                 f"asegúrate de que el correlativo {correlativo_str} sea el siguiente en tu serie."
             )
+
+    # ── Crédito: informar forma de pago que se enviará a SUNAT ──────────
+    if tipo == "factura" and comp.get("fecha_vencimiento"):
+        advertencias.append(
+            f"Se emitirá como Factura a Crédito (vence {comp['fecha_vencimiento']}). "
+            "SUNAT registrará el pago diferido."
+        )
 
     # ── Config APISPERU ─────────────────────────────────────────────────
     if not APISPERU_TOKEN:

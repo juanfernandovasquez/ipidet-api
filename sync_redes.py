@@ -6,14 +6,19 @@ sync_redes.py — Sincroniza métricas de redes sociales usando Playwright.
     pip install playwright
     playwright install chromium
 
-    Al correr por primera vez se abrirá Chrome en modo visible.
-    Inicia sesión en Instagram, LinkedIn, YouTube y TikTok manualmente,
-    luego cierra el navegador. Las sesiones quedan guardadas en
-    chrome_profile_redes/ y se reutilizan en las siguientes ejecuciones.
+    Al correr por primera vez ejecuta el modo setup:
+
+        python sync_redes.py --setup
+
+    Se abrirá Brave en modo visible. Inicia sesión en Instagram, LinkedIn,
+    YouTube y TikTok manualmente, luego presiona Enter. Las sesiones quedan
+    guardadas en chrome_profile_redes/ y se reutilizan en las siguientes
+    ejecuciones.
 
 == Uso ==
 
-    python sync_redes.py
+    python sync_redes.py --setup   # primera vez: inicia sesión
+    python sync_redes.py           # sincroniza métricas
 
 == Programación automática (Windows Task Scheduler) ==
 
@@ -35,6 +40,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 PROFILE_DIR = Path(__file__).parent / "chrome_profile_redes"
 PROFILE_DIR.mkdir(exist_ok=True)
+
+# Ruta del ejecutable de Brave en Windows
+BRAVE_PATH = Path(r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe")
+if not BRAVE_PATH.exists():
+    BRAVE_PATH = Path(r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe")
+
+SETUP_MODE = "--setup" in sys.argv
 
 
 # ── Parseo de números ─────────────────────────────────────────────────────────
@@ -228,14 +240,30 @@ async def main():
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] Sincronizando {len(cuentas)} cuenta(s)…")
 
     async with async_playwright() as p:
+        launch_kwargs = {}
+        if BRAVE_PATH.exists():
+            launch_kwargs["executable_path"] = str(BRAVE_PATH)
+        else:
+            launch_kwargs["channel"] = "chrome"
+
         ctx = await p.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE_DIR),
-            channel="chrome",
             headless=False,
             args=["--start-maximized"],
             no_viewport=True,
+            **launch_kwargs,
         )
         page = await ctx.new_page()
+
+        if SETUP_MODE:
+            print("\n=== MODO SETUP ===")
+            print("Inicia sesión en Instagram, LinkedIn, YouTube y TikTok en el navegador.")
+            print("Cuando hayas terminado, vuelve aquí y presiona Enter para cerrar.\n")
+            await page.goto("https://www.linkedin.com/", wait_until="domcontentloaded", timeout=30_000)
+            input("Presiona Enter cuando hayas iniciado sesión en todas las plataformas…")
+            await ctx.close()
+            print("Sesión guardada. Ahora puedes correr: python sync_redes.py")
+            return
 
         for cuenta in cuentas:
             plat    = cuenta.get("plataforma", "")
@@ -259,7 +287,7 @@ async def main():
                 if data.get("posts_total"):
                     print(f"    Posts totales: {data['posts_total']:,}")
             else:
-                print(f"    Sin datos — verifica que la sesión esté activa en Chrome.")
+                print(f"    Sin datos — verifica que la sesión esté activa (corre: python sync_redes.py --setup)")
                 print(f"    URL: {cuenta.get('url', '(no configurada)')}")
 
         await ctx.close()
