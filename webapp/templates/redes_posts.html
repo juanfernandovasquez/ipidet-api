@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block title %}Posts — Redes Sociales{% endblock %}
+{% block heading %}Posts publicados{% endblock %}
+
+{% block header_actions %}
+<button onclick="document.getElementById('modal-add-post').classList.remove('hidden')"
+  class="btn-primary text-sm">
+  <i class="fa-solid fa-plus mr-1.5"></i> Registrar post
+</button>
+{% endblock %}
+
+{% set P_ICON = {
+  'linkedin':  'fa-brands fa-linkedin',
+  'youtube':   'fa-brands fa-youtube',
+  'tiktok':    'fa-brands fa-tiktok',
+  'instagram': 'fa-brands fa-instagram'
+} %}
+{% set P_COLOR = {
+  'linkedin':  '#0A66C2',
+  'youtube':   '#FF0000',
+  'tiktok':    '#010101',
+  'instagram': '#C13584'
+} %}
+{% set TIPO_ICON = {
+  'video':    'fa-solid fa-video',
+  'imagen':   'fa-solid fa-image',
+  'carrusel': 'fa-solid fa-images',
+  'reel':     'fa-solid fa-film',
+  'short':    'fa-solid fa-bolt',
+  'artículo': 'fa-solid fa-newspaper',
+  'historia': 'fa-solid fa-circle-dot',
+  'otro':     'fa-solid fa-file',
+} %}
+
+{% block content %}
+
+<!-- Filtros -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+  <form method="get" action="/redes/posts" class="flex flex-wrap gap-3 items-end" x-data="{ t: null }" x-ref="filterForm">
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
+      <input name="search" value="{{ search }}" placeholder="Título, descripción…" class="input w-52"
+             @input="clearTimeout(t); t=setTimeout(()=>$refs.filterForm.submit(),450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Plataforma</label>
+      <select name="plataforma" class="input" @change="$el.form.submit()">
+        <option value="">Todas</option>
+        {% for p, cfg in plataformas_config.items() %}
+        <option value="{{ p }}" {% if plataforma == p %}selected{% endif %}>{{ cfg.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
+      <select name="tipo" class="input" @change="$el.form.submit()">
+        <option value="">Todos</option>
+        {% for t in tipos_contenido %}
+        <option value="{{ t }}" {% if tipo == t %}selected{% endif %}>{{ t.title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if search or plataforma or tipo %}
+    <a href="/redes/posts" class="btn-ghost text-sm self-end">Limpiar</a>
+    {% endif %}
+    <div class="ml-auto self-end text-xs text-slate-400">{{ total }} post{% if total != 1 %}s{% endif %}</div>
+  </form>
+</div>
+
+{% if posts %}
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Fecha</th>
+        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32">Red / Tipo</th>
+        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Título</th>
+        <th class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Views</th>
+        <th class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Likes</th>
+        <th class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Coments.</th>
+        <th class="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Compartidos</th>
+        <th class="px-4 py-3 w-16"></th>
+      </tr>
+    </thead>
+      {% for p in posts %}
+      <tbody x-data='postRow({{ p | tojson }})'>
+        <!-- Fila principal -->
+        <tr class="hover:bg-slate-50 group cursor-pointer border-t border-slate-100" @click="expanded=!expanded">
+          <td class="px-4 py-3 text-xs text-slate-600">
+            {{ p.fecha_publicacion or '—' }}
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] flex-shrink-0"
+                   style="background-color: {{ P_COLOR.get(p.plataforma, '#64748b') }}">
+                <i class="{{ P_ICON.get(p.plataforma, 'fa-share-nodes') }}"></i>
+              </div>
+              <span class="text-[11px] text-slate-500">
+                <i class="{{ TIPO_ICON.get(p.tipo, 'fa-solid fa-file') }} mr-0.5 opacity-60"></i>
+                {{ p.tipo or '—' }}
+              </span>
+            </div>
+          </td>
+          <td class="px-4 py-3">
+            <div class="font-medium text-slate-800 text-sm">{{ p.titulo or '(sin título)' }}</div>
+            {% if p.url %}
+            <a href="{{ p.url }}" target="_blank" @click.stop
+               class="text-[11px] text-blue-500 hover:underline truncate block max-w-[240px]">{{ p.url }}</a>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-sm font-medium text-slate-700">
+            {% if p.views is not none %}{{ '{:,}'.format(p.views).replace(',', '.') }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-sm text-slate-600">
+            {% if p.likes is not none %}{{ '{:,}'.format(p.likes).replace(',', '.') }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-sm text-slate-600">
+            {% if p.comentarios is not none %}{{ '{:,}'.format(p.comentarios).replace(',', '.') }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-sm text-slate-600">
+            {% if p.compartidos is not none %}{{ '{:,}'.format(p.compartidos).replace(',', '.') }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-1 justify-end" @click.stop>
+              <button @click="editing=!editing"
+                class="text-slate-300 group-hover:text-blue-500 p-1.5 rounded hover:bg-blue-50 transition-colors">
+                <i class="fa-solid fa-pencil text-xs"></i>
+              </button>
+              <form action="/redes/posts/{{ p._id | string }}/delete" method="post"
+                    onsubmit="return confirm('¿Eliminar este post?')">
+                <button type="submit" class="text-slate-300 group-hover:text-red-400 p-1.5 rounded hover:bg-red-50 transition-colors">
+                  <i class="fa-solid fa-trash text-xs"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Fila expandida: métricas completas + edición -->
+        <tr x-show="expanded || editing" x-cloak class="bg-slate-50 border-t border-slate-100">
+          <td colspan="8" class="px-6 py-4">
+
+            <!-- Modo vista -->
+            <div x-show="!editing">
+              <div class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-4">
+                {% set metrics = [
+                  ('views', 'Views', 'fa-eye'),
+                  ('likes', 'Likes', 'fa-heart'),
+                  ('comentarios', 'Comentarios', 'fa-comment'),
+                  ('compartidos', 'Compartidos', 'fa-share'),
+                  ('guardados', 'Guardados', 'fa-bookmark'),
+                  ('alcance', 'Alcance', 'fa-users'),
+                  ('impresiones', 'Impresiones', 'fa-eye-low-vision'),
+                ] %}
+                {% for field, label, icon in metrics %}
+                <div class="text-center">
+                  <div class="text-[10px] text-slate-400 uppercase tracking-wide mb-1">
+                    <i class="fa-solid {{ icon }} mr-0.5"></i> {{ label }}
+                  </div>
+                  <div class="text-lg font-bold text-slate-700">
+                    {% if p[field] is not none %}{{ '{:,}'.format(p[field]).replace(',', '.') }}{% else %}<span class="text-slate-300 text-sm">—</span>{% endif %}
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              {% if p.descripcion %}
+              <p class="text-xs text-slate-500 mt-3 pt-3 border-t border-slate-200">{{ p.descripcion }}</p>
+              {% endif %}
+            </div>
+
+            <!-- Modo edición -->
+            <form x-show="editing" action="/redes/posts/{{ p._id | string }}/update" method="post" x-cloak>
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Título</label>
+                  <input name="titulo" value="{{ p.titulo or '' }}" class="input w-full">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">URL</label>
+                  <input name="url" value="{{ p.url or '' }}" class="input w-full">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
+                  <select name="tipo" class="input w-full">
+                    <option value="">— Tipo —</option>
+                    {% for t in tipos_contenido %}
+                    <option value="{{ t }}" {% if p.tipo == t %}selected{% endif %}>{{ t.title() }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Fecha publicación</label>
+                  <input type="date" name="fecha_publicacion" value="{{ p.fecha_publicacion or '' }}" class="input w-full">
+                </div>
+              </div>
+              <div class="grid grid-cols-3 sm:grid-cols-7 gap-3 mb-4">
+                {% for field, label in [('views','Views'),('likes','Likes'),('comentarios','Coments.'),('compartidos','Compartidos'),('guardados','Guardados'),('alcance','Alcance'),('impresiones','Impresiones')] %}
+                <div>
+                  <label class="block text-[10px] font-medium text-slate-500 mb-1 uppercase tracking-wide">{{ label }}</label>
+                  <input type="number" name="{{ field }}" value="{{ p[field] if p[field] is not none else '' }}"
+                         min="0" class="input w-full text-xs" placeholder="0">
+                </div>
+                {% endfor %}
+              </div>
+              <div class="mb-4">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+                <textarea name="descripcion" rows="2" class="input w-full resize-none text-sm">{{ p.descripcion or '' }}</textarea>
+              </div>
+              <div class="flex gap-2">
+                <button type="submit" class="btn-primary text-sm">Guardar cambios</button>
+                <button type="button" @click="editing=false" class="btn-ghost text-sm">Cancelar</button>
+              </div>
+            </form>
+
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+  </table>
+</div>
+
+<!-- Paginación -->
+{% set total_pages = (total / per_page) | round(0, 'ceil') | int %}
+{% if total_pages > 1 %}
+<div class="flex items-center justify-between mt-4 text-sm text-slate-600">
+  <span>Página {{ page }} de {{ total_pages }}</span>
+  <div class="flex gap-1">
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&plataforma={{ plataforma }}&tipo={{ tipo }}&search={{ search }}"
+       class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">Anterior</a>
+    {% endif %}
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}&plataforma={{ plataforma }}&tipo={{ tipo }}&search={{ search }}"
+       class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">Siguiente</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="bg-white rounded-xl border border-slate-200 p-12 text-center">
+  <div class="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+    <i class="fa-solid fa-grip text-2xl text-slate-400"></i>
+  </div>
+  <h3 class="text-slate-700 font-semibold mb-1">Sin posts registrados</h3>
+  <p class="text-slate-500 text-sm mb-4">Registra tus publicaciones para hacer seguimiento a las métricas.</p>
+  <button onclick="document.getElementById('modal-add-post').classList.remove('hidden')"
+    class="btn-primary text-sm">
+    <i class="fa-solid fa-plus mr-1.5"></i> Registrar primer post
+  </button>
+</div>
+{% endif %}
+
+
+<!-- ── Modal: Registrar post ──────────────────────────────────────────────────── -->
+<div id="modal-add-post" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
+      <h2 class="font-semibold text-slate-800">Registrar post</h2>
+      <button onclick="document.getElementById('modal-add-post').classList.add('hidden')"
+        class="text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <form action="/redes/posts/add" method="post" class="p-6 space-y-4 overflow-y-auto">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Cuenta <span class="text-red-500">*</span></label>
+          <select name="cuenta_id" required class="input w-full" id="sel-cuenta-post"
+                  onchange="document.getElementById('inp-plat-post').value = this.options[this.selectedIndex].dataset.plat || ''">
+            <option value="">— Seleccionar —</option>
+            {% for c in cuentas %}
+            <option value="{{ c._id }}" data-plat="{{ c.plataforma }}">{{ plataformas_config.get(c.plataforma, {}).get('label', c.plataforma.title()) }} — {{ c.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
+          <select name="tipo" class="input w-full">
+            <option value="">— Tipo —</option>
+            {% for t in tipos_contenido %}
+            <option value="{{ t }}">{{ t.title() }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <input type="hidden" name="plataforma" id="inp-plat-post">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Título <span class="text-red-500">*</span></label>
+        <input name="titulo" required placeholder="Título o tema del post" class="input w-full">
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">URL del post</label>
+          <input name="url" type="url" placeholder="https://..." class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de publicación</label>
+          <input type="date" name="fecha_publicacion" class="input w-full">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+        <textarea name="descripcion" rows="2" placeholder="Resumen del contenido…" class="input w-full resize-none"></textarea>
+      </div>
+      <!-- Métricas -->
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Métricas iniciales</p>
+        <div class="grid grid-cols-4 gap-3">
+          {% for field, label in [('views','Views'),('likes','Likes'),('comentarios','Coments.'),('compartidos','Compartidos'),('guardados','Guardados'),('alcance','Alcance'),('impresiones','Impresiones')] %}
+          <div>
+            <label class="block text-[10px] font-medium text-slate-500 mb-1 uppercase tracking-wide">{{ label }}</label>
+            <input type="number" name="{{ field }}" min="0" class="input w-full text-xs" placeholder="0">
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Guardar</button>
+        <button type="button" onclick="document.getElementById('modal-add-post').classList.add('hidden')"
+          class="btn-ghost flex-1">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function postRow(post) {
+  return { expanded: false, editing: false, data: { ...post } };
+}
+</script>
+
+{% endblock %}

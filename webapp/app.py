@@ -55,6 +55,12 @@ def _safe_float(val, default=None):
     except (ValueError, TypeError):
         return default
 
+def _safe_int(val, default=None):
+    try:
+        return int(float(val)) if val not in (None, "", "None") else default
+    except (ValueError, TypeError):
+        return default
+
 def _oid(val: str):
     from bson import ObjectId as _ObjId
     try:
@@ -4392,3 +4398,207 @@ async def api_publico_enviar(request: Request):
     return {"ok": True, "enviados": enviados, "fallidos": fallidos,
             "errores": errores if errores else [],
             "fallidos_detalle": fallidos_detalle}
+
+
+# ── Redes Sociales ────────────────────────────────────────────────────────────
+
+@app.get("/redes", response_class=HTMLResponse)
+async def redes_dashboard(request: Request):
+    cuentas       = pdb.get_redes_metricas_latest()
+    historico     = pdb.get_redes_metricas_historico()
+    posts, _      = pdb.get_redes_posts(per_page=10)
+    cronograma    = pdb.get_cronograma(estado="programado")
+    todas_cuentas = pdb.get_redes_cuentas()
+    return templates.TemplateResponse("redes_dashboard.html", {
+        "request": request,
+        "cuentas": cuentas,
+        "historico": historico,
+        "posts_recientes": posts,
+        "cronograma_prox": cronograma[:6],
+        "todas_cuentas": todas_cuentas,
+        "plataformas_config": pdb.PLATAFORMAS_CONFIG,
+        **_ctx(request),
+    })
+
+
+@app.post("/redes/cuentas/add")
+async def redes_cuentas_add(
+    plataforma: str = Form(...),
+    nombre:     str = Form(...),
+    url:        str = Form(...),
+    handle:     str = Form(""),
+):
+    pdb.create_red_cuenta(plataforma, nombre, url, handle)
+    return RedirectResponse("/redes?tab=cuentas", status_code=303)
+
+
+@app.post("/redes/cuentas/{cuenta_id}/update")
+async def redes_cuentas_update(
+    cuenta_id: str,
+    nombre: str = Form(...),
+    url:    str = Form(...),
+    handle: str = Form(""),
+    activo: str = Form(""),
+):
+    pdb.update_red_cuenta(cuenta_id, {
+        "nombre": nombre,
+        "url":    url,
+        "handle": handle,
+        "activo": activo == "on",
+    })
+    return RedirectResponse("/redes?tab=cuentas", status_code=303)
+
+
+@app.post("/redes/cuentas/{cuenta_id}/delete")
+async def redes_cuentas_delete(cuenta_id: str):
+    pdb.delete_red_cuenta(cuenta_id)
+    return RedirectResponse("/redes?tab=cuentas", status_code=303)
+
+
+@app.get("/redes/posts", response_class=HTMLResponse)
+async def redes_posts_view(
+    request:    Request,
+    plataforma: str = "",
+    tipo:       str = "",
+    search:     str = "",
+    page:       int = 1,
+):
+    posts, total = pdb.get_redes_posts(plataforma=plataforma, tipo=tipo,
+                                        search=search, page=page)
+    cuentas = pdb.get_redes_cuentas()
+    return templates.TemplateResponse("redes_posts.html", {
+        "request": request,
+        "posts": posts, "total": total, "page": page, "per_page": 50,
+        "plataforma": plataforma, "tipo": tipo, "search": search,
+        "cuentas": cuentas,
+        "tipos_contenido": pdb.TIPOS_CONTENIDO_REDES,
+        "plataformas_config": pdb.PLATAFORMAS_CONFIG,
+        **_ctx(request),
+    })
+
+
+@app.post("/redes/posts/add")
+async def redes_posts_add(
+    cuenta_id:        str = Form(...),
+    plataforma:       str = Form(...),
+    url:              str = Form(""),
+    tipo:             str = Form(""),
+    titulo:           str = Form(...),
+    descripcion:      str = Form(""),
+    fecha_publicacion:str = Form(""),
+    views:      str = Form(""), likes:      str = Form(""),
+    comentarios:str = Form(""), compartidos:str = Form(""),
+    guardados:  str = Form(""), alcance:    str = Form(""),
+    impresiones:str = Form(""),
+):
+    pdb.create_red_post(cuenta_id, plataforma, url, tipo, titulo,
+                         fecha_publicacion, descripcion, {
+        "views": _safe_int(views), "likes": _safe_int(likes),
+        "comentarios": _safe_int(comentarios), "compartidos": _safe_int(compartidos),
+        "guardados": _safe_int(guardados), "alcance": _safe_int(alcance),
+        "impresiones": _safe_int(impresiones),
+    })
+    return RedirectResponse("/redes/posts", status_code=303)
+
+
+@app.post("/redes/posts/{post_id}/update")
+async def redes_posts_update(
+    post_id:          str,
+    url:              str = Form(""),
+    tipo:             str = Form(""),
+    titulo:           str = Form(""),
+    descripcion:      str = Form(""),
+    fecha_publicacion:str = Form(""),
+    views:      str = Form(""), likes:      str = Form(""),
+    comentarios:str = Form(""), compartidos:str = Form(""),
+    guardados:  str = Form(""), alcance:    str = Form(""),
+    impresiones:str = Form(""),
+):
+    pdb.update_red_post(post_id, {
+        "url": url, "tipo": tipo, "titulo": titulo,
+        "descripcion": descripcion, "fecha_publicacion": fecha_publicacion,
+        "views": _safe_int(views), "likes": _safe_int(likes),
+        "comentarios": _safe_int(comentarios), "compartidos": _safe_int(compartidos),
+        "guardados": _safe_int(guardados), "alcance": _safe_int(alcance),
+        "impresiones": _safe_int(impresiones),
+    })
+    return RedirectResponse("/redes/posts", status_code=303)
+
+
+@app.post("/redes/posts/{post_id}/delete")
+async def redes_posts_delete(post_id: str):
+    pdb.delete_red_post(post_id)
+    return RedirectResponse("/redes/posts", status_code=303)
+
+
+@app.get("/redes/cronograma", response_class=HTMLResponse)
+async def redes_cronograma_view(
+    request:     Request,
+    plataforma:  str = "",
+    estado:      str = "",
+    search:      str = "",
+    fecha_desde: str = "",
+    fecha_hasta: str = "",
+):
+    items   = pdb.get_cronograma(plataforma=plataforma, estado=estado,
+                                  search=search, fecha_desde=fecha_desde,
+                                  fecha_hasta=fecha_hasta)
+    cuentas = pdb.get_redes_cuentas()
+    return templates.TemplateResponse("redes_cronograma.html", {
+        "request": request,
+        "items": items, "cuentas": cuentas,
+        "plataforma": plataforma, "estado": estado,
+        "search": search, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
+        "tipos_contenido": pdb.TIPOS_CONTENIDO_REDES,
+        "estados_cronograma": pdb.ESTADOS_CRONOGRAMA,
+        "plataformas_config": pdb.PLATAFORMAS_CONFIG,
+        **_ctx(request),
+    })
+
+
+@app.post("/redes/cronograma/add")
+async def redes_cronograma_add(
+    plataforma:       str = Form(...),
+    cuenta_id:        str = Form(""),
+    titulo:           str = Form(...),
+    descripcion:      str = Form(""),
+    tipo_contenido:   str = Form(""),
+    fecha_planificada:str = Form(...),
+    hora_planificada: str = Form(""),
+    responsable:      str = Form(""),
+    notas:            str = Form(""),
+    estado:           str = Form("borrador"),
+):
+    pdb.create_cronograma_item(plataforma, titulo, descripcion, tipo_contenido,
+                                fecha_planificada, hora_planificada, estado,
+                                responsable, notas, cuenta_id)
+    return RedirectResponse("/redes/cronograma", status_code=303)
+
+
+@app.post("/redes/cronograma/{item_id}/update")
+async def redes_cronograma_update(
+    item_id:          str,
+    plataforma:       str = Form(""),
+    titulo:           str = Form(""),
+    descripcion:      str = Form(""),
+    tipo_contenido:   str = Form(""),
+    fecha_planificada:str = Form(""),
+    hora_planificada: str = Form(""),
+    responsable:      str = Form(""),
+    notas:            str = Form(""),
+    estado:           str = Form(""),
+):
+    pdb.update_cronograma_item(item_id, {
+        "plataforma": plataforma, "titulo": titulo,
+        "descripcion": descripcion, "tipo_contenido": tipo_contenido,
+        "fecha_planificada": fecha_planificada,
+        "hora_planificada": hora_planificada or None,
+        "responsable": responsable, "notas": notas, "estado": estado,
+    })
+    return RedirectResponse("/redes/cronograma", status_code=303)
+
+
+@app.post("/redes/cronograma/{item_id}/delete")
+async def redes_cronograma_delete(item_id: str):
+    pdb.delete_cronograma_item(item_id)
+    return RedirectResponse("/redes/cronograma", status_code=303)

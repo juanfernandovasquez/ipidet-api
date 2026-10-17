@@ -197,6 +197,19 @@
       </a>
       {% endif %}
 
+      {% if is_admin or 'redes' in p %}
+      <div class="sidebar-section">Redes Sociales</div>
+      <a href="/redes" class="sidebar-link {% if request.url.path == '/redes' %}active{% endif %}">
+        <i class="fa-solid fa-chart-line"></i> Dashboard
+      </a>
+      <a href="/redes/cronograma" class="sidebar-link {% if '/redes/cronograma' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-calendar-days"></i> Cronograma
+      </a>
+      <a href="/redes/posts" class="sidebar-link {% if '/redes/posts' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-grip"></i> Posts
+      </a>
+      {% endif %}
+
       {% if is_admin or 'pendientes' in p %}
       <div class="sidebar-section">Gestión</div>
       <a href="/pendientes" class="sidebar-link {% if '/pendientes' in request.url.path %}active{% endif %}">

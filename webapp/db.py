@@ -37,6 +37,11 @@ comprobantes_col = _db.comprobantes
 config_col = _db.config
 publico_col = _db.publico
 
+redes_cuentas_col    = _db.redes_cuentas
+redes_metricas_col   = _db.redes_metricas
+redes_posts_col      = _db.redes_posts
+redes_cronograma_col = _db.redes_cronograma
+
 MEDIOS_PAGO = [
     "Transferencia bancaria",
     "Depósito bancario",
@@ -4496,6 +4501,214 @@ def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str = "2026")
     return mid
 
 
+# ── Redes Sociales ────────────────────────────────────────────────────────────
+
+PLATAFORMAS_CONFIG = {
+    "linkedin":  {"label": "LinkedIn",  "color": "#0A66C2"},
+    "youtube":   {"label": "YouTube",   "color": "#FF0000"},
+    "tiktok":    {"label": "TikTok",    "color": "#010101"},
+    "instagram": {"label": "Instagram", "color": "#C13584"},
+}
+
+TIPOS_CONTENIDO_REDES = [
+    "video", "imagen", "carrusel", "reel", "short", "artículo", "historia", "otro",
+]
+
+ESTADOS_CRONOGRAMA = ["borrador", "programado", "publicado", "archivado", "cancelado"]
+
+
+def get_redes_cuentas(solo_activas: bool = False) -> list:
+    q = {"activo": True} if solo_activas else {}
+    docs = list(redes_cuentas_col.find(q).sort("plataforma", 1))
+    return _clean(docs)
+
+
+def create_red_cuenta(plataforma: str, nombre: str, url: str, handle: str = "") -> str:
+    doc = {
+        "plataforma": plataforma,
+        "nombre":     nombre,
+        "handle":     handle,
+        "url":        url,
+        "activo":     True,
+        "created_at": datetime.now(timezone.utc),
+    }
+    return str(redes_cuentas_col.insert_one(doc).inserted_id)
+
+
+def update_red_cuenta(cuenta_id: str, fields: dict) -> None:
+    redes_cuentas_col.update_one({"_id": ObjectId(cuenta_id)}, {"$set": fields})
+
+
+def delete_red_cuenta(cuenta_id: str) -> None:
+    redes_cuentas_col.delete_one({"_id": ObjectId(cuenta_id)})
+
+
+def save_red_metrica(cuenta_id: str, plataforma: str, seguidores: int,
+                     siguiendo: int = None, posts_total: int = None,
+                     views_total: int = None, likes_total: int = None) -> None:
+    hoy = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    doc = {
+        "cuenta_id":   cuenta_id,
+        "plataforma":  plataforma,
+        "fecha":       hoy,
+        "seguidores":  seguidores,
+        "siguiendo":   siguiendo,
+        "posts_total": posts_total,
+        "views_total": views_total,
+        "likes_total": likes_total,
+        "created_at":  datetime.now(timezone.utc),
+    }
+    redes_metricas_col.replace_one({"cuenta_id": cuenta_id, "fecha": hoy}, doc, upsert=True)
+
+
+def get_redes_metricas_latest() -> list:
+    """Último snapshot + anterior por cada cuenta (para las tarjetas del dashboard)."""
+    cuentas = get_redes_cuentas()
+    result = []
+    for c in cuentas:
+        cid = c["_id"]
+        actual = redes_metricas_col.find_one({"cuenta_id": cid}, sort=[("fecha", -1)])
+        anterior = None
+        if actual:
+            anterior = redes_metricas_col.find_one(
+                {"cuenta_id": cid, "fecha": {"$lt": actual["fecha"]}},
+                sort=[("fecha", -1)],
+            )
+        result.append({
+            **c,
+            "metrica_actual":   _clean(actual)   if actual   else None,
+            "metrica_anterior": _clean(anterior)  if anterior else None,
+        })
+    return result
+
+
+def get_redes_metricas_historico() -> dict:
+    """Serie temporal agrupada por cuenta — últimos 16 snapshots, para Chart.js."""
+    cuentas = get_redes_cuentas(solo_activas=True)
+    out: dict = {}
+    for c in cuentas:
+        cid = c["_id"]
+        docs = list(redes_metricas_col.find({"cuenta_id": cid}).sort("fecha", -1).limit(16))
+        docs.reverse()
+        out[cid] = {
+            "plataforma": c["plataforma"],
+            "nombre":     c["nombre"],
+            "fechas":     [d["fecha"] for d in docs],
+            "seguidores": [d.get("seguidores") or 0 for d in docs],
+        }
+    return out
+
+
+def get_redes_posts(plataforma: str = "", tipo: str = "", search: str = "",
+                    page: int = 1, per_page: int = 50):
+    q: dict = {}
+    if plataforma:
+        q["plataforma"] = plataforma
+    if tipo:
+        q["tipo"] = tipo
+    if search:
+        q["$or"] = [
+            {"titulo":     {"$regex": search, "$options": "i"}},
+            {"descripcion":{"$regex": search, "$options": "i"}},
+        ]
+    total = redes_posts_col.count_documents(q)
+    skip = (page - 1) * per_page
+    docs = list(redes_posts_col.find(q).sort("fecha_publicacion", -1).skip(skip).limit(per_page))
+    return _clean(docs), total
+
+
+def create_red_post(cuenta_id: str, plataforma: str, url: str, tipo: str,
+                    titulo: str, fecha_publicacion: str, descripcion: str = "",
+                    metrics: dict = None) -> str:
+    m = metrics or {}
+    now = datetime.now(timezone.utc)
+    doc = {
+        "cuenta_id":        cuenta_id,
+        "plataforma":       plataforma,
+        "url":              url,
+        "tipo":             tipo,
+        "titulo":           titulo,
+        "descripcion":      descripcion,
+        "fecha_publicacion":fecha_publicacion,
+        "views":            m.get("views"),
+        "likes":            m.get("likes"),
+        "comentarios":      m.get("comentarios"),
+        "compartidos":      m.get("compartidos"),
+        "guardados":        m.get("guardados"),
+        "alcance":          m.get("alcance"),
+        "impresiones":      m.get("impresiones"),
+        "snapshots":        [],
+        "created_at":       now,
+        "updated_at":       now,
+    }
+    return str(redes_posts_col.insert_one(doc).inserted_id)
+
+
+def update_red_post(post_id: str, fields: dict) -> None:
+    fields["updated_at"] = datetime.now(timezone.utc)
+    redes_posts_col.update_one({"_id": ObjectId(post_id)}, {"$set": fields})
+
+
+def delete_red_post(post_id: str) -> None:
+    redes_posts_col.delete_one({"_id": ObjectId(post_id)})
+
+
+def get_cronograma(plataforma: str = "", estado: str = "", search: str = "",
+                   fecha_desde: str = "", fecha_hasta: str = "") -> list:
+    q: dict = {}
+    if plataforma:
+        q["plataforma"] = plataforma
+    if estado:
+        q["estado"] = estado
+    if search:
+        q["$or"] = [
+            {"titulo":     {"$regex": search, "$options": "i"}},
+            {"descripcion":{"$regex": search, "$options": "i"}},
+        ]
+    if fecha_desde or fecha_hasta:
+        fq: dict = {}
+        if fecha_desde:
+            fq["$gte"] = fecha_desde
+        if fecha_hasta:
+            fq["$lte"] = fecha_hasta
+        q["fecha_planificada"] = fq
+    docs = list(redes_cronograma_col.find(q).sort("fecha_planificada", 1))
+    return _clean(docs)
+
+
+def create_cronograma_item(plataforma: str, titulo: str, descripcion: str,
+                            tipo_contenido: str, fecha_planificada: str,
+                            hora_planificada: str = "", estado: str = "borrador",
+                            responsable: str = "", notas: str = "",
+                            cuenta_id: str = "") -> str:
+    now = datetime.now(timezone.utc)
+    doc = {
+        "plataforma":        plataforma,
+        "cuenta_id":         cuenta_id or None,
+        "titulo":            titulo,
+        "descripcion":       descripcion,
+        "tipo_contenido":    tipo_contenido,
+        "fecha_planificada": fecha_planificada,
+        "hora_planificada":  hora_planificada or None,
+        "estado":            estado,
+        "responsable":       responsable,
+        "notas":             notas,
+        "post_id":           None,
+        "created_at":        now,
+        "updated_at":        now,
+    }
+    return str(redes_cronograma_col.insert_one(doc).inserted_id)
+
+
+def update_cronograma_item(item_id: str, fields: dict) -> None:
+    fields["updated_at"] = datetime.now(timezone.utc)
+    redes_cronograma_col.update_one({"_id": ObjectId(item_id)}, {"$set": fields})
+
+
+def delete_cronograma_item(item_id: str) -> None:
+    redes_cronograma_col.delete_one({"_id": ObjectId(item_id)})
+
+
 # ── Índices MongoDB ───────────────────────────────────────────────────────────
 
 def _ensure_indexes() -> None:
@@ -4519,6 +4732,13 @@ def _ensure_indexes() -> None:
     # publico
     publico_col.create_index([("email", ASCENDING)], unique=True, background=True)
     publico_col.create_index([("estado", ASCENDING)], background=True)
+    # redes sociales
+    redes_metricas_col.create_index([("cuenta_id", ASCENDING), ("fecha", ASCENDING)],
+                                     unique=True, background=True)
+    redes_posts_col.create_index([("plataforma", ASCENDING)], background=True)
+    redes_posts_col.create_index([("fecha_publicacion", DESCENDING)], background=True)
+    redes_cronograma_col.create_index([("fecha_planificada", ASCENDING)], background=True)
+    redes_cronograma_col.create_index([("estado", ASCENDING)], background=True)
     # faqs
     faqs_col.create_index([("active", ASCENDING)], background=True)
     # eventos

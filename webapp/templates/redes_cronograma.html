@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}Cronograma — Redes Sociales{% endblock %}
+{% block heading %}Cronograma de publicaciones{% endblock %}
+
+{% block header_actions %}
+<button onclick="document.getElementById('modal-add-item').classList.remove('hidden')"
+  class="btn-primary text-sm">
+  <i class="fa-solid fa-plus mr-1.5"></i> Nueva publicación
+</button>
+{% endblock %}
+
+{% set P_ICON = {
+  'linkedin':  'fa-brands fa-linkedin',
+  'youtube':   'fa-brands fa-youtube',
+  'tiktok':    'fa-brands fa-tiktok',
+  'instagram': 'fa-brands fa-instagram'
+} %}
+{% set P_COLOR = {
+  'linkedin':  '#0A66C2',
+  'youtube':   '#FF0000',
+  'tiktok':    '#010101',
+  'instagram': '#C13584'
+} %}
+{% set ESTADO_STYLE = {
+  'borrador':   'bg-slate-100 text-slate-600',
+  'programado': 'bg-blue-100 text-blue-700',
+  'publicado':  'bg-green-100 text-green-700',
+  'archivado':  'bg-slate-100 text-slate-500',
+  'cancelado':  'bg-red-100 text-red-600',
+} %}
+{% set TIPO_ICON = {
+  'video':    'fa-solid fa-video',
+  'imagen':   'fa-solid fa-image',
+  'carrusel': 'fa-solid fa-images',
+  'reel':     'fa-solid fa-film',
+  'short':    'fa-solid fa-bolt',
+  'artículo': 'fa-solid fa-newspaper',
+  'historia': 'fa-solid fa-circle-dot',
+  'otro':     'fa-solid fa-file',
+} %}
+
+{% block content %}
+
+<!-- Filtros -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
+  <form method="get" action="/redes/cronograma" class="flex flex-wrap gap-3 items-end" x-data="{ t: null }" x-ref="filterForm">
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
+      <input name="search" value="{{ search }}" placeholder="Título, descripción…" class="input w-48"
+             @input="clearTimeout(t); t=setTimeout(()=>$refs.filterForm.submit(),450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Plataforma</label>
+      <select name="plataforma" class="input" @change="$el.form.submit()">
+        <option value="">Todas</option>
+        {% for p, cfg in plataformas_config.items() %}
+        <option value="{{ p }}" {% if plataforma == p %}selected{% endif %}>{{ cfg.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+      <select name="estado" class="input" @change="$el.form.submit()">
+        <option value="">Todos</option>
+        {% for e in estados_cronograma %}
+        <option value="{{ e }}" {% if estado == e %}selected{% endif %}>{{ e.title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Desde</label>
+      <input type="date" name="fecha_desde" value="{{ fecha_desde }}" class="input" @change="$el.form.submit()">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Hasta</label>
+      <input type="date" name="fecha_hasta" value="{{ fecha_hasta }}" class="input" @change="$el.form.submit()">
+    </div>
+    {% if search or plataforma or estado or fecha_desde or fecha_hasta %}
+    <a href="/redes/cronograma" class="btn-ghost text-sm self-end">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if items %}
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Fecha</th>
+        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-32">Red / Tipo</th>
+        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Título</th>
+        <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Responsable</th>
+        <th class="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Estado</th>
+        <th class="px-4 py-3 w-20"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for item in items %}
+      <tr class="hover:bg-slate-50 group"
+          x-data='cronRow({{ item | tojson }})'>
+
+        <!-- Fila de datos -->
+        <td class="px-4 py-3">
+          <span x-show="!editing" class="font-medium text-slate-700 text-xs">
+            {% if item.fecha_planificada %}{{ item.fecha_planificada }}{% else %}—{% endif %}
+            {% if item.hora_planificada %}<br><span class="text-slate-400">{{ item.hora_planificada }}</span>{% endif %}
+          </span>
+          <div x-show="editing" class="space-y-1" x-cloak>
+            <input type="date" x-model="data.fecha_planificada" class="input w-full text-xs">
+            <input type="time" x-model="data.hora_planificada" class="input w-full text-xs">
+          </div>
+        </td>
+        <td class="px-4 py-3">
+          <div x-show="!editing" class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] flex-shrink-0"
+                 style="background-color: {{ P_COLOR.get(item.plataforma, '#64748b') }}">
+              <i class="{{ P_ICON.get(item.plataforma, 'fa-share-nodes') }}"></i>
+            </div>
+            <span class="text-xs text-slate-500">{{ item.tipo_contenido or '—' }}</span>
+          </div>
+          <div x-show="editing" class="space-y-1" x-cloak>
+            <select x-model="data.plataforma" class="input w-full text-xs">
+              <option value="">— Red —</option>
+              {% for p, cfg in plataformas_config.items() %}
+              <option value="{{ p }}">{{ cfg.label }}</option>
+              {% endfor %}
+            </select>
+            <select x-model="data.tipo_contenido" class="input w-full text-xs">
+              <option value="">— Tipo —</option>
+              {% for t in tipos_contenido %}
+              <option value="{{ t }}">{{ t.title() }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </td>
+        <td class="px-4 py-3">
+          <div x-show="!editing">
+            <div class="font-medium text-slate-800">{{ item.titulo }}</div>
+            {% if item.descripcion %}
+            <div class="text-xs text-slate-400 truncate max-w-xs">{{ item.descripcion }}</div>
+            {% endif %}
+            {% if item.notas %}
+            <div class="text-xs text-amber-600 mt-0.5"><i class="fa-solid fa-sticky-note mr-1"></i>{{ item.notas }}</div>
+            {% endif %}
+          </div>
+          <div x-show="editing" class="space-y-1.5" x-cloak>
+            <input x-model="data.titulo" class="input w-full text-sm" placeholder="Título *">
+            <input x-model="data.descripcion" class="input w-full text-xs" placeholder="Descripción">
+            <input x-model="data.notas" class="input w-full text-xs" placeholder="Notas internas">
+          </div>
+        </td>
+        <td class="px-4 py-3 text-xs text-slate-500">
+          <span x-show="!editing">{{ item.responsable or '—' }}</span>
+          <input x-show="editing" x-model="data.responsable" class="input w-full text-xs" placeholder="Responsable" x-cloak>
+        </td>
+        <td class="px-4 py-3 text-center">
+          <span x-show="!editing"
+            class="badge {{ ESTADO_STYLE.get(item.estado, 'badge-gray') }}">
+            {{ item.estado or '—' }}
+          </span>
+          <select x-show="editing" x-model="data.estado" class="input text-xs w-full" x-cloak>
+            {% for e in estados_cronograma %}
+            <option value="{{ e }}">{{ e.title() }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-1 justify-end">
+            <button x-show="!editing" @click="editing=true"
+              class="text-slate-300 group-hover:text-blue-500 p-1.5 rounded hover:bg-blue-50 transition-colors">
+              <i class="fa-solid fa-pencil text-xs"></i>
+            </button>
+            <div x-show="editing" class="flex gap-1" x-cloak>
+              <form :action="'/redes/cronograma/' + data._id + '/update'" method="post">
+                <input type="hidden" name="plataforma"        :value="data.plataforma">
+                <input type="hidden" name="titulo"            :value="data.titulo">
+                <input type="hidden" name="descripcion"       :value="data.descripcion">
+                <input type="hidden" name="tipo_contenido"    :value="data.tipo_contenido">
+                <input type="hidden" name="fecha_planificada" :value="data.fecha_planificada">
+                <input type="hidden" name="hora_planificada"  :value="data.hora_planificada">
+                <input type="hidden" name="responsable"       :value="data.responsable">
+                <input type="hidden" name="notas"             :value="data.notas">
+                <input type="hidden" name="estado"            :value="data.estado">
+                <button type="submit" class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700">OK</button>
+              </form>
+              <button @click="editing=false" class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded hover:bg-slate-200">✕</button>
+            </div>
+            <form x-show="!editing" action="/redes/cronograma/{{ item._id | string }}/delete" method="post"
+                  onsubmit="return confirm('¿Eliminar esta entrada?')">
+              <button type="submit" class="text-slate-300 group-hover:text-red-400 p-1.5 rounded hover:bg-red-50 transition-colors">
+                <i class="fa-solid fa-trash text-xs"></i>
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="bg-white rounded-xl border border-slate-200 p-12 text-center">
+  <div class="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+    <i class="fa-solid fa-calendar-days text-2xl text-slate-400"></i>
+  </div>
+  <h3 class="text-slate-700 font-semibold mb-1">Sin publicaciones programadas</h3>
+  <p class="text-slate-500 text-sm mb-4">Planifica tu contenido para las próximas semanas.</p>
+  <button onclick="document.getElementById('modal-add-item').classList.remove('hidden')"
+    class="btn-primary text-sm">
+    <i class="fa-solid fa-plus mr-1.5"></i> Nueva publicación
+  </button>
+</div>
+{% endif %}
+
+
+<!-- ── Modal: Nueva publicación ─────────────────────────────────────────────── -->
+<div id="modal-add-item" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
+      <h2 class="font-semibold text-slate-800">Nueva publicación</h2>
+      <button onclick="document.getElementById('modal-add-item').classList.add('hidden')"
+        class="text-slate-400 hover:text-slate-600">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+    </div>
+    <form action="/redes/cronograma/add" method="post" class="p-6 space-y-4 overflow-y-auto">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Plataforma <span class="text-red-500">*</span></label>
+          <select name="plataforma" required class="input w-full">
+            <option value="">— Seleccionar —</option>
+            {% for p, cfg in plataformas_config.items() %}
+            <option value="{{ p }}">{{ cfg.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de contenido</label>
+          <select name="tipo_contenido" class="input w-full">
+            <option value="">— Tipo —</option>
+            {% for t in tipos_contenido %}
+            <option value="{{ t }}">{{ t.title() }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Título <span class="text-red-500">*</span></label>
+        <input name="titulo" required placeholder="Tema o título de la publicación" class="input w-full">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
+        <textarea name="descripcion" rows="2" placeholder="Resumen del contenido…" class="input w-full resize-none"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Fecha planificada <span class="text-red-500">*</span></label>
+          <input type="date" name="fecha_planificada" required class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Hora</label>
+          <input type="time" name="hora_planificada" class="input w-full">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Responsable</label>
+          <input name="responsable" placeholder="Nombre del responsable" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Estado</label>
+          <select name="estado" class="input w-full">
+            {% for e in estados_cronograma %}
+            <option value="{{ e }}" {% if e == 'borrador' %}selected{% endif %}>{{ e.title() }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Notas internas</label>
+        <input name="notas" placeholder="Referencias, ideas, instrucciones…" class="input w-full">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Guardar</button>
+        <button type="button" onclick="document.getElementById('modal-add-item').classList.add('hidden')"
+          class="btn-ghost flex-1">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function cronRow(item) {
+  return {
+    editing: false,
+    data: { ...item },
+  };
+}
+</script>
+
+{% endblock %}
