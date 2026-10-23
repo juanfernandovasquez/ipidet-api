@@ -288,6 +288,99 @@
           </div>
         </div>
 
+        <!-- ── Envío por lotes ── -->
+        <div x-show="filtros.modo !== 'publico'" x-cloak
+             class="mb-5 border border-slate-200 rounded-xl overflow-hidden">
+          <button type="button" @click="lotes.activo = !lotes.activo"
+                  class="flex items-center justify-between w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
+            <span class="flex items-center gap-2 text-xs font-semibold text-slate-600">
+              <i class="fa-solid fa-layer-group text-slate-400"></i> Envío por lotes
+              <span x-show="lotes.activo && lotes.campania"
+                    class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-medium">
+                <i class="fa-solid fa-circle text-[6px]"></i> activo
+              </span>
+            </span>
+            <i class="fa-solid text-slate-400 text-xs"
+               :class="lotes.activo ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+          </button>
+
+          <div x-show="lotes.activo" x-cloak class="p-4 border-t border-slate-200 space-y-3">
+            <p class="text-xs text-slate-400">
+              Divide un envío grande en lotes diarios. La plataforma recuerda a quién ya se le envió y los excluye automáticamente.
+            </p>
+
+            <!-- Nombre de campaña -->
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Nombre de campaña <span class="text-red-500">*</span>
+              </label>
+              <input x-model="lotes.campania"
+                     @input.debounce.500ms="cargarCampaniaInfo()"
+                     type="text"
+                     placeholder="Ej. Circular octubre 2026"
+                     class="input w-full text-sm"
+                     autocomplete="off">
+              <p class="text-xs text-slate-400 mt-1">Usa el mismo nombre en todos los lotes de la misma campaña.</p>
+            </div>
+
+            <!-- Campañas recientes -->
+            <div x-show="lotes.campanias_recientes.length > 0">
+              <label class="block text-xs font-medium text-slate-500 mb-1">Campañas recientes</label>
+              <div class="space-y-1 max-h-28 overflow-y-auto">
+                <template x-for="c in lotes.campanias_recientes" :key="c.nombre">
+                  <button type="button"
+                          @click="lotes.campania = c.nombre; cargarCampaniaInfo()"
+                          :class="lotes.campania === c.nombre ? 'border-blue-400 bg-blue-50' : 'border-slate-100 hover:bg-slate-50'"
+                          class="w-full text-left flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition-colors">
+                    <span class="font-medium text-slate-700 truncate" x-text="c.nombre"></span>
+                    <span class="flex-shrink-0 ml-2 text-slate-400">
+                      <span x-text="c.num_lotes"></span> lote<span x-show="c.num_lotes !== 1">s</span>,
+                      <span x-text="c.total_enviados"></span> enviados
+                    </span>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <!-- Límite por lote -->
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Límite por lote</label>
+              <div class="flex items-center gap-2">
+                <input x-model.number="lotes.limite" type="number" min="1" max="1000"
+                       class="input text-sm w-24">
+                <span class="text-xs text-slate-400">destinatarios (orden A→Z)</span>
+              </div>
+            </div>
+
+            <!-- Estado de la campaña -->
+            <div x-show="lotes.campania.trim()">
+              <div x-show="lotes.cargando" class="text-xs text-slate-400">
+                <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
+              </div>
+              <div x-show="!lotes.cargando && lotes.info" x-cloak>
+                <template x-if="lotes.info && lotes.info.num_lotes === 0">
+                  <div class="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                    <i class="fa-solid fa-circle-info text-slate-400"></i>
+                    Nueva campaña — aún no se ha enviado ningún lote.
+                  </div>
+                </template>
+                <template x-if="lotes.info && lotes.info.num_lotes > 0">
+                  <div class="text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+                    <div class="font-semibold text-amber-800">
+                      <i class="fa-solid fa-paper-plane mr-1"></i>
+                      Lote <span x-text="lotes.info.num_lotes"></span> enviado
+                      (<span x-text="lotes.info.total_enviados"></span> socios en total)
+                    </div>
+                    <div class="text-amber-700">
+                      Al hacer Preview se excluirán automáticamente los ya enviados.
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Botón preview -->
         <button type="button" @click="filtros.modo === 'publico' ? previewPublico() : preview()"
           :disabled="previewing"
@@ -298,7 +391,7 @@
         </button>
 
         <!-- Resumen destinatarios del filtro -->
-        <div x-show="showPreview" x-cloak class="mt-3">
+        <div x-show="showPreview" x-cloak class="mt-3 space-y-2">
           <button type="button" @click="abrirModalDest()"
                   class="w-full flex items-center justify-between px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors">
             <div class="flex items-center gap-2 text-sm font-medium text-blue-800">
@@ -307,6 +400,20 @@
             </div>
             <span class="text-xs text-blue-500 font-medium">Ver / editar <i class="fa-solid fa-arrow-right ml-1"></i></span>
           </button>
+          <!-- Banner lotes: quedan pendientes -->
+          <div x-show="lotes.activo && lotesPendientes > 0" x-cloak
+               class="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-800">
+            <i class="fa-solid fa-layer-group text-amber-500 flex-shrink-0"></i>
+            <span>
+              <strong x-text="seleccionados.length"></strong> a enviar hoy ·
+              <strong x-text="lotesPendientes"></strong> quedan para el siguiente lote
+            </span>
+          </div>
+          <div x-show="lotes.activo && lotesPendientes === 0 && lotes.totalSinLimite > 0" x-cloak
+               class="flex items-center gap-2 text-xs bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-green-700">
+            <i class="fa-solid fa-circle-check text-green-500 flex-shrink-0"></i>
+            Todos los destinatarios caben en un solo lote.
+          </div>
         </div>
       </div>
 
@@ -687,6 +794,25 @@
           <div class="flex items-start gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700">
             <i class="fa-solid fa-circle-check mt-0.5"></i>
             <span x-text="'Enviado correctamente a ' + resultado.enviados + ' destinatario(s).'"></span>
+          </div>
+          <!-- Banner lote completado -->
+          <div x-show="resultado && lotes.activo && resultado.lote_pendientes > 0" x-cloak
+               class="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
+            <i class="fa-solid fa-layer-group text-blue-500 mt-0.5 flex-shrink-0"></i>
+            <div>
+              <p class="font-semibold">
+                Lote <span x-text="resultado.lote_numero"></span> completado.
+              </p>
+              <p class="text-xs mt-0.5">
+                Quedan <strong x-text="resultado.lote_pendientes"></strong> socios pendientes para el siguiente lote.
+                Haz Preview nuevamente mañana para continuar.
+              </p>
+            </div>
+          </div>
+          <div x-show="resultado && lotes.activo && resultado.lote_pendientes === 0" x-cloak
+               class="flex items-start gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
+            <i class="fa-solid fa-flag-checkered text-green-600 mt-0.5 flex-shrink-0"></i>
+            <p class="font-semibold">Campaña completada — todos los socios han recibido el mensaje.</p>
           </div>
           <div x-show="resultado && resultado.fallidos > 0" x-cloak
                class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
@@ -1381,6 +1507,17 @@ function comunicaciones() {
     nuevaPlantillaAsunto:  '',
     nuevaPlantillaCuerpo:  '',
 
+    // Envío por lotes
+    lotes: {
+      activo:             false,
+      campania:           '',
+      limite:             250,
+      info:               null,
+      campanias_recientes: [],
+      cargando:           false,
+      totalSinLimite:     0,
+    },
+
     disclaimer:  true,
     confirmando: false,
     enviando:    false,
@@ -1449,6 +1586,7 @@ function comunicaciones() {
 
     async init() {
       this.cargarExcluidos();
+      this.cargarCampaniasRecientes();
       await this.cargarPlantillas();
       {% if pre_member %}
       this.manuales.push({ ...{{ pre_member | tojson }}, selected: true });
@@ -1467,6 +1605,35 @@ function comunicaciones() {
       const tipo = this.filtros.modo === 'publico' ? 'publico' : 'socios';
       const r = await fetch('/api/plantillas?tipo=' + tipo);
       this.plantillasList = await r.json();
+    },
+
+    async cargarCampaniasRecientes() {
+      const r = await fetch('/api/comunicaciones/campanias');
+      this.lotes.campanias_recientes = await r.json();
+    },
+
+    async cargarCampaniaInfo() {
+      const nombre = this.lotes.campania.trim();
+      if (!nombre) { this.lotes.info = null; return; }
+      this.lotes.cargando = true;
+      const r = await fetch('/api/comunicaciones/campania-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre }),
+      });
+      this.lotes.info = await r.json();
+      this.lotes.cargando = false;
+    },
+
+    _excluirIdsLote() {
+      return (this.lotes.activo && this.lotes.info)
+        ? (this.lotes.info.member_ids_enviados || [])
+        : [];
+    },
+
+    get lotesPendientes() {
+      if (!this.lotes.activo) return 0;
+      return Math.max(0, this.lotes.totalSinLimite - Math.min(this.lotes.limite, this.lotes.totalSinLimite));
     },
 
     get seleccionados() {
@@ -1564,10 +1731,14 @@ function comunicaciones() {
           excluir_titulo:         this.exclusiones.titulo,
           excluir_centro_trabajo: this.exclusiones.centro_trabajo,
           excluir_keywords:       this.exclusiones.keywords,
+          excluir_ids:            this._excluirIdsLote(),
         }),
       });
       const data = await r.json();
-      this.destinatarios = (data.destinatarios || []).map(d => ({ ...d, selected: true }));
+      const todos = data.destinatarios || [];
+      this.lotes.totalSinLimite = todos.length;
+      const limite = this.lotes.activo ? Math.max(1, parseInt(this.lotes.limite) || 250) : Infinity;
+      this.destinatarios = todos.map((d, i) => ({ ...d, selected: i < limite }));
       this.previewing   = false;
       this.showPreview  = true;
     },
@@ -1726,6 +1897,9 @@ function comunicaciones() {
       const endpoint = this.filtros.modo === 'publico'
         ? '/api/publico/enviar-comunicacion'
         : '/api/comunicaciones/enviar';
+      const campania = (this.lotes.activo && this.lotes.campania.trim())
+        ? this.lotes.campania.trim()
+        : '';
       try {
         const r = await fetch(endpoint, {
           method: 'POST',
@@ -1739,19 +1913,31 @@ function comunicaciones() {
             filtros:        this.filtros.modo === 'publico' ? { ...this.filtrosPublico } : { ...this.filtros, periodo: this._periodoParaFiltro() },
             attachments:    this.adjuntos,
             imagenesInline: this.imagenesInline,
+            campania:       campania,
           }),
         });
         const data = await r.json();
         if (r.ok) {
+          // Enriquecer resultado con info de lotes
+          if (campania) {
+            await this.cargarCampaniaInfo();
+            const infoPost = this.lotes.info || {};
+            data.lote_numero   = infoPost.num_lotes || 1;
+            data.lote_pendientes = Math.max(0,
+              (this.lotes.totalSinLimite - (infoPost.total_enviados || data.enviados))
+            );
+          }
           this.resultado             = data;
           this.confirmando           = false;
           this.showPreview           = false;
           this.destinatarios         = [];
+          this.lotes.totalSinLimite  = 0;
           this.manuales              = [];
           this.empresasDestinatarias = [];
           this.adjuntos              = [];
           this.imagenesInline        = [];
           this.cuerpo                = '';
+          if (campania) await this.cargarCampaniasRecientes();
           this.$nextTick(() => {
             const ed = this.$refs.cuerpoEditor;
             if (ed) ed.innerHTML = '';

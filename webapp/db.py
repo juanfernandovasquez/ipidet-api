@@ -2193,6 +2193,7 @@ def get_comunicacion_destinatarios(
     excluir_titulo: str = "",
     excluir_centro_trabajo: str = "",
     excluir_keywords: str = "",
+    excluir_ids: list[str] | None = None,
 ) -> list:
     """Socios activos con email habilitado que coincidan con los filtros."""
     q: dict = {
@@ -2256,6 +2257,10 @@ def get_comunicacion_destinatarios(
         excluded_ids = {p["member_id"] for p in payments_col.find(ex_q, {"member_id": 1})}
         members = [m for m in members if m["member_id"] not in excluded_ids]
 
+    if excluir_ids:
+        excluir_set = set(excluir_ids)
+        members = [m for m in members if m["member_id"] not in excluir_set]
+
     member_ids = [m["member_id"] for m in members]
     pay_map = {}
     if periodo and member_ids:
@@ -2291,21 +2296,77 @@ def get_comunicacion_destinatarios(
 
 def save_comunicacion_log(asunto: str, plantilla: str, filtros: dict,
                            destinatarios: list, usuario: str = "",
-                           fallidos_detalle: list | None = None) -> str:
+                           fallidos_detalle: list | None = None,
+                           campania: str = "") -> str:
     from datetime import datetime, timezone
     fd = fallidos_detalle or []
+    member_ids_enviados = [
+        d.get("member_id") for d in destinatarios
+        if d.get("member_id")
+    ]
     doc = {
-        "fecha":             datetime.now(timezone.utc),
-        "usuario":           usuario,
-        "asunto":            asunto,
-        "plantilla":         plantilla,
-        "filtros":           filtros,
-        "total_enviados":    len(destinatarios) - len(fd),
-        "total_fallidos":    len(fd),
-        "fallidos_detalle":  fd,
-        "destinatarios":     destinatarios,
+        "fecha":               datetime.now(timezone.utc),
+        "usuario":             usuario,
+        "asunto":              asunto,
+        "plantilla":           plantilla,
+        "filtros":             filtros,
+        "total_enviados":      len(destinatarios) - len(fd),
+        "total_fallidos":      len(fd),
+        "fallidos_detalle":    fd,
+        "destinatarios":       destinatarios,
+        "member_ids_enviados": member_ids_enviados,
     }
+    if campania:
+        doc["campania"] = campania
     return str(comunicaciones_col.insert_one(doc).inserted_id)
+
+
+def get_campania_info(campania_nombre: str) -> dict:
+    """Retorna lotes enviados y member_ids acumulados para una campaña."""
+    if not campania_nombre.strip():
+        return {"campania": "", "num_lotes": 0, "total_enviados": 0, "member_ids_enviados": [], "ultima_fecha": None}
+    lotes = list(comunicaciones_col.find(
+        {"campania": campania_nombre},
+        {"member_ids_enviados": 1, "fecha": 1, "total_enviados": 1},
+    ).sort("fecha", 1))
+    seen: set = set()
+    all_ids: list = []
+    for lote in lotes:
+        for mid in (lote.get("member_ids_enviados") or []):
+            if mid and mid not in seen:
+                seen.add(mid)
+                all_ids.append(mid)
+    return {
+        "campania":            campania_nombre,
+        "num_lotes":           len(lotes),
+        "total_enviados":      len(all_ids),
+        "member_ids_enviados": all_ids,
+        "ultima_fecha":        lotes[-1]["fecha"].isoformat() if lotes else None,
+    }
+
+
+def get_campanias_recientes(limit: int = 10) -> list:
+    """Retorna las campañas más recientes con conteo acumulado."""
+    pipeline = [
+        {"$match": {"campania": {"$exists": True, "$nin": ["", None]}}},
+        {"$group": {
+            "_id":            "$campania",
+            "num_lotes":      {"$sum": 1},
+            "total_enviados": {"$sum": "$total_enviados"},
+            "ultima_fecha":   {"$max": "$fecha"},
+        }},
+        {"$sort": {"ultima_fecha": -1}},
+        {"$limit": limit},
+    ]
+    return [
+        {
+            "nombre":         d["_id"],
+            "num_lotes":      d["num_lotes"],
+            "total_enviados": d["total_enviados"],
+            "ultima_fecha":   d["ultima_fecha"].isoformat() if d.get("ultima_fecha") else None,
+        }
+        for d in comunicaciones_col.aggregate(pipeline)
+    ]
 
 
 def get_comunicaciones_history(limit: int = 20) -> list:

@@ -3100,6 +3100,7 @@ async def comunicaciones_preview(request: Request):
     excluir_titulo    = data.get("excluir_titulo", "")
     excluir_centro    = data.get("excluir_centro_trabajo", "")
     excluir_keywords  = data.get("excluir_keywords", "")
+    excluir_ids       = data.get("excluir_ids", [])
     destinatarios = pdb.get_comunicacion_destinatarios(
         periodo=periodo, estados_pago=estados or None,
         empresa=empresa, ubicacion=ubicacion, titulo=titulo,
@@ -3110,6 +3111,7 @@ async def comunicaciones_preview(request: Request):
         excluir_titulo=excluir_titulo,
         excluir_centro_trabajo=excluir_centro,
         excluir_keywords=excluir_keywords,
+        excluir_ids=excluir_ids or None,
     )
     return {"total": len(destinatarios), "destinatarios": destinatarios}
 
@@ -3128,6 +3130,18 @@ async def toggle_excluido(request: Request):
         raise HTTPException(status_code=400, detail="member_id requerido")
     pdb.toggle_excluir_comunicaciones(member_id, excluir)
     return {"ok": True, "member_id": member_id, "excluir": excluir}
+
+
+@app.get("/api/comunicaciones/campanias")
+async def get_campanias_recientes(request: Request):
+    return pdb.get_campanias_recientes(limit=10)
+
+
+@app.post("/api/comunicaciones/campania-info")
+async def get_campania_info(request: Request):
+    data   = await request.json()
+    nombre = (data.get("nombre") or "").strip()
+    return pdb.get_campania_info(nombre)
 
 
 def _process_inline_images(html: str, imagenesInline: list) -> tuple[str, list]:
@@ -3203,8 +3217,10 @@ async def comunicaciones_enviar(request: Request):
             status_code=500,
         )
 
-    usuario = request.session.get("user_email", "")
-    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario, fallidos_detalle)
+    usuario  = request.session.get("user_email", "")
+    campania = (data.get("campania") or "").strip()
+    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario,
+                               fallidos_detalle, campania=campania)
 
     return {"ok": True, "enviados": enviados, "fallidos": fallidos,
             "errores": errores if errores else [],
