@@ -39,7 +39,16 @@ def _get(path: str, params: dict | None = None) -> dict:
         params=params or {},
         timeout=15,
     )
-    resp.raise_for_status()
+    if not resp.is_success:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+        raise httpx.HTTPStatusError(
+            f"{resp.status_code} — {detail}",
+            request=resp.request,
+            response=resp,
+        )
     return resp.json()
 
 
