@@ -56,6 +56,10 @@
               <dd class="text-slate-700">{{ prospecto.celular or '—' }}</dd>
             </div>
             <div>
+              <dt class="text-xs font-medium text-slate-400 mb-0.5">DNI</dt>
+              <dd class="text-slate-700 font-mono text-sm">{{ prospecto.dni or '—' }}</dd>
+            </div>
+            <div>
               <dt class="text-xs font-medium text-slate-400 mb-0.5">Ciudad</dt>
               <dd class="text-slate-700">{{ prospecto.ciudad or '—' }}</dd>
             </div>
@@ -110,6 +114,10 @@
                 <label class="block text-xs font-medium text-slate-600 mb-1">Celular</label>
                 <input type="text" name="celular" value="{{ prospecto.celular or '' }}" class="input w-full text-sm">
               </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">DNI</label>
+              <input type="text" name="dni" value="{{ prospecto.dni or '' }}" class="input w-full text-sm" placeholder="12345678">
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>

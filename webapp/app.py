@@ -4367,6 +4367,7 @@ async def publico_update(
     apellido:       str = Form(""),
     email:          str = Form(...),
     celular:        str = Form(""),
+    dni:            str = Form(""),
     titulo:         str = Form(""),
     empresa:        str = Form(""),
     ciudad:         str = Form(""),
@@ -4378,7 +4379,7 @@ async def publico_update(
     tags_list = [t.strip() for t in tags.split(",") if t.strip()]
     pdb.update_prospecto(prospecto_id, {
         "nombre": nombre, "apellido": apellido, "email": email.lower().strip(),
-        "celular": celular, "titulo": titulo, "empresa": empresa,
+        "celular": celular, "dni": dni, "titulo": titulo, "empresa": empresa,
         "ciudad": ciudad, "notas": notas, "fuente": fuente,
         "fuente_detalle": fuente_detalle, "tags": tags_list,
     })
