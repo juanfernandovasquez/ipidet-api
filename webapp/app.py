@@ -4231,13 +4231,13 @@ async def publico_list(
     request: Request,
     search:   str = "", estado: str = "", ciudad: str = "",
     titulo:   str = "", empresa: str = "", fuente: str = "",
-    tag: str = "", es_socio: str = "", zoom_evento_id: str = "",
+    tag: str = "", es_socio: str = "", zoom_evento_id: List[str] = Query(default=[]),
     zoom_asistio: str = "", page: int = 1,
 ):
     docs, total = pdb.get_prospectos(search=search, estado=estado, ciudad=ciudad,
                                      titulo=titulo, empresa=empresa, fuente=fuente,
                                      tag=tag, es_socio=es_socio,
-                                     zoom_evento_id=zoom_evento_id,
+                                     zoom_evento_ids=zoom_evento_id,
                                      zoom_asistio=zoom_asistio, page=page)
     stats             = pdb.get_publico_stats()
     # Títulos: combinar los del padrón con los que vienen de Zoom
@@ -4253,7 +4253,7 @@ async def publico_list(
         search=search, estado=estado, ciudad=ciudad,
         titulo=titulo, empresa=empresa, fuente=fuente,
         tag=tag, es_socio=es_socio,
-        zoom_evento_id=zoom_evento_id, zoom_asistio=zoom_asistio,
+        zoom_evento_ids=zoom_evento_id, zoom_asistio=zoom_asistio,
     ))
 
 
@@ -4441,12 +4441,13 @@ async def api_publico_preview(request: Request):
     fuente         = data.get("fuente", "")
     tag            = data.get("tag", "")
     es_socio       = data.get("es_socio", "")
-    zoom_evento_id = data.get("zoom_evento_id", "")
-    zoom_asistio   = data.get("zoom_asistio", "")
+    _raw_zoom       = data.get("zoom_evento_id", [])
+    zoom_evento_ids = [_raw_zoom] if isinstance(_raw_zoom, str) and _raw_zoom else (_raw_zoom if isinstance(_raw_zoom, list) else [])
+    zoom_asistio    = data.get("zoom_asistio", "")
     docs = pdb.get_prospectos_all(search=search, estado=estado, ciudad=ciudad,
                                   titulo=titulo, empresa=empresa, fuente=fuente,
                                   tag=tag, es_socio=es_socio,
-                                  zoom_evento_id=zoom_evento_id,
+                                  zoom_evento_ids=zoom_evento_ids,
                                   zoom_asistio=zoom_asistio)
     result = [{"_id": str(d.get("_id", "")),
                "nombre": d.get("nombre", ""),

@@ -4529,7 +4529,7 @@ def get_publico_stats() -> dict:
 def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = "",
                              titulo: str = "", empresa: str = "", fuente: str = "",
                              tag: str = "", es_socio: str = "",
-                             zoom_evento_id: str = "", zoom_asistio: str = "") -> dict:
+                             zoom_evento_ids: list = None, zoom_asistio: str = "") -> dict:
     """Helper interno — construye la query de prospectos con todos los filtros."""
     query: dict = {}
     if estado:
@@ -4548,15 +4548,15 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
         query["es_socio"] = {"$ne": True}
     elif es_socio == "true":
         query["es_socio"] = True
-    if zoom_evento_id and zoom_asistio == "excluir":
-        # Excluir personas registradas en este evento
-        query["zoom_eventos.evento_id"] = {"$ne": zoom_evento_id}
-    elif zoom_evento_id and zoom_asistio:
-        cond: dict = {"evento_id": zoom_evento_id}
-        cond["asistio"] = True if zoom_asistio == "true" else {"$ne": True}
-        query["zoom_eventos"] = {"$elemMatch": cond}
-    elif zoom_evento_id:
-        query["zoom_eventos.evento_id"] = zoom_evento_id
+    ids = zoom_evento_ids or []
+    if ids and zoom_asistio == "excluir":
+        query["zoom_eventos.evento_id"] = {"$nin": ids}
+    elif ids and zoom_asistio == "true":
+        query["zoom_eventos"] = {"$elemMatch": {"evento_id": {"$in": ids}, "asistio": True}}
+    elif ids and zoom_asistio == "false":
+        query["zoom_eventos"] = {"$elemMatch": {"evento_id": {"$in": ids}, "asistio": {"$ne": True}}}
+    elif ids:
+        query["zoom_eventos.evento_id"] = {"$in": ids}
     elif zoom_asistio == "excluir":
         # Sin evento seleccionado: excluir a todos los que tienen algún evento Zoom
         query["zoom_eventos"] = {"$not": {"$elemMatch": {}}}
@@ -4588,10 +4588,10 @@ def get_zoom_eventos_disponibles() -> list:
 
 def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
                    titulo: str = "", empresa: str = "", fuente: str = "",
-                   tag: str = "", es_socio: str = "", zoom_evento_id: str = "",
+                   tag: str = "", es_socio: str = "", zoom_evento_ids: list = None,
                    zoom_asistio: str = "", page: int = 1) -> tuple:
     query = _build_prospectos_query(search, estado, ciudad, titulo, empresa, fuente,
-                                    tag, es_socio, zoom_evento_id, zoom_asistio)
+                                    tag, es_socio, zoom_evento_ids, zoom_asistio)
     per_page = 50
     skip = (page - 1) * per_page
     total = publico_col.count_documents(query)
@@ -4603,11 +4603,11 @@ def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
 
 def get_prospectos_all(search: str = "", estado: str = "", ciudad: str = "",
                         titulo: str = "", empresa: str = "", fuente: str = "",
-                        tag: str = "", es_socio: str = "", zoom_evento_id: str = "",
+                        tag: str = "", es_socio: str = "", zoom_evento_ids: list = None,
                         zoom_asistio: str = "") -> list:
     """Sin paginación — para envíos masivos y preview de campaña."""
     query = _build_prospectos_query(search, estado, ciudad, titulo, empresa, fuente,
-                                    tag, es_socio, zoom_evento_id, zoom_asistio)
+                                    tag, es_socio, zoom_evento_ids, zoom_asistio)
     docs = list(publico_col.find(query).sort("created_at", -1))
     for d in docs:
         d["_id"] = str(d["_id"])
