@@ -3526,13 +3526,17 @@ async def api_evento_detalle(evento_id: str):
 # ── Zoom Webinar Sync ─────────────────────────────────────────────────────────
 
 @app.get("/api/zoom/webinars")
-async def zoom_list_webinars(request: Request):
-    """Lista webinars disponibles en la cuenta Zoom."""
+async def zoom_list_webinars_api(request: Request):
+    """
+    Lista webinars de la cuenta Zoom (activos + pasados).
+    Los participantes de Zoom son público general, no necesariamente socios de IPIDET.
+    """
     if not zoom_client.is_configured():
         return JSONResponse({"error": "Zoom no configurado"}, status_code=503)
     try:
-        webinars = zoom_client.list_webinars()
-        return JSONResponse(webinars)
+        activos   = zoom_client.list_webinars(webinar_type="scheduled")
+        pasados   = zoom_client.list_webinars(webinar_type="past")
+        return JSONResponse({"activos": activos, "pasados": pasados})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -3540,13 +3544,14 @@ async def zoom_list_webinars(request: Request):
 @app.post("/eventos/{evento_id}/sync-zoom")
 async def evento_sync_zoom(request: Request, evento_id: str):
     """
-    Sincroniza inscritos y asistencia de un webinar Zoom al evento IPIDET.
+    Importa participantes de un webinar Zoom al campo zoom_registrants del evento.
+    Los participantes son público general — NO se mezclan con los socios inscritos.
     Body JSON: {"zoom_webinar_id": "123456789"}
     """
     if not zoom_client.is_configured():
         return JSONResponse({"error": "Zoom no configurado"}, status_code=503)
     body = await request.json()
-    webinar_id = body.get("zoom_webinar_id", "").strip()
+    webinar_id = str(body.get("zoom_webinar_id", "")).strip()
     if not webinar_id:
         return JSONResponse({"error": "zoom_webinar_id requerido"}, status_code=400)
 
@@ -3555,34 +3560,20 @@ async def evento_sync_zoom(request: Request, evento_id: str):
         return JSONResponse({"error": "Evento no encontrado"}, status_code=404)
 
     try:
+        # Obtener info del webinar para guardar el título
+        try:
+            info = zoom_client.get_webinar(webinar_id)
+            zoom_titulo = info.get("topic", webinar_id)
+        except Exception:
+            zoom_titulo = webinar_id
+
         registrants = zoom_client.get_webinar_registrants(webinar_id)
         try:
             participants = zoom_client.get_webinar_participants(webinar_id)
         except Exception:
-            participants = []
+            participants = []  # webinar aún en vivo o report no disponible
 
-        attended_emails = {p["user_email"].lower() for p in participants if p.get("user_email")}
-        attended_names  = {p["name"].lower() for p in participants if p.get("name")}
-
-        stats = {"inscritos_zoom": len(registrants), "asistentes_zoom": len(participants),
-                 "vinculados": 0, "no_vinculados": 0}
-
-        for reg in registrants:
-            email = (reg.get("email") or "").lower()
-            nombre = f"{reg.get('first_name', '')} {reg.get('last_name', '')}".strip()
-            asistio = email in attended_emails or nombre.lower() in attended_names
-
-            member = pdb.find_member_by_email(email) if email else None
-            if member:
-                member_id = member["member_id"]
-                pdb.inscribir_socio(evento_id, member_id)
-                if asistio:
-                    pdb.marcar_asistencia(evento_id, member_id, True)
-                stats["vinculados"] += 1
-            else:
-                pdb.inscribir_socio_externo(evento_id, nombre, email, asistio)
-                stats["no_vinculados"] += 1
-
+        stats = pdb.sync_zoom_data(evento_id, webinar_id, zoom_titulo, registrants, participants)
         return JSONResponse({"ok": True, "stats": stats})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

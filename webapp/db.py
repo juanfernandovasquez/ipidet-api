@@ -2873,6 +2873,11 @@ def get_evento(evento_id: str) -> dict | None:
     cupo = doc.get("cupo_max")
     doc["cupo_disponible"] = (cupo - doc["n_inscritos"]) if cupo else None
     doc["lleno"] = bool(cupo and doc["n_inscritos"] >= cupo)
+    # Campos Zoom — default vacío si el evento no tiene webinar vinculado
+    doc.setdefault("zoom_webinar_id", None)
+    doc.setdefault("zoom_titulo", "")
+    doc.setdefault("zoom_synced_at", None)
+    doc.setdefault("zoom_registrants", [])
     return doc
 
 
@@ -2989,41 +2994,66 @@ def get_evento_stats(evento_id: str) -> dict:
     }
 
 
-def find_member_by_email(email: str) -> dict | None:
-    """Busca un socio por cualquiera de sus emails (case-insensitive)."""
-    email = email.lower().strip()
-    doc = members_col.find_one({"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}})
-    return _clean(dict(doc)) if doc else None
-
-
-def inscribir_socio_externo(evento_id: str, nombre: str, email: str, asistio: bool | None = None):
+def sync_zoom_data(
+    evento_id: str,
+    zoom_webinar_id: str,
+    zoom_titulo: str,
+    registrants: list[dict],
+    participants: list[dict],
+) -> dict:
     """
-    Inscribe a una persona externa (sin member_id) como inscrita en un evento.
-    Usado para importar participantes de Zoom que no están en el padrón.
-    Si ya existe una entrada con el mismo email, la actualiza.
+    Reemplaza completamente los datos de Zoom en el evento.
+    registrants: lista de inscritos de Zoom (del endpoint /registrants).
+    participants: lista de asistentes reales (del endpoint /report/participants).
+    Los participantes de Zoom son público general, NO socios de IPIDET.
+    Devuelve stats del resultado.
     """
-    evento = eventos_col.find_one({"_id": ObjectId(evento_id)})
-    if not evento:
-        return
-    inscritos = evento.get("inscritos", [])
-    if email and any(i.get("email", "").lower() == email.lower() for i in inscritos):
-        if asistio:
-            eventos_col.update_one(
-                {"_id": ObjectId(evento_id), "inscritos.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}},
-                {"$set": {"inscritos.$.asistio": True}},
-            )
-        return
-    entrada = {
-        "member_id": None,
-        "nombre":    nombre or email,
-        "email":     email,
-        "fecha_ins": str(_date.today()),
-        "asistio":   asistio,
+    from datetime import datetime, timezone as _tz
+
+    attended_emails = {
+        p["user_email"].lower()
+        for p in participants
+        if p.get("user_email")
     }
+    # Duración por email (en minutos)
+    duration_by_email: dict[str, int] = {}
+    for p in participants:
+        em = (p.get("user_email") or "").lower()
+        if em:
+            duration_by_email[em] = duration_by_email.get(em, 0) + int(p.get("duration", 0)) // 60
+
+    zoom_list = []
+    for r in registrants:
+        email = (r.get("email") or "").lower()
+        nombre = f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or email
+        asistio = email in attended_emails if email else False
+        zoom_list.append({
+            "email":         email,
+            "nombre":        nombre,
+            "registrado_at": r.get("create_time") or r.get("join_time", ""),
+            "asistio":       asistio,
+            "duracion_min":  duration_by_email.get(email) if asistio else None,
+        })
+
+    # Ordenar: asistentes primero, luego por nombre
+    zoom_list.sort(key=lambda x: (not x["asistio"], x["nombre"].lower()))
+
+    now = datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     eventos_col.update_one(
         {"_id": ObjectId(evento_id)},
-        {"$push": {"inscritos": entrada}},
+        {"$set": {
+            "zoom_webinar_id": zoom_webinar_id,
+            "zoom_titulo":     zoom_titulo,
+            "zoom_synced_at":  now,
+            "zoom_registrants": zoom_list,
+        }},
     )
+    n_asistentes = sum(1 for z in zoom_list if z["asistio"])
+    return {
+        "total_registrados": len(zoom_list),
+        "total_asistentes":  n_asistentes,
+        "pct_asistencia":    round(n_asistentes / len(zoom_list) * 100, 1) if zoom_list else 0,
+    }
 
 
 # ── Pendientes y Atención ─────────────────────────────────────────────────────

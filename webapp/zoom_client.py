@@ -43,10 +43,24 @@ def _get(path: str, params: dict | None = None) -> dict:
     return resp.json()
 
 
-def list_webinars(user_id: str = "me", page_size: int = 30) -> list[dict]:
-    """Lista los webinars del account."""
-    data = _get(f"/users/{user_id}/webinars", {"page_size": page_size})
-    return data.get("webinars", [])
+def list_webinars(user_id: str = "me", page_size: int = 100,
+                  webinar_type: str = "scheduled") -> list[dict]:
+    """
+    Lista webinars del account.
+    webinar_type: "scheduled" (activos/próximos) | "past" (finalizados)
+    """
+    results = []
+    next_token = None
+    while True:
+        params: dict = {"page_size": page_size, "type": webinar_type}
+        if next_token:
+            params["next_page_token"] = next_token
+        data = _get(f"/users/{user_id}/webinars", params)
+        results.extend(data.get("webinars", []))
+        next_token = data.get("next_page_token")
+        if not next_token:
+            break
+    return results
 
 
 def get_webinar(webinar_id: str) -> dict:

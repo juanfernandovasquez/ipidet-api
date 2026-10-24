@@ -33,9 +33,12 @@
           <span><i class="fa-solid fa-location-dot mr-1.5"></i>{{ evento.lugar }}</span>
           {% endif %}
           {% if evento.cupo_max %}
-          <span><i class="fa-solid fa-users mr-1.5"></i>{{ evento.n_inscritos }} / {{ evento.cupo_max }} cupos</span>
+          <span><i class="fa-solid fa-users mr-1.5"></i>{{ evento.n_inscritos }} / {{ evento.cupo_max }} cupos (socios)</span>
           {% else %}
-          <span><i class="fa-solid fa-users mr-1.5"></i>{{ evento.n_inscritos }} inscrito(s)</span>
+          <span><i class="fa-solid fa-users mr-1.5"></i>{{ evento.n_inscritos }} socio(s) inscrito(s)</span>
+          {% endif %}
+          {% if evento.zoom_webinar_id %}
+          <span class="text-blue-600"><i class="fa-solid fa-video mr-1.5"></i>Zoom vinculado · {{ evento.zoom_registrants | length }} registrados</span>
           {% endif %}
         </div>
         {% if evento.descripcion %}
@@ -99,12 +102,18 @@
   </div>
 </div>
 
-<!-- Stats de asistencia (#10) -->
+<!-- ═══════════════════════════════════════════════════════════
+     SECCIÓN 1 — SOCIOS IPIDET INSCRITOS
+     Solo aparecen socios del padrón que se inscribieron manualmente.
+     No tiene nada que ver con los participantes de Zoom.
+     ═══════════════════════════════════════════════════════════ -->
+
+<!-- Stats socios -->
 {% if evento.n_inscritos > 0 %}
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
   <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
     <div class="text-2xl font-bold text-slate-800">{{ evento.n_inscritos }}</div>
-    <div class="text-xs text-slate-500 mt-0.5">Inscritos</div>
+    <div class="text-xs text-slate-500 mt-0.5">Socios inscritos</div>
   </div>
   <div class="bg-white rounded-xl border border-green-200 p-4 text-center">
     <div class="text-2xl font-bold text-green-700">{{ evento.n_asistentes }}</div>
@@ -121,15 +130,15 @@
 </div>
 {% endif %}
 
-<!-- Inscripción de socios (#8) -->
-<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5" x-data="inscribir()">
+<!-- Inscribir socio -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-4" x-data="inscribirSocio()">
   <h2 class="text-sm font-semibold text-slate-700 mb-3">
-    <i class="fa-solid fa-user-plus mr-1.5 text-blue-600"></i> Inscribir socio
+    <i class="fa-solid fa-id-card mr-1.5 text-indigo-600"></i> Inscribir socio IPIDET
   </h2>
   <div class="flex gap-2">
     <div class="relative flex-1">
       <input type="text" x-model="query" @input.debounce.350ms="buscar()"
-        placeholder="Buscar por nombre o ID…" class="input w-full pr-8"
+        placeholder="Buscar socio por nombre o ID…" class="input w-full pr-8"
         @keydown.escape="resultados = []">
       <div x-show="resultados.length > 0" x-cloak
         class="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-20 overflow-hidden">
@@ -148,38 +157,17 @@
     </button>
   </div>
   <div x-show="error" x-cloak class="mt-2 text-xs text-red-600" x-text="error"></div>
-  <div x-show="ok" x-cloak class="mt-2 text-xs text-green-600">Socio inscrito. Recarga la página para ver la lista actualizada.</div>
+  <div x-show="ok" x-cloak class="mt-2 text-xs text-green-600">Socio inscrito correctamente.</div>
 </div>
 
-<!-- Sync Zoom Webinar -->
-<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5" x-data="zoomSync()">
-  <h2 class="text-sm font-semibold text-slate-700 mb-3">
-    <i class="fa-solid fa-video mr-1.5 text-blue-500"></i> Sincronizar desde Zoom Webinar
-  </h2>
-  <div class="flex gap-2">
-    <input type="text" x-model="webinarId" placeholder="ID del webinar Zoom (ej. 123456789)"
-      class="input flex-1" @keydown.enter="sync()">
-    <button type="button" @click="sync()" :disabled="loading || !webinarId.trim()"
-      class="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">
-      <span x-show="!loading"><i class="fa-solid fa-rotate mr-1"></i> Sincronizar</span>
-      <span x-show="loading" x-cloak><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Importando…</span>
-    </button>
-  </div>
-  <p class="text-xs text-slate-400 mt-1.5">Importa inscritos y marca asistencia automáticamente. Los socios del padrón se vinculan por email.</p>
-  <div x-show="error" x-cloak class="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5" x-text="error"></div>
-  <div x-show="resultado" x-cloak class="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1.5">
-    <strong>Listo.</strong>
-    <span x-text="`${resultado?.stats?.inscritos_zoom || 0} inscritos en Zoom · ${resultado?.stats?.asistentes_zoom || 0} asistentes · ${resultado?.stats?.vinculados || 0} vinculados al padrón · ${resultado?.stats?.no_vinculados || 0} externos`"></span>
-    <button type="button" @click="location.reload()" class="ml-2 underline">Recargar</button>
-  </div>
-</div>
-
-<!-- Lista de inscritos (#8 asistencia) -->
+<!-- Lista de socios inscritos -->
 {% if evento.inscritos %}
-<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
   <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-    <h2 class="text-sm font-semibold text-slate-700">Lista de inscritos</h2>
-    <span class="text-xs text-slate-400">{{ evento.n_inscritos }} persona(s)</span>
+    <h2 class="text-sm font-semibold text-slate-700">
+      <i class="fa-solid fa-users mr-1.5 text-indigo-500"></i> Socios IPIDET inscritos
+    </h2>
+    <span class="text-xs text-slate-400">{{ evento.n_inscritos }} socio(s)</span>
   </div>
   <table class="w-full text-sm">
     <thead class="bg-slate-50 border-b border-slate-200">
@@ -194,21 +182,15 @@
       {% for ins in evento.inscritos %}
       <tr class="border-t border-slate-100 hover:bg-slate-50">
         <td class="px-4 py-3">
-          {% if ins.member_id %}
           <a href="/members/{{ ins.member_id }}" class="font-medium text-slate-800 hover:text-blue-600">
             {{ ins.nombre }}
           </a>
-          {% else %}
-          <span class="font-medium text-slate-700">{{ ins.nombre }}</span>
-          <span class="ml-1.5 text-xs bg-slate-100 text-slate-400 rounded-full px-1.5 py-0.5">externo</span>
-          {% endif %}
           {% if ins.email %}
           <div class="text-xs text-slate-400 font-mono">{{ ins.email }}</div>
           {% endif %}
         </td>
         <td class="px-4 py-3 text-xs text-slate-500">{{ ins.fecha_ins or '—' }}</td>
         <td class="px-4 py-3 text-center">
-          {% if ins.member_id %}
           <form method="post" action="/eventos/{{ evento._id }}/asistencia/{{ ins.member_id }}"
                 class="inline-flex gap-1">
             <button name="asistio" value="true" type="submit"
@@ -228,23 +210,14 @@
               <i class="fa-solid fa-rotate-left"></i>
             </button>
           </form>
-          {% else %}
-          <span class="text-xs {% if ins.asistio is sameas true %}text-green-600{% elif ins.asistio is sameas false %}text-red-400{% else %}text-slate-300{% endif %}">
-            {% if ins.asistio is sameas true %}<i class="fa-solid fa-check"></i>
-            {% elif ins.asistio is sameas false %}<i class="fa-solid fa-xmark"></i>
-            {% else %}—{% endif %}
-          </span>
-          {% endif %}
         </td>
         <td class="px-4 py-3 text-right">
-          {% if ins.member_id %}
           <form method="post" action="/eventos/{{ evento._id }}/desinscribir/{{ ins.member_id }}">
             <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1"
               title="Quitar de la lista">
               <i class="fa-solid fa-trash-can text-xs"></i>
             </button>
           </form>
-          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -252,45 +225,247 @@
   </table>
 </div>
 {% else %}
-<div class="bg-white rounded-xl border border-slate-200 py-10 text-center">
-  <i class="fa-solid fa-users text-3xl text-slate-300 mb-2"></i>
-  <p class="text-slate-500 text-sm">Sin inscritos aún</p>
+<div class="bg-white rounded-xl border border-slate-200 py-8 text-center mb-6">
+  <i class="fa-solid fa-id-card text-3xl text-slate-300 mb-2"></i>
+  <p class="text-slate-500 text-sm">Sin socios IPIDET inscritos aún</p>
+</div>
+{% endif %}
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECCIÓN 2 — PARTICIPANTES ZOOM WEBINAR
+     Público general. Completamente independiente del padrón.
+     ═══════════════════════════════════════════════════════════ -->
+
+<div class="border-t-2 border-dashed border-slate-200 my-6"></div>
+
+<div class="flex items-center gap-3 mb-4">
+  <i class="fa-solid fa-video text-blue-500 text-lg"></i>
+  <h2 class="text-base font-semibold text-slate-700">Zoom Webinar — Público general</h2>
+  {% if evento.zoom_webinar_id %}
+  <span class="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+    ID: {{ evento.zoom_webinar_id }}
+  </span>
+  {% if evento.zoom_synced_at %}
+  <span class="text-xs text-slate-400">Sync: {{ evento.zoom_synced_at[:10] }}</span>
+  {% endif %}
+  {% endif %}
+</div>
+
+<!-- Stats Zoom -->
+{% if evento.zoom_registrants %}
+{% set zoom_total = evento.zoom_registrants | length %}
+{% set zoom_asistentes = evento.zoom_registrants | selectattr('asistio') | list | length %}
+{% set zoom_pct = (zoom_asistentes / zoom_total * 100) | round(1) if zoom_total else 0 %}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+  <div class="bg-white rounded-xl border border-blue-100 p-4 text-center">
+    <div class="text-2xl font-bold text-blue-700">{{ zoom_total }}</div>
+    <div class="text-xs text-blue-500 mt-0.5">Registrados Zoom</div>
+  </div>
+  <div class="bg-white rounded-xl border border-green-200 p-4 text-center">
+    <div class="text-2xl font-bold text-green-700">{{ zoom_asistentes }}</div>
+    <div class="text-xs text-green-600 mt-0.5">Asistieron</div>
+  </div>
+  <div class="bg-white rounded-xl border border-slate-200 p-4 text-center">
+    <div class="text-2xl font-bold text-slate-500">{{ zoom_total - zoom_asistentes }}</div>
+    <div class="text-xs text-slate-400 mt-0.5">No asistieron</div>
+  </div>
+  <div class="bg-white rounded-xl border border-amber-200 p-4 text-center">
+    <div class="text-2xl font-bold text-amber-700">{{ zoom_pct }}%</div>
+    <div class="text-xs text-amber-600 mt-0.5">Tasa asistencia</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Selector de webinar Zoom -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-4" x-data="zoomSync()">
+  <h3 class="text-sm font-semibold text-slate-700 mb-3">
+    <i class="fa-solid fa-rotate mr-1.5 text-blue-500"></i>
+    {% if evento.zoom_webinar_id %}Re-sincronizar{% else %}Vincular webinar Zoom{% endif %}
+  </h3>
+
+  <!-- Cargar lista de webinars -->
+  <div x-show="!webinarsLoaded && !loadError" class="mb-3">
+    <button type="button" @click="cargarWebinars()"
+      class="btn-ghost text-sm" :disabled="loadingList">
+      <span x-show="!loadingList"><i class="fa-solid fa-cloud-arrow-down mr-1"></i> Cargar webinars desde Zoom</span>
+      <span x-show="loadingList" x-cloak><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Cargando…</span>
+    </button>
+  </div>
+  <div x-show="loadError" x-cloak class="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5" x-text="loadError"></div>
+
+  <!-- Selector de webinar -->
+  <div x-show="webinarsLoaded" x-cloak class="space-y-3">
+    <!-- Pestañas: programados / pasados -->
+    <div class="flex gap-1 text-xs">
+      <button type="button" @click="tab='activos'"
+        :class="tab==='activos' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-slate-500 border-slate-200'"
+        class="px-3 py-1.5 rounded-md border font-medium">
+        Próximos / activos (<span x-text="webinars.activos.length"></span>)
+      </button>
+      <button type="button" @click="tab='pasados'"
+        :class="tab==='pasados' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-slate-500 border-slate-200'"
+        class="px-3 py-1.5 rounded-md border font-medium">
+        Pasados (<span x-text="webinars.pasados.length"></span>)
+      </button>
+    </div>
+
+    <!-- Lista de webinars -->
+    <div class="max-h-48 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+      <template x-for="w in (tab==='activos' ? webinars.activos : webinars.pasados)" :key="w.id">
+        <label class="flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 cursor-pointer">
+          <input type="radio" name="zoom_webinar" :value="w.id" x-model="selectedId"
+            class="mt-0.5 shrink-0">
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-slate-800 truncate" x-text="w.topic || w.agenda || w.id"></div>
+            <div class="text-xs text-slate-400 mt-0.5">
+              <span x-text="w.id"></span>
+              <span x-show="w.start_time" x-cloak> · <span x-text="w.start_time?.substring(0,10)"></span></span>
+              <span x-show="w.registrants_count" x-cloak> · <span x-text="w.registrants_count"></span> reg.</span>
+            </div>
+          </div>
+        </label>
+      </template>
+      <div x-show="(tab==='activos' ? webinars.activos : webinars.pasados).length === 0"
+        class="px-4 py-6 text-center text-xs text-slate-400">No hay webinars en esta categoría</div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button type="button" @click="sync()" :disabled="!selectedId || syncing"
+        class="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        <span x-show="!syncing"><i class="fa-solid fa-rotate mr-1"></i> Importar participantes</span>
+        <span x-show="syncing" x-cloak><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Importando…</span>
+      </button>
+      <p class="text-xs text-slate-400">Los datos reemplazan la sincronización anterior.</p>
+    </div>
+  </div>
+
+  <!-- Resultado -->
+  <div x-show="syncError" x-cloak class="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5" x-text="syncError"></div>
+  <div x-show="resultado" x-cloak class="mt-3 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 flex items-center gap-4">
+    <i class="fa-solid fa-circle-check text-green-500"></i>
+    <div>
+      <span class="font-semibold" x-text="resultado?.stats?.total_registrados + ' registrados'"></span>
+      · <span x-text="resultado?.stats?.total_asistentes + ' asistentes'"></span>
+      · <span x-text="resultado?.stats?.pct_asistencia + '% tasa'"></span>
+    </div>
+    <button type="button" @click="location.reload()" class="ml-auto underline">Ver resultados</button>
+  </div>
+</div>
+
+<!-- Tabla de participantes Zoom -->
+{% if evento.zoom_registrants %}
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
+  <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+    <h3 class="text-sm font-semibold text-slate-700">
+      <i class="fa-solid fa-list-ul mr-1.5 text-blue-500"></i>
+      Participantes Zoom
+      {% if evento.zoom_titulo %}
+      <span class="ml-2 font-normal text-slate-400 text-xs">— {{ evento.zoom_titulo }}</span>
+      {% endif %}
+    </h3>
+    <span class="text-xs text-slate-400">{{ evento.zoom_registrants | length }} persona(s)</span>
+  </div>
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 border-b border-slate-200">
+      <tr>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Nombre</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>
+        <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Registro</th>
+        <th class="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Asistencia</th>
+        <th class="text-right px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Duración</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in evento.zoom_registrants %}
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="px-4 py-2.5 font-medium text-slate-800">{{ p.nombre or '—' }}</td>
+        <td class="px-4 py-2.5 text-xs text-slate-500 font-mono">{{ p.email or '—' }}</td>
+        <td class="px-4 py-2.5 text-xs text-slate-400">{{ (p.registrado_at or '')[:10] or '—' }}</td>
+        <td class="px-4 py-2.5 text-center">
+          {% if p.asistio %}
+          <span class="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 rounded-full px-2 py-0.5 font-medium">
+            <i class="fa-solid fa-check"></i> Asistió
+          </span>
+          {% else %}
+          <span class="text-xs text-slate-300">—</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-2.5 text-right text-xs text-slate-500">
+          {% if p.duracion_min %}{{ p.duracion_min }} min{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="bg-white rounded-xl border border-dashed border-slate-200 py-10 text-center mb-6">
+  <i class="fa-solid fa-video text-3xl text-slate-200 mb-2"></i>
+  <p class="text-slate-400 text-sm">Sin datos de Zoom aún — usa el widget de arriba para importar</p>
 </div>
 {% endif %}
 
 <script>
 function zoomSync() {
   return {
-    webinarId: '',
-    loading: false,
-    error: '',
+    webinarsLoaded: false,
+    loadingList: false,
+    loadError: '',
+    webinars: { activos: [], pasados: [] },
+    tab: 'pasados',
+    selectedId: '',
+    syncing: false,
+    syncError: '',
     resultado: null,
+
+    async cargarWebinars() {
+      this.loadingList = true;
+      this.loadError = '';
+      try {
+        const r = await fetch('/api/zoom/webinars');
+        const data = await r.json();
+        if (data.error) { this.loadError = data.error; return; }
+        this.webinars = data;
+        this.webinarsLoaded = true;
+        // Si ya hay un webinar vinculado, preseleccionarlo
+        const vinculado = '{{ evento.zoom_webinar_id or "" }}';
+        if (vinculado) this.selectedId = vinculado;
+      } catch(e) {
+        this.loadError = 'Error al conectar con Zoom';
+      } finally {
+        this.loadingList = false;
+      }
+    },
+
     async sync() {
-      this.error = ''; this.resultado = null;
-      if (!this.webinarId.trim()) return;
-      this.loading = true;
+      this.syncError = ''; this.resultado = null;
+      if (!this.selectedId) return;
+      this.syncing = true;
       try {
         const resp = await fetch(`/eventos/{{ evento._id }}/sync-zoom`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ zoom_webinar_id: this.webinarId.trim() }),
+          body: JSON.stringify({ zoom_webinar_id: this.selectedId }),
         });
         const data = await resp.json();
         if (!resp.ok || data.error) {
-          this.error = data.error || 'Error al sincronizar';
+          this.syncError = data.error || 'Error al sincronizar';
         } else {
           this.resultado = data;
         }
-      } catch (e) {
-        this.error = 'Error de red';
+      } catch(e) {
+        this.syncError = 'Error de red';
       } finally {
-        this.loading = false;
+        this.syncing = false;
       }
     },
   };
 }
 
-function inscribir() {
+function inscribirSocio() {
   return {
     query: '',
     resultados: [],
