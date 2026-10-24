@@ -105,19 +105,21 @@
       </select>
       {% if zoom_eventos_disp %}
       <select name="zoom_evento_id" class="input text-sm max-w-xs" @change="$refs.filterForm.submit()">
-        <option value="">Todos los eventos Zoom</option>
+        <option value="">Sin filtro de evento Zoom</option>
         {% for ze in zoom_eventos_disp %}
         <option value="{{ ze._id }}" {% if zoom_evento_id == ze._id %}selected{% endif %}>
           {{ ze.titulo or ze._id }} ({{ ze.count }})
         </option>
         {% endfor %}
       </select>
-      {% endif %}
-      <select name="zoom_asistio" class="input text-sm" @change="$refs.filterForm.submit()">
-        <option value="">Asistencia Zoom</option>
-        <option value="true"  {% if zoom_asistio == 'true'  %}selected{% endif %}>Solo asistentes</option>
-        <option value="false" {% if zoom_asistio == 'false' %}selected{% endif %}>Solo no asistentes</option>
+      <select name="zoom_asistio" class="input text-sm" @change="$refs.filterForm.submit()"
+              title="Relación con el evento Zoom seleccionado">
+        <option value="">Cualquier relación</option>
+        <option value="true"   {% if zoom_asistio == 'true'    %}selected{% endif %}>✓ Asistió al evento</option>
+        <option value="false"  {% if zoom_asistio == 'false'   %}selected{% endif %}>✗ Registrado, no asistió</option>
+        <option value="excluir" {% if zoom_asistio == 'excluir' %}selected{% endif %}>⊘ Excluir del evento</option>
       </select>
+      {% endif %}
       <input type="text" name="tag" value="{{ tag }}" placeholder="Tag"
              class="input text-sm w-28"
              @input="clearTimeout(_t3); _t3=setTimeout(()=>$refs.filterForm.submit(),450)">
@@ -329,9 +331,24 @@
             {% if fuente %}<span class="badge badge-slate">Fuente: {{ fuente }}</span>{% endif %}
             {% if es_socio == 'false' %}<span class="badge badge-rose">Solo no socios</span>{% elif es_socio == 'true' %}<span class="badge badge-green">Solo socios</span>{% endif %}
             {% if zoom_evento_id %}
-              {% for ze in zoom_eventos_disp %}{% if ze._id == zoom_evento_id %}<span class="badge badge-cyan">Evento: {{ ze.titulo or zoom_evento_id }}</span>{% endif %}{% endfor %}
+              {% for ze in zoom_eventos_disp %}{% if ze._id == zoom_evento_id %}
+                {% if zoom_asistio == 'excluir' %}
+                  <span class="badge badge-rose">⊘ Excluir inscritos: {{ ze.titulo or zoom_evento_id }}</span>
+                {% elif zoom_asistio == 'true' %}
+                  <span class="badge badge-cyan">✓ Asistentes a: {{ ze.titulo or zoom_evento_id }}</span>
+                {% elif zoom_asistio == 'false' %}
+                  <span class="badge badge-slate">✗ Registrados no asistentes: {{ ze.titulo or zoom_evento_id }}</span>
+                {% else %}
+                  <span class="badge badge-cyan">Evento: {{ ze.titulo or zoom_evento_id }}</span>
+                {% endif %}
+              {% endif %}{% endfor %}
+            {% elif zoom_asistio == 'excluir' %}
+              <span class="badge badge-rose">⊘ Excluir todos los que tienen eventos Zoom</span>
+            {% elif zoom_asistio == 'true' %}
+              <span class="badge badge-cyan">Solo asistentes Zoom (cualquier evento)</span>
+            {% elif zoom_asistio == 'false' %}
+              <span class="badge badge-slate">Solo no asistentes Zoom</span>
             {% endif %}
-            {% if zoom_asistio == 'true' %}<span class="badge badge-cyan">Solo asistentes</span>{% elif zoom_asistio == 'false' %}<span class="badge badge-slate">Solo no asistentes</span>{% endif %}
             {% if tag %}<span class="badge badge-violet">Tag: {{ tag }}</span>{% endif %}
             {% if not (search or estado or ciudad or empresa or titulo or fuente or es_socio or tag or zoom_evento_id or zoom_asistio) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
           </div>

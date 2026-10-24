@@ -4548,12 +4548,18 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
         query["es_socio"] = {"$ne": True}
     elif es_socio == "true":
         query["es_socio"] = True
-    if zoom_evento_id and zoom_asistio:
+    if zoom_evento_id and zoom_asistio == "excluir":
+        # Excluir personas registradas en este evento
+        query["zoom_eventos.evento_id"] = {"$ne": zoom_evento_id}
+    elif zoom_evento_id and zoom_asistio:
         cond: dict = {"evento_id": zoom_evento_id}
         cond["asistio"] = True if zoom_asistio == "true" else {"$ne": True}
         query["zoom_eventos"] = {"$elemMatch": cond}
     elif zoom_evento_id:
         query["zoom_eventos.evento_id"] = zoom_evento_id
+    elif zoom_asistio == "excluir":
+        # Sin evento seleccionado: excluir a todos los que tienen algún evento Zoom
+        query["zoom_eventos"] = {"$not": {"$elemMatch": {}}}
     elif zoom_asistio == "true":
         query["zoom_eventos"] = {"$elemMatch": {"asistio": True}}
     elif zoom_asistio == "false":
