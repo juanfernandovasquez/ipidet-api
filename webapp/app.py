@@ -3574,11 +3574,11 @@ async def evento_sync_zoom(request: Request, evento_id: str):
             participants = []  # webinar aún en vivo o report no disponible
 
         stats = pdb.sync_zoom_data(evento_id, webinar_id, zoom_titulo, registrants, participants)
+        zoom_list = stats.pop("_zoom_list", [])
 
         # Upsert participantes al pool de público/prospectos (deduplicado por email)
-        evento_doc = pdb.get_evento(evento_id)
+        evento_doc   = pdb.get_evento(evento_id)
         evento_fecha = evento_doc.get("fecha", "") if evento_doc else ""
-        zoom_list = pdb.get_evento(evento_id).get("zoom_registrants", []) if evento_doc else []
         publico_stats = pdb.upsert_prospectos_from_zoom(
             evento_id, zoom_titulo, evento_fecha, webinar_id, zoom_list
         )

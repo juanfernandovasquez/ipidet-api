@@ -3053,6 +3053,7 @@ def sync_zoom_data(
         "total_registrados": len(zoom_list),
         "total_asistentes":  n_asistentes,
         "pct_asistencia":    round(n_asistentes / len(zoom_list) * 100, 1) if zoom_list else 0,
+        "_zoom_list":        zoom_list,  # evita re-query al llamador
     }
 
 
