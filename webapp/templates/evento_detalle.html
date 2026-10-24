@@ -284,10 +284,34 @@
 
 <!-- Selector de webinar Zoom -->
 <div class="bg-white rounded-xl border border-slate-200 p-4 mb-4" x-data="zoomSync()">
-  <h3 class="text-sm font-semibold text-slate-700 mb-3">
-    <i class="fa-solid fa-rotate mr-1.5 text-blue-500"></i>
-    {% if evento.zoom_webinar_id %}Re-sincronizar{% else %}Vincular webinar Zoom{% endif %}
-  </h3>
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-sm font-semibold text-slate-700">
+      <i class="fa-solid fa-rotate mr-1.5 text-blue-500"></i>
+      {% if evento.zoom_webinar_id %}Zoom sincronización{% else %}Vincular webinar Zoom{% endif %}
+    </h3>
+    {% if evento.zoom_webinar_id %}
+    <button type="button" @click="showSelector = !showSelector"
+      class="text-xs text-slate-400 hover:text-slate-600 underline">
+      <span x-show="!showSelector">Cambiar webinar vinculado</span>
+      <span x-show="showSelector" x-cloak>Ocultar selector</span>
+    </button>
+    {% endif %}
+  </div>
+
+  {% if evento.zoom_webinar_id %}
+  <!-- Botón de actualización rápida (un clic) -->
+  <div x-show="!showSelector" class="flex items-center gap-3">
+    <button type="button" @click="syncRapido()" :disabled="syncing"
+      class="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!syncing"><i class="fa-solid fa-rotate mr-1"></i> Actualizar participantes</span>
+      <span x-show="syncing" x-cloak><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Actualizando…</span>
+    </button>
+    <p class="text-xs text-slate-400">Webinar <span class="font-mono">{{ evento.zoom_webinar_id }}</span>{% if evento.zoom_synced_at %} · último sync {{ evento.zoom_synced_at[:10] }}{% endif %}</p>
+  </div>
+  {% endif %}
+
+  <!-- Selector de webinar (siempre visible si no hay vinculado; colapsable si ya hay) -->
+  <div x-show="showSelector" {% if evento.zoom_webinar_id %}x-cloak{% endif %} class="space-y-3">
 
   <!-- Cargar lista de webinars -->
   <div x-show="!webinarsLoaded && !loadError" class="mb-3">
@@ -344,6 +368,7 @@
       <p class="text-xs text-slate-400">Los datos reemplazan la sincronización anterior.</p>
     </div>
   </div>
+  </div><!-- /showSelector -->
 
   <!-- Resultado -->
   <div x-show="syncError" x-cloak class="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5" x-text="syncError"></div>
@@ -450,6 +475,27 @@ function zoomSync() {
     syncing: false,
     syncError: '',
     resultado: null,
+    showSelector: false,
+
+    async syncRapido() {
+      const vinculado = '{{ evento.zoom_webinar_id or "" }}';
+      if (!vinculado) return;
+      this.syncing = true; this.syncError = ''; this.resultado = null;
+      try {
+        const resp = await fetch(`/eventos/{{ evento._id }}/sync-zoom`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zoom_webinar_id: vinculado }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.error) { this.syncError = data.error || 'Error al sincronizar'; return; }
+        this.resultado = data;
+      } catch(e) {
+        this.syncError = 'Error de red';
+      } finally {
+        this.syncing = false;
+      }
+    },
 
     async cargarWebinars() {
       this.loadingList = true;
