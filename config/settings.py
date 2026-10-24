@@ -72,6 +72,11 @@ IPIDET_DIRECCION       = os.getenv("IPIDET_DIRECCION", "")
 IPIDET_UBIGUEO         = os.getenv("IPIDET_UBIGUEO", "150101")    # ubigeo Lima Centro
 SUNAT_ENVIRONMENT      = os.getenv("SUNAT_ENVIRONMENT", "beta")   # "beta" | "produccion"
 
+# Zoom Server-to-Server OAuth (webinars)
+ZOOM_ACCOUNT_ID    = os.getenv("ZOOM_ACCOUNT_ID", "")
+ZOOM_CLIENT_ID     = os.getenv("ZOOM_CLIENT_ID", "")
+ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET", "")
+
 CRITICAL_KEYWORDS = [
     "amenaza legal", "demanda", "abogado", "tribunal",
     "prensa", "medios", "periodista", "queja formal",

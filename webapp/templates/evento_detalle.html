@@ -151,6 +151,29 @@
   <div x-show="ok" x-cloak class="mt-2 text-xs text-green-600">Socio inscrito. Recarga la página para ver la lista actualizada.</div>
 </div>
 
+<!-- Sync Zoom Webinar -->
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-5" x-data="zoomSync()">
+  <h2 class="text-sm font-semibold text-slate-700 mb-3">
+    <i class="fa-solid fa-video mr-1.5 text-blue-500"></i> Sincronizar desde Zoom Webinar
+  </h2>
+  <div class="flex gap-2">
+    <input type="text" x-model="webinarId" placeholder="ID del webinar Zoom (ej. 123456789)"
+      class="input flex-1" @keydown.enter="sync()">
+    <button type="button" @click="sync()" :disabled="loading || !webinarId.trim()"
+      class="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+      <span x-show="!loading"><i class="fa-solid fa-rotate mr-1"></i> Sincronizar</span>
+      <span x-show="loading" x-cloak><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Importando…</span>
+    </button>
+  </div>
+  <p class="text-xs text-slate-400 mt-1.5">Importa inscritos y marca asistencia automáticamente. Los socios del padrón se vinculan por email.</p>
+  <div x-show="error" x-cloak class="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5" x-text="error"></div>
+  <div x-show="resultado" x-cloak class="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1.5">
+    <strong>Listo.</strong>
+    <span x-text="`${resultado?.stats?.inscritos_zoom || 0} inscritos en Zoom · ${resultado?.stats?.asistentes_zoom || 0} asistentes · ${resultado?.stats?.vinculados || 0} vinculados al padrón · ${resultado?.stats?.no_vinculados || 0} externos`"></span>
+    <button type="button" @click="location.reload()" class="ml-2 underline">Recargar</button>
+  </div>
+</div>
+
 <!-- Lista de inscritos (#8 asistencia) -->
 {% if evento.inscritos %}
 <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -171,15 +194,21 @@
       {% for ins in evento.inscritos %}
       <tr class="border-t border-slate-100 hover:bg-slate-50">
         <td class="px-4 py-3">
+          {% if ins.member_id %}
           <a href="/members/{{ ins.member_id }}" class="font-medium text-slate-800 hover:text-blue-600">
             {{ ins.nombre }}
           </a>
+          {% else %}
+          <span class="font-medium text-slate-700">{{ ins.nombre }}</span>
+          <span class="ml-1.5 text-xs bg-slate-100 text-slate-400 rounded-full px-1.5 py-0.5">externo</span>
+          {% endif %}
           {% if ins.email %}
           <div class="text-xs text-slate-400 font-mono">{{ ins.email }}</div>
           {% endif %}
         </td>
         <td class="px-4 py-3 text-xs text-slate-500">{{ ins.fecha_ins or '—' }}</td>
         <td class="px-4 py-3 text-center">
+          {% if ins.member_id %}
           <form method="post" action="/eventos/{{ evento._id }}/asistencia/{{ ins.member_id }}"
                 class="inline-flex gap-1">
             <button name="asistio" value="true" type="submit"
@@ -199,14 +228,23 @@
               <i class="fa-solid fa-rotate-left"></i>
             </button>
           </form>
+          {% else %}
+          <span class="text-xs {% if ins.asistio is sameas true %}text-green-600{% elif ins.asistio is sameas false %}text-red-400{% else %}text-slate-300{% endif %}">
+            {% if ins.asistio is sameas true %}<i class="fa-solid fa-check"></i>
+            {% elif ins.asistio is sameas false %}<i class="fa-solid fa-xmark"></i>
+            {% else %}—{% endif %}
+          </span>
+          {% endif %}
         </td>
         <td class="px-4 py-3 text-right">
+          {% if ins.member_id %}
           <form method="post" action="/eventos/{{ evento._id }}/desinscribir/{{ ins.member_id }}">
             <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors p-1"
               title="Quitar de la lista">
               <i class="fa-solid fa-trash-can text-xs"></i>
             </button>
           </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -221,6 +259,37 @@
 {% endif %}
 
 <script>
+function zoomSync() {
+  return {
+    webinarId: '',
+    loading: false,
+    error: '',
+    resultado: null,
+    async sync() {
+      this.error = ''; this.resultado = null;
+      if (!this.webinarId.trim()) return;
+      this.loading = true;
+      try {
+        const resp = await fetch(`/eventos/{{ evento._id }}/sync-zoom`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ zoom_webinar_id: this.webinarId.trim() }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || data.error) {
+          this.error = data.error || 'Error al sincronizar';
+        } else {
+          this.resultado = data;
+        }
+      } catch (e) {
+        this.error = 'Error de red';
+      } finally {
+        this.loading = false;
+      }
+    },
+  };
+}
+
 function inscribir() {
   return {
     query: '',

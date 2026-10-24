@@ -2989,6 +2989,43 @@ def get_evento_stats(evento_id: str) -> dict:
     }
 
 
+def find_member_by_email(email: str) -> dict | None:
+    """Busca un socio por cualquiera de sus emails (case-insensitive)."""
+    email = email.lower().strip()
+    doc = members_col.find_one({"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}})
+    return _clean(dict(doc)) if doc else None
+
+
+def inscribir_socio_externo(evento_id: str, nombre: str, email: str, asistio: bool | None = None):
+    """
+    Inscribe a una persona externa (sin member_id) como inscrita en un evento.
+    Usado para importar participantes de Zoom que no están en el padrón.
+    Si ya existe una entrada con el mismo email, la actualiza.
+    """
+    evento = eventos_col.find_one({"_id": ObjectId(evento_id)})
+    if not evento:
+        return
+    inscritos = evento.get("inscritos", [])
+    if email and any(i.get("email", "").lower() == email.lower() for i in inscritos):
+        if asistio:
+            eventos_col.update_one(
+                {"_id": ObjectId(evento_id), "inscritos.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}},
+                {"$set": {"inscritos.$.asistio": True}},
+            )
+        return
+    entrada = {
+        "member_id": None,
+        "nombre":    nombre or email,
+        "email":     email,
+        "fecha_ins": str(_date.today()),
+        "asistio":   asistio,
+    }
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$push": {"inscritos": entrada}},
+    )
+
+
 # ── Pendientes y Atención ─────────────────────────────────────────────────────
 
 pendientes_col = _db.pendientes

@@ -17,6 +17,7 @@ import webapp.portal_router as portal_routes
 import webapp.auth as auth
 import webapp.mailer as mailer
 import webapp.scheduler as scheduler
+import webapp.zoom_client as zoom_client
 from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN
 from knowledge_base import db as kb_db
 from billing import db as billing_db
@@ -3520,6 +3521,71 @@ async def api_evento_detalle(evento_id: str):
     if not stats:
         return JSONResponse({"error": "No encontrado"}, status_code=404)
     return stats
+
+
+# ── Zoom Webinar Sync ─────────────────────────────────────────────────────────
+
+@app.get("/api/zoom/webinars")
+async def zoom_list_webinars(request: Request):
+    """Lista webinars disponibles en la cuenta Zoom."""
+    if not zoom_client.is_configured():
+        return JSONResponse({"error": "Zoom no configurado"}, status_code=503)
+    try:
+        webinars = zoom_client.list_webinars()
+        return JSONResponse(webinars)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/eventos/{evento_id}/sync-zoom")
+async def evento_sync_zoom(request: Request, evento_id: str):
+    """
+    Sincroniza inscritos y asistencia de un webinar Zoom al evento IPIDET.
+    Body JSON: {"zoom_webinar_id": "123456789"}
+    """
+    if not zoom_client.is_configured():
+        return JSONResponse({"error": "Zoom no configurado"}, status_code=503)
+    body = await request.json()
+    webinar_id = body.get("zoom_webinar_id", "").strip()
+    if not webinar_id:
+        return JSONResponse({"error": "zoom_webinar_id requerido"}, status_code=400)
+
+    evento = pdb.get_evento(evento_id)
+    if not evento:
+        return JSONResponse({"error": "Evento no encontrado"}, status_code=404)
+
+    try:
+        registrants = zoom_client.get_webinar_registrants(webinar_id)
+        try:
+            participants = zoom_client.get_webinar_participants(webinar_id)
+        except Exception:
+            participants = []
+
+        attended_emails = {p["user_email"].lower() for p in participants if p.get("user_email")}
+        attended_names  = {p["name"].lower() for p in participants if p.get("name")}
+
+        stats = {"inscritos_zoom": len(registrants), "asistentes_zoom": len(participants),
+                 "vinculados": 0, "no_vinculados": 0}
+
+        for reg in registrants:
+            email = (reg.get("email") or "").lower()
+            nombre = f"{reg.get('first_name', '')} {reg.get('last_name', '')}".strip()
+            asistio = email in attended_emails or nombre.lower() in attended_names
+
+            member = pdb.find_member_by_email(email) if email else None
+            if member:
+                member_id = member["member_id"]
+                pdb.inscribir_socio(evento_id, member_id)
+                if asistio:
+                    pdb.marcar_asistencia(evento_id, member_id, True)
+                stats["vinculados"] += 1
+            else:
+                pdb.inscribir_socio_externo(evento_id, nombre, email, asistio)
+                stats["no_vinculados"] += 1
+
+        return JSONResponse({"ok": True, "stats": stats})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # ── Pendientes y Atención ─────────────────────────────────────────────────────
