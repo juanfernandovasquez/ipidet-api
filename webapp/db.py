@@ -3022,18 +3022,41 @@ def sync_zoom_data(
         if em:
             duration_by_email[em] = duration_by_email.get(em, 0) + int(p.get("duration", 0)) // 60
 
+    # Pre-cargar emails de socios del padrón para cruce O(1)
+    all_emails_in_list = {
+        (r.get("email") or "").lower()
+        for r in registrants if r.get("email")
+    }
+    socios_emails: set[str] = set()
+    socios_member_ids: dict[str, str] = {}
+    if all_emails_in_list:
+        for m in members_col.find(
+            {"emails.email": {"$in": list(all_emails_in_list)}},
+            {"member_id": 1, "emails": 1},
+        ):
+            for e in m.get("emails", []):
+                em = (e.get("email") or "").lower()
+                if em in all_emails_in_list:
+                    socios_emails.add(em)
+                    socios_member_ids[em] = m["member_id"]
+
     zoom_list = []
     for r in registrants:
         email = (r.get("email") or "").lower()
         nombre = f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or email
         asistio = email in attended_emails if email else False
-        zoom_list.append({
+        es_socio = email in socios_emails
+        entry: dict = {
             "email":         email,
             "nombre":        nombre,
             "registrado_at": r.get("create_time") or r.get("join_time", ""),
             "asistio":       asistio,
             "duracion_min":  duration_by_email.get(email) if asistio else None,
-        })
+            "es_socio":      es_socio,
+        }
+        if es_socio and email in socios_member_ids:
+            entry["member_id"] = socios_member_ids[email]
+        zoom_list.append(entry)
 
     # Ordenar: asistentes primero, luego por nombre
     zoom_list.sort(key=lambda x: (not x["asistio"], x["nombre"].lower()))
