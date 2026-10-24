@@ -477,7 +477,7 @@ function zoomSync() {
     syncing: false,
     syncError: '',
     resultado: null,
-    showSelector: false,
+    showSelector: {{ 'false' if evento.zoom_webinar_id else 'true' }},
 
     async syncRapido() {
       const vinculado = '{{ evento.zoom_webinar_id or "" }}';
