@@ -396,8 +396,10 @@
         <td class="px-4 py-2.5 text-xs text-slate-500 font-mono">{{ p.email or '—' }}</td>
         <td class="px-4 py-2.5">
           {% if p.es_socio %}
-          <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+          <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5"
+                title="Identificado vía {{ p.match_via or 'email' }}">
             <i class="fa-solid fa-circle-check text-[10px]"></i> Socio
+            {% if p.match_via == 'dni' %}<span class="opacity-50 text-[9px]">DNI</span>{% endif %}
           </span>
           {% else %}
           <span class="text-xs text-slate-300">—</span>

@@ -2994,6 +2994,37 @@ def get_evento_stats(evento_id: str) -> dict:
     }
 
 
+def _parse_zoom_custom_fields(custom_questions: list) -> dict:
+    """
+    Mapea las preguntas personalizadas del formulario de Zoom a campos canónicos.
+    Usa coincidencia por palabras clave en el título de la pregunta — el operador
+    puede nombrar las preguntas libremente siempre que contengan estas palabras:
+      título/profesion → titulo
+      empresa/instituc/organiz/trabajo → empresa
+      ciudad/departamento/ubicacion → ciudad
+      celular/telefono/phone/movil → celular
+      dni/documento/cedula/ruc → dni
+    """
+    _KEYWORDS = {
+        "titulo":  ("título", "titulo", "profesion", "profesión", "especialidad"),
+        "empresa": ("empresa", "instituc", "organiz", "trabajo", "empleador", "compañ"),
+        "ciudad":  ("ciudad", "departamento", "ubicacion", "ubicación", "región", "region"),
+        "celular": ("celular", "teléfono", "telefono", "phone", "móvil", "movil", "whatsapp"),
+        "dni":     ("dni", "documento", "cédula", "cedula", "ruc", "identificacion"),
+    }
+    result: dict = {}
+    for q in custom_questions:
+        title = (q.get("title") or "").lower()
+        value = (q.get("value") or "").strip()
+        if not value:
+            continue
+        for campo, kws in _KEYWORDS.items():
+            if campo not in result and any(kw in title for kw in kws):
+                result[campo] = value
+                break
+    return result
+
+
 def sync_zoom_data(
     evento_id: str,
     zoom_webinar_id: str,
@@ -3015,27 +3046,42 @@ def sync_zoom_data(
         for p in participants
         if p.get("user_email")
     }
-    # Duración por email (en minutos)
     duration_by_email: dict[str, int] = {}
     for p in participants:
         em = (p.get("user_email") or "").lower()
         if em:
             duration_by_email[em] = duration_by_email.get(em, 0) + int(p.get("duration", 0)) // 60
 
-    # Mapa email_lowercase → member_id de todo el padrón (una sola query, case-insensitive)
-    socios_member_ids: dict[str, str] = {}
-    for m in members_col.find({}, {"member_id": 1, "emails": 1}):
+    # Mapas de cruce con el padrón — email y DNI (una sola query)
+    by_email: dict[str, str] = {}  # email_lower → member_id
+    by_dni:   dict[str, str] = {}  # dni_limpio  → member_id
+    for m in members_col.find({}, {"member_id": 1, "emails": 1, "dni": 1}):
+        mid = m["member_id"]
         for e in m.get("emails", []):
             em = (e.get("email") or "").lower().strip()
             if em:
-                socios_member_ids[em] = m["member_id"]
+                by_email[em] = mid
+        dni_raw = (m.get("dni") or "").strip()
+        if dni_raw:
+            by_dni[dni_raw] = mid
 
     zoom_list = []
     for r in registrants:
-        email = (r.get("email") or "").lower()
+        email  = (r.get("email") or "").lower().strip()
         nombre = f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or email
         asistio = email in attended_emails if email else False
-        member_id_val = socios_member_ids.get(email)
+
+        # Leer campos extra del formulario de registro Zoom
+        extra = _parse_zoom_custom_fields(r.get("custom_questions") or [])
+
+        # Cruce: email primero, DNI como fallback
+        member_id_val = by_email.get(email)
+        match_via = "email" if member_id_val else None
+        if not member_id_val and extra.get("dni"):
+            member_id_val = by_dni.get(extra["dni"].strip())
+            if member_id_val:
+                match_via = "dni"
+
         entry: dict = {
             "email":         email,
             "nombre":        nombre,
@@ -3043,9 +3089,14 @@ def sync_zoom_data(
             "asistio":       asistio,
             "duracion_min":  duration_by_email.get(email) if asistio else None,
             "es_socio":      member_id_val is not None,
+            "match_via":     match_via,
         }
         if member_id_val:
             entry["member_id"] = member_id_val
+        # Campos extra del formulario Zoom (solo si vienen con valor)
+        for k in ("titulo", "empresa", "ciudad", "celular", "dni"):
+            if extra.get(k):
+                entry[k] = extra[k]
         zoom_list.append(entry)
 
     # Ordenar: asistentes primero, luego por nombre
@@ -4558,11 +4609,10 @@ def upsert_prospectos_from_zoom(
     zoom_registrants: list[dict],
 ) -> dict:
     """
-    Upsert de participantes de Zoom en la colección publico (prospectos).
-    Los participantes son público general — NO necesariamente socios de IPIDET.
-    Marca es_socio=True si el email coincide con el padrón de socios.
+    Upsert de participantes de Zoom en la colección publico.
+    zoom_registrants ya viene enriquecido por sync_zoom_data:
+    es_socio, member_id, match_via, titulo, empresa, ciudad, celular, dni.
     Deduplicación por email. Re-sync del mismo evento actualiza la entrada.
-    Devuelve {insertados, actualizados, sin_email}.
     """
     now = datetime.now(timezone.utc)
     now_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -4574,17 +4624,15 @@ def upsert_prospectos_from_zoom(
             sin_email += 1
             continue
 
-        nombre = r.get("nombre") or ""
-        asistio = r.get("asistio", False)
+        nombre       = r.get("nombre") or ""
+        asistio      = r.get("asistio", False)
         duracion_min = r.get("duracion_min")
+        es_socio     = r.get("es_socio", False)
+        member_id_val = r.get("member_id")
 
-        # Cross-reference con socios del padrón (solo busca, no modifica members)
-        member_doc = members_col.find_one(
-            {"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}},
-            {"member_id": 1},
-        )
-        es_socio = member_doc is not None
-        member_id_val = member_doc["member_id"] if member_doc else None
+        # Campos extra del formulario Zoom (solo los que vienen con valor)
+        extra_fields = {k: r[k] for k in ("titulo", "empresa", "ciudad", "celular", "dni")
+                        if r.get(k)}
 
         zoom_entry = {
             "evento_id":       evento_id,
@@ -4598,7 +4646,7 @@ def upsert_prospectos_from_zoom(
 
         existing = publico_col.find_one(
             {"email": email},
-            {"_id": 1, "zoom_eventos": 1},
+            {"_id": 1, "zoom_eventos": 1, "titulo": 1, "empresa": 1, "ciudad": 1, "celular": 1},
         )
 
         if existing:
@@ -4607,8 +4655,11 @@ def upsert_prospectos_from_zoom(
             set_fields: dict = {"es_socio": es_socio, "updated_at": now}
             if member_id_val:
                 set_fields["member_id"] = member_id_val
+            # Solo completar campos vacíos — no pisar datos que ya existían
+            for k, v in extra_fields.items():
+                if not existing.get(k):
+                    set_fields[k] = v
             if has_this_event:
-                # Actualizar la entrada del evento (re-sync)
                 publico_col.update_one(
                     {"_id": existing["_id"], "zoom_eventos.evento_id": evento_id},
                     {"$set": {
@@ -4617,7 +4668,6 @@ def upsert_prospectos_from_zoom(
                     }},
                 )
             else:
-                # Añadir nuevo evento al historial
                 publico_col.update_one(
                     {"_id": existing["_id"]},
                     {"$set": set_fields, "$push": {"zoom_eventos": zoom_entry}},
@@ -4628,10 +4678,10 @@ def upsert_prospectos_from_zoom(
                 "nombre":         nombre,
                 "apellido":       "",
                 "email":          email,
-                "celular":        "",
-                "titulo":         "",
-                "empresa":        "",
-                "ciudad":         "",
+                "celular":        extra_fields.get("celular", ""),
+                "titulo":         extra_fields.get("titulo", ""),
+                "empresa":        extra_fields.get("empresa", ""),
+                "ciudad":         extra_fields.get("ciudad", ""),
                 "notas":          "",
                 "fuente":         "zoom",
                 "fuente_detalle": evento_titulo,
@@ -4644,11 +4694,13 @@ def upsert_prospectos_from_zoom(
                 "created_at":     now,
                 "updated_at":     now,
             }
+            if extra_fields.get("dni"):
+                doc["dni"] = extra_fields["dni"]
             try:
                 publico_col.insert_one(doc)
                 insertados += 1
             except Exception:
-                actualizados += 1  # duplicate key race condition
+                actualizados += 1
 
     return {"insertados": insertados, "actualizados": actualizados, "sin_email": sin_email}
 
