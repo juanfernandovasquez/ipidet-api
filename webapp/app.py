@@ -3528,14 +3528,26 @@ async def api_evento_detalle(evento_id: str):
 @app.get("/api/zoom/webinars")
 async def zoom_list_webinars_api(request: Request):
     """
-    Lista webinars de la cuenta Zoom (activos + pasados).
-    Los participantes de Zoom son público general, no necesariamente socios de IPIDET.
+    Lista webinars de la cuenta Zoom (todos: pasados, activos y próximos).
+    Zoom solo acepta type=scheduled|live|upcoming para este endpoint.
+    - scheduled: pasados no expirados + en curso + próximos
+    - upcoming:  en curso + próximos (para no perder ninguno reciente)
+    Se deduplicam por id y se separan por fecha.
     """
     if not zoom_client.is_configured():
         return JSONResponse({"error": "Zoom no configurado"}, status_code=503)
     try:
-        activos   = zoom_client.list_webinars(webinar_type="scheduled")
-        pasados   = zoom_client.list_webinars(webinar_type="past")
+        scheduled = zoom_client.list_webinars(webinar_type="scheduled")
+        upcoming  = zoom_client.list_webinars(webinar_type="upcoming")
+        # Deduplicar por id
+        seen: dict = {}
+        for w in scheduled + upcoming:
+            seen[str(w.get("id", ""))] = w
+        todos = sorted(seen.values(), key=lambda w: w.get("start_time", ""), reverse=True)
+        from datetime import datetime, timezone
+        ahora = datetime.now(timezone.utc).isoformat()
+        activos = [w for w in todos if w.get("start_time", "") >= ahora]
+        pasados = [w for w in todos if w.get("start_time", "") < ahora]
         return JSONResponse({"activos": activos, "pasados": pasados})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

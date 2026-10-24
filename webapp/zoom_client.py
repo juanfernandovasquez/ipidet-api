@@ -56,7 +56,9 @@ def list_webinars(user_id: str = "me", page_size: int = 100,
                   webinar_type: str = "scheduled") -> list[dict]:
     """
     Lista webinars del account.
-    webinar_type: "scheduled" (activos/próximos) | "past" (finalizados)
+    webinar_type válidos: "scheduled" | "live" | "upcoming"
+    "scheduled" devuelve pasados no expirados + en curso + próximos.
+    "upcoming" devuelve en curso + próximos.
     """
     results = []
     next_token = None
