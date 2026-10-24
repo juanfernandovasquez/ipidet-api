@@ -83,6 +83,9 @@
       <input type="text" name="ciudad" value="{{ ciudad }}" placeholder="Ciudad"
              class="input text-sm w-32"
              @input="clearTimeout(_t2); _t2=setTimeout(()=>$refs.filterForm.submit(),450)">
+      <input type="text" name="empresa" value="{{ empresa }}" placeholder="Empresa"
+             class="input text-sm w-36"
+             @input="clearTimeout(_t4); _t4=setTimeout(()=>$refs.filterForm.submit(),450)">
       <select name="titulo" class="input text-sm" @change="$refs.filterForm.submit()">
         <option value="">Cualquier título</option>
         {% for t in titulos %}
@@ -118,7 +121,7 @@
       <input type="text" name="tag" value="{{ tag }}" placeholder="Tag"
              class="input text-sm w-28"
              @input="clearTimeout(_t3); _t3=setTimeout(()=>$refs.filterForm.submit(),450)">
-      {% if search or estado or ciudad or titulo or fuente or tag or es_socio or zoom_evento_id or zoom_asistio %}
+      {% if search or estado or ciudad or empresa or titulo or fuente or tag or es_socio or zoom_evento_id or zoom_asistio %}
       <a href="/publico" class="btn-ghost text-sm">Limpiar</a>
       {% endif %}
     </div>
@@ -212,7 +215,7 @@
     <div class="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
       <span>Página {{ page }} de {{ ((total - 1) // 50 + 1) }}</span>
       <div class="flex gap-2">
-        {% set pgparams = "search=" ~ search ~ "&estado=" ~ estado ~ "&ciudad=" ~ ciudad ~ "&titulo=" ~ titulo ~ "&fuente=" ~ fuente ~ "&tag=" ~ tag ~ "&es_socio=" ~ es_socio ~ "&zoom_evento_id=" ~ zoom_evento_id ~ "&zoom_asistio=" ~ zoom_asistio %}
+        {% set pgparams = "search=" ~ search ~ "&estado=" ~ estado ~ "&ciudad=" ~ ciudad ~ "&empresa=" ~ empresa ~ "&titulo=" ~ titulo ~ "&fuente=" ~ fuente ~ "&tag=" ~ tag ~ "&es_socio=" ~ es_socio ~ "&zoom_evento_id=" ~ zoom_evento_id ~ "&zoom_asistio=" ~ zoom_asistio %}
         {% if page > 1 %}
         <a href="?page={{ page - 1 }}&{{ pgparams }}" class="btn-ghost text-xs">← Anterior</a>
         {% endif %}
@@ -321,6 +324,7 @@
             {% if search %}<span class="badge badge-slate">Búsqueda: {{ search }}</span>{% endif %}
             {% if estado %}<span class="badge badge-slate">Estado: {{ estado }}</span>{% endif %}
             {% if ciudad %}<span class="badge badge-slate">Ciudad: {{ ciudad }}</span>{% endif %}
+            {% if empresa %}<span class="badge badge-slate">Empresa: {{ empresa }}</span>{% endif %}
             {% if titulo %}<span class="badge badge-slate">Título: {{ titulo }}</span>{% endif %}
             {% if fuente %}<span class="badge badge-slate">Fuente: {{ fuente }}</span>{% endif %}
             {% if es_socio == 'false' %}<span class="badge badge-rose">Solo no socios</span>{% elif es_socio == 'true' %}<span class="badge badge-green">Solo socios</span>{% endif %}
@@ -329,7 +333,7 @@
             {% endif %}
             {% if zoom_asistio == 'true' %}<span class="badge badge-cyan">Solo asistentes</span>{% elif zoom_asistio == 'false' %}<span class="badge badge-slate">Solo no asistentes</span>{% endif %}
             {% if tag %}<span class="badge badge-violet">Tag: {{ tag }}</span>{% endif %}
-            {% if not (search or estado or ciudad or titulo or fuente or es_socio or tag or zoom_evento_id or zoom_asistio) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
+            {% if not (search or estado or ciudad or empresa or titulo or fuente or es_socio or tag or zoom_evento_id or zoom_asistio) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
           </div>
         </div>
         <!-- Preview destinatarios -->
@@ -446,7 +450,7 @@ function publicoPage() {
     destinatariosAll:     [],
     destinatariosPreview: [],
 
-    _t: null, _t2: null, _t3: null,
+    _t: null, _t2: null, _t3: null, _t4: null,
 
     // filtros actuales (para pasarlos al backend)
     _filtros() {
@@ -455,6 +459,7 @@ function publicoPage() {
         search:         p.get('search')         || '',
         estado:         p.get('estado')         || '',
         ciudad:         p.get('ciudad')         || '',
+        empresa:        p.get('empresa')        || '',
         titulo:         p.get('titulo')         || '',
         fuente:         p.get('fuente')         || '',
         tag:            p.get('tag')            || '',

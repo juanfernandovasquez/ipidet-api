@@ -2380,6 +2380,12 @@ def get_member_titulos() -> list[str]:
     return sorted(members_col.distinct("titulo", {"estado": "activo", "titulo": {"$nin": [None, ""]}}))
 
 
+def get_publico_titulos() -> list[str]:
+    """Títulos distintos en la colección publico (incluye los que vienen de Zoom)."""
+    raw = publico_col.distinct("titulo", {"titulo": {"$nin": [None, ""]}})
+    return sorted(set(raw))
+
+
 def get_member_ubicaciones() -> list[str]:
     return sorted(members_col.distinct("ubicacion", {"estado": "activo", "ubicacion": {"$nin": [None, ""]}}))
 
@@ -4521,9 +4527,9 @@ def get_publico_stats() -> dict:
 
 
 def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = "",
-                             titulo: str = "", fuente: str = "", tag: str = "",
-                             es_socio: str = "", zoom_evento_id: str = "",
-                             zoom_asistio: str = "") -> dict:
+                             titulo: str = "", empresa: str = "", fuente: str = "",
+                             tag: str = "", es_socio: str = "",
+                             zoom_evento_id: str = "", zoom_asistio: str = "") -> dict:
     """Helper interno — construye la query de prospectos con todos los filtros."""
     query: dict = {}
     if estado:
@@ -4532,6 +4538,8 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
         query["ciudad"] = {"$regex": _re.escape(ciudad), "$options": "i"}
     if titulo:
         query["titulo"] = titulo
+    if empresa:
+        query["empresa"] = {"$regex": _re.escape(empresa), "$options": "i"}
     if fuente:
         query["fuente"] = fuente
     if tag:
@@ -4540,7 +4548,6 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
         query["es_socio"] = {"$ne": True}
     elif es_socio == "true":
         query["es_socio"] = True
-    # Filtros Zoom: evento específico y/o asistencia
     if zoom_evento_id and zoom_asistio:
         cond: dict = {"evento_id": zoom_evento_id}
         cond["asistio"] = True if zoom_asistio == "true" else {"$ne": True}
@@ -4574,11 +4581,11 @@ def get_zoom_eventos_disponibles() -> list:
 
 
 def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
-                   titulo: str = "", fuente: str = "", tag: str = "",
-                   es_socio: str = "", zoom_evento_id: str = "",
+                   titulo: str = "", empresa: str = "", fuente: str = "",
+                   tag: str = "", es_socio: str = "", zoom_evento_id: str = "",
                    zoom_asistio: str = "", page: int = 1) -> tuple:
-    query = _build_prospectos_query(search, estado, ciudad, titulo, fuente, tag,
-                                    es_socio, zoom_evento_id, zoom_asistio)
+    query = _build_prospectos_query(search, estado, ciudad, titulo, empresa, fuente,
+                                    tag, es_socio, zoom_evento_id, zoom_asistio)
     per_page = 50
     skip = (page - 1) * per_page
     total = publico_col.count_documents(query)
@@ -4589,12 +4596,12 @@ def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
 
 
 def get_prospectos_all(search: str = "", estado: str = "", ciudad: str = "",
-                        titulo: str = "", fuente: str = "", tag: str = "",
-                        es_socio: str = "", zoom_evento_id: str = "",
+                        titulo: str = "", empresa: str = "", fuente: str = "",
+                        tag: str = "", es_socio: str = "", zoom_evento_id: str = "",
                         zoom_asistio: str = "") -> list:
     """Sin paginación — para envíos masivos y preview de campaña."""
-    query = _build_prospectos_query(search, estado, ciudad, titulo, fuente, tag,
-                                    es_socio, zoom_evento_id, zoom_asistio)
+    query = _build_prospectos_query(search, estado, ciudad, titulo, empresa, fuente,
+                                    tag, es_socio, zoom_evento_id, zoom_asistio)
     docs = list(publico_col.find(query).sort("created_at", -1))
     for d in docs:
         d["_id"] = str(d["_id"])
