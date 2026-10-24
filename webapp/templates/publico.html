@@ -100,10 +100,25 @@
         <option value="false" {% if es_socio == 'false' %}selected{% endif %}>Solo no socios</option>
         <option value="true"  {% if es_socio == 'true'  %}selected{% endif %}>Solo socios</option>
       </select>
+      {% if zoom_eventos_disp %}
+      <select name="zoom_evento_id" class="input text-sm max-w-xs" @change="$refs.filterForm.submit()">
+        <option value="">Todos los eventos Zoom</option>
+        {% for ze in zoom_eventos_disp %}
+        <option value="{{ ze._id }}" {% if zoom_evento_id == ze._id %}selected{% endif %}>
+          {{ ze.titulo or ze._id }} ({{ ze.count }})
+        </option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      <select name="zoom_asistio" class="input text-sm" @change="$refs.filterForm.submit()">
+        <option value="">Asistencia Zoom</option>
+        <option value="true"  {% if zoom_asistio == 'true'  %}selected{% endif %}>Solo asistentes</option>
+        <option value="false" {% if zoom_asistio == 'false' %}selected{% endif %}>Solo no asistentes</option>
+      </select>
       <input type="text" name="tag" value="{{ tag }}" placeholder="Tag"
              class="input text-sm w-28"
              @input="clearTimeout(_t3); _t3=setTimeout(()=>$refs.filterForm.submit(),450)">
-      {% if search or estado or ciudad or titulo or fuente or tag or es_socio %}
+      {% if search or estado or ciudad or titulo or fuente or tag or es_socio or zoom_evento_id or zoom_asistio %}
       <a href="/publico" class="btn-ghost text-sm">Limpiar</a>
       {% endif %}
     </div>
@@ -197,13 +212,12 @@
     <div class="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
       <span>Página {{ page }} de {{ ((total - 1) // 50 + 1) }}</span>
       <div class="flex gap-2">
+        {% set pgparams = "search=" ~ search ~ "&estado=" ~ estado ~ "&ciudad=" ~ ciudad ~ "&titulo=" ~ titulo ~ "&fuente=" ~ fuente ~ "&tag=" ~ tag ~ "&es_socio=" ~ es_socio ~ "&zoom_evento_id=" ~ zoom_evento_id ~ "&zoom_asistio=" ~ zoom_asistio %}
         {% if page > 1 %}
-        <a href="?page={{ page - 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}&es_socio={{ es_socio }}"
-           class="btn-ghost text-xs">← Anterior</a>
+        <a href="?page={{ page - 1 }}&{{ pgparams }}" class="btn-ghost text-xs">← Anterior</a>
         {% endif %}
         {% if page * 50 < total %}
-        <a href="?page={{ page + 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}&es_socio={{ es_socio }}"
-           class="btn-ghost text-xs">Siguiente →</a>
+        <a href="?page={{ page + 1 }}&{{ pgparams }}" class="btn-ghost text-xs">Siguiente →</a>
         {% endif %}
       </div>
     </div>
@@ -310,8 +324,12 @@
             {% if titulo %}<span class="badge badge-slate">Título: {{ titulo }}</span>{% endif %}
             {% if fuente %}<span class="badge badge-slate">Fuente: {{ fuente }}</span>{% endif %}
             {% if es_socio == 'false' %}<span class="badge badge-rose">Solo no socios</span>{% elif es_socio == 'true' %}<span class="badge badge-green">Solo socios</span>{% endif %}
+            {% if zoom_evento_id %}
+              {% for ze in zoom_eventos_disp %}{% if ze._id == zoom_evento_id %}<span class="badge badge-cyan">Evento: {{ ze.titulo or zoom_evento_id }}</span>{% endif %}{% endfor %}
+            {% endif %}
+            {% if zoom_asistio == 'true' %}<span class="badge badge-cyan">Solo asistentes</span>{% elif zoom_asistio == 'false' %}<span class="badge badge-slate">Solo no asistentes</span>{% endif %}
             {% if tag %}<span class="badge badge-violet">Tag: {{ tag }}</span>{% endif %}
-            {% if not (search or estado or ciudad or titulo or fuente or es_socio or tag) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
+            {% if not (search or estado or ciudad or titulo or fuente or es_socio or tag or zoom_evento_id or zoom_asistio) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
           </div>
         </div>
         <!-- Preview destinatarios -->
@@ -434,13 +452,15 @@ function publicoPage() {
     _filtros() {
       const p = new URLSearchParams(window.location.search);
       return {
-        search:   p.get('search')   || '',
-        estado:   p.get('estado')   || '',
-        ciudad:   p.get('ciudad')   || '',
-        titulo:   p.get('titulo')   || '',
-        fuente:   p.get('fuente')   || '',
-        tag:      p.get('tag')      || '',
-        es_socio: p.get('es_socio') || '',
+        search:         p.get('search')         || '',
+        estado:         p.get('estado')         || '',
+        ciudad:         p.get('ciudad')         || '',
+        titulo:         p.get('titulo')         || '',
+        fuente:         p.get('fuente')         || '',
+        tag:            p.get('tag')            || '',
+        es_socio:       p.get('es_socio')       || '',
+        zoom_evento_id: p.get('zoom_evento_id') || '',
+        zoom_asistio:   p.get('zoom_asistio')   || '',
       };
     },
 

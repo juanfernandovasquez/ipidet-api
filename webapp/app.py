@@ -4231,19 +4231,24 @@ async def publico_list(
     request: Request,
     search:   str = "", estado: str = "", ciudad: str = "",
     titulo:   str = "", fuente: str = "", tag: str = "",
-    es_socio: str = "", page: int = 1,
+    es_socio: str = "", zoom_evento_id: str = "",
+    zoom_asistio: str = "", page: int = 1,
 ):
     docs, total = pdb.get_prospectos(search=search, estado=estado, ciudad=ciudad,
                                      titulo=titulo, fuente=fuente, tag=tag,
-                                     es_socio=es_socio, page=page)
-    stats   = pdb.get_publico_stats()
-    titulos = pdb.get_member_titulos()
+                                     es_socio=es_socio, zoom_evento_id=zoom_evento_id,
+                                     zoom_asistio=zoom_asistio, page=page)
+    stats              = pdb.get_publico_stats()
+    titulos            = pdb.get_member_titulos()
+    zoom_eventos_disp  = pdb.get_zoom_eventos_disponibles()
     return templates.TemplateResponse(request, "publico.html", _ctx(request,
         prospectos=docs, total=total, page=page,
         stats_publico=stats,
         titulos=titulos,
+        zoom_eventos_disp=zoom_eventos_disp,
         search=search, estado=estado, ciudad=ciudad,
         titulo=titulo, fuente=fuente, tag=tag, es_socio=es_socio,
+        zoom_evento_id=zoom_evento_id, zoom_asistio=zoom_asistio,
     ))
 
 
@@ -4421,21 +4426,24 @@ async def publico_delete(request: Request, prospecto_id: str):
 
 @app.post("/api/publico/preview")
 async def api_publico_preview(request: Request):
-    data     = await request.json()
-    search   = data.get("search", "")
-    estado   = data.get("estado", "")
-    ciudad   = data.get("ciudad", "")
-    titulo   = data.get("titulo", "")
-    fuente   = data.get("fuente", "")
-    tag      = data.get("tag", "")
-    es_socio = data.get("es_socio", "")
-    docs     = pdb.get_prospectos_all(search=search, estado=estado, ciudad=ciudad,
-                                      titulo=titulo, fuente=fuente, tag=tag,
-                                      es_socio=es_socio)
-    result   = [{"_id": str(d.get("_id", "")),
-                 "nombre": d.get("nombre", ""),
-                 "apellido": d.get("apellido", ""),
-                 "email": d.get("email", "")} for d in docs if d.get("email")]
+    data           = await request.json()
+    search         = data.get("search", "")
+    estado         = data.get("estado", "")
+    ciudad         = data.get("ciudad", "")
+    titulo         = data.get("titulo", "")
+    fuente         = data.get("fuente", "")
+    tag            = data.get("tag", "")
+    es_socio       = data.get("es_socio", "")
+    zoom_evento_id = data.get("zoom_evento_id", "")
+    zoom_asistio   = data.get("zoom_asistio", "")
+    docs = pdb.get_prospectos_all(search=search, estado=estado, ciudad=ciudad,
+                                  titulo=titulo, fuente=fuente, tag=tag,
+                                  es_socio=es_socio, zoom_evento_id=zoom_evento_id,
+                                  zoom_asistio=zoom_asistio)
+    result = [{"_id": str(d.get("_id", "")),
+               "nombre": d.get("nombre", ""),
+               "apellido": d.get("apellido", ""),
+               "email": d.get("email", "")} for d in docs if d.get("email")]
     return {"total": len(result), "destinatarios": result}
 
 
