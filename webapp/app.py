@@ -3574,6 +3574,17 @@ async def evento_sync_zoom(request: Request, evento_id: str):
             participants = []  # webinar aún en vivo o report no disponible
 
         stats = pdb.sync_zoom_data(evento_id, webinar_id, zoom_titulo, registrants, participants)
+
+        # Upsert participantes al pool de público/prospectos (deduplicado por email)
+        evento_doc = pdb.get_evento(evento_id)
+        evento_fecha = evento_doc.get("fecha", "") if evento_doc else ""
+        zoom_list = pdb.get_evento(evento_id).get("zoom_registrants", []) if evento_doc else []
+        publico_stats = pdb.upsert_prospectos_from_zoom(
+            evento_id, zoom_titulo, evento_fecha, webinar_id, zoom_list
+        )
+        stats["publico_insertados"] = publico_stats["insertados"]
+        stats["publico_actualizados"] = publico_stats["actualizados"]
+
         return JSONResponse({"ok": True, "stats": stats})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -4206,11 +4217,13 @@ async def inbox_proof_dismiss(proof_id: str):
 @app.get("/publico", response_class=HTMLResponse)
 async def publico_list(
     request: Request,
-    search:  str = "", estado: str = "", ciudad: str = "",
-    titulo:  str = "", fuente: str = "", tag: str = "", page: int = 1,
+    search:   str = "", estado: str = "", ciudad: str = "",
+    titulo:   str = "", fuente: str = "", tag: str = "",
+    es_socio: str = "", page: int = 1,
 ):
     docs, total = pdb.get_prospectos(search=search, estado=estado, ciudad=ciudad,
-                                     titulo=titulo, fuente=fuente, tag=tag, page=page)
+                                     titulo=titulo, fuente=fuente, tag=tag,
+                                     es_socio=es_socio, page=page)
     stats   = pdb.get_publico_stats()
     titulos = pdb.get_member_titulos()
     return templates.TemplateResponse(request, "publico.html", _ctx(request,
@@ -4218,7 +4231,7 @@ async def publico_list(
         stats_publico=stats,
         titulos=titulos,
         search=search, estado=estado, ciudad=ciudad,
-        titulo=titulo, fuente=fuente, tag=tag,
+        titulo=titulo, fuente=fuente, tag=tag, es_socio=es_socio,
     ))
 
 
@@ -4396,16 +4409,21 @@ async def publico_delete(request: Request, prospecto_id: str):
 
 @app.post("/api/publico/preview")
 async def api_publico_preview(request: Request):
-    data    = await request.json()
-    estado  = data.get("estado", "")
-    ciudad  = data.get("ciudad", "")
-    titulo  = data.get("titulo", "")
-    fuente  = data.get("fuente", "")
-    tag     = data.get("tag", "")
-    docs    = pdb.get_prospectos_all(estado=estado, ciudad=ciudad, titulo=titulo,
-                                     fuente=fuente, tag=tag)
-    result  = [{"nombre": f"{d.get('nombre','')} {d.get('apellido','')}".strip(),
-                "email": d.get("email", "")} for d in docs if d.get("email")]
+    data     = await request.json()
+    search   = data.get("search", "")
+    estado   = data.get("estado", "")
+    ciudad   = data.get("ciudad", "")
+    titulo   = data.get("titulo", "")
+    fuente   = data.get("fuente", "")
+    tag      = data.get("tag", "")
+    es_socio = data.get("es_socio", "")
+    docs     = pdb.get_prospectos_all(search=search, estado=estado, ciudad=ciudad,
+                                      titulo=titulo, fuente=fuente, tag=tag,
+                                      es_socio=es_socio)
+    result   = [{"_id": str(d.get("_id", "")),
+                 "nombre": d.get("nombre", ""),
+                 "apellido": d.get("apellido", ""),
+                 "email": d.get("email", "")} for d in docs if d.get("email")]
     return {"total": len(result), "destinatarios": result}
 
 

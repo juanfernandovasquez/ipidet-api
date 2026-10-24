@@ -3,13 +3,17 @@
 {% block heading %}Público / Prospectos{% endblock %}
 
 {% block header_actions %}
-<button @click="$dispatch('open-nuevo')"
+<button @click="$dispatch('open-campana')"
         class="btn-primary flex items-center gap-2">
-  <i class="fa-solid fa-plus"></i> Nuevo prospecto
+  <i class="fa-solid fa-paper-plane"></i> Enviar campaña
+</button>
+<button @click="$dispatch('open-nuevo')"
+        class="btn-ghost flex items-center gap-2 text-sm">
+  <i class="fa-solid fa-plus"></i> Nuevo
 </button>
 <a href="/publico/template-excel"
    class="btn-ghost flex items-center gap-2 text-sm">
-  <i class="fa-solid fa-file-arrow-down"></i> Plantilla Excel
+  <i class="fa-solid fa-file-arrow-down"></i> Excel
 </a>
 <button @click="$dispatch('open-importar')"
         class="btn-ghost flex items-center gap-2 text-sm">
@@ -18,7 +22,10 @@
 {% endblock %}
 
 {% block content %}
-<div x-data="publicoPage()" @open-nuevo.window="modalNuevo=true" @open-importar.window="modalImportar=true">
+<div x-data="publicoPage()"
+     @open-nuevo.window="modalNuevo=true"
+     @open-importar.window="modalImportar=true"
+     @open-campana.window="abrirCampana()">
 
   {% if request.query_params.get('ok') == 'importado' %}
   <div class="mb-4 flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
@@ -40,20 +47,23 @@
   {% endif %}
 
   <!-- Stats bar -->
-  <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
-    {% for lbl, val, color in [
-      ("Total",       stats_publico.total,       "violet"),
-      ("Nuevos",      stats_publico.nuevos,       "slate"),
-      ("Interesados", stats_publico.interesados,  "blue"),
-      ("Postulantes", stats_publico.postulantes,  "amber"),
-      ("Convertidos", stats_publico.convertidos,  "green"),
+  <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-5">
+    {% for lbl, val, color, filtro in [
+      ("Total",        stats_publico.total,       "violet", ""),
+      ("Nuevos",       stats_publico.nuevos,      "slate",  "estado=nuevo"),
+      ("Interesados",  stats_publico.interesados, "blue",   "estado=interesado"),
+      ("Postulantes",  stats_publico.postulantes, "amber",  "estado=postulante"),
+      ("Convertidos",  stats_publico.convertidos, "green",  "estado=convertido"),
+      ("Desde Zoom",   stats_publico.desde_zoom,  "cyan",   "fuente=zoom"),
+      ("No socios",    stats_publico.no_socios,   "rose",   "es_socio=false"),
     ] %}
-    <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+    <a href="/publico?{{ filtro }}"
+       class="bg-white rounded-xl border border-slate-200 p-3 flex items-center gap-2.5 hover:border-{{ color }}-300 transition-colors">
       <div class="w-8 h-8 rounded-lg bg-{{ color }}-100 flex items-center justify-center flex-shrink-0">
         <span class="text-sm font-bold text-{{ color }}-700">{{ val }}</span>
       </div>
-      <div class="text-xs text-slate-500">{{ lbl }}</div>
-    </div>
+      <div class="text-xs text-slate-500 leading-tight">{{ lbl }}</div>
+    </a>
     {% endfor %}
   </div>
 
@@ -81,14 +91,19 @@
       </select>
       <select name="fuente" class="input text-sm" @change="$refs.filterForm.submit()">
         <option value="">Cualquier fuente</option>
-        {% for v, l in [("manual","Manual"),("excel","Excel"),("portal","Portal"),("evento","Evento")] %}
+        {% for v, l in [("manual","Manual"),("excel","Excel"),("zoom","Zoom Webinar"),("portal","Portal"),("evento","Evento")] %}
         <option value="{{ v }}" {% if fuente == v %}selected{% endif %}>{{ l }}</option>
         {% endfor %}
+      </select>
+      <select name="es_socio" class="input text-sm" @change="$refs.filterForm.submit()">
+        <option value="">¿Socio IPIDET?</option>
+        <option value="false" {% if es_socio == 'false' %}selected{% endif %}>Solo no socios</option>
+        <option value="true"  {% if es_socio == 'true'  %}selected{% endif %}>Solo socios</option>
       </select>
       <input type="text" name="tag" value="{{ tag }}" placeholder="Tag"
              class="input text-sm w-28"
              @input="clearTimeout(_t3); _t3=setTimeout(()=>$refs.filterForm.submit(),450)">
-      {% if search or estado or ciudad or titulo or fuente or tag %}
+      {% if search or estado or ciudad or titulo or fuente or tag or es_socio %}
       <a href="/publico" class="btn-ghost text-sm">Limpiar</a>
       {% endif %}
     </div>
@@ -108,8 +123,9 @@
             <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Título / Empresa</th>
             <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Ciudad</th>
             <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Fuente</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">¿Socio?</th>
+            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Eventos Zoom</th>
             <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
-            <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tags</th>
             <th class="px-4 py-2.5"></th>
           </tr>
         </thead>
@@ -127,17 +143,35 @@
             </td>
             <td class="px-4 py-3 text-slate-600">{{ p.ciudad or '—' }}</td>
             <td class="px-4 py-3">
-              {% set fuente_colors = {"manual": "slate", "excel": "blue", "portal": "green", "evento": "purple"} %}
+              {% set fuente_colors = {"manual": "slate", "excel": "blue", "portal": "green", "evento": "purple", "zoom": "cyan"} %}
               <span class="badge badge-{{ fuente_colors.get(p.fuente, 'gray') }}">{{ p.fuente or 'manual' }}</span>
+            </td>
+            <td class="px-4 py-3">
+              {% if p.es_socio %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 rounded-full px-2 py-0.5">
+                <i class="fa-solid fa-circle-check text-[10px]"></i> Socio
+              </span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">
+                <i class="fa-regular fa-circle text-[10px]"></i> Prospecto
+              </span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              {% set ze = p.zoom_eventos or [] %}
+              {% if ze %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-full px-2 py-0.5"
+                    title="{% for e in ze %}{{ e.evento_titulo or 'Webinar' }}{% if not loop.last %} · {% endif %}{% endfor %}">
+                <i class="fa-brands fa-zoom text-[10px]"></i>
+                {{ ze|length }} evento{% if ze|length != 1 %}s{% endif %}
+              </span>
+              {% else %}
+              <span class="text-slate-300">—</span>
+              {% endif %}
             </td>
             <td class="px-4 py-3">
               {% set estado_colors = {"nuevo": "slate", "interesado": "blue", "postulante": "amber", "convertido": "green", "inactivo": "gray"} %}
               <span class="badge badge-{{ estado_colors.get(p.estado, 'gray') }}">{{ p.estado or 'nuevo' }}</span>
-            </td>
-            <td class="px-4 py-3">
-              {% for tag in (p.tags or [])[:3] %}
-              <span class="inline-block text-[10px] bg-violet-100 text-violet-700 rounded px-1.5 py-0.5 mr-0.5">{{ tag }}</span>
-              {% endfor %}
             </td>
             <td class="px-4 py-3">
               <a href="/publico/{{ p._id }}" class="text-slate-400 hover:text-blue-500 text-xs px-2 py-1 rounded hover:bg-blue-50 transition-colors">
@@ -147,7 +181,7 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="8" class="px-4 py-12 text-center text-slate-400">
+            <td colspan="9" class="px-4 py-12 text-center text-slate-400">
               <i class="fa-solid fa-user-magnifying-glass text-3xl mb-3 block opacity-25"></i>
               No se encontraron prospectos.
               <a href="#" @click.prevent="modalNuevo=true" class="text-blue-500 hover:underline ml-1">Agregar el primero</a>
@@ -164,11 +198,11 @@
       <span>Página {{ page }} de {{ ((total - 1) // 50 + 1) }}</span>
       <div class="flex gap-2">
         {% if page > 1 %}
-        <a href="?page={{ page - 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}"
+        <a href="?page={{ page - 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}&es_socio={{ es_socio }}"
            class="btn-ghost text-xs">← Anterior</a>
         {% endif %}
         {% if page * 50 < total %}
-        <a href="?page={{ page + 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}"
+        <a href="?page={{ page + 1 }}&search={{ search }}&estado={{ estado }}&ciudad={{ ciudad }}&titulo={{ titulo }}&fuente={{ fuente }}&tag={{ tag }}&es_socio={{ es_socio }}"
            class="btn-ghost text-xs">Siguiente →</a>
         {% endif %}
       </div>
@@ -254,6 +288,92 @@
     </div>
   </div>
 
+  <!-- ── Modal Campaña ── -->
+  <div x-show="modalCampana" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @keydown.escape.window="modalCampana=false">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" @click.stop>
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
+        <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-paper-plane text-violet-500"></i> Enviar campaña
+        </h3>
+        <button @click="modalCampana=false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
+      </div>
+      <div class="overflow-y-auto px-6 py-5 space-y-4 flex-1">
+        <!-- Filtros activos resumidos -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
+          <div class="font-medium text-slate-700 mb-1">Filtros activos al abrir el modal:</div>
+          <div class="flex flex-wrap gap-1.5">
+            {% if search %}<span class="badge badge-slate">Búsqueda: {{ search }}</span>{% endif %}
+            {% if estado %}<span class="badge badge-slate">Estado: {{ estado }}</span>{% endif %}
+            {% if ciudad %}<span class="badge badge-slate">Ciudad: {{ ciudad }}</span>{% endif %}
+            {% if titulo %}<span class="badge badge-slate">Título: {{ titulo }}</span>{% endif %}
+            {% if fuente %}<span class="badge badge-slate">Fuente: {{ fuente }}</span>{% endif %}
+            {% if es_socio == 'false' %}<span class="badge badge-rose">Solo no socios</span>{% elif es_socio == 'true' %}<span class="badge badge-green">Solo socios</span>{% endif %}
+            {% if tag %}<span class="badge badge-violet">Tag: {{ tag }}</span>{% endif %}
+            {% if not (search or estado or ciudad or titulo or fuente or es_socio or tag) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
+          </div>
+        </div>
+        <!-- Preview destinatarios -->
+        <div class="flex items-center gap-3">
+          <button type="button" @click="previewDestinatarios()"
+                  class="btn-ghost text-sm flex items-center gap-1.5" :disabled="loadingPreview">
+            <i class="fa-solid fa-users" :class="loadingPreview ? 'animate-pulse' : ''"></i>
+            <span x-text="loadingPreview ? 'Calculando…' : 'Ver destinatarios'"></span>
+          </button>
+          <span x-show="destinatariosCount !== null" class="text-sm font-semibold text-violet-700"
+                x-text="destinatariosCount + ' destinatario' + (destinatariosCount !== 1 ? 's' : '')"></span>
+        </div>
+        <div x-show="destinatariosPreview.length > 0" class="border border-slate-200 rounded-xl overflow-hidden">
+          <div class="bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500 border-b border-slate-200">Primeros destinatarios</div>
+          <ul class="divide-y divide-slate-100 max-h-36 overflow-y-auto text-sm">
+            <template x-for="d in destinatariosPreview.slice(0, 10)" :key="d._id || d.email">
+              <li class="px-3 py-1.5 flex items-center gap-2">
+                <span class="font-medium text-slate-700" x-text="(d.apellido || '') + ' ' + (d.nombre || '')"></span>
+                <span class="text-slate-400 font-mono text-xs" x-text="d.email"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+        <!-- Asunto -->
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Asunto <span class="text-red-500">*</span></label>
+          <input type="text" x-model="campAsunto" class="input w-full text-sm"
+                 placeholder="Únete a IPIDET — el gremio de los mejores profesionales">
+        </div>
+        <!-- Cuerpo HTML -->
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Cuerpo del email
+            <span class="text-slate-400 font-normal">(HTML o texto plano)</span>
+          </label>
+          <textarea x-model="campCuerpo" rows="10" class="input w-full text-sm font-mono resize-y"
+                    placeholder="<p>Estimado/a {nombre},</p>&#10;<p>...</p>"></textarea>
+          <p class="text-xs text-slate-400 mt-1">Puedes usar <code class="bg-slate-100 px-1 rounded">{nombre}</code>, <code class="bg-slate-100 px-1 rounded">{apellido}</code>, <code class="bg-slate-100 px-1 rounded">{email}</code>.</p>
+        </div>
+        <!-- Errores -->
+        <div x-show="campError" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+          <i class="fa-solid fa-circle-exclamation mr-1.5"></i>
+          <span x-text="campError"></span>
+        </div>
+        <!-- Resultado -->
+        <div x-show="campResultado" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+          <i class="fa-solid fa-circle-check mr-1.5"></i>
+          <span x-text="campResultado"></span>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-slate-200 flex items-center justify-between flex-shrink-0">
+        <button type="button" @click="modalCampana=false" class="btn-ghost">Cancelar</button>
+        <button type="button" @click="enviarCampana()"
+                class="btn-primary flex items-center gap-2"
+                :disabled="enviando || !campAsunto || !campCuerpo || !destinatariosAll.length"
+                :class="(enviando || !campAsunto || !campCuerpo || !destinatariosAll.length) ? 'opacity-60 cursor-not-allowed' : ''">
+          <i class="fa-solid fa-paper-plane" :class="enviando ? 'animate-bounce' : ''"></i>
+          <span x-text="enviando ? 'Enviando…' : (destinatariosAll.length ? 'Enviar a ' + destinatariosAll.length + ' contactos' : 'Enviar campaña')"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Modal Importar Excel ── -->
   <div x-show="modalImportar" x-cloak
        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -293,9 +413,105 @@
 <script>
 function publicoPage() {
   return {
-    modalNuevo: {{ 'true' if request.query_params.get('ok') == 'creado' else 'false' }},
+    modalNuevo:    {{ 'true' if request.query_params.get('ok') == 'creado' else 'false' }},
     modalImportar: false,
+    modalCampana:  false,
+
+    // campaña
+    campAsunto:           '',
+    campCuerpo:           '',
+    campError:            '',
+    campResultado:        '',
+    enviando:             false,
+    loadingPreview:       false,
+    destinatariosCount:   null,
+    destinatariosAll:     [],
+    destinatariosPreview: [],
+
     _t: null, _t2: null, _t3: null,
+
+    // filtros actuales (para pasarlos al backend)
+    _filtros() {
+      const p = new URLSearchParams(window.location.search);
+      return {
+        search:   p.get('search')   || '',
+        estado:   p.get('estado')   || '',
+        ciudad:   p.get('ciudad')   || '',
+        titulo:   p.get('titulo')   || '',
+        fuente:   p.get('fuente')   || '',
+        tag:      p.get('tag')      || '',
+        es_socio: p.get('es_socio') || '',
+      };
+    },
+
+    abrirCampana() {
+      this.campError     = '';
+      this.campResultado = '';
+      this.destinatariosCount   = null;
+      this.destinatariosPreview = [];
+      this.modalCampana  = true;
+    },
+
+    async previewDestinatarios() {
+      this.loadingPreview       = true;
+      this.campError            = '';
+      this.destinatariosAll     = [];
+      this.destinatariosPreview = [];
+      this.destinatariosCount   = null;
+      try {
+        const resp = await fetch('/api/publico/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this._filtros()),
+        });
+        const data = await resp.json();
+        if (data.error) { this.campError = data.error; return; }
+        this.destinatariosAll   = data.destinatarios || [];
+        this.destinatariosCount = data.total;
+        this.destinatariosPreview = this.destinatariosAll.slice(0, 10);
+      } catch (e) {
+        this.campError = 'Error al consultar destinatarios.';
+      } finally {
+        this.loadingPreview = false;
+      }
+    },
+
+    async enviarCampana() {
+      if (!this.campAsunto || !this.campCuerpo) return;
+      if (!this.destinatariosAll || !this.destinatariosAll.length) {
+        this.campError = 'Primero haz clic en "Ver destinatarios" para calcular la lista.';
+        return;
+      }
+      this.campError     = '';
+      this.campResultado = '';
+      this.enviando      = true;
+      try {
+        const payload = {
+          asunto:        this.campAsunto,
+          cuerpo:        this.campCuerpo,
+          destinatarios: this.destinatariosAll,
+          filtros:       this._filtros(),
+        };
+        const resp = await fetch('/api/publico/enviar-comunicacion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (data.error) { this.campError = data.error; return; }
+        this.campResultado = `Campaña enviada: ${data.enviados} emails` +
+          (data.fallidos ? `, ${data.fallidos} fallidos.` : '.');
+        this.campAsunto           = '';
+        this.campCuerpo           = '';
+        this.destinatariosAll     = [];
+        this.destinatariosCount   = null;
+        this.destinatariosPreview = [];
+      } catch (e) {
+        this.campError = 'Error al enviar la campaña.';
+      } finally {
+        this.enviando = false;
+      }
+    },
   };
 }
 </script>

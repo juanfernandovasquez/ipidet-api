@@ -4446,13 +4446,19 @@ def get_publico_stats() -> dict:
     interesados = publico_col.count_documents({"estado": "interesado"})
     postulantes = publico_col.count_documents({"estado": "postulante"})
     convertidos = publico_col.count_documents({"estado": "convertido"})
-    return {"total": total, "nuevos": nuevos, "interesados": interesados,
-            "postulantes": postulantes, "convertidos": convertidos}
+    desde_zoom  = publico_col.count_documents({"zoom_eventos": {"$exists": True, "$ne": []}})
+    no_socios   = publico_col.count_documents({"es_socio": {"$ne": True}, "estado": {"$ne": "inactivo"}})
+    return {
+        "total": total, "nuevos": nuevos, "interesados": interesados,
+        "postulantes": postulantes, "convertidos": convertidos,
+        "desde_zoom": desde_zoom, "no_socios": no_socios,
+    }
 
 
-def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
-                   titulo: str = "", fuente: str = "", tag: str = "",
-                   page: int = 1) -> tuple:
+def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = "",
+                             titulo: str = "", fuente: str = "", tag: str = "",
+                             es_socio: str = "") -> dict:
+    """Helper interno — construye la query de prospectos con todos los filtros."""
     query: dict = {}
     if estado:
         query["estado"] = estado
@@ -4464,10 +4470,21 @@ def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
         query["fuente"] = fuente
     if tag:
         query["tags"] = tag
+    if es_socio == "false":
+        query["es_socio"] = {"$ne": True}
+    elif es_socio == "true":
+        query["es_socio"] = True
     if search:
         rx = {"$regex": _re.escape(search), "$options": "i"}
         query["$or"] = [{"nombre": rx}, {"apellido": rx}, {"email": rx},
                         {"empresa": rx}, {"celular": rx}]
+    return query
+
+
+def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
+                   titulo: str = "", fuente: str = "", tag: str = "",
+                   es_socio: str = "", page: int = 1) -> tuple:
+    query = _build_prospectos_query(search, estado, ciudad, titulo, fuente, tag, es_socio)
     per_page = 50
     skip = (page - 1) * per_page
     total = publico_col.count_documents(query)
@@ -4477,24 +4494,118 @@ def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
     return docs, total
 
 
-def get_prospectos_all(estado: str = "", ciudad: str = "", titulo: str = "",
-                        fuente: str = "", tag: str = "") -> list:
-    """Sin paginación — para envíos masivos."""
-    query: dict = {}
-    if estado:
-        query["estado"] = estado
-    if ciudad:
-        query["ciudad"] = {"$regex": _re.escape(ciudad), "$options": "i"}
-    if titulo:
-        query["titulo"] = titulo
-    if fuente:
-        query["fuente"] = fuente
-    if tag:
-        query["tags"] = tag
+def get_prospectos_all(search: str = "", estado: str = "", ciudad: str = "",
+                        titulo: str = "", fuente: str = "", tag: str = "",
+                        es_socio: str = "") -> list:
+    """Sin paginación — para envíos masivos y preview de campaña."""
+    query = _build_prospectos_query(search, estado, ciudad, titulo, fuente, tag, es_socio)
     docs = list(publico_col.find(query).sort("created_at", -1))
     for d in docs:
         d["_id"] = str(d["_id"])
     return docs
+
+
+def upsert_prospectos_from_zoom(
+    evento_id: str,
+    evento_titulo: str,
+    evento_fecha: str,
+    zoom_webinar_id: str,
+    zoom_registrants: list[dict],
+) -> dict:
+    """
+    Upsert de participantes de Zoom en la colección publico (prospectos).
+    Los participantes son público general — NO necesariamente socios de IPIDET.
+    Marca es_socio=True si el email coincide con el padrón de socios.
+    Deduplicación por email. Re-sync del mismo evento actualiza la entrada.
+    Devuelve {insertados, actualizados, sin_email}.
+    """
+    now = datetime.now(timezone.utc)
+    now_str = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    insertados = actualizados = sin_email = 0
+
+    for r in zoom_registrants:
+        email = (r.get("email") or "").lower().strip()
+        if not email or "@" not in email:
+            sin_email += 1
+            continue
+
+        nombre = r.get("nombre") or ""
+        asistio = r.get("asistio", False)
+        duracion_min = r.get("duracion_min")
+
+        # Cross-reference con socios del padrón (solo busca, no modifica members)
+        member_doc = members_col.find_one(
+            {"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}},
+            {"member_id": 1},
+        )
+        es_socio = member_doc is not None
+        member_id_val = member_doc["member_id"] if member_doc else None
+
+        zoom_entry = {
+            "evento_id":       evento_id,
+            "evento_titulo":   evento_titulo,
+            "evento_fecha":    evento_fecha,
+            "zoom_webinar_id": zoom_webinar_id,
+            "asistio":         asistio,
+            "duracion_min":    duracion_min,
+            "synced_at":       now_str,
+        }
+
+        existing = publico_col.find_one(
+            {"email": email},
+            {"_id": 1, "zoom_eventos": 1},
+        )
+
+        if existing:
+            existing_zoom = existing.get("zoom_eventos") or []
+            has_this_event = any(ze.get("evento_id") == evento_id for ze in existing_zoom)
+            set_fields: dict = {"es_socio": es_socio, "updated_at": now}
+            if member_id_val:
+                set_fields["member_id"] = member_id_val
+            if has_this_event:
+                # Actualizar la entrada del evento (re-sync)
+                publico_col.update_one(
+                    {"_id": existing["_id"], "zoom_eventos.evento_id": evento_id},
+                    {"$set": {
+                        **set_fields,
+                        **{f"zoom_eventos.$.{k}": v for k, v in zoom_entry.items()},
+                    }},
+                )
+            else:
+                # Añadir nuevo evento al historial
+                publico_col.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": set_fields, "$push": {"zoom_eventos": zoom_entry}},
+                )
+            actualizados += 1
+        else:
+            doc = {
+                "nombre":         nombre,
+                "apellido":       "",
+                "email":          email,
+                "celular":        "",
+                "titulo":         "",
+                "empresa":        "",
+                "ciudad":         "",
+                "notas":          "",
+                "fuente":         "zoom",
+                "fuente_detalle": evento_titulo,
+                "tags":           [],
+                "estado":         "nuevo",
+                "es_socio":       es_socio,
+                "member_id":      member_id_val,
+                "zoom_eventos":   [zoom_entry],
+                "comunicaciones": [],
+                "created_at":     now,
+                "updated_at":     now,
+            }
+            try:
+                publico_col.insert_one(doc)
+                insertados += 1
+            except Exception:
+                actualizados += 1  # duplicate key race condition
+
+    return {"insertados": insertados, "actualizados": actualizados, "sin_email": sin_email}
 
 
 def get_prospecto(prospecto_id: str) -> dict | None:
