@@ -107,43 +107,7 @@
      ═══════════════════════════════════════════════════════════ -->
 {% set ok_comms = request.query_params.get('ok') == 'comms' %}
 <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5"
-     x-data="{
-       tab: 'flyer',
-       previewMode: false,
-       lastFocused: 'email_asunto_input',
-       emailCuerpo: {{ (evento.email_cuerpo or '') | tojson }},
-       sampleVars: {
-         nombre: 'Carlos', apellido: 'García Ríos', titulo: 'Contador',
-         evento_titulo: {{ evento.titulo | tojson }},
-         evento_fecha:  {{ evento.fecha | tojson }},
-         evento_hora:   {{ evento.hora | tojson }},
-         evento_lugar:  {{ evento.lugar | tojson }},
-       },
-       get previewHtml() {
-         const t = this.emailCuerpo;
-         if (!t) return '';
-         return t
-           .replace(/\{\{nombre\}\}/g,         this.sampleVars.nombre)
-           .replace(/\{\{apellido\}\}/g,        this.sampleVars.apellido)
-           .replace(/\{\{titulo\}\}/g,          this.sampleVars.titulo)
-           .replace(/\{\{evento_titulo\}\}/g,   this.sampleVars.evento_titulo)
-           .replace(/\{\{evento_fecha\}\}/g,    this.sampleVars.evento_fecha)
-           .replace(/\{\{evento_hora\}\}/g,     this.sampleVars.evento_hora)
-           .replace(/\{\{evento_lugar\}\}/g,    this.sampleVars.evento_lugar);
-       },
-       insertVar(varName) {
-         const el = document.getElementById(this.lastFocused);
-         if (!el) return;
-         const pos = el.selectionStart || 0;
-         const val = el.value;
-         const insert = '{{' + varName + '}}';
-         el.value = val.slice(0, pos) + insert + val.slice(el.selectionEnd || pos);
-         el.selectionStart = el.selectionEnd = pos + insert.length;
-         el.focus();
-         el.dispatchEvent(new Event('input'));
-         if (this.lastFocused === 'email_cuerpo_input') this.emailCuerpo = el.value;
-       },
-     }">
+     x-data='eventoComms({{ (evento.email_cuerpo or "") | tojson }}, {{ evento.titulo | tojson }}, {{ evento.fecha | tojson }}, {{ evento.hora | tojson }}, {{ evento.lugar | tojson }})'>
 
   <!-- Cabecera con tabs -->
   <div class="flex items-center justify-between mb-4">
@@ -173,9 +137,9 @@
   <!-- TAB FLYER -->
   <div x-show="tab==='flyer'" class="space-y-4">
     <form method="post" action="/eventos/{{ evento._id }}/update-comunicaciones" class="space-y-4">
-      <!-- Preserve email fields -->
+      <!-- Preserve email fields (textarea para soportar HTML multilinea) -->
       <input type="hidden" name="email_asunto" value="{{ evento.email_asunto or '' }}">
-      <input type="hidden" name="email_cuerpo" value="{{ evento.email_cuerpo or '' }}">
+      <textarea name="email_cuerpo" style="display:none">{{ evento.email_cuerpo or '' }}</textarea>
 
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">URL del flyer</label>
@@ -666,6 +630,44 @@
 {% endif %}
 
 <script>
+function eventoComms(emailCuerpo, eventoTitulo, eventoFecha, eventoHora, eventoLugar) {
+  return {
+    tab: 'flyer',
+    previewMode: false,
+    lastFocused: 'email_asunto_input',
+    emailCuerpo: emailCuerpo || '',
+    sampleVars: {
+      nombre: 'Carlos', apellido: 'García Ríos', titulo: 'Contador',
+      evento_titulo: eventoTitulo || '',
+      evento_fecha:  eventoFecha  || '',
+      evento_hora:   eventoHora   || '',
+      evento_lugar:  eventoLugar  || '',
+    },
+    get previewHtml() {
+      const s = this.sampleVars;
+      return (this.emailCuerpo || '')
+        .replace(/\{\{nombre\}\}/g,         s.nombre)
+        .replace(/\{\{apellido\}\}/g,        s.apellido)
+        .replace(/\{\{titulo\}\}/g,          s.titulo)
+        .replace(/\{\{evento_titulo\}\}/g,   s.evento_titulo)
+        .replace(/\{\{evento_fecha\}\}/g,    s.evento_fecha)
+        .replace(/\{\{evento_hora\}\}/g,     s.evento_hora)
+        .replace(/\{\{evento_lugar\}\}/g,    s.evento_lugar);
+    },
+    insertVar(varName) {
+      const el = document.getElementById(this.lastFocused);
+      if (!el) return;
+      const pos = el.selectionStart || 0;
+      const insert = '{{' + varName + '}}';
+      el.value = el.value.slice(0, pos) + insert + el.value.slice(el.selectionEnd || pos);
+      el.selectionStart = el.selectionEnd = pos + insert.length;
+      el.focus();
+      el.dispatchEvent(new Event('input'));
+      if (this.lastFocused === 'email_cuerpo_input') this.emailCuerpo = el.value;
+    },
+  };
+}
+
 function zoomSync() {
   return {
     webinarsLoaded: false,
