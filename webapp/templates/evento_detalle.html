@@ -195,12 +195,27 @@ window._eventoData = {
         </div>
       </div>
 
-      <!-- URL externa (opcional) -->
+      <!-- URL externa -->
       <div>
-        <label class="block text-xs font-medium text-slate-500 mb-1">O pega una URL externa</label>
+        <label class="block text-xs font-medium text-slate-500 mb-1">
+          <i class="fa-solid fa-link mr-1"></i> O pega una URL externa
+          <span class="text-violet-600 font-semibold ml-1">— recomendado para correos</span>
+        </label>
         <div class="flex gap-2">
           <input type="url" x-model="flyerUrl" placeholder="https://..." class="input flex-1 text-sm"
                  @click.stop>
+        </div>
+      </div>
+
+      <!-- Aviso: flyer subido como archivo (no URL) -->
+      <div x-show="flyerUrl && flyerUrl.startsWith('data:')" x-cloak
+           class="flex items-start gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+        <i class="fa-solid fa-triangle-exclamation mt-0.5 shrink-0"></i>
+        <div>
+          <span class="font-semibold">El flyer está guardado como archivo subido.</span>
+          Para que aparezca correctamente en todos los correos (Gmail, Outlook, etc.),
+          lo más seguro es usar una <strong>URL externa</strong>: sube la imagen a la web
+          de IPIDET (WordPress → Medios) y pega aquí el enlace directo.
         </div>
       </div>
 
