@@ -3584,6 +3584,18 @@ async def evento_update(
     return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
 
 
+@app.post("/eventos/{evento_id}/update-comunicaciones")
+async def evento_update_comunicaciones(
+    request: Request,
+    evento_id:    str,
+    flyer_url:    str = Form(""),
+    email_asunto: str = Form(""),
+    email_cuerpo: str = Form(""),
+):
+    pdb.update_evento_comunicaciones(evento_id, flyer_url, email_asunto, email_cuerpo)
+    return RedirectResponse(f"/eventos/{evento_id}?ok=comms", status_code=303)
+
+
 @app.post("/eventos/{evento_id}/delete")
 async def evento_delete(request: Request, evento_id: str):
     pdb.delete_evento(evento_id)

@@ -2990,6 +2990,18 @@ def update_evento(evento_id: str, titulo: str, descripcion: str, fecha: str,
     )
 
 
+def update_evento_comunicaciones(evento_id: str, flyer_url: str = "",
+                                  email_asunto: str = "", email_cuerpo: str = ""):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$set": {
+            "flyer_url":    flyer_url.strip(),
+            "email_asunto": email_asunto.strip(),
+            "email_cuerpo": email_cuerpo,
+        }},
+    )
+
+
 def delete_evento(evento_id: str):
     eventos_col.update_one(
         {"_id": ObjectId(evento_id)},
@@ -4631,16 +4643,20 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
     elif es_socio == "true":
         query["es_socio"] = True
     ids = zoom_evento_ids or []
+    # "inscrito" y "" son equivalentes: cualquier relación con el evento (inscrito con o sin asistencia)
+    _asistio = zoom_asistio if zoom_asistio not in ("", "inscrito") else None
     if ids and zoom_asistio == "excluir":
+        # Excluir a quien aparezca en alguno de estos eventos
         query["zoom_eventos.evento_id"] = {"$nin": ids}
-    elif ids and zoom_asistio == "true":
+    elif ids and _asistio == "true":
         query["zoom_eventos"] = {"$elemMatch": {"evento_id": {"$in": ids}, "asistio": True}}
-    elif ids and zoom_asistio == "false":
+    elif ids and _asistio == "false":
+        # Inscrito pero NO asistió a ninguno de los eventos seleccionados
         query["zoom_eventos"] = {"$elemMatch": {"evento_id": {"$in": ids}, "asistio": {"$ne": True}}}
     elif ids:
-        query["zoom_eventos.evento_id"] = {"$in": ids}
+        # Inscrito (con o sin asistencia) — usa $elemMatch para consistencia
+        query["zoom_eventos"] = {"$elemMatch": {"evento_id": {"$in": ids}}}
     elif zoom_asistio == "excluir":
-        # Sin evento seleccionado: excluir a todos los que tienen algún evento Zoom
         query["zoom_eventos"] = {"$not": {"$elemMatch": {}}}
     elif zoom_asistio == "true":
         query["zoom_eventos"] = {"$elemMatch": {"asistio": True}}
