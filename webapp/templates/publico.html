@@ -11,9 +11,9 @@
         class="btn-ghost flex items-center gap-2 text-sm">
   <i class="fa-solid fa-plus"></i> Nuevo
 </button>
-<a href="/publico/template-excel"
+<a href="/publico/export?{{ request.url.query }}"
    class="btn-ghost flex items-center gap-2 text-sm">
-  <i class="fa-solid fa-file-arrow-down"></i> Excel
+  <i class="fa-solid fa-file-arrow-down"></i> Exportar
 </a>
 <button @click="$dispatch('open-importar')"
         class="btn-ghost flex items-center gap-2 text-sm">

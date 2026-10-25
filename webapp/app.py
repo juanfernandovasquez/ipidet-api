@@ -3666,8 +3666,28 @@ async def evento_enviar_prueba(request: Request, evento_id: str):
         cuerpo = cuerpo.replace("{{" + k + "}}", v or "")
 
     asunto = f"[PRUEBA] {asunto}"
+
+    # Gmail blocks data URIs in <img src="data:...">. Convert to inline attachment.
+    attachments = None
+    flyer_url_val = reemplazos["flyer_url"]
+    if flyer_url_val.startswith("data:"):
+        try:
+            meta, b64data = flyer_url_val.split(",", 1)
+            mime_type = meta.split(":")[1].split(";")[0]
+            raw_bytes = _b64.b64decode(b64data)
+            ext = mime_type.split("/")[-1]
+            attachments = [{"filename": f"flyer.{ext}", "data": raw_bytes,
+                            "mime": mime_type, "content_id": "flyer"}]
+            cuerpo = re.sub(
+                r'(<img[^>]*)src="data:[^"]*"([^>]*>)',
+                r'\1src="cid:flyer"\2',
+                cuerpo
+            )
+        except Exception:
+            pass
+
     try:
-        await mailer.send_email(email_dest, asunto, html_body=cuerpo)
+        await mailer.send_email(email_dest, asunto, html_body=cuerpo, attachments=attachments)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -4451,6 +4471,60 @@ async def publico_template_excel():
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=plantilla_prospectos.xlsx"},
+    )
+
+
+@app.get("/publico/export")
+async def publico_export(
+    request: Request,
+    search:   str = "", estado: str = "", ciudad: str = "",
+    titulo:   str = "", empresa: str = "", fuente: str = "",
+    tags: List[str] = Query(default=[]), es_socio: str = "",
+    zoom_evento_id: List[str] = Query(default=[]),
+    zoom_asistio: str = "",
+):
+    docs = pdb.get_prospectos_all(
+        search=search, estado=estado, ciudad=ciudad,
+        titulo=titulo, empresa=empresa, fuente=fuente,
+        tags=tags, es_socio=es_socio,
+        zoom_evento_ids=zoom_evento_id,
+        zoom_asistio=zoom_asistio,
+    )
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Público IPIDET"
+    headers = ["Nombre", "Apellido", "Email", "Celular", "Título", "Empresa",
+               "Ciudad", "Estado", "Es socio", "Fuente", "Tags", "Eventos Zoom"]
+    hfill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+    hfont = Font(color="FFFFFF", bold=True)
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.fill = hfill
+        cell.font = hfont
+        cell.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 20
+    for d in docs:
+        tags_str = ",".join(d.get("tags") or [])
+        zoom_str = "; ".join(
+            ze.get("evento_titulo", ze.get("evento_id", ""))
+            for ze in (d.get("zoom_eventos") or [])
+        )
+        ws.append([
+            d.get("nombre", ""), d.get("apellido", ""), d.get("email", ""),
+            d.get("celular", ""), d.get("titulo", ""), d.get("empresa", ""),
+            d.get("ciudad", ""), d.get("estado", ""),
+            "Sí" if d.get("es_socio") else "No",
+            d.get("fuente", ""), tags_str, zoom_str,
+        ])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from datetime import date as _date
+    fname = f"publico_{_date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
 
 
