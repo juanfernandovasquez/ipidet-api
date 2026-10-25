@@ -705,6 +705,7 @@ window._eventoData = {
 {% endif %}
 
 <script>
+{% raw %}
 function eventoComms() {
   const d = window._eventoData || {};
   function applyVars(text, s) {
@@ -761,7 +762,6 @@ function eventoComms() {
       const el = document.getElementById('email_cuerpo_input');
       if (!el) return;
       this.lastFocused = 'email_cuerpo_input';
-      // Concatenación JS para que Jinja2 no interprete {{ }} como variable de template
       const flyrVar = '{{' + 'flyer_url' + '}}';
       const tag = '<img src="' + flyrVar + '" alt="Flyer del evento" style="max-width:100%;display:block;margin:16px auto;">';
       const pos = el.selectionStart || 0;
@@ -792,6 +792,7 @@ function eventoComms() {
     },
   };
 }
+{% endraw %}
 
 function zoomSync() {
   return {
