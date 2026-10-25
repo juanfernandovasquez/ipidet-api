@@ -106,6 +106,12 @@
      SECCIÓN — FLYER Y PLANTILLA DE CORREO
      ═══════════════════════════════════════════════════════════ -->
 {% set ok_comms = request.query_params.get('ok') == 'comms' %}
+<style>
+.ev-var-chip{display:inline-block;padding:2px 8px;background:#ede9fe;color:#5b21b6;border-radius:99px;font-size:.8rem;font-weight:500;white-space:nowrap;user-select:none;cursor:default;border:1px solid #c4b5fd;line-height:1.6;vertical-align:baseline;}
+.ev-flyer-block{display:block;border:2px dashed #93c5fd;border-radius:8px;padding:14px 20px;text-align:center;color:#2563eb;background:#eff6ff;font-size:.875rem;font-weight:500;margin:10px 0;user-select:none;cursor:default;}
+#ev-editor p{margin:.4em 0;}
+#ev-editor br{line-height:1.7;}
+</style>
 <script>
 window._eventoData = {
   flyerUrl:    {{ (evento.flyer_url    or '') | tojson }},
@@ -146,12 +152,7 @@ window._eventoData = {
 
   <!-- TAB FLYER -->
   <div x-show="tab==='flyer'" class="space-y-4">
-    <form method="post" action="/eventos/{{ evento._id }}/update-comunicaciones" class="space-y-4">
-      <!-- Preserve email fields -->
-      <input type="hidden" name="email_asunto" value="{{ evento.email_asunto or '' }}">
-      <textarea name="email_cuerpo" style="display:none">{{ evento.email_cuerpo or '' }}</textarea>
-      <!-- Campo oculto que recibe la URL final (externa o data URI del archivo subido) -->
-      <input type="hidden" name="flyer_url" x-model="flyerUrl">
+    <div class="space-y-4">
 
       <!-- Zona drag & drop -->
       <div class="relative rounded-2xl border-2 transition-colors duration-150 overflow-hidden cursor-pointer select-none"
@@ -205,89 +206,131 @@ window._eventoData = {
 
       <!-- Acciones -->
       <div class="flex items-center gap-3">
-        <button type="submit" class="btn-primary text-sm">
-          <i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar flyer
+        <button type="button" @click="guardar()" :disabled="guardando"
+                class="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
+          <i class="fa-solid fa-floppy-disk" x-show="!guardando"></i>
+          <i class="fa-solid fa-circle-notch fa-spin" x-show="guardando" x-cloak></i>
+          <span x-text="guardando ? 'Guardando…' : 'Guardar flyer'"></span>
         </button>
-        <button type="button" x-show="flyerUrl" @click.prevent="flyerUrl=''" x-cloak
+        <button type="button" x-show="flyerUrl" @click="flyerUrl=''" x-cloak
                 class="text-sm text-red-400 hover:text-red-600 transition-colors">
           <i class="fa-solid fa-trash-can mr-1"></i> Quitar flyer
         </button>
+        <span x-show="guardadoOk" x-cloak class="text-xs text-green-600 flex items-center gap-1.5">
+          <i class="fa-solid fa-circle-check"></i> ¡Guardado!
+        </span>
       </div>
-    </form>
+    </div>
   </div>
 
   <!-- TAB PLANTILLA EMAIL — layout dos columnas -->
   <div x-show="tab==='email'" x-cloak>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
 
-      <!-- ── Columna izquierda: editor ── -->
-      <div class="space-y-4">
-        <form method="post" action="/eventos/{{ evento._id }}/update-comunicaciones" class="space-y-3">
-          <input type="hidden" name="flyer_url" x-model="flyerUrl">
+      <!-- ── Columna izquierda: editor WYSIWYG ── -->
+      <div class="space-y-4 min-w-0">
 
-          <!-- Variables -->
-          <div>
-            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Variables — clic para insertar</p>
-            <div class="flex flex-wrap gap-1.5">
-              {% for var, desc in [
-                ('nombre',        'Nombre del destinatario'),
-                ('apellido',      'Apellido'),
-                ('titulo',        'Título profesional'),
-                ('evento_titulo', 'Título del evento'),
-                ('evento_fecha',  'Fecha del evento'),
-                ('evento_hora',   'Hora del evento'),
-                ('evento_lugar',  'Lugar del evento'),
-                ('flyer_url',     'URL del flyer'),
-              ] %}
-              <button type="button" title="{{ desc }}"
-                      @click="insertVar('{{ var }}')"
-                      class="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2.5 py-1 hover:bg-violet-100 transition-colors font-mono cursor-pointer select-none">
-                {{ '{{' }}{{ var }}{{ '}}' }}
-              </button>
-              {% endfor %}
-              <!-- Botón especial: insertar imagen del flyer como <img> -->
-              <button type="button" @click="insertFlyerImg()" x-show="flyerUrl"
-                      title="Inserta un tag &lt;img&gt; listo para usar"
-                      class="inline-flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 hover:bg-blue-100 transition-colors cursor-pointer select-none">
-                <i class="fa-solid fa-image text-[10px]"></i> Insertar imagen del flyer
-              </button>
-            </div>
-          </div>
+        <!-- Asunto -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Asunto del correo</label>
+          <input type="text" x-model="emailAsunto"
+                 placeholder="Ej: Invitación al evento — te esperamos"
+                 class="input w-full text-sm">
+        </div>
 
-          <!-- Asunto -->
-          <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">Asunto</label>
-            <input id="email_asunto_input" name="email_asunto"
-                   x-model="emailAsunto"
-                   placeholder="Ej: Invitación — {{ '{{' }}evento_titulo{{ '}}' }}"
-                   class="input w-full text-sm"
-                   @focus="lastFocused='email_asunto_input'">
-          </div>
+        <!-- Editor WYSIWYG -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Contenido del correo</label>
 
-          <!-- Cuerpo HTML -->
-          <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">Cuerpo del correo (HTML)</label>
-            <textarea id="email_cuerpo_input" name="email_cuerpo" rows="14"
-                      class="input w-full text-xs font-mono resize-y leading-relaxed"
-                      placeholder="Escribe HTML o texto plano. Las variables se reemplazan al enviar."
-                      @focus="lastFocused='email_cuerpo_input'"
-                      @input="emailCuerpo=$el.value"
-                      >{{ evento.email_cuerpo or '' }}</textarea>
-          </div>
-
-          <div class="flex items-center gap-3 pt-1">
-            <button type="submit" class="btn-primary text-sm">
-              <i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar
+          <!-- Barra de herramientas -->
+          <div class="flex items-center gap-0.5 flex-wrap bg-slate-50 border border-b-0 border-slate-200 rounded-t-lg px-2 py-1.5 select-none">
+            <button type="button" @mousedown.prevent="fmt('bold')" title="Negrita"
+                    class="w-7 h-7 rounded hover:bg-slate-200 flex items-center justify-center font-bold text-slate-700 transition-colors">B</button>
+            <button type="button" @mousedown.prevent="fmt('italic')" title="Cursiva"
+                    class="w-7 h-7 rounded hover:bg-slate-200 flex items-center justify-center italic text-slate-700 transition-colors">I</button>
+            <button type="button" @mousedown.prevent="fmt('underline')" title="Subrayado"
+                    class="w-7 h-7 rounded hover:bg-slate-200 flex items-center justify-center underline text-slate-700 transition-colors">S</button>
+            <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+            <button type="button" @mousedown.prevent="fmt('fontSize','5')" title="Título"
+                    class="px-1.5 h-7 rounded hover:bg-slate-200 text-base font-bold text-slate-700 transition-colors leading-none">A</button>
+            <button type="button" @mousedown.prevent="fmt('fontSize','3')" title="Texto normal"
+                    class="px-1.5 h-7 rounded hover:bg-slate-200 text-sm text-slate-500 transition-colors leading-none">a</button>
+            <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+            <button type="button" @mousedown.prevent="fmt('justifyLeft')" title="Alinear izquierda"
+                    class="w-7 h-7 rounded hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
+              <i class="fa-solid fa-align-left text-xs"></i></button>
+            <button type="button" @mousedown.prevent="fmt('justifyCenter')" title="Centrar"
+                    class="w-7 h-7 rounded hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
+              <i class="fa-solid fa-align-center text-xs"></i></button>
+            <button type="button" @mousedown.prevent="fmt('justifyRight')" title="Alinear derecha"
+                    class="w-7 h-7 rounded hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
+              <i class="fa-solid fa-align-right text-xs"></i></button>
+            <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+            <button type="button" @mousedown.prevent="fmt('foreColor','#111827')" title="Negro"
+                    class="w-5 h-5 rounded-full border-2 border-white ring-1 ring-slate-300 hover:scale-110 transition-transform flex-shrink-0" style="background:#111827"></button>
+            <button type="button" @mousedown.prevent="fmt('foreColor','#1d4ed8')" title="Azul"
+                    class="w-5 h-5 rounded-full border-2 border-white ring-1 ring-slate-300 hover:scale-110 transition-transform flex-shrink-0" style="background:#1d4ed8"></button>
+            <button type="button" @mousedown.prevent="fmt('foreColor','#dc2626')" title="Rojo"
+                    class="w-5 h-5 rounded-full border-2 border-white ring-1 ring-slate-300 hover:scale-110 transition-transform flex-shrink-0" style="background:#dc2626"></button>
+            <button type="button" @mousedown.prevent="fmt('foreColor','#16a34a')" title="Verde"
+                    class="w-5 h-5 rounded-full border-2 border-white ring-1 ring-slate-300 hover:scale-110 transition-transform flex-shrink-0" style="background:#16a34a"></button>
+            <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+            <button type="button" @mousedown.prevent="insertFlyer()"
+                    title="Insertar la imagen del flyer en este punto del correo"
+                    class="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors">
+              <i class="fa-solid fa-image"></i> Insertar flyer
             </button>
           </div>
-        </form>
+
+          <!-- Variables para insertar -->
+          <div class="flex flex-wrap items-center gap-1 bg-violet-50/70 border border-b-0 border-slate-200 px-2 py-1.5 select-none">
+            <span class="text-xs text-slate-400 shrink-0 mr-0.5">Insertar:</span>
+            <button type="button" @mousedown.prevent="insertVar('nombre')"
+                    class="text-xs bg-violet-100 text-violet-700 border border-violet-200 rounded-full px-2.5 py-0.5 hover:bg-violet-200 transition-colors">Nombre</button>
+            <button type="button" @mousedown.prevent="insertVar('apellido')"
+                    class="text-xs bg-violet-100 text-violet-700 border border-violet-200 rounded-full px-2.5 py-0.5 hover:bg-violet-200 transition-colors">Apellido</button>
+            <button type="button" @mousedown.prevent="insertVar('titulo')"
+                    class="text-xs bg-violet-100 text-violet-700 border border-violet-200 rounded-full px-2.5 py-0.5 hover:bg-violet-200 transition-colors">Título</button>
+            <button type="button" @mousedown.prevent="insertVar('evento_titulo')"
+                    class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 hover:bg-emerald-200 transition-colors">Nombre del evento</button>
+            <button type="button" @mousedown.prevent="insertVar('evento_fecha')"
+                    class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 hover:bg-emerald-200 transition-colors">Fecha</button>
+            <button type="button" @mousedown.prevent="insertVar('evento_hora')"
+                    class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 hover:bg-emerald-200 transition-colors">Hora</button>
+            <button type="button" @mousedown.prevent="insertVar('evento_lugar')"
+                    class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 hover:bg-emerald-200 transition-colors">Lugar</button>
+          </div>
+
+          <!-- Área de escritura -->
+          <div id="ev-editor" x-ref="editor" contenteditable="true"
+               class="min-h-64 border border-slate-200 rounded-b-lg p-4 text-sm text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent bg-white"
+               @input="syncContent()"
+               @keyup="saveSelection()"
+               @mouseup="saveSelection()"
+               @click="saveSelection()"
+               x-init="initEditor()">
+          </div>
+        </div>
+
+        <!-- Acciones guardar -->
+        <div class="flex items-center gap-3 flex-wrap">
+          <button type="button" @click="guardar()" :disabled="guardando"
+                  class="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
+            <i class="fa-solid fa-floppy-disk" x-show="!guardando"></i>
+            <i class="fa-solid fa-circle-notch fa-spin" x-show="guardando" x-cloak></i>
+            <span x-text="guardando ? 'Guardando…' : 'Guardar plantilla'"></span>
+          </button>
+          <span x-show="guardadoOk" x-cloak class="text-xs text-green-600 flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-check"></i> ¡Guardado!
+          </span>
+        </div>
 
         <!-- Enviar prueba -->
         <div class="border border-slate-200 rounded-xl p-4 space-y-2 bg-slate-50">
           <p class="text-xs font-semibold text-slate-600">
             <i class="fa-solid fa-flask mr-1 text-slate-400"></i> Enviar correo de prueba
           </p>
-          <p class="text-xs text-slate-400">Usa datos de muestra (Carlos García Ríos · Contador). El asunto lleva <code class="bg-white border border-slate-200 rounded px-1">[PRUEBA]</code>.</p>
+          <p class="text-xs text-slate-400">Muestra: <strong class="text-slate-600">Carlos García Ríos · Contador</strong> — asunto lleva <code class="bg-white border border-slate-200 rounded px-1">[PRUEBA]</code>.</p>
           <div class="flex gap-2">
             <input type="email" x-model="pruebaEmail" placeholder="tucorreo@ejemplo.com"
                    class="input flex-1 text-sm" @keydown.enter.prevent="enviarPrueba()">
@@ -295,7 +338,7 @@ window._eventoData = {
                     class="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
               <i class="fa-solid fa-paper-plane" x-show="!pruebaEnviando"></i>
               <i class="fa-solid fa-circle-notch fa-spin" x-show="pruebaEnviando" x-cloak></i>
-              <span x-text="pruebaEnviando ? 'Enviando…' : 'Enviar'"></span>
+              <span x-text="pruebaEnviando ? 'Enviando…' : 'Enviar prueba'"></span>
             </button>
           </div>
           <p x-show="pruebaOk" x-cloak class="text-xs text-green-600 flex items-center gap-1.5">
@@ -303,35 +346,36 @@ window._eventoData = {
           </p>
           <p x-show="pruebaError" x-cloak class="text-xs text-red-500" x-text="pruebaError"></p>
         </div>
+
       </div>
 
       <!-- ── Columna derecha: vista previa en vivo ── -->
-      <div class="lg:sticky lg:top-4 space-y-2 self-start">
+      <div class="xl:sticky xl:top-4 space-y-2 self-start">
         <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Vista previa en tiempo real</p>
         <div class="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
           <!-- Cabecera simulada de cliente de correo -->
           <div class="bg-slate-50 border-b border-slate-100 px-4 py-3 space-y-1">
-            <div class="flex items-start gap-2 text-xs text-slate-500">
+            <div class="flex items-start gap-2 text-xs">
               <span class="text-slate-400 w-12 shrink-0">De:</span>
               <span class="text-slate-700">IPIDET &lt;administracion@ipidet.org&gt;</span>
             </div>
-            <div class="flex items-start gap-2 text-xs text-slate-500">
+            <div class="flex items-start gap-2 text-xs">
               <span class="text-slate-400 w-12 shrink-0">Para:</span>
               <span class="text-slate-700">Carlos García Ríos &lt;carlos@ejemplo.com&gt;</span>
             </div>
-            <div class="flex items-start gap-2 text-xs text-slate-500">
+            <div class="flex items-start gap-2 text-xs">
               <span class="text-slate-400 w-12 shrink-0">Asunto:</span>
               <span class="text-slate-800 font-medium" x-text="previewAsunto || '(sin asunto)'"></span>
             </div>
           </div>
-          <!-- Cuerpo del email renderizado -->
-          <iframe :srcdoc="previewHtml || '<p style=\'padding:20px;color:#94a3b8;font-size:13px;\'>El cuerpo del correo aparecerá aquí mientras escribes…</p>'"
+          <!-- Cuerpo renderizado -->
+          <iframe :srcdoc="previewHtml || '<p style=\'padding:24px;color:#94a3b8;font-size:13px;\'>Escribe el correo y aquí verás la vista previa en tiempo real…</p>'"
                   class="w-full bg-white border-0"
-                  style="min-height:420px; height:420px"
+                  style="min-height:460px;height:460px"
                   sandbox="allow-same-origin"></iframe>
         </div>
         <p class="text-xs text-slate-400">
-          Muestra de variables: <strong>Carlos García Ríos</strong> · Contador · datos del evento
+          Los bloques de color se reemplazan con los datos reales de cada destinatario al enviar.
         </p>
       </div>
 
@@ -708,78 +752,213 @@ window._eventoData = {
 {% raw %}
 function eventoComms() {
   const d = window._eventoData || {};
-  function applyVars(text, s) {
-    if (!text) return '';
-    return text
-      .replace(/\{\{nombre\}\}/g,         s.nombre)
-      .replace(/\{\{apellido\}\}/g,        s.apellido)
-      .replace(/\{\{titulo\}\}/g,          s.titulo)
-      .replace(/\{\{evento_titulo\}\}/g,   s.evento_titulo)
-      .replace(/\{\{evento_fecha\}\}/g,    s.evento_fecha)
-      .replace(/\{\{evento_hora\}\}/g,     s.evento_hora)
-      .replace(/\{\{evento_lugar\}\}/g,    s.evento_lugar)
-      .replace(/\{\{flyer_url\}\}/g,       s.flyer_url);
+
+  const VAR_LABELS = {
+    nombre:        'Nombre del socio',
+    apellido:      'Apellido',
+    titulo:        'Título profesional',
+    evento_titulo: 'Nombre del evento',
+    evento_fecha:  'Fecha del evento',
+    evento_hora:   'Hora del evento',
+    evento_lugar:  'Lugar del evento',
+  };
+
+  // Convierte el HTML del editor (con chips) al formato plantilla (con {{var}})
+  function serialize(html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('[data-var]').forEach(el => {
+      el.replaceWith(document.createTextNode('{{' + el.getAttribute('data-var') + '}}'));
+    });
+    tmp.querySelectorAll('[data-flyer]').forEach(el => {
+      const img = document.createElement('img');
+      img.setAttribute('src', '{{flyer_url}}');
+      img.setAttribute('alt', 'Flyer del evento');
+      img.setAttribute('style', 'max-width:100%;display:block;margin:16px auto;');
+      el.replaceWith(img);
+    });
+    return tmp.innerHTML;
   }
+
+  // Convierte el formato plantilla al HTML visual con chips para el editor
+  function deserialize(text) {
+    let html = text || '';
+    Object.keys(VAR_LABELS).forEach(k => {
+      html = html.replace(
+        new RegExp('\\{\\{' + k + '\\}\\}', 'g'),
+        '<span contenteditable="false" data-var="' + k + '" class="ev-var-chip">' + VAR_LABELS[k] + '</span>'
+      );
+    });
+    html = html.replace(
+      /<img[^>]*src=["']\{\{flyer_url\}\}["'][^>]*>/gi,
+      '<div contenteditable="false" data-flyer="1" class="ev-flyer-block"><i class="fa-solid fa-image" style="margin-right:6px;"></i>Flyer del evento</div>'
+    );
+    return html;
+  }
+
   return {
     tab:         'flyer',
-    lastFocused: 'email_cuerpo_input',
     emailAsunto: d.emailAsunto || '',
     emailCuerpo: d.emailCuerpo || '',
     flyerUrl:    d.flyerUrl    || '',
     dragging:    false,
+    savedRange:  null,
+    syncTimer:   null,
+    guardando:   false,
+    guardadoOk:  false,
     pruebaEmail: '', pruebaEnviando: false, pruebaOk: false, pruebaError: '',
+
     get sampleVars() {
       return {
-        nombre: 'Carlos', apellido: 'García Ríos', titulo: 'Contador',
-        evento_titulo: d.titulo || '', evento_fecha: d.fecha || '',
-        evento_hora:   d.hora   || '', evento_lugar: d.lugar || '',
+        nombre:        'Carlos',
+        apellido:      'García Ríos',
+        titulo:        'Contador',
+        evento_titulo: d.titulo || '',
+        evento_fecha:  d.fecha  || '',
+        evento_hora:   d.hora   || '',
+        evento_lugar:  d.lugar  || '',
         flyer_url:     this.flyerUrl || '',
       };
     },
-    get previewAsunto() { return applyVars(this.emailAsunto, this.sampleVars); },
-    get previewHtml()   { return applyVars(this.emailCuerpo, this.sampleVars); },
-    loadFile(file) {
-      if (!file || !file.type.startsWith('image/')) return;
-      if (file.size > 2 * 1024 * 1024) { alert('El archivo supera los 2 MB'); return; }
-      const reader = new FileReader();
-      reader.onload = (e) => { this.flyerUrl = e.target.result; };
-      reader.readAsDataURL(file);
+
+    get previewAsunto() {
+      const sv = this.sampleVars;
+      return (this.emailAsunto || '')
+        .replace(/\{\{nombre\}\}/g,       sv.nombre)
+        .replace(/\{\{apellido\}\}/g,      sv.apellido)
+        .replace(/\{\{titulo\}\}/g,        sv.titulo)
+        .replace(/\{\{evento_titulo\}\}/g, sv.evento_titulo)
+        .replace(/\{\{evento_fecha\}\}/g,  sv.evento_fecha)
+        .replace(/\{\{evento_hora\}\}/g,   sv.evento_hora)
+        .replace(/\{\{evento_lugar\}\}/g,  sv.evento_lugar);
     },
-    handleFileDrop(e)   { this.loadFile(e.dataTransfer?.files?.[0]); },
-    handleFileSelect(e) { this.loadFile(e.target?.files?.[0]); e.target.value = ''; },
+
+    get previewHtml() {
+      const sv = this.sampleVars;
+      let html = this.emailCuerpo || '';
+      html = html
+        .replace(/\{\{nombre\}\}/g,       sv.nombre)
+        .replace(/\{\{apellido\}\}/g,      sv.apellido)
+        .replace(/\{\{titulo\}\}/g,        sv.titulo)
+        .replace(/\{\{evento_titulo\}\}/g, sv.evento_titulo)
+        .replace(/\{\{evento_fecha\}\}/g,  sv.evento_fecha)
+        .replace(/\{\{evento_hora\}\}/g,   sv.evento_hora)
+        .replace(/\{\{evento_lugar\}\}/g,  sv.evento_lugar);
+      if (sv.flyer_url) {
+        html = html.replace(/\{\{flyer_url\}\}/g, sv.flyer_url);
+      } else {
+        html = html.replace(
+          /<img[^>]*src=["']\{\{flyer_url\}\}["'][^>]*>/gi,
+          '<div style="border:2px dashed #93c5fd;border-radius:8px;padding:28px 20px;text-align:center;color:#3b82f6;background:#eff6ff;margin:16px 0;font-size:14px;">📷 Sube el flyer (pestaña Flyer) para verlo aquí</div>'
+        );
+      }
+      return '<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#374151;line-height:1.8;padding:20px 24px;">' + html + '</div>';
+    },
+
+    _doSync() {
+      const el = this.$refs.editor;
+      if (el) this.emailCuerpo = serialize(el.innerHTML);
+    },
+
+    syncContent() {
+      clearTimeout(this.syncTimer);
+      this.syncTimer = setTimeout(() => this._doSync(), 350);
+    },
+
+    initEditor() {
+      const el = this.$refs.editor;
+      if (!el) return;
+      el.innerHTML = deserialize(this.emailCuerpo);
+    },
+
+    saveSelection() {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const r = sel.getRangeAt(0);
+      const el = this.$refs.editor;
+      if (el && el.contains(r.commonAncestorContainer)) {
+        this.savedRange = r.cloneRange();
+      }
+    },
+
+    restoreSelection() {
+      const el = this.$refs.editor;
+      if (!el) return;
+      el.focus();
+      if (!this.savedRange) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
+      try {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(this.savedRange);
+      } catch(e) {}
+    },
+
+    fmt(cmd, value) {
+      this.restoreSelection();
+      document.execCommand(cmd, false, value !== undefined ? String(value) : null);
+      this._doSync();
+    },
+
+    insertHtml(html) {
+      this.restoreSelection();
+      document.execCommand('insertHTML', false, html);
+      this._doSync();
+      setTimeout(() => this.saveSelection(), 30);
+    },
+
     insertVar(varName) {
-      const el = document.getElementById(this.lastFocused) || document.getElementById('email_cuerpo_input');
-      if (!el) return;
-      const pos = el.selectionStart || 0;
-      const ins = '{{' + varName + '}}';
-      el.value = el.value.slice(0, pos) + ins + el.value.slice(el.selectionEnd || pos);
-      el.selectionStart = el.selectionEnd = pos + ins.length;
-      el.focus(); el.dispatchEvent(new Event('input'));
-      if (el.id === 'email_cuerpo_input') this.emailCuerpo = el.value;
-      else if (el.id === 'email_asunto_input') this.emailAsunto = el.value;
+      const label = VAR_LABELS[varName] || varName;
+      this.insertHtml(
+        '<span contenteditable="false" data-var="' + varName + '" class="ev-var-chip">' + label + '</span>&#8203;'
+      );
     },
-    insertFlyerImg() {
-      const el = document.getElementById('email_cuerpo_input');
-      if (!el) return;
-      this.lastFocused = 'email_cuerpo_input';
-      const flyrVar = '{{' + 'flyer_url' + '}}';
-      const tag = '<img src="' + flyrVar + '" alt="Flyer del evento" style="max-width:100%;display:block;margin:16px auto;">';
-      const pos = el.selectionStart || 0;
-      el.value = el.value.slice(0, pos) + tag + el.value.slice(el.selectionEnd || pos);
-      el.selectionStart = el.selectionEnd = pos + tag.length;
-      el.focus(); el.dispatchEvent(new Event('input'));
-      this.emailCuerpo = el.value;
+
+    insertFlyer() {
+      this.insertHtml(
+        '<div contenteditable="false" data-flyer="1" class="ev-flyer-block"><i class="fa-solid fa-image" style="margin-right:6px;"></i>Flyer del evento</div><p><br></p>'
+      );
     },
+
+    async guardar() {
+      this._doSync();
+      this.guardando = true;
+      const eventId = window.location.pathname.split('/').filter(Boolean)[1];
+      try {
+        const fd = new FormData();
+        fd.append('flyer_url', this.flyerUrl || '');
+        fd.append('email_asunto', this.emailAsunto || '');
+        fd.append('email_cuerpo', this.emailCuerpo || '');
+        const r = await fetch('/eventos/' + eventId + '/update-comunicaciones', { method: 'POST', body: fd });
+        if (r.ok) {
+          this.guardadoOk = true;
+          setTimeout(() => { this.guardadoOk = false; }, 3000);
+        }
+      } catch(e) {
+        alert('Error al guardar: ' + e.message);
+      } finally {
+        this.guardando = false;
+      }
+    },
+
     async enviarPrueba() {
       const email = this.pruebaEmail.trim();
       if (!email) { this.pruebaError = 'Ingresa un email de destino'; return; }
+      this._doSync();
       this.pruebaEnviando = true; this.pruebaOk = false; this.pruebaError = '';
+      const eventId = window.location.pathname.split('/').filter(Boolean)[1];
       try {
-        const eventId = window.location.pathname.split('/').filter(Boolean)[1];
         const r = await fetch('/eventos/' + eventId + '/enviar-prueba', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({email, asunto: this.emailAsunto, cuerpo: this.emailCuerpo}),
+          body: JSON.stringify({ email, asunto: this.emailAsunto, cuerpo: this.emailCuerpo }),
         });
         const resp = await r.json();
         if (resp.ok) { this.pruebaOk = true; setTimeout(() => { this.pruebaOk = false; }, 6000); }
@@ -790,6 +969,16 @@ function eventoComms() {
         this.pruebaEnviando = false;
       }
     },
+
+    loadFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      if (file.size > 2 * 1024 * 1024) { alert('El archivo supera los 2 MB'); return; }
+      const reader = new FileReader();
+      reader.onload = (e) => { this.flyerUrl = e.target.result; };
+      reader.readAsDataURL(file);
+    },
+    handleFileDrop(e)   { this.loadFile(e.dataTransfer?.files?.[0]); },
+    handleFileSelect(e) { this.loadFile(e.target?.files?.[0]); e.target.value = ''; },
   };
 }
 {% endraw %}
