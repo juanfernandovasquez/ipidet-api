@@ -107,7 +107,7 @@
      ═══════════════════════════════════════════════════════════ -->
 {% set ok_comms = request.query_params.get('ok') == 'comms' %}
 <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5"
-     x-data='eventoComms({{ (evento.email_cuerpo or "") | tojson }}, {{ evento.titulo | tojson }}, {{ evento.fecha | tojson }}, {{ evento.hora | tojson }}, {{ evento.lugar | tojson }})'>
+     x-data='eventoComms({{ (evento.email_cuerpo or "") | tojson }}, {{ evento.titulo | tojson }}, {{ evento.fecha | tojson }}, {{ evento.hora | tojson }}, {{ evento.lugar | tojson }}, {{ (evento.flyer_url or "") | tojson }})'>
 
   <!-- Cabecera con tabs -->
   <div class="flex items-center justify-between mb-4">
@@ -137,48 +137,79 @@
   <!-- TAB FLYER -->
   <div x-show="tab==='flyer'" class="space-y-4">
     <form method="post" action="/eventos/{{ evento._id }}/update-comunicaciones" class="space-y-4">
-      <!-- Preserve email fields (textarea para soportar HTML multilinea) -->
+      <!-- Preserve email fields -->
       <input type="hidden" name="email_asunto" value="{{ evento.email_asunto or '' }}">
       <textarea name="email_cuerpo" style="display:none">{{ evento.email_cuerpo or '' }}</textarea>
+      <!-- Campo oculto que recibe la URL final (externa o data URI del archivo subido) -->
+      <input type="hidden" name="flyer_url" x-model="flyerUrl">
 
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">URL del flyer</label>
-        <div class="flex gap-2">
-          <input name="flyer_url" type="url" value="{{ evento.flyer_url or '' }}"
-                 placeholder="https://..." class="input flex-1 text-sm"
-                 @input="$nextTick(() => {
-                   const v = $el.value.trim();
-                   const img = document.getElementById('flyer_preview');
-                   if (img) { img.src = v; img.classList.toggle('hidden', !v); }
-                 })">
-          <button type="submit" class="btn-primary text-sm px-4">Guardar</button>
+      <!-- Zona drag & drop -->
+      <div class="relative rounded-2xl border-2 transition-colors duration-150 overflow-hidden cursor-pointer select-none"
+           :class="dragging ? 'border-violet-400 bg-violet-50' : flyerUrl ? 'border-slate-200 bg-white' : 'border-dashed border-slate-300 bg-slate-50 hover:border-violet-300 hover:bg-violet-50'"
+           @click="$refs.fileInput.click()"
+           @dragover.prevent="dragging=true"
+           @dragenter.prevent="dragging=true"
+           @dragleave.prevent="dragging=false"
+           @drop.prevent="dragging=false; handleFileDrop($event)">
+
+        <!-- Input file oculto -->
+        <input type="file" x-ref="fileInput" accept="image/*" class="hidden"
+               @change="handleFileSelect($event)">
+
+        <!-- Estado: hay imagen -->
+        <div x-show="flyerUrl" class="flex flex-col items-center p-4 gap-3">
+          <img :src="flyerUrl" alt="Flyer"
+               class="max-h-64 max-w-full rounded-xl object-contain shadow-sm border border-slate-100">
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <i class="fa-solid fa-arrow-up-from-bracket"></i>
+            <span>Clic o arrastra para reemplazar</span>
+          </div>
         </div>
-        <p class="text-xs text-slate-400 mt-1">Pega la URL directa a la imagen (JPG, PNG, WebP).</p>
+
+        <!-- Estado: sin imagen -->
+        <div x-show="!flyerUrl" class="flex flex-col items-center justify-center py-14 gap-3">
+          <div class="w-14 h-14 rounded-2xl flex items-center justify-center transition-colors"
+               :class="dragging ? 'bg-violet-100' : 'bg-slate-100'">
+            <i class="fa-solid fa-cloud-arrow-up text-2xl transition-colors"
+               :class="dragging ? 'text-violet-500' : 'text-slate-400'"></i>
+          </div>
+          <div class="text-center">
+            <p class="text-sm font-medium transition-colors"
+               :class="dragging ? 'text-violet-700' : 'text-slate-600'">
+              <span x-show="!dragging">Arrastra el flyer aquí o <span class="text-violet-600 underline">haz clic para seleccionar</span></span>
+              <span x-show="dragging" x-cloak>Suelta la imagen aquí</span>
+            </p>
+            <p class="text-xs text-slate-400 mt-1">JPG, PNG, WebP · máx. 2 MB</p>
+          </div>
+        </div>
       </div>
 
-      <!-- Preview del flyer -->
-      {% if evento.flyer_url %}
-      <div class="mt-2">
-        <p class="text-xs font-medium text-slate-500 mb-2">Vista previa</p>
-        <img id="flyer_preview" src="{{ evento.flyer_url }}" alt="Flyer del evento"
-             class="max-w-sm rounded-xl border border-slate-200 shadow-sm object-contain max-h-64"
-             onerror="this.style.display='none'">
+      <!-- URL externa (opcional) -->
+      <div>
+        <label class="block text-xs font-medium text-slate-500 mb-1">O pega una URL externa</label>
+        <div class="flex gap-2">
+          <input type="url" x-model="flyerUrl" placeholder="https://..." class="input flex-1 text-sm"
+                 @click.stop>
+        </div>
       </div>
-      {% else %}
-      <div class="border-2 border-dashed border-slate-200 rounded-xl py-10 text-center">
-        <img id="flyer_preview" src="" alt="" class="hidden max-w-sm mx-auto rounded-xl mb-3 max-h-48 object-contain">
-        <i class="fa-solid fa-image text-3xl text-slate-200 mb-2"></i>
-        <p class="text-sm text-slate-400">Sin flyer cargado aún</p>
+
+      <!-- Acciones -->
+      <div class="flex items-center gap-3">
+        <button type="submit" class="btn-primary text-sm">
+          <i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar flyer
+        </button>
+        <button type="button" x-show="flyerUrl" @click.prevent="flyerUrl=''" x-cloak
+                class="text-sm text-red-400 hover:text-red-600 transition-colors">
+          <i class="fa-solid fa-trash-can mr-1"></i> Quitar flyer
+        </button>
       </div>
-      {% endif %}
     </form>
   </div>
 
   <!-- TAB PLANTILLA EMAIL -->
   <div x-show="tab==='email'" x-cloak class="space-y-4">
     <form method="post" action="/eventos/{{ evento._id }}/update-comunicaciones" class="space-y-4">
-      <!-- Preserve flyer -->
-      <input type="hidden" name="flyer_url" value="{{ evento.flyer_url or '' }}">
+      <input type="hidden" name="flyer_url" x-model="flyerUrl">
 
       <!-- Variables disponibles -->
       <div>
@@ -630,12 +661,14 @@
 {% endif %}
 
 <script>
-function eventoComms(emailCuerpo, eventoTitulo, eventoFecha, eventoHora, eventoLugar) {
+function eventoComms(emailCuerpo, eventoTitulo, eventoFecha, eventoHora, eventoLugar, flyerUrlInit) {
   return {
     tab: 'flyer',
     previewMode: false,
     lastFocused: 'email_asunto_input',
     emailCuerpo: emailCuerpo || '',
+    flyerUrl: flyerUrlInit || '',
+    dragging: false,
     sampleVars: {
       nombre: 'Carlos', apellido: 'García Ríos', titulo: 'Contador',
       evento_titulo: eventoTitulo || '',
@@ -653,6 +686,22 @@ function eventoComms(emailCuerpo, eventoTitulo, eventoFecha, eventoHora, eventoL
         .replace(/\{\{evento_fecha\}\}/g,    s.evento_fecha)
         .replace(/\{\{evento_hora\}\}/g,     s.evento_hora)
         .replace(/\{\{evento_lugar\}\}/g,    s.evento_lugar);
+    },
+    loadFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+      if (file.size > 2 * 1024 * 1024) { alert('El archivo supera los 2 MB'); return; }
+      const reader = new FileReader();
+      reader.onload = (e) => { this.flyerUrl = e.target.result; };
+      reader.readAsDataURL(file);
+    },
+    handleFileDrop(e) {
+      const file = e.dataTransfer?.files?.[0];
+      this.loadFile(file);
+    },
+    handleFileSelect(e) {
+      const file = e.target?.files?.[0];
+      this.loadFile(file);
+      e.target.value = '';
     },
     insertVar(varName) {
       const el = document.getElementById(this.lastFocused);
