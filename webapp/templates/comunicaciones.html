@@ -904,7 +904,12 @@
               :disabled="enviando"
               class="btn-primary text-sm disabled:opacity-40">
               <i class="fa-solid fa-spinner fa-spin mr-1" x-show="enviando" x-cloak></i>
-              <span x-text="enviando ? 'Enviando…' : 'Sí, enviar'"></span>
+              <span x-text="enviando ? 'Enviando…' : 'Sí, enviar ahora'"></span>
+            </button>
+            <button type="button" @click="crearCampana()"
+              :disabled="enviando"
+              class="btn-ghost text-sm disabled:opacity-40 flex items-center gap-1.5">
+              <i class="fa-solid fa-layer-group"></i> Guardar como campaña
             </button>
             <button type="button" @click="confirmando = false" class="btn-ghost text-sm">Cancelar</button>
           </div>
@@ -1948,6 +1953,48 @@ function comunicaciones() {
         }
       } catch {
         this.errorMsg    = 'Error de red. Intenta nuevamente.';
+        this.confirmando = false;
+      } finally {
+        this.enviando = false;
+      }
+    },
+
+    async crearCampana() {
+      if (!this.asunto || !this.cuerpo) {
+        this.errorMsg = 'Completa el asunto y el cuerpo antes de crear la campaña.';
+        this.confirmando = false; return;
+      }
+      if (!this.seleccionados.length) {
+        this.errorMsg = 'No hay destinatarios seleccionados.';
+        this.confirmando = false; return;
+      }
+      this.enviando = true;
+      try {
+        const fuente = this.filtros.modo === 'publico' ? 'publico' : 'socios';
+        const filtros = fuente === 'publico'
+          ? { ...this.filtrosPublico }
+          : { ...this.filtros, periodo: this._periodoParaFiltro() };
+        const r = await fetch('/campanas/crear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asunto:        this.asunto,
+            cuerpo:        this.cuerpo,
+            fuente:        fuente,
+            filtros:       filtros,
+            destinatarios: this.seleccionados,
+            disclaimer:    this.disclaimer,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok && data.id) {
+          window.location.href = '/comunicaciones/campanas/' + data.id;
+        } else {
+          this.errorMsg = data.error || 'Error al crear la campaña.';
+          this.confirmando = false;
+        }
+      } catch {
+        this.errorMsg = 'Error de red.';
         this.confirmando = false;
       } finally {
         this.enviando = false;

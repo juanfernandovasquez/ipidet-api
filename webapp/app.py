@@ -2972,6 +2972,118 @@ async def sunat_anular(comp_id: str, request: Request):
     return resultado
 
 
+# ── Campañas por lotes ────────────────────────────────────────────────────────
+
+@app.post("/campanas/crear")
+async def campana_crear(request: Request):
+    from bson import ObjectId
+    data          = await request.json()
+    asunto        = (data.get("asunto") or "").strip()
+    cuerpo        = (data.get("cuerpo") or "").strip()
+    fuente        = (data.get("fuente") or "socios").strip()
+    filtros       = data.get("filtros", {})
+    destinatarios = data.get("destinatarios", [])
+    disclaimer    = data.get("disclaimer", True)
+    if not asunto or not cuerpo:
+        return JSONResponse({"error": "Asunto y cuerpo son obligatorios."}, status_code=422)
+    if not destinatarios:
+        return JSONResponse({"error": "Sin destinatarios."}, status_code=422)
+    campana_id = pdb.create_campana(asunto, cuerpo, fuente, filtros, destinatarios, disclaimer)
+    return {"ok": True, "id": campana_id}
+
+
+@app.get("/comunicaciones/campanas", response_class=HTMLResponse)
+async def campanas_list(request: Request):
+    campanas = pdb.get_campanas()
+    return templates.TemplateResponse(request, "campanas.html", _ctx(request, campanas=campanas))
+
+
+@app.get("/comunicaciones/campanas/{campana_id}", response_class=HTMLResponse)
+async def campana_detalle(request: Request, campana_id: str):
+    campana = pdb.get_campana(campana_id)
+    if not campana:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+    return templates.TemplateResponse(request, "campana_detalle.html", _ctx(request, campana=campana))
+
+
+@app.post("/campanas/{campana_id}/enviar-lote")
+async def campana_enviar_lote(request: Request, campana_id: str):
+    from bson import ObjectId
+    from datetime import datetime, timezone
+    data = await request.json()
+    n    = max(1, min(int(data.get("n", 250)), 1000))
+
+    campana = pdb.get_campana(campana_id)
+    if not campana:
+        return JSONResponse({"error": "Campaña no encontrada"}, status_code=404)
+    if campana["estado"] == "completada":
+        return JSONResponse({"error": "Campaña ya completada."}, status_code=400)
+
+    pendientes = [d for d in campana["destinatarios"] if d["estado"] == "pendiente"][:n]
+    if not pendientes:
+        return JSONResponse({"error": "No hay destinatarios pendientes."}, status_code=400)
+
+    ahora_iso  = datetime.now(timezone.utc).isoformat()
+    enviados_ok = 0
+    fallidos_n  = 0
+
+    for d in pendientes:
+        email    = d.get("email", "")
+        nombre   = d.get("nombre", "") or "asociado/a"
+        apellido = d.get("apellido", "")
+        asunto_p = campana["asunto"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
+        cuerpo_p = campana["cuerpo"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
+        html_body = mailer._base_html(
+            f'<div style="color:#475569;line-height:1.7">{mailer._render_body(cuerpo_p)}</div>',
+            disclaimer=campana.get("disclaimer", True),
+        )
+        try:
+            ok, err = await mailer.send_email(email, asunto_p, html_body)
+            if ok:
+                enviados_ok += 1
+                pdb.campanas_col.update_one(
+                    {"_id": ObjectId(campana_id)},
+                    {"$set": {"destinatarios.$[el].estado": "enviado",
+                               "destinatarios.$[el].enviado_at": ahora_iso},
+                     "$inc": {"enviados": 1}},
+                    array_filters=[{"el.email": email, "el.estado": "pendiente"}],
+                )
+            else:
+                fallidos_n += 1
+                pdb.campanas_col.update_one(
+                    {"_id": ObjectId(campana_id)},
+                    {"$set": {"destinatarios.$[el].estado": "fallido",
+                               "destinatarios.$[el].error": str(err)},
+                     "$inc": {"fallidos": 1}},
+                    array_filters=[{"el.email": email, "el.estado": "pendiente"}],
+                )
+        except Exception as exc:
+            fallidos_n += 1
+            pdb.campanas_col.update_one(
+                {"_id": ObjectId(campana_id)},
+                {"$set": {"destinatarios.$[el].estado": "fallido",
+                           "destinatarios.$[el].error": str(exc)},
+                 "$inc": {"fallidos": 1}},
+                array_filters=[{"el.email": email, "el.estado": "pendiente"}],
+            )
+
+    campana_upd = pdb.get_campana(campana_id)
+    pendientes_restantes = sum(1 for d in campana_upd["destinatarios"] if d["estado"] == "pendiente")
+    nuevo_estado = "completada" if pendientes_restantes == 0 else "en_progreso"
+    pdb.campanas_col.update_one(
+        {"_id": ObjectId(campana_id)},
+        {"$set": {"estado": nuevo_estado, "updated_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True, "enviados": enviados_ok, "fallidos": fallidos_n,
+            "pendientes": pendientes_restantes, "estado": nuevo_estado}
+
+
+@app.post("/campanas/{campana_id}/delete")
+async def campana_delete(campana_id: str):
+    pdb.delete_campana(campana_id)
+    return RedirectResponse("/comunicaciones/campanas", status_code=303)
+
+
 # ── Comunicaciones ────────────────────────────────────────────────────────────
 
 @app.get("/comunicaciones", response_class=HTMLResponse)
@@ -3384,6 +3496,7 @@ async def brevo_bounce(request: Request):
 
     bounce_type = "hard" if event in ("hard_bounce", "invalid_email", "blocked") else "soft"
     pdb.mark_email_bounce(email, bounce_type, reason=f"{event}: {reason}".strip(": "))
+    pdb.marcar_rebote_campana(email)
     return {"ok": True, "email": email, "bounce_type": bounce_type}
 
 

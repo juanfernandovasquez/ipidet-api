@@ -187,6 +187,9 @@
       <a href="/comunicaciones" class="sidebar-link {% if request.url.path == '/comunicaciones' %}active{% endif %}">
         <i class="fa-solid fa-paper-plane"></i> Comunicaciones
       </a>
+      <a href="/comunicaciones/campanas" class="sidebar-link {% if '/comunicaciones/campanas' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-layer-group"></i> Campañas
+      </a>
       <a href="/comunicaciones/rebotes" class="sidebar-link {% if '/comunicaciones/rebotes' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-envelope-circle-check"></i> Rebotes
       </a>

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Campañas — IPIDET{% endblock %}
+{% block heading %}Campañas por lotes{% endblock %}
+
+{% block header_actions %}
+<a href="/comunicaciones" class="btn-ghost flex items-center gap-2 text-sm">
+  <i class="fa-solid fa-arrow-left"></i> Comunicaciones
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+
+  {% if not campanas %}
+  <div class="bg-white rounded-2xl border border-dashed border-slate-200 py-16 text-center">
+    <i class="fa-solid fa-layer-group text-4xl text-slate-200 mb-3 block"></i>
+    <p class="text-slate-400">No hay campañas creadas aún.</p>
+    <p class="text-sm text-slate-400 mt-1">
+      Crea una desde <a href="/comunicaciones" class="text-blue-500 hover:underline">Comunicaciones</a>
+      o <a href="/publico" class="text-blue-500 hover:underline">Público</a>.
+    </p>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-200">
+        <tr>
+          <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Asunto</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Fuente</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide min-w-[200px]">Progreso</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
+          <th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Creada</th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in campanas %}
+        {% set pct = ((c.enviados / c.total * 100) | round(0) | int) if c.total else 0 %}
+        {% set pendientes = c.total - c.enviados - c.fallidos %}
+        <tr class="hover:bg-slate-50 transition-colors">
+          <td class="px-4 py-3 font-medium text-slate-800 max-w-xs">
+            <a href="/comunicaciones/campanas/{{ c._id }}" class="hover:text-blue-600 truncate block">
+              {{ c.asunto }}
+            </a>
+          </td>
+          <td class="px-4 py-3">
+            {% if c.fuente == 'socios' %}
+            <span class="badge badge-blue">Socios</span>
+            {% else %}
+            <span class="badge badge-violet">Público</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                <div class="h-full rounded-full {{ 'bg-green-500' if c.estado == 'completada' else 'bg-blue-500' }}"
+                     style="width: {{ pct }}%"></div>
+              </div>
+              <span class="text-xs text-slate-500 tabular-nums whitespace-nowrap">
+                {{ c.enviados }}/{{ c.total }}
+              </span>
+            </div>
+            <div class="flex gap-3 mt-0.5 text-xs">
+              {% if pendientes > 0 %}<span class="text-amber-500">{{ pendientes }} pendientes</span>{% endif %}
+              {% if c.fallidos > 0 %}<span class="text-red-500">{{ c.fallidos }} fallidos</span>{% endif %}
+              {% if c.rebotados > 0 %}<span class="text-orange-500">{{ c.rebotados }} rebotados</span>{% endif %}
+            </div>
+          </td>
+          <td class="px-4 py-3">
+            {% if c.estado == 'completada' %}
+            <span class="badge badge-green">Completada</span>
+            {% elif c.estado == 'en_progreso' %}
+            <span class="badge badge-blue">En progreso</span>
+            {% else %}
+            <span class="badge badge-slate">Pendiente</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-xs text-slate-400">
+            {{ c.created_at[:10] if c.created_at else '—' }}
+          </td>
+          <td class="px-4 py-3">
+            <a href="/comunicaciones/campanas/{{ c._id }}"
+               class="text-slate-400 hover:text-blue-500 text-xs px-2 py-1 rounded hover:bg-blue-50 transition-colors">
+              <i class="fa-solid fa-arrow-right"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

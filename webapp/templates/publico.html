@@ -435,13 +435,22 @@
       </div>
       <div class="px-6 py-4 border-t border-slate-200 flex items-center justify-between flex-shrink-0">
         <button type="button" @click="modalCampana=false" class="btn-ghost">Cancelar</button>
-        <button type="button" @click="enviarCampana()"
-                class="btn-primary flex items-center gap-2"
-                :disabled="enviando || !campAsunto || !campCuerpo || !destinatariosAll.length"
-                :class="(enviando || !campAsunto || !campCuerpo || !destinatariosAll.length) ? 'opacity-60 cursor-not-allowed' : ''">
-          <i class="fa-solid fa-paper-plane" :class="enviando ? 'animate-bounce' : ''"></i>
-          <span x-text="enviando ? 'Enviando…' : (destinatariosAll.length ? 'Enviar a ' + destinatariosAll.length + ' contactos' : 'Enviar campaña')"></span>
-        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" @click="crearCampana()"
+                  class="btn-ghost flex items-center gap-1.5"
+                  :disabled="enviando || !campAsunto || !campCuerpo || !destinatariosAll.length"
+                  :class="(!campAsunto || !campCuerpo || !destinatariosAll.length) ? 'opacity-50 cursor-not-allowed' : ''">
+            <i class="fa-solid fa-layer-group text-violet-500"></i>
+            <span>Crear campaña</span>
+          </button>
+          <button type="button" @click="enviarCampana()"
+                  class="btn-primary flex items-center gap-2"
+                  :disabled="enviando || !campAsunto || !campCuerpo || !destinatariosAll.length"
+                  :class="(enviando || !campAsunto || !campCuerpo || !destinatariosAll.length) ? 'opacity-60 cursor-not-allowed' : ''">
+            <i class="fa-solid fa-paper-plane" :class="enviando ? 'animate-bounce' : ''"></i>
+            <span x-text="enviando ? 'Enviando…' : (destinatariosAll.length ? 'Enviar a ' + destinatariosAll.length + ' ahora' : 'Enviar campaña')"></span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -566,6 +575,31 @@ function publicoPage() {
       } finally {
         this.loadingPreview = false;
       }
+    },
+
+    async crearCampana() {
+      if (!this.campAsunto || !this.campCuerpo || !this.destinatariosAll.length) return;
+      this.enviando = true;
+      try {
+        const r = await fetch('/campanas/crear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asunto:        this.campAsunto,
+            cuerpo:        this.campCuerpo,
+            fuente:        'publico',
+            filtros:       this._filtros(),
+            destinatarios: this.destinatariosAll,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok && data.id) {
+          window.location.href = '/comunicaciones/campanas/' + data.id;
+        } else {
+          this.campError = data.error || 'Error al crear la campaña.';
+        }
+      } catch { this.campError = 'Error de red.'; }
+      finally  { this.enviando = false; }
     },
 
     async enviarCampana() {

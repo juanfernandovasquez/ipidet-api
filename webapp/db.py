@@ -2050,6 +2050,77 @@ def get_marketing_emails(titulo: str = "", ubicacion: str = "",
     return sorted(result, key=lambda x: x["nombre"])
 
 
+# ── Campañas por lotes ─────────────────────────────────────────────────────────
+
+campanas_col = _db["campanas"]
+
+
+def create_campana(asunto: str, cuerpo: str, fuente: str, filtros: dict,
+                   destinatarios: list, disclaimer: bool = True) -> str:
+    """fuente: 'socios' | 'publico'. Congela la lista completa de destinatarios."""
+    from datetime import datetime, timezone
+    ahora = datetime.now(timezone.utc)
+    dest_docs = [
+        {
+            "email":      d.get("email", ""),
+            "nombre":     d.get("nombre", "") or d.get("nombres", ""),
+            "apellido":   d.get("apellido", "") or d.get("apellidos", ""),
+            "id":         str(d.get("member_id") or d.get("_id") or ""),
+            "estado":     "pendiente",
+            "enviado_at": None,
+            "rebotado":   False,
+            "error":      None,
+        }
+        for d in destinatarios if d.get("email")
+    ]
+    doc = {
+        "asunto":        asunto.strip(),
+        "cuerpo":        cuerpo.strip(),
+        "fuente":        fuente,
+        "filtros":       filtros,
+        "disclaimer":    disclaimer,
+        "estado":        "pendiente",
+        "total":         len(dest_docs),
+        "enviados":      0,
+        "fallidos":      0,
+        "rebotados":     0,
+        "destinatarios": dest_docs,
+        "created_at":    ahora,
+        "updated_at":    ahora,
+    }
+    return str(campanas_col.insert_one(doc).inserted_id)
+
+
+def get_campanas(limit: int = 50) -> list:
+    docs = list(campanas_col.find({}, {"destinatarios": 0}).sort("created_at", -1).limit(limit))
+    return _clean(docs)
+
+
+def get_campana(campana_id: str) -> dict | None:
+    from bson import ObjectId
+    try:
+        doc = campanas_col.find_one({"_id": ObjectId(campana_id)})
+    except Exception:
+        return None
+    return _clean(doc) if doc else None
+
+
+def marcar_rebote_campana(email: str) -> None:
+    """Llamado desde el webhook de Brevo: marca el email como rebotado en todas las campañas activas."""
+    from datetime import datetime, timezone
+    campanas_col.update_many(
+        {"destinatarios": {"$elemMatch": {"email": email, "estado": "enviado"}}},
+        {"$set":  {"destinatarios.$[elem].rebotado": True},
+         "$inc":  {"rebotados": 1}},
+        array_filters=[{"elem.email": email, "elem.estado": "enviado"}],
+    )
+
+
+def delete_campana(campana_id: str) -> None:
+    from bson import ObjectId
+    campanas_col.delete_one({"_id": ObjectId(campana_id)})
+
+
 # ── Comunicaciones ─────────────────────────────────────────────────────────────
 
 comunicaciones_col = _db.comunicaciones
