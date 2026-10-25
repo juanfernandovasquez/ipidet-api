@@ -75,14 +75,21 @@
               <dt class="text-xs font-medium text-slate-400 mb-0.5">Fuente</dt>
               <dd class="text-slate-700">{{ prospecto.fuente or 'manual' }}{% if prospecto.fuente_detalle %} — {{ prospecto.fuente_detalle }}{% endif %}</dd>
             </div>
-            <div>
-              <dt class="text-xs font-medium text-slate-400 mb-0.5">Tags</dt>
+            <div class="col-span-2">
+              <dt class="text-xs font-medium text-slate-400 mb-1">Etiquetas</dt>
               <dd>
-                {% for tag in (prospecto.tags or []) %}
-                <span class="inline-block text-[10px] bg-violet-100 text-violet-700 rounded px-1.5 py-0.5 mr-0.5">{{ tag }}</span>
+                {% if prospecto.tags %}
+                <div class="flex flex-wrap gap-1">
+                  {% for tag in prospecto.tags %}
+                  <a href="/publico?tags={{ tag | urlencode }}"
+                     class="inline-block text-xs bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2.5 py-0.5 hover:bg-violet-100 transition-colors">
+                    <i class="fa-solid fa-tag text-[9px] mr-0.5"></i>{{ tag }}
+                  </a>
+                  {% endfor %}
+                </div>
                 {% else %}
-                <span class="text-slate-400">—</span>
-                {% endfor %}
+                <span class="text-slate-400 text-sm">Sin etiquetas</span>
+                {% endif %}
               </dd>
             </div>
             <div class="col-span-2">
@@ -152,10 +159,7 @@
                 <input type="text" name="fuente_detalle" value="{{ prospecto.fuente_detalle or '' }}" class="input w-full text-sm" placeholder="Feria 2026…">
               </div>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">Tags <span class="text-slate-400 font-normal">(separados por coma)</span></label>
-              <input type="text" name="tags" value="{{ (prospecto.tags or []) | join(', ') }}" class="input w-full text-sm">
-            </div>
+            <!-- Tags se gestionan desde el panel lateral; no en este formulario -->
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Notas</label>
               <textarea name="notas" rows="3" class="input w-full text-sm resize-none">{{ prospecto.notas or '' }}</textarea>
@@ -261,6 +265,60 @@
         </form>
       </div>
 
+      <!-- Gestión de etiquetas -->
+      <div class="bg-white rounded-2xl border border-slate-200 p-5"
+           x-data="tagsManager({{ (prospecto.tags or []) | tojson }}, {{ all_tags | tojson }}, '{{ prospecto._id }}')">
+        <h2 class="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-tags text-violet-500"></i> Etiquetas
+        </h2>
+        <!-- Tags actuales -->
+        <div class="flex flex-wrap gap-1.5 mb-3 min-h-[28px]">
+          <template x-for="tag in tags" :key="tag">
+            <span class="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 rounded-full pl-2.5 pr-1 py-0.5">
+              <span x-text="tag"></span>
+              <button type="button" @click="removeTag(tag)"
+                      class="w-4 h-4 rounded-full flex items-center justify-center hover:bg-violet-200 transition-colors text-violet-500">
+                <i class="fa-solid fa-xmark text-[9px]"></i>
+              </button>
+            </span>
+          </template>
+          <span x-show="tags.length === 0" class="text-xs text-slate-400 italic">Sin etiquetas</span>
+        </div>
+        <!-- Input para agregar -->
+        <div class="relative">
+          <input type="text" x-model="tagInput" placeholder="Agregar etiqueta…"
+                 @input="showSugg = tagInput.length > 0"
+                 @keydown.enter.prevent="addTag(tagInput)"
+                 @keydown.escape="showSugg = false"
+                 class="input w-full text-sm pr-8">
+          <button type="button" @click="addTag(tagInput)" x-show="tagInput"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-violet-500 hover:text-violet-700">
+            <i class="fa-solid fa-plus text-xs"></i>
+          </button>
+          <!-- Sugerencias -->
+          <div x-show="showSugg && filteredSuggs.length > 0" x-cloak @click.outside="showSugg=false"
+               class="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 py-1 max-h-40 overflow-y-auto">
+            <template x-for="s in filteredSuggs" :key="s.tag">
+              <button type="button" @click="addTag(s.tag)"
+                      class="w-full text-left px-3 py-1.5 text-sm hover:bg-violet-50 flex items-center justify-between">
+                <span x-text="s.tag" class="text-slate-700"></span>
+                <span x-text="s.count" class="text-xs text-slate-400"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+        <!-- Tags frecuentes como chips clickeables -->
+        <div class="mt-2 flex flex-wrap gap-1">
+          <template x-for="s in allTagData.filter(t => !tags.includes(t.tag)).slice(0, 8)" :key="s.tag">
+            <button type="button" @click="addTag(s.tag)"
+                    class="text-[10px] bg-slate-100 text-slate-500 rounded-full px-2 py-0.5 hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200 border border-transparent transition-colors">
+              + <span x-text="s.tag"></span>
+            </button>
+          </template>
+        </div>
+        <p x-show="savingTag" class="text-xs text-slate-400 mt-2">Guardando…</p>
+      </div>
+
       <!-- Postulación -->
       {% if prospecto.estado != 'convertido' %}
       <div class="bg-white rounded-2xl border border-slate-200 p-5">
@@ -349,8 +407,56 @@
 {% block scripts %}
 <script>
 function prospectoDetalle() {
+  return { editando: false };
+}
+
+function tagsManager(initialTags, allTagData, prospectoId) {
   return {
-    editando: false,
+    tags:       initialTags,
+    allTagData: allTagData,
+    tagInput:   '',
+    showSugg:   false,
+    savingTag:  false,
+
+    get filteredSuggs() {
+      if (!this.tagInput) return [];
+      const q = this.tagInput.toLowerCase();
+      return this.allTagData
+        .filter(t => t.tag.toLowerCase().includes(q) && !this.tags.includes(t.tag))
+        .slice(0, 6);
+    },
+
+    async addTag(tag) {
+      tag = (tag || '').trim().toLowerCase().replace(/\s+/g, '-');
+      if (!tag || this.tags.includes(tag)) { this.tagInput = ''; this.showSugg = false; return; }
+      this.tags.push(tag);
+      this.tagInput  = '';
+      this.showSugg  = false;
+      this.savingTag = true;
+      try {
+        await fetch('/publico/' + prospectoId + '/tags/add', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({tag}),
+        });
+        // Actualiza sugerencias si el tag es nuevo
+        if (!this.allTagData.find(t => t.tag === tag)) {
+          this.allTagData.unshift({tag, count: 1});
+        }
+      } finally { this.savingTag = false; }
+    },
+
+    async removeTag(tag) {
+      this.tags = this.tags.filter(t => t !== tag);
+      this.savingTag = true;
+      try {
+        await fetch('/publico/' + prospectoId + '/tags/remove', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({tag}),
+        });
+      } finally { this.savingTag = false; }
+    },
   };
 }
 </script>

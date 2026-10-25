@@ -4344,28 +4344,30 @@ async def publico_list(
     request: Request,
     search:   str = "", estado: str = "", ciudad: str = "",
     titulo:   str = "", empresa: str = "", fuente: str = "",
-    tag: str = "", es_socio: str = "", zoom_evento_id: List[str] = Query(default=[]),
+    tags: List[str] = Query(default=[]), es_socio: str = "",
+    zoom_evento_id: List[str] = Query(default=[]),
     zoom_asistio: str = "", page: int = 1,
 ):
     docs, total = pdb.get_prospectos(search=search, estado=estado, ciudad=ciudad,
                                      titulo=titulo, empresa=empresa, fuente=fuente,
-                                     tag=tag, es_socio=es_socio,
+                                     tags=tags, es_socio=es_socio,
                                      zoom_evento_ids=zoom_evento_id,
                                      zoom_asistio=zoom_asistio, page=page)
     stats             = pdb.get_publico_stats()
-    # Títulos: combinar los del padrón con los que vienen de Zoom
     titulos_members   = set(pdb.get_member_titulos())
     titulos_publico   = set(pdb.get_publico_titulos())
     titulos           = sorted(titulos_members | titulos_publico)
     zoom_eventos_disp = pdb.get_zoom_eventos_disponibles()
+    all_tags          = pdb.get_all_tags()
     return templates.TemplateResponse(request, "publico.html", _ctx(request,
         prospectos=docs, total=total, page=page,
         stats_publico=stats,
         titulos=titulos,
         zoom_eventos_disp=zoom_eventos_disp,
+        all_tags=all_tags,
         search=search, estado=estado, ciudad=ciudad,
         titulo=titulo, empresa=empresa, fuente=fuente,
-        tag=tag, es_socio=es_socio,
+        tags=tags, es_socio=es_socio,
         zoom_evento_ids=zoom_evento_id, zoom_asistio=zoom_asistio,
     ))
 
@@ -4466,10 +4468,40 @@ async def publico_detalle(request: Request, prospecto_id: str):
     p = pdb.get_prospecto(prospecto_id)
     if not p:
         return RedirectResponse("/publico", status_code=303)
-    titulos = pdb.get_member_titulos()
+    titulos  = pdb.get_member_titulos()
+    all_tags = pdb.get_all_tags()
     return templates.TemplateResponse(request, "publico_detalle.html", _ctx(request,
-        prospecto=p, titulos=titulos,
+        prospecto=p, titulos=titulos, all_tags=all_tags,
     ))
+
+
+@app.post("/publico/{prospecto_id}/tags/add")
+async def publico_tag_add(request: Request, prospecto_id: str):
+    data = await request.json()
+    tag  = (data.get("tag") or "").strip()
+    if tag:
+        pdb.publico_col.update_one(
+            {"_id": ObjectId(prospecto_id)},
+            {"$addToSet": {"tags": tag}},
+        )
+    return {"ok": True}
+
+
+@app.post("/publico/{prospecto_id}/tags/remove")
+async def publico_tag_remove(request: Request, prospecto_id: str):
+    data = await request.json()
+    tag  = (data.get("tag") or "").strip()
+    if tag:
+        pdb.publico_col.update_one(
+            {"_id": ObjectId(prospecto_id)},
+            {"$pull": {"tags": tag}},
+        )
+    return {"ok": True}
+
+
+@app.get("/api/publico/tags")
+async def api_publico_tags():
+    return pdb.get_all_tags()
 
 
 @app.post("/publico/{prospecto_id}/update")
@@ -4487,14 +4519,13 @@ async def publico_update(
     notas:          str = Form(""),
     fuente:         str = Form(""),
     fuente_detalle: str = Form(""),
-    tags:           str = Form(""),
 ):
-    tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+    # Tags gestionados via /tags/add y /tags/remove — no se tocan desde este form
     pdb.update_prospecto(prospecto_id, {
         "nombre": nombre, "apellido": apellido, "email": email.lower().strip(),
         "celular": celular, "dni": dni, "titulo": titulo, "empresa": empresa,
         "ciudad": ciudad, "notas": notas, "fuente": fuente,
-        "fuente_detalle": fuente_detalle, "tags": tags_list,
+        "fuente_detalle": fuente_detalle,
     })
     return RedirectResponse(f"/publico/{prospecto_id}?ok=actualizado", status_code=303)
 
@@ -4552,14 +4583,15 @@ async def api_publico_preview(request: Request):
     titulo         = data.get("titulo", "")
     empresa        = data.get("empresa", "")
     fuente         = data.get("fuente", "")
-    tag            = data.get("tag", "")
-    es_socio       = data.get("es_socio", "")
+    _raw_tags       = data.get("tags", [])
+    tags            = [_raw_tags] if isinstance(_raw_tags, str) and _raw_tags else (_raw_tags if isinstance(_raw_tags, list) else [])
+    es_socio        = data.get("es_socio", "")
     _raw_zoom       = data.get("zoom_evento_id", [])
     zoom_evento_ids = [_raw_zoom] if isinstance(_raw_zoom, str) and _raw_zoom else (_raw_zoom if isinstance(_raw_zoom, list) else [])
     zoom_asistio    = data.get("zoom_asistio", "")
     docs = pdb.get_prospectos_all(search=search, estado=estado, ciudad=ciudad,
                                   titulo=titulo, empresa=empresa, fuente=fuente,
-                                  tag=tag, es_socio=es_socio,
+                                  tags=tags, es_socio=es_socio,
                                   zoom_evento_ids=zoom_evento_ids,
                                   zoom_asistio=zoom_asistio)
     result = [{"_id": str(d.get("_id", "")),

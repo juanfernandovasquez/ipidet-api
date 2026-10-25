@@ -68,8 +68,10 @@
   </div>
 
   <!-- Filtros -->
-  <form method="get" x-ref="filterForm" class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
-    <div class="flex flex-wrap gap-2 items-end">
+  <form method="get" x-ref="filterForm" class="bg-white rounded-xl border border-slate-200 p-4 mb-4 space-y-3">
+
+    <!-- Fila 1: filtros básicos -->
+    <div class="flex flex-wrap gap-2 items-center">
       <input type="text" name="search" value="{{ search }}" placeholder="Nombre, email, empresa…"
              class="input text-sm w-52"
              x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }"
@@ -80,12 +82,6 @@
         <option value="{{ v }}" {% if estado == v %}selected{% endif %}>{{ l }}</option>
         {% endfor %}
       </select>
-      <input type="text" name="ciudad" value="{{ ciudad }}" placeholder="Ciudad"
-             class="input text-sm w-32"
-             @input="clearTimeout(_t2); _t2=setTimeout(()=>$refs.filterForm.submit(),450)">
-      <input type="text" name="empresa" value="{{ empresa }}" placeholder="Empresa"
-             class="input text-sm w-36"
-             @input="clearTimeout(_t4); _t4=setTimeout(()=>$refs.filterForm.submit(),450)">
       <select name="titulo" class="input text-sm" @change="$refs.filterForm.submit()">
         <option value="">Cualquier título</option>
         {% for t in titulos %}
@@ -103,60 +99,213 @@
         <option value="false" {% if es_socio == 'false' %}selected{% endif %}>Solo no socios</option>
         <option value="true"  {% if es_socio == 'true'  %}selected{% endif %}>Solo socios</option>
       </select>
+    </div>
+
+    <!-- Fila 2: segmentación -->
+    <div class="flex flex-wrap gap-2 items-center border-t border-slate-100 pt-3">
+
       {% if zoom_eventos_disp %}
-      <div x-data='zoomPickerInit({{ zoom_evento_ids | tojson }}, {{ zoom_eventos_disp | map(attribute="_id") | list | tojson }})' class="relative flex-none" @keydown.escape.window="open=false">
+      <!-- Picker de eventos Zoom (con asistencia integrada) -->
+      <div x-data='zoomPickerInit({{ zoom_evento_ids | tojson }}, {{ zoom_eventos_disp | map(attribute="_id") | list | tojson }}, "{{ zoom_asistio }}")'
+           class="relative flex-none" @keydown.escape.window="open=false">
         <template x-for="id in selected" :key="id">
           <input type="hidden" name="zoom_evento_id" :value="id">
         </template>
+        <input type="hidden" name="zoom_asistio" :value="relacion">
         <button type="button" @click="open=!open"
-                class="input text-sm flex items-center gap-2 min-w-[190px]"
-                :class="selected.length ? 'border-violet-400' : ''">
-          <i class="fa-solid fa-video text-xs" :class="selected.length ? 'text-violet-500' : 'text-slate-400'"></i>
-          <span class="flex-1 text-left"
-                x-text="selected.length === 0 ? 'Eventos Zoom' : selected.length + ' evento' + (selected.length !== 1 ? 's' : '')"></span>
+                class="input text-sm flex items-center gap-2 min-w-[200px]"
+                :class="selected.length || relacion ? 'border-violet-400 text-violet-700' : ''">
+          <i class="fa-solid fa-video text-xs" :class="selected.length || relacion ? 'text-violet-500' : 'text-slate-400'"></i>
+          <span class="flex-1 text-left truncate" x-text="zoomLabel"></span>
           <i class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform duration-150"
              :class="open ? 'rotate-180' : ''"></i>
         </button>
         <div x-show="open" x-cloak @click.outside="open=false"
-             class="absolute top-full left-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-lg z-30">
+             class="absolute top-full left-0 mt-1 w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-30">
+          <!-- Seleccionar todos -->
           <label class="flex items-center gap-2.5 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded-t-xl select-none">
             <input type="checkbox" :checked="allSelected" :indeterminate.prop="someSelected"
                    @change="toggleAll()" class="rounded accent-violet-600">
-            <span class="text-sm font-medium text-slate-700">Todos los eventos <span class="font-normal text-slate-400">({{ zoom_eventos_disp | length }})</span></span>
+            <span class="text-sm font-medium text-slate-700">
+              Todos los eventos <span class="font-normal text-slate-400">({{ zoom_eventos_disp | length }})</span>
+            </span>
           </label>
-          <div class="max-h-52 overflow-y-auto py-1">
+          <!-- Lista de eventos -->
+          <div class="max-h-44 overflow-y-auto py-1">
             {% for ze in zoom_eventos_disp %}
             <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-slate-50 cursor-pointer select-none">
               <input type="checkbox" :checked="selected.includes('{{ ze._id }}')"
                      @change="toggle('{{ ze._id }}')" class="rounded accent-violet-600 shrink-0">
-              <span class="flex-1 truncate text-sm text-slate-700">{{ ze.titulo or ze._id }}</span>
+              <div class="flex-1 min-w-0">
+                <span class="block truncate text-sm text-slate-700" title="{{ ze.titulo or ze._id }}">{{ ze.titulo or ze._id }}</span>
+                {% if ze.fecha %}<span class="text-[10px] text-slate-400">{{ ze.fecha[:10] }}</span>{% endif %}
+              </div>
               <span class="text-xs text-slate-400 shrink-0">{{ ze.count }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <!-- Relación / asistencia -->
+          <div class="border-t border-slate-100 px-3 py-2.5">
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Relación con estos eventos</p>
+            {% for val, lbl, hint in [
+              ('',       'Inscrito',           'Cualquiera que se registró (con o sin asistencia)'),
+              ('true',   'Asistió',            'Solo quienes efectivamente asistieron al evento'),
+              ('false',  'No asistió',         'Se inscribió pero no asistió'),
+              ('excluir','Excluir del resultado', 'No mostrar a los que participaron en estos eventos'),
+            ] %}
+            <label class="flex items-start gap-2 py-1 cursor-pointer select-none hover:bg-slate-50 rounded px-1 group">
+              <input type="radio" name="_zoom_rel" value="{{ val }}" x-model="relacion"
+                     class="accent-violet-600 shrink-0 mt-0.5">
+              <div>
+                <span class="text-xs font-medium {{ 'text-red-600' if val == 'excluir' else 'text-slate-700' }}">{{ lbl }}</span>
+                <span class="block text-[10px] text-slate-400 leading-tight">{{ hint }}</span>
+              </div>
+            </label>
+            {% endfor %}
+          </div>
+          <!-- Botón aplicar -->
+          <div class="border-t border-slate-100 px-3 py-2 rounded-b-xl">
+            <button type="submit" @click="open=false"
+                    class="w-full py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors">
+              Aplicar filtro Zoom
+            </button>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Picker de etiquetas (tags) -->
+      {% if all_tags %}
+      <div x-data='tagPickerInit({{ tags | tojson }}, {{ all_tags | tojson }})'
+           class="relative flex-none" @keydown.escape.window="open=false">
+        <template x-for="tag in selected" :key="tag">
+          <input type="hidden" name="tags" :value="tag">
+        </template>
+        <button type="button" @click="open=!open"
+                class="input text-sm flex items-center gap-2 min-w-[160px]"
+                :class="selected.length ? 'border-violet-400 text-violet-700' : ''">
+          <i class="fa-solid fa-tag text-xs" :class="selected.length ? 'text-violet-500' : 'text-slate-400'"></i>
+          <span class="flex-1 text-left" x-text="tagLabel"></span>
+          <i class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform duration-150"
+             :class="open ? 'rotate-180' : ''"></i>
+        </button>
+        <div x-show="open" x-cloak @click.outside="open=false"
+             class="absolute top-full left-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-lg z-30">
+          <label class="flex items-center gap-2.5 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer rounded-t-xl select-none">
+            <input type="checkbox" :checked="tagAllSelected" :indeterminate.prop="tagSomeSelected"
+                   @change="tagToggleAll()" class="rounded accent-violet-600">
+            <span class="text-sm font-medium text-slate-700">
+              Todas las etiquetas <span class="font-normal text-slate-400">({{ all_tags | length }})</span>
+            </span>
+          </label>
+          <div class="max-h-52 overflow-y-auto py-1">
+            {% for t in all_tags %}
+            <label class="flex items-center gap-2.5 px-3 py-1.5 hover:bg-slate-50 cursor-pointer select-none">
+              <input type="checkbox" :checked="selected.includes({{ t.tag | tojson }})"
+                     @change="tagToggle({{ t.tag | tojson }})" class="rounded accent-violet-600 shrink-0">
+              <span class="flex-1 truncate text-sm text-slate-700">{{ t.tag }}</span>
+              <span class="text-xs text-slate-400 shrink-0">{{ t.count }}</span>
             </label>
             {% endfor %}
           </div>
           <div class="border-t border-slate-100 px-3 py-2 rounded-b-xl">
             <button type="submit" @click="open=false"
                     class="w-full py-1.5 text-xs font-medium bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors">
-              Aplicar
+              Aplicar etiquetas
             </button>
           </div>
         </div>
       </div>
-      <select name="zoom_asistio" class="input text-sm" @change="$refs.filterForm.submit()"
-              title="Relación con los eventos Zoom seleccionados">
-        <option value="">Cualquier relación</option>
-        <option value="true"    {% if zoom_asistio == 'true'    %}selected{% endif %}>✓ Asistió</option>
-        <option value="false"   {% if zoom_asistio == 'false'   %}selected{% endif %}>✗ No asistió</option>
-        <option value="excluir" {% if zoom_asistio == 'excluir' %}selected{% endif %}>⊘ Excluir</option>
-      </select>
+      {% else %}
+      <!-- Sin tags aún: input texto simple como fallback -->
+      <input type="hidden" name="tags" value="{{ tags[0] if tags else '' }}">
       {% endif %}
-      <input type="text" name="tag" value="{{ tag }}" placeholder="Tag"
-             class="input text-sm w-28"
-             @input="clearTimeout(_t3); _t3=setTimeout(()=>$refs.filterForm.submit(),450)">
-      {% if search or estado or ciudad or empresa or titulo or fuente or tag or es_socio or zoom_evento_ids or zoom_asistio %}
-      <a href="/publico" class="btn-ghost text-sm">Limpiar</a>
+
+      <input type="text" name="ciudad" value="{{ ciudad }}" placeholder="Ciudad"
+             class="input text-sm w-32"
+             @input="clearTimeout(_t2); _t2=setTimeout(()=>$refs.filterForm.submit(),450)">
+      <input type="text" name="empresa" value="{{ empresa }}" placeholder="Empresa"
+             class="input text-sm w-36"
+             @input="clearTimeout(_t4); _t4=setTimeout(()=>$refs.filterForm.submit(),450)">
+
+      {% if search or estado or ciudad or empresa or titulo or fuente or tags or es_socio or zoom_evento_ids or zoom_asistio %}
+      <a href="/publico" class="btn-ghost text-sm ml-auto">
+        <i class="fa-solid fa-xmark mr-1"></i> Limpiar
+      </a>
       {% endif %}
     </div>
+
+    <!-- Chips de filtros activos -->
+    {% set _has_filters = search or estado or ciudad or empresa or titulo or fuente or tags or es_socio or zoom_evento_ids or zoom_asistio %}
+    {% if _has_filters %}
+    <div class="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100">
+      {% if search %}
+      <span class="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5">
+        <i class="fa-solid fa-magnifying-glass text-[9px]"></i> {{ search }}
+      </span>
+      {% endif %}
+      {% if estado %}
+      <span class="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-0.5">
+        Estado: {{ estado }}
+      </span>
+      {% endif %}
+      {% if titulo %}
+      <span class="text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5">{{ titulo }}</span>
+      {% endif %}
+      {% if fuente %}
+      <span class="text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5">Fuente: {{ fuente }}</span>
+      {% endif %}
+      {% if es_socio == 'false' %}
+      <span class="text-xs bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-2.5 py-0.5">Solo no socios</span>
+      {% elif es_socio == 'true' %}
+      <span class="text-xs bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5">Solo socios</span>
+      {% endif %}
+      {% if ciudad %}
+      <span class="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5">
+        <i class="fa-solid fa-location-dot text-[9px]"></i> {{ ciudad }}
+      </span>
+      {% endif %}
+      {% if empresa %}
+      <span class="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5">
+        <i class="fa-solid fa-building text-[9px]"></i> {{ empresa }}
+      </span>
+      {% endif %}
+      {% for t in tags %}
+      <span class="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2.5 py-0.5">
+        <i class="fa-solid fa-tag text-[9px]"></i> {{ t }}
+      </span>
+      {% endfor %}
+      {% if zoom_evento_ids %}
+        {% set _n = zoom_evento_ids | length %}
+        {% if zoom_asistio == 'excluir' %}
+        <span class="inline-flex items-center gap-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded-full px-2.5 py-0.5">
+          <i class="fa-solid fa-ban text-[9px]"></i> Excluye {{ _n }} evento{{ "s" if _n != 1 }} Zoom
+        </span>
+        {% elif zoom_asistio == 'true' %}
+        <span class="inline-flex items-center gap-1 text-xs bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-full px-2.5 py-0.5">
+          <i class="fa-solid fa-circle-check text-[9px]"></i> Asistió: {{ _n }} evento{{ "s" if _n != 1 }}
+        </span>
+        {% elif zoom_asistio == 'false' %}
+        <span class="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5">
+          <i class="fa-regular fa-circle text-[9px]"></i> No asistió: {{ _n }} evento{{ "s" if _n != 1 }}
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1 text-xs bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-full px-2.5 py-0.5">
+          <i class="fa-brands fa-zoom text-[9px]"></i> Inscrito: {{ _n }} evento{{ "s" if _n != 1 }}
+        </span>
+        {% endif %}
+      {% elif zoom_asistio %}
+        {% if zoom_asistio == 'excluir' %}
+        <span class="text-xs bg-red-50 text-red-600 border border-red-200 rounded-full px-2.5 py-0.5">⊘ Sin eventos Zoom</span>
+        {% elif zoom_asistio == 'true' %}
+        <span class="text-xs bg-cyan-50 text-cyan-700 border border-cyan-200 rounded-full px-2.5 py-0.5">Solo asistentes Zoom</span>
+        {% elif zoom_asistio == 'false' %}
+        <span class="text-xs bg-slate-100 text-slate-600 rounded-full px-2.5 py-0.5">Inscritos no asistentes Zoom</span>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+
   </form>
 
   <!-- Tabla -->
@@ -186,6 +335,18 @@
               <a href="/publico/{{ p._id }}" class="hover:text-blue-600">
                 {{ p.apellido }} {{ p.nombre }}
               </a>
+              {% set ptags = p.tags or [] %}
+              {% if ptags %}
+              <div class="flex flex-wrap gap-0.5 mt-1">
+                {% for t in ptags[:3] %}
+                <a href="/publico?tags={{ t | urlencode }}"
+                   class="inline-block text-[10px] bg-violet-50 text-violet-600 border border-violet-100 rounded px-1.5 py-0.5 hover:bg-violet-100 transition-colors">{{ t }}</a>
+                {% endfor %}
+                {% if ptags | length > 3 %}
+                <span class="inline-block text-[10px] bg-slate-100 text-slate-500 rounded px-1.5 py-0.5">+{{ ptags | length - 3 }}</span>
+                {% endif %}
+              </div>
+              {% endif %}
             </td>
             <td class="px-4 py-3 text-slate-600 font-mono text-xs">{{ p.email }}</td>
             <td class="px-4 py-3 text-slate-600">
@@ -247,7 +408,8 @@
     <div class="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
       <span>Página {{ page }} de {{ ((total - 1) // 50 + 1) }}</span>
       <div class="flex gap-2">
-        {% set _pgns = namespace(pgparams = "search=" ~ search ~ "&estado=" ~ estado ~ "&ciudad=" ~ ciudad ~ "&empresa=" ~ empresa ~ "&titulo=" ~ titulo ~ "&fuente=" ~ fuente ~ "&tag=" ~ tag ~ "&es_socio=" ~ es_socio ~ "&zoom_asistio=" ~ zoom_asistio) %}
+        {% set _pgns = namespace(pgparams = "search=" ~ search ~ "&estado=" ~ estado ~ "&ciudad=" ~ ciudad ~ "&empresa=" ~ empresa ~ "&titulo=" ~ titulo ~ "&fuente=" ~ fuente ~ "&es_socio=" ~ es_socio ~ "&zoom_asistio=" ~ zoom_asistio) %}
+        {% for _t in tags %}{% set _pgns.pgparams = _pgns.pgparams ~ "&tags=" ~ _t %}{% endfor %}
         {% for _zid in zoom_evento_ids %}{% set _pgns.pgparams = _pgns.pgparams ~ "&zoom_evento_id=" ~ _zid %}{% endfor %}
         {% set pgparams = _pgns.pgparams %}
         {% if page > 1 %}
@@ -380,8 +542,8 @@
             {% elif zoom_asistio == 'false' %}
               <span class="badge badge-slate">Solo no asistentes Zoom</span>
             {% endif %}
-            {% if tag %}<span class="badge badge-violet">Tag: {{ tag }}</span>{% endif %}
-            {% if not (search or estado or ciudad or empresa or titulo or fuente or es_socio or tag or zoom_evento_ids or zoom_asistio) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
+            {% for t in tags %}<span class="badge badge-violet"><i class="fa-solid fa-tag text-[9px] mr-0.5"></i> {{ t }}</span>{% endfor %}
+            {% if not (search or estado or ciudad or empresa or titulo or fuente or es_socio or tags or zoom_evento_ids or zoom_asistio) %}<span class="text-slate-400">Sin filtros (todos los prospectos activos)</span>{% endif %}
           </div>
         </div>
         <!-- Preview destinatarios -->
@@ -492,17 +654,45 @@
 
 {% block scripts %}
 <script>
-function zoomPickerInit(initialSelected, allIds) {
+function zoomPickerInit(initialSelected, allIds, initialRelacion) {
   return {
-    open: false,
-    selected: initialSelected,
-    allIds: allIds,
-    get allSelected() { return this.allIds.length > 0 && this.allIds.every(id => this.selected.includes(id)); },
+    open:      false,
+    selected:  initialSelected,
+    allIds:    allIds,
+    relacion:  initialRelacion || '',
+    get allSelected()  { return this.allIds.length > 0 && this.allIds.every(id => this.selected.includes(id)); },
     get someSelected() { return this.selected.length > 0 && !this.allSelected; },
     toggleAll() { this.selected = this.allSelected ? [] : [...this.allIds]; },
     toggle(id) {
       if (this.selected.includes(id)) this.selected = this.selected.filter(i => i !== id);
       else this.selected.push(id);
+    },
+    get zoomLabel() {
+      const n = this.selected.length;
+      const r = this.relacion;
+      const rel = r === 'true' ? 'asistió' : r === 'false' ? 'no asistió' : r === 'excluir' ? 'excluir' : 'inscrito';
+      if (n === 0 && !r) return 'Eventos Zoom';
+      if (n === 0)       return 'Zoom: ' + rel;
+      return n + ' evento' + (n !== 1 ? 's' : '') + ' · ' + rel;
+    },
+  };
+}
+
+function tagPickerInit(initialTags, allTagData) {
+  return {
+    open:       false,
+    selected:   initialTags,
+    allTagData: allTagData,
+    get tagAllSelected()  { return this.allTagData.length > 0 && this.allTagData.every(t => this.selected.includes(t.tag)); },
+    get tagSomeSelected() { return this.selected.length > 0 && !this.tagAllSelected; },
+    tagToggleAll() { this.selected = this.tagAllSelected ? [] : this.allTagData.map(t => t.tag); },
+    tagToggle(tag) {
+      if (this.selected.includes(tag)) this.selected = this.selected.filter(t => t !== tag);
+      else this.selected.push(tag);
+    },
+    get tagLabel() {
+      if (this.selected.length === 0) return 'Etiquetas';
+      return this.selected.length + ' etiqueta' + (this.selected.length !== 1 ? 's' : '');
     },
   };
 }
@@ -536,7 +726,7 @@ function publicoPage() {
         empresa:        p.get('empresa')           || '',
         titulo:         p.get('titulo')            || '',
         fuente:         p.get('fuente')            || '',
-        tag:            p.get('tag')               || '',
+        tags:           p.getAll('tags'),
         es_socio:       p.get('es_socio')          || '',
         zoom_evento_id: p.getAll('zoom_evento_id'),
         zoom_asistio:   p.get('zoom_asistio')      || '',
