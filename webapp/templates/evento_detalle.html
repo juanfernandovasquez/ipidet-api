@@ -106,8 +106,18 @@
      SECCIÓN — FLYER Y PLANTILLA DE CORREO
      ═══════════════════════════════════════════════════════════ -->
 {% set ok_comms = request.query_params.get('ok') == 'comms' %}
-<div class="bg-white rounded-xl border border-slate-200 p-5 mb-5"
-     x-data='eventoComms({{ (evento.email_cuerpo or "") | tojson }}, {{ evento.titulo | tojson }}, {{ evento.fecha | tojson }}, {{ evento.hora | tojson }}, {{ evento.lugar | tojson }}, {{ (evento.flyer_url or "") | tojson }})'>
+<script>
+window._eventoData = {
+  flyerUrl:    {{ (evento.flyer_url    or '') | tojson }},
+  emailAsunto: {{ (evento.email_asunto or '') | tojson }},
+  emailCuerpo: {{ (evento.email_cuerpo or '') | tojson }},
+  titulo: {{ evento.titulo | tojson }},
+  fecha:  {{ evento.fecha  | tojson }},
+  hora:   {{ (evento.hora  or '') | tojson }},
+  lugar:  {{ (evento.lugar or '') | tojson }},
+};
+</script>
+<div class="bg-white rounded-xl border border-slate-200 p-5 mb-5" x-data="eventoComms()">
 
   <!-- Cabecera con tabs -->
   <div class="flex items-center justify-between mb-4">
@@ -206,126 +216,125 @@
     </form>
   </div>
 
-  <!-- TAB PLANTILLA EMAIL -->
-  <div x-show="tab==='email'" x-cloak class="space-y-4">
-    <form method="post" action="/eventos/{{ evento._id }}/update-comunicaciones" class="space-y-4">
-      <input type="hidden" name="flyer_url" x-model="flyerUrl">
+  <!-- TAB PLANTILLA EMAIL — layout dos columnas -->
+  <div x-show="tab==='email'" x-cloak>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-      <!-- Variables disponibles -->
-      <div class="space-y-2">
-        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Variables — clic para insertar donde está el cursor</p>
-        <div class="flex flex-wrap gap-1.5">
-          {% for var, desc in [
-            ('nombre',        'Nombre del destinatario'),
-            ('apellido',      'Apellido'),
-            ('titulo',        'Título profesional'),
-            ('evento_titulo', 'Título del evento'),
-            ('evento_fecha',  'Fecha del evento'),
-            ('evento_hora',   'Hora del evento'),
-            ('evento_lugar',  'Lugar del evento'),
-            ('flyer_url',     'URL del flyer (para usar en <img>)'),
-          ] %}
-          <button type="button" title="{{ desc }}"
-                  @click="insertVar('{{ var }}')"
-                  class="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2.5 py-1 hover:bg-violet-100 transition-colors font-mono cursor-pointer select-none">
-            <i class="fa-solid fa-plus text-[9px]"></i> {{ '{{' }}{{ var }}{{ '}}' }}
-          </button>
-          {% endfor %}
-        </div>
-        {% if evento.flyer_url %}
-        <div>
-          <button type="button"
-                  @click="insertFlyerImg()"
-                  class="inline-flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 hover:bg-blue-100 transition-colors cursor-pointer select-none">
-            <i class="fa-solid fa-image text-[10px]"></i> Insertar imagen del flyer
-          </button>
-          <span class="text-xs text-slate-400 ml-1">Inserta el tag &lt;img&gt; listo para usar en el cuerpo</span>
-        </div>
-        {% endif %}
-      </div>
+      <!-- ── Columna izquierda: editor ── -->
+      <div class="space-y-4">
+        <form method="post" action="/eventos/{{ evento._id }}/update-comunicaciones" class="space-y-3">
+          <input type="hidden" name="flyer_url" x-model="flyerUrl">
 
-      <!-- Asunto -->
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Asunto del correo</label>
-        <input id="email_asunto_input" name="email_asunto"
-               value="{{ evento.email_asunto or '' }}"
-               placeholder="Ej: Invitación: {{evento_titulo}} — {{evento_fecha}}"
-               class="input w-full text-sm font-mono"
-               @focus="lastFocused='email_asunto_input'">
-      </div>
-
-      <!-- Cuerpo HTML -->
-      <div>
-        <div class="flex items-center justify-between mb-1">
-          <label class="text-xs font-medium text-slate-600">Cuerpo del correo (HTML)</label>
-          <div class="flex gap-1">
-            <button type="button" @click="previewMode=false"
-                    :class="!previewMode ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:text-slate-600'"
-                    class="text-xs px-2 py-0.5 rounded transition-colors">Editor</button>
-            <button type="button" @click="previewMode=true"
-                    :class="previewMode ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:text-slate-600'"
-                    class="text-xs px-2 py-0.5 rounded transition-colors">Preview</button>
+          <!-- Variables -->
+          <div>
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Variables — clic para insertar</p>
+            <div class="flex flex-wrap gap-1.5">
+              {% for var, desc in [
+                ('nombre',        'Nombre del destinatario'),
+                ('apellido',      'Apellido'),
+                ('titulo',        'Título profesional'),
+                ('evento_titulo', 'Título del evento'),
+                ('evento_fecha',  'Fecha del evento'),
+                ('evento_hora',   'Hora del evento'),
+                ('evento_lugar',  'Lugar del evento'),
+                ('flyer_url',     'URL del flyer'),
+              ] %}
+              <button type="button" title="{{ desc }}"
+                      @click="insertVar('{{ var }}')"
+                      class="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 rounded-full px-2.5 py-1 hover:bg-violet-100 transition-colors font-mono cursor-pointer select-none">
+                {{ '{{' }}{{ var }}{{ '}}' }}
+              </button>
+              {% endfor %}
+              <!-- Botón especial: insertar imagen del flyer como <img> -->
+              <button type="button" @click="insertFlyerImg()" x-show="flyerUrl"
+                      title="Inserta un tag &lt;img&gt; listo para usar"
+                      class="inline-flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 hover:bg-blue-100 transition-colors cursor-pointer select-none">
+                <i class="fa-solid fa-image text-[10px]"></i> Insertar imagen del flyer
+              </button>
+            </div>
           </div>
-        </div>
-        <div x-show="!previewMode">
-          <textarea id="email_cuerpo_input" name="email_cuerpo" rows="12"
-                    class="input w-full text-xs font-mono resize-y"
-                    placeholder="Escribe aquí el HTML del correo. Usa {{nombre}}, {{apellido}}, etc. para personalizar."
-                    @focus="lastFocused='email_cuerpo_input'"
-                    @input="emailCuerpo=$el.value"
-                    >{{ evento.email_cuerpo or '' }}</textarea>
-          <p class="text-xs text-slate-400 mt-1">
-            Puedes escribir HTML completo o texto simple. Las variables se reemplazan al momento de enviar.
+
+          <!-- Asunto -->
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Asunto</label>
+            <input id="email_asunto_input" name="email_asunto"
+                   x-model="emailAsunto"
+                   placeholder="Ej: Invitación — {{ '{{' }}evento_titulo{{ '}}' }}"
+                   class="input w-full text-sm"
+                   @focus="lastFocused='email_asunto_input'">
+          </div>
+
+          <!-- Cuerpo HTML -->
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Cuerpo del correo (HTML)</label>
+            <textarea id="email_cuerpo_input" name="email_cuerpo" rows="14"
+                      class="input w-full text-xs font-mono resize-y leading-relaxed"
+                      placeholder="Escribe HTML o texto plano. Las variables se reemplazan al enviar."
+                      @focus="lastFocused='email_cuerpo_input'"
+                      @input="emailCuerpo=$el.value"
+                      >{{ evento.email_cuerpo or '' }}</textarea>
+          </div>
+
+          <div class="flex items-center gap-3 pt-1">
+            <button type="submit" class="btn-primary text-sm">
+              <i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar
+            </button>
+          </div>
+        </form>
+
+        <!-- Enviar prueba -->
+        <div class="border border-slate-200 rounded-xl p-4 space-y-2 bg-slate-50">
+          <p class="text-xs font-semibold text-slate-600">
+            <i class="fa-solid fa-flask mr-1 text-slate-400"></i> Enviar correo de prueba
           </p>
-        </div>
-        <div x-show="previewMode" x-cloak class="border border-slate-200 rounded-lg overflow-hidden">
-          <div class="bg-slate-50 border-b border-slate-100 px-3 py-2 text-xs text-slate-500">
-            Preview con datos de muestra:
-            <span class="font-medium text-slate-700">
-              {{ '{{' }}nombre{{ '}}' }} = "Carlos" · {{ '{{' }}apellido{{ '}}' }} = "García Ríos" · {{ '{{' }}titulo{{ '}}' }} = "Contador"
-            </span>
+          <p class="text-xs text-slate-400">Usa datos de muestra (Carlos García Ríos · Contador). El asunto lleva <code class="bg-white border border-slate-200 rounded px-1">[PRUEBA]</code>.</p>
+          <div class="flex gap-2">
+            <input type="email" x-model="pruebaEmail" placeholder="tucorreo@ejemplo.com"
+                   class="input flex-1 text-sm" @keydown.enter.prevent="enviarPrueba()">
+            <button type="button" @click="enviarPrueba()" :disabled="pruebaEnviando"
+                    class="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50">
+              <i class="fa-solid fa-paper-plane" x-show="!pruebaEnviando"></i>
+              <i class="fa-solid fa-circle-notch fa-spin" x-show="pruebaEnviando" x-cloak></i>
+              <span x-text="pruebaEnviando ? 'Enviando…' : 'Enviar'"></span>
+            </button>
           </div>
-          <iframe :srcdoc="previewHtml"
-                  class="w-full bg-white" style="height: 320px"
+          <p x-show="pruebaOk" x-cloak class="text-xs text-green-600 flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-check"></i> ¡Enviado! Revisa tu bandeja de entrada.
+          </p>
+          <p x-show="pruebaError" x-cloak class="text-xs text-red-500" x-text="pruebaError"></p>
+        </div>
+      </div>
+
+      <!-- ── Columna derecha: vista previa en vivo ── -->
+      <div class="lg:sticky lg:top-4 space-y-2 self-start">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Vista previa en tiempo real</p>
+        <div class="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
+          <!-- Cabecera simulada de cliente de correo -->
+          <div class="bg-slate-50 border-b border-slate-100 px-4 py-3 space-y-1">
+            <div class="flex items-start gap-2 text-xs text-slate-500">
+              <span class="text-slate-400 w-12 shrink-0">De:</span>
+              <span class="text-slate-700">IPIDET &lt;administracion@ipidet.org&gt;</span>
+            </div>
+            <div class="flex items-start gap-2 text-xs text-slate-500">
+              <span class="text-slate-400 w-12 shrink-0">Para:</span>
+              <span class="text-slate-700">Carlos García Ríos &lt;carlos@ejemplo.com&gt;</span>
+            </div>
+            <div class="flex items-start gap-2 text-xs text-slate-500">
+              <span class="text-slate-400 w-12 shrink-0">Asunto:</span>
+              <span class="text-slate-800 font-medium" x-text="previewAsunto || '(sin asunto)'"></span>
+            </div>
+          </div>
+          <!-- Cuerpo del email renderizado -->
+          <iframe :srcdoc="previewHtml || '<p style=\'padding:20px;color:#94a3b8;font-size:13px;\'>El cuerpo del correo aparecerá aquí mientras escribes…</p>'"
+                  class="w-full bg-white border-0"
+                  style="min-height:420px; height:420px"
                   sandbox="allow-same-origin"></iframe>
         </div>
-      </div>
-
-      <!-- Botón guardar -->
-      <div class="flex items-center justify-between pt-2 border-t border-slate-100">
-        <button type="submit" class="btn-primary text-sm">
-          <i class="fa-solid fa-floppy-disk mr-1.5"></i> Guardar plantilla
-        </button>
-        {% if evento.email_asunto or evento.email_cuerpo %}
         <p class="text-xs text-slate-400">
-          Última actualización: {{ evento.updated_at[:10] if evento.updated_at else '—' }}
+          Muestra de variables: <strong>Carlos García Ríos</strong> · Contador · datos del evento
         </p>
-        {% endif %}
       </div>
-    </form>
 
-    <!-- Enviar correo de prueba (fuera del form principal para no mezclar) -->
-    <div class="border-t border-slate-100 pt-4 space-y-3">
-      <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Correo de prueba</p>
-      <p class="text-xs text-slate-400">
-        Se enviará con datos de muestra (Carlos García Ríos, Contador) para que veas cómo queda.
-        El asunto llevará el prefijo <span class="font-mono bg-slate-100 px-1 rounded">[PRUEBA]</span>.
-      </p>
-      <div class="flex gap-2">
-        <input type="email" x-model="pruebaEmail" placeholder="tucorreo@ejemplo.com"
-               class="input flex-1 text-sm" @keydown.enter.prevent="enviarPrueba()">
-        <button type="button" @click="enviarPrueba()"
-                :disabled="pruebaEnviando"
-                class="btn-ghost text-sm flex items-center gap-1.5 disabled:opacity-50">
-          <i class="fa-solid fa-paper-plane" x-show="!pruebaEnviando"></i>
-          <i class="fa-solid fa-circle-notch fa-spin" x-show="pruebaEnviando" x-cloak></i>
-          <span x-text="pruebaEnviando ? 'Enviando…' : 'Enviar prueba'"></span>
-        </button>
-      </div>
-      <p x-show="pruebaOk" x-cloak class="text-xs text-green-600 flex items-center gap-1">
-        <i class="fa-solid fa-circle-check"></i> Correo enviado correctamente.
-      </p>
-      <p x-show="pruebaError" x-cloak class="text-xs text-red-500" x-text="pruebaError"></p>
     </div>
   </div>
 
@@ -696,36 +705,38 @@
 {% endif %}
 
 <script>
-function eventoComms(emailCuerpo, eventoTitulo, eventoFecha, eventoHora, eventoLugar, flyerUrlInit) {
+function eventoComms() {
+  const d = window._eventoData || {};
+  function applyVars(text, s) {
+    if (!text) return '';
+    return text
+      .replace(/\{\{nombre\}\}/g,         s.nombre)
+      .replace(/\{\{apellido\}\}/g,        s.apellido)
+      .replace(/\{\{titulo\}\}/g,          s.titulo)
+      .replace(/\{\{evento_titulo\}\}/g,   s.evento_titulo)
+      .replace(/\{\{evento_fecha\}\}/g,    s.evento_fecha)
+      .replace(/\{\{evento_hora\}\}/g,     s.evento_hora)
+      .replace(/\{\{evento_lugar\}\}/g,    s.evento_lugar)
+      .replace(/\{\{flyer_url\}\}/g,       s.flyer_url);
+  }
   return {
-    tab: 'flyer',
-    previewMode: false,
-    lastFocused: 'email_asunto_input',
-    emailCuerpo: emailCuerpo || '',
-    flyerUrl: flyerUrlInit || '',
-    dragging: false,
-    sampleVars: {
-      nombre: 'Carlos', apellido: 'García Ríos', titulo: 'Contador',
-      evento_titulo: eventoTitulo || '',
-      evento_fecha:  eventoFecha  || '',
-      evento_hora:   eventoHora   || '',
-      evento_lugar:  eventoLugar  || '',
+    tab:         'flyer',
+    lastFocused: 'email_cuerpo_input',
+    emailAsunto: d.emailAsunto || '',
+    emailCuerpo: d.emailCuerpo || '',
+    flyerUrl:    d.flyerUrl    || '',
+    dragging:    false,
+    pruebaEmail: '', pruebaEnviando: false, pruebaOk: false, pruebaError: '',
+    get sampleVars() {
+      return {
+        nombre: 'Carlos', apellido: 'García Ríos', titulo: 'Contador',
+        evento_titulo: d.titulo || '', evento_fecha: d.fecha || '',
+        evento_hora:   d.hora   || '', evento_lugar: d.lugar || '',
+        flyer_url:     this.flyerUrl || '',
+      };
     },
-    get previewHtml() {
-      const s = this.sampleVars;
-      return (this.emailCuerpo || '')
-        .replace(/\{\{nombre\}\}/g,         s.nombre)
-        .replace(/\{\{apellido\}\}/g,        s.apellido)
-        .replace(/\{\{titulo\}\}/g,          s.titulo)
-        .replace(/\{\{evento_titulo\}\}/g,   s.evento_titulo)
-        .replace(/\{\{evento_fecha\}\}/g,    s.evento_fecha)
-        .replace(/\{\{evento_hora\}\}/g,     s.evento_hora)
-        .replace(/\{\{evento_lugar\}\}/g,    s.evento_lugar);
-    },
-    pruebaEmail:    '',
-    pruebaEnviando: false,
-    pruebaOk:       false,
-    pruebaError:    '',
+    get previewAsunto() { return applyVars(this.emailAsunto, this.sampleVars); },
+    get previewHtml()   { return applyVars(this.emailCuerpo, this.sampleVars); },
     loadFile(file) {
       if (!file || !file.type.startsWith('image/')) return;
       if (file.size > 2 * 1024 * 1024) { alert('El archivo supera los 2 MB'); return; }
@@ -733,55 +744,48 @@ function eventoComms(emailCuerpo, eventoTitulo, eventoFecha, eventoHora, eventoL
       reader.onload = (e) => { this.flyerUrl = e.target.result; };
       reader.readAsDataURL(file);
     },
-    handleFileDrop(e) {
-      const file = e.dataTransfer?.files?.[0];
-      this.loadFile(file);
-    },
-    handleFileSelect(e) {
-      const file = e.target?.files?.[0];
-      this.loadFile(file);
-      e.target.value = '';
-    },
+    handleFileDrop(e)   { this.loadFile(e.dataTransfer?.files?.[0]); },
+    handleFileSelect(e) { this.loadFile(e.target?.files?.[0]); e.target.value = ''; },
     insertVar(varName) {
-      const el = document.getElementById(this.lastFocused);
+      const el = document.getElementById(this.lastFocused) || document.getElementById('email_cuerpo_input');
       if (!el) return;
       const pos = el.selectionStart || 0;
-      const insert = '{{' + varName + '}}';
-      el.value = el.value.slice(0, pos) + insert + el.value.slice(el.selectionEnd || pos);
-      el.selectionStart = el.selectionEnd = pos + insert.length;
-      el.focus();
-      el.dispatchEvent(new Event('input'));
-      if (this.lastFocused === 'email_cuerpo_input') this.emailCuerpo = el.value;
+      const ins = '{{' + varName + '}}';
+      el.value = el.value.slice(0, pos) + ins + el.value.slice(el.selectionEnd || pos);
+      el.selectionStart = el.selectionEnd = pos + ins.length;
+      el.focus(); el.dispatchEvent(new Event('input'));
+      if (el.id === 'email_cuerpo_input') this.emailCuerpo = el.value;
+      else if (el.id === 'email_asunto_input') this.emailAsunto = el.value;
     },
     insertFlyerImg() {
       const el = document.getElementById('email_cuerpo_input');
       if (!el) return;
       this.lastFocused = 'email_cuerpo_input';
-      const tag = '<img src="{{flyer_url}}" alt="Flyer del evento" style="max-width:100%;display:block;margin:0 auto;">';
+      // Concatenación JS para que Jinja2 no interprete {{ }} como variable de template
+      const flyrVar = '{{' + 'flyer_url' + '}}';
+      const tag = '<img src="' + flyrVar + '" alt="Flyer del evento" style="max-width:100%;display:block;margin:16px auto;">';
       const pos = el.selectionStart || 0;
       el.value = el.value.slice(0, pos) + tag + el.value.slice(el.selectionEnd || pos);
       el.selectionStart = el.selectionEnd = pos + tag.length;
-      el.focus();
-      el.dispatchEvent(new Event('input'));
+      el.focus(); el.dispatchEvent(new Event('input'));
       this.emailCuerpo = el.value;
     },
     async enviarPrueba() {
       const email = this.pruebaEmail.trim();
       if (!email) { this.pruebaError = 'Ingresa un email de destino'; return; }
-      const asunto = document.getElementById('email_asunto_input')?.value || '';
-      const cuerpo = document.getElementById('email_cuerpo_input')?.value || '';
       this.pruebaEnviando = true; this.pruebaOk = false; this.pruebaError = '';
       try {
-        const r = await fetch(window.location.pathname + '/enviar-prueba', {
+        const eventId = window.location.pathname.split('/').filter(Boolean)[1];
+        const r = await fetch('/eventos/' + eventId + '/enviar-prueba', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({email, asunto, cuerpo}),
+          body: JSON.stringify({email, asunto: this.emailAsunto, cuerpo: this.emailCuerpo}),
         });
-        const d = await r.json();
-        if (d.ok) { this.pruebaOk = true; setTimeout(() => { this.pruebaOk = false; }, 5000); }
-        else { this.pruebaError = d.error || 'Error al enviar'; }
+        const resp = await r.json();
+        if (resp.ok) { this.pruebaOk = true; setTimeout(() => { this.pruebaOk = false; }, 6000); }
+        else { this.pruebaError = resp.error || 'Error al enviar'; }
       } catch(e) {
-        this.pruebaError = 'Error de red';
+        this.pruebaError = 'Error de red: ' + e.message;
       } finally {
         this.pruebaEnviando = false;
       }

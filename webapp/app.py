@@ -3666,10 +3666,11 @@ async def evento_enviar_prueba(request: Request, evento_id: str):
         cuerpo = cuerpo.replace("{{" + k + "}}", v or "")
 
     asunto = f"[PRUEBA] {asunto}"
-    ok, err = await mailer.send_email(email_dest, asunto, html_body=cuerpo)
-    if ok:
+    try:
+        await mailer.send_email(email_dest, asunto, html_body=cuerpo)
         return {"ok": True}
-    return {"ok": False, "error": err or "Error al enviar"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/api/eventos")
