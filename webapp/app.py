@@ -3632,6 +3632,46 @@ async def evento_asistencia(
     return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
 
 
+@app.post("/eventos/{evento_id}/enviar-prueba")
+async def evento_enviar_prueba(request: Request, evento_id: str):
+    data       = await request.json()
+    email_dest = (data.get("email") or "").strip()
+    asunto_tmpl = data.get("asunto", "")
+    cuerpo_tmpl = data.get("cuerpo", "")
+
+    if not email_dest:
+        return {"ok": False, "error": "Ingresa un email de destino"}
+    if not asunto_tmpl and not cuerpo_tmpl:
+        return {"ok": False, "error": "La plantilla está vacía"}
+
+    evento = pdb.get_evento(evento_id)
+    if not evento:
+        return {"ok": False, "error": "Evento no encontrado"}
+
+    reemplazos = {
+        "nombre":        "Carlos",
+        "apellido":      "García Ríos",
+        "titulo":        "Contador",
+        "evento_titulo": evento.get("titulo", ""),
+        "evento_fecha":  evento.get("fecha", ""),
+        "evento_hora":   evento.get("hora", ""),
+        "evento_lugar":  evento.get("lugar", ""),
+        "flyer_url":     evento.get("flyer_url", ""),
+    }
+
+    asunto = asunto_tmpl
+    cuerpo = cuerpo_tmpl
+    for k, v in reemplazos.items():
+        asunto = asunto.replace("{{" + k + "}}", v or "")
+        cuerpo = cuerpo.replace("{{" + k + "}}", v or "")
+
+    asunto = f"[PRUEBA] {asunto}"
+    ok, err = await mailer.send_email(email_dest, asunto, html_body=cuerpo)
+    if ok:
+        return {"ok": True}
+    return {"ok": False, "error": err or "Error al enviar"}
+
+
 @app.get("/api/eventos")
 async def api_eventos(limit: int = 5):
     """API pública para bots: próximos eventos activos."""
