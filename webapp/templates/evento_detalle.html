@@ -323,6 +323,7 @@ window._eventoData = {
                @keyup="saveSelection()"
                @mouseup="saveSelection()"
                @click="saveSelection()"
+               @paste.prevent="handlePaste($event)"
                x-init="initEditor()">
           </div>
         </div>
@@ -985,6 +986,14 @@ function eventoComms() {
       }
     },
 
+    handlePaste(e) {
+      // Strip block-level HTML from clipboard to prevent emojis/text landing
+      // on their own isolated line when pasted from web pages or Word.
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+      this.saveSelection();
+      this._doSync();
+    },
     loadFile(file) {
       if (!file || !file.type.startsWith('image/')) return;
       if (file.size > 2 * 1024 * 1024) { alert('El archivo supera los 2 MB'); return; }
