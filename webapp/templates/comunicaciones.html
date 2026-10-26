@@ -763,7 +763,11 @@
           </div>
         </div>
 
-        <!-- Opción disclaimer -->
+        <!-- Opciones de formato -->
+        <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-2 select-none">
+          <input type="checkbox" x-model="plantillaCorporativa" class="rounded accent-blue-600">
+          Usar plantilla corporativa IPIDET (logo, recuadro blanco, fondo gris)
+        </label>
         <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-5 select-none">
           <input type="checkbox" x-model="disclaimer" class="rounded accent-blue-600">
           Incluir aviso <em>"No responder directamente a este mensaje"</em> en el pie del email
@@ -1535,7 +1539,8 @@ function comunicaciones() {
       totalSinLimite:     0,
     },
 
-    disclaimer:  true,
+    disclaimer:           true,
+    plantillaCorporativa: true,
     confirmando: false,
     enviando:    false,
     resultado:   null,
@@ -1900,7 +1905,7 @@ function comunicaciones() {
       const r = await fetch('/api/comunicaciones/preview-html', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cuerpo: this.cuerpo, disclaimer: this.disclaimer }),
+        body: JSON.stringify({ cuerpo: this.cuerpo, disclaimer: this.disclaimer, plantilla_corporativa: this.plantillaCorporativa }),
       });
       const data = await r.json();
       this.showPreviewModal = true;
@@ -1934,11 +1939,12 @@ function comunicaciones() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            asunto:        this.asunto,
-            cuerpo:        this.cuerpo,
-            plantilla:     this.plantilla,
-            disclaimer:     this.disclaimer,
-            destinatarios:  this.seleccionados,
+            asunto:               this.asunto,
+            cuerpo:               this.cuerpo,
+            plantilla:            this.plantilla,
+            disclaimer:           this.disclaimer,
+            plantilla_corporativa: this.plantillaCorporativa,
+            destinatarios:        this.seleccionados,
             filtros:        this.filtros.modo === 'publico' ? { ...this.filtrosPublico } : { ...this.filtros, periodo: this._periodoParaFiltro() },
             attachments:    this.adjuntos,
             imagenesInline: this.imagenesInline,
@@ -2002,12 +2008,13 @@ function comunicaciones() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            asunto:        this.asunto,
-            cuerpo:        this.cuerpo,
-            fuente:        fuente,
-            filtros:       filtros,
-            destinatarios: this.seleccionados,
-            disclaimer:    this.disclaimer,
+            asunto:               this.asunto,
+            cuerpo:               this.cuerpo,
+            fuente:               fuente,
+            filtros:              filtros,
+            destinatarios:        this.seleccionados,
+            disclaimer:           this.disclaimer,
+            plantilla_corporativa: this.plantillaCorporativa,
           }),
         });
         const data = await r.json();
@@ -2173,12 +2180,13 @@ function comunicaciones() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email_prueba: this.emailPrueba,
-            asunto:         this.asunto,
-            cuerpo:         this.cuerpo,
-            disclaimer:     this.disclaimer,
-            attachments:    this.adjuntos,
-            imagenesInline: this.imagenesInline,
+            email_prueba:          this.emailPrueba,
+            asunto:                this.asunto,
+            cuerpo:                this.cuerpo,
+            disclaimer:            this.disclaimer,
+            plantilla_corporativa: this.plantillaCorporativa,
+            attachments:           this.adjuntos,
+            imagenesInline:        this.imagenesInline,
           }),
         });
         const data = await r.json();
@@ -2324,11 +2332,12 @@ function comunicaciones() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            asunto:         this.asunto,
-            cuerpo:         this.cuerpo,
-            disclaimer:     this.disclaimer,
-            destinatarios:  sel,
-            filtros:        { ...this.filtros, periodo: this._periodoParaFiltro() },
+            asunto:               this.asunto,
+            cuerpo:               this.cuerpo,
+            disclaimer:           this.disclaimer,
+            plantilla_corporativa: this.plantillaCorporativa,
+            destinatarios:        sel,
+            filtros:              { ...this.filtros, periodo: this._periodoParaFiltro() },
             fecha_envio:    this.fechaProgramada.slice(0, 16) + ':00',
             imagenesInline: this.imagenesInline,
           }),

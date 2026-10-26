@@ -3337,9 +3337,10 @@ async def comunicaciones_enviar(request: Request):
             status_code=400,
         )
 
-    disclaimer      = data.get("disclaimer", True)
-    attachments_raw = data.get("attachments", [])
-    imagenesInline  = data.get("imagenesInline", [])
+    disclaimer            = data.get("disclaimer", True)
+    plantilla_corporativa = data.get("plantilla_corporativa", True)
+    attachments_raw       = data.get("attachments", [])
+    imagenesInline        = data.get("imagenesInline", [])
 
     mensajes = []
     for d in destinatarios:
@@ -3353,7 +3354,10 @@ async def comunicaciones_enviar(request: Request):
             full_html, inline_atts = _process_inline_images(full_html, imagenesInline)
         else:
             inline_atts = []
-        html_body = mailer._base_html(full_html, disclaimer=disclaimer)
+        if plantilla_corporativa:
+            html_body = mailer._base_html(full_html, disclaimer=disclaimer)
+        else:
+            html_body = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;font-family:Arial,sans-serif">{full_html}</body></html>"""
         mensajes.append({"to": d["email"], "nombre": nombre, "subject": asunto_p, "html_body": html_body})
 
     all_attachments = list(attachments_raw) + inline_atts if imagenesInline else list(attachments_raw)
@@ -3404,28 +3408,30 @@ async def comunicaciones_buscar_miembro(q: str = ""):
 @app.post("/api/comunicaciones/preview-html")
 async def comunicaciones_preview_html(request: Request):
     """Devuelve el HTML renderizado del email para vista previa."""
-    data        = await request.json()
-    cuerpo      = (data.get("cuerpo") or "").strip()
-    disclaimer  = data.get("disclaimer", True)
-    nombre_muestra = "Juan Pérez"
-    cuerpo_p    = cuerpo.replace("{{nombre}}", nombre_muestra)
+    data                  = await request.json()
+    cuerpo                = (data.get("cuerpo") or "").strip()
+    disclaimer            = data.get("disclaimer", True)
+    plantilla_corporativa = data.get("plantilla_corporativa", True)
+    muestra = {"nombre": "Juan Pérez", "nombres": "Juan", "apellidos": "Pérez",
+               "titulo": "Contador", "ubicacion": "Lima", "member_id": "IPIDET-0001",
+               "numero_registro": "IPIDET-0001", "estado_pago": "pagado"}
+    cuerpo_p    = _sustituir(cuerpo, muestra)
     cuerpo_html = mailer._render_body(cuerpo_p)
-    html = mailer._base_html(
-        f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>',
-        disclaimer=disclaimer,
-    )
+    inner = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
+    html  = mailer._base_html(inner, disclaimer=disclaimer) if plantilla_corporativa else f"""<!DOCTYPE html><html><body style="margin:0;padding:0;font-family:Arial,sans-serif">{inner}</body></html>"""
     return {"html": html}
 
 
 @app.post("/api/comunicaciones/enviar-prueba")
 async def comunicaciones_enviar_prueba(request: Request):
     """Envía un correo de prueba a la dirección indicada."""
-    data         = await request.json()
-    email_prueba = (data.get("email_prueba") or "").strip()
-    asunto       = (data.get("asunto") or "").strip()
-    cuerpo       = (data.get("cuerpo") or "").strip()
-    disclaimer   = data.get("disclaimer", True)
-    attachments  = data.get("attachments", [])
+    data                  = await request.json()
+    email_prueba          = (data.get("email_prueba") or "").strip()
+    asunto                = (data.get("asunto") or "").strip()
+    cuerpo                = (data.get("cuerpo") or "").strip()
+    disclaimer            = data.get("disclaimer", True)
+    plantilla_corporativa = data.get("plantilla_corporativa", True)
+    attachments           = data.get("attachments", [])
 
     if not email_prueba or not asunto or not cuerpo:
         return JSONResponse({"error": "Faltan campos obligatorios."}, status_code=400)
@@ -3446,7 +3452,10 @@ async def comunicaciones_enviar_prueba(request: Request):
     inline_atts: list = []
     if imagenesInline:
         full_html, inline_atts = _process_inline_images(full_html, imagenesInline)
-    html_body = mailer._base_html(full_html, disclaimer=disclaimer)
+    if plantilla_corporativa:
+        html_body = mailer._base_html(full_html, disclaimer=disclaimer)
+    else:
+        html_body = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;font-family:Arial,sans-serif">{full_html}</body></html>"""
     regular_atts = [
         {"filename": a["filename"],
          "data": _b64.b64decode(a["data_b64"]),
