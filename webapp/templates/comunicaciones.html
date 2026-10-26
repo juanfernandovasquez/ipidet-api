@@ -721,6 +721,7 @@
                  @blur="cuerpo = $el.innerHTML"
                  @keyup="saveSel()"
                  @mouseup="saveSel()"
+                 @paste.prevent="handlePaste($event)"
                  class="input w-full text-sm overflow-auto focus:outline-none focus:ring-2 focus:ring-blue-500"
                  style="min-height:220px; max-height:520px; white-space:pre-wrap; word-break:break-word; line-height:1.65">
             </div>
@@ -2092,6 +2093,25 @@ function comunicaciones() {
       if (!url) return;
       const texto = prompt('Texto del enlace:', url) || url;
       this.insertAtCursor(`<a href="${url}" style="color:#2563eb">${texto}</a>`);
+    },
+
+    handlePaste(e) {
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain').trim();
+      if (/^https?:\/\/\S+$/.test(text)) {
+        const display = text.length > 60 ? text.slice(0, 57) + '…' : text;
+        document.execCommand('insertHTML', false, `<a href="${text}" target="_blank" style="color:#2563eb">${display}</a>`);
+      } else {
+        const linked = text.replace(
+          /(https?:\/\/[^\s]+)/g,
+          (url) => `<a href="${url}" target="_blank" style="color:#2563eb">${url}</a>`
+        );
+        if (linked !== text) {
+          document.execCommand('insertHTML', false, linked);
+        } else {
+          document.execCommand('insertText', false, text);
+        }
+      }
+      this.cuerpo = this.$refs.cuerpoEditor.innerHTML;
     },
 
     saveSel() {

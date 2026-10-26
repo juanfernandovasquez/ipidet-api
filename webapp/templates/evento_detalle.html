@@ -1071,11 +1071,15 @@ function eventoComms() {
 
     cargarEnComunicaciones() {
       this._doSync();
-      // Replace {{flyer_url}} placeholder with actual URL so the image appears in comms
-      const cuerpoFinal = this.emailCuerpo.replace(/\{\{flyer_url\}\}/g, this.flyerUrl || '');
+      const replaceEvento = (str) => (str || '')
+        .replace(/\{\{flyer_url\}\}/g,     this.flyerUrl  || '')
+        .replace(/\{\{evento_titulo\}\}/g, d.titulo || '')
+        .replace(/\{\{evento_fecha\}\}/g,  d.fecha  || '')
+        .replace(/\{\{evento_hora\}\}/g,   d.hora   || '')
+        .replace(/\{\{evento_lugar\}\}/g,  d.lugar  || '');
       localStorage.setItem('ipidet_evento_draft', JSON.stringify({
-        asunto: this.emailAsunto || '',
-        cuerpo: cuerpoFinal,
+        asunto: replaceEvento(this.emailAsunto),
+        cuerpo: replaceEvento(this.emailCuerpo),
       }));
       window.location.href = '/comunicaciones';
     },

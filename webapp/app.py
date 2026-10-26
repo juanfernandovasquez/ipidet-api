@@ -3328,6 +3328,7 @@ async def comunicaciones_enviar(request: Request):
             "nombre":           nombre_completo  or "Estimado/a asociado/a",
             "nombres":          nombres_solo     or "",
             "apellidos":        apellidos_solo   or "",
+            "apellido":         apellidos_solo   or "",   # alias del chip del editor de eventos
             "titulo":           titulo           or "",
             "ubicacion":        d.get("ubicacion", "")   or "",
             "member_id":        d.get("member_id", "")   or "",
