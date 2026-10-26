@@ -3660,8 +3660,8 @@ async def evento_asistencia(
 
 @app.post("/eventos/{evento_id}/enviar-prueba")
 async def evento_enviar_prueba(request: Request, evento_id: str):
-    data       = await request.json()
-    email_dest = (data.get("email") or "").strip()
+    data        = await request.json()
+    email_dest  = (data.get("email") or "").strip()
     asunto_tmpl = data.get("asunto", "")
     cuerpo_tmpl = data.get("cuerpo", "")
 
@@ -3674,6 +3674,22 @@ async def evento_enviar_prueba(request: Request, evento_id: str):
     if not evento:
         return {"ok": False, "error": "Evento no encontrado"}
 
+    def _normalize_drive_url(url: str) -> str:
+        """Convierte URLs de compartir de Google Drive a URL de imagen directa."""
+        if not url:
+            return url
+        m = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', url)
+        if m:
+            return f"https://drive.google.com/uc?export=view&id={m.group(1)}"
+        m = re.search(r'drive\.google\.com/open\?.*[?&]id=([a-zA-Z0-9_-]+)', url)
+        if m:
+            return f"https://drive.google.com/uc?export=view&id={m.group(1)}"
+        if 'drive.google.com/uc' in url and 'export=download' in url:
+            return url.replace('export=download', 'export=view')
+        return url
+
+    flyer_url = _normalize_drive_url(evento.get("flyer_url", ""))
+
     reemplazos = {
         "nombre":        "Carlos",
         "apellido":      "García Ríos",
@@ -3682,23 +3698,22 @@ async def evento_enviar_prueba(request: Request, evento_id: str):
         "evento_fecha":  evento.get("fecha", ""),
         "evento_hora":   evento.get("hora", ""),
         "evento_lugar":  evento.get("lugar", ""),
-        "flyer_url":     evento.get("flyer_url", ""),
+        "flyer_url":     flyer_url,
     }
 
     asunto = asunto_tmpl
     cuerpo = cuerpo_tmpl
     for k, v in reemplazos.items():
         asunto = asunto.replace("{{" + k + "}}", v or "")
-        cuerpo = cuerpo.replace("{{" + k + "}}", v or "")
+        cuerpo  = cuerpo.replace("{{" + k + "}}", v or "")
 
     asunto = f"[PRUEBA] {asunto}"
 
-    # Gmail blocks data URIs in <img src="data:...">. Serve the image from our
-    # own server under a temporary URL so all email clients can load it normally.
-    flyer_url_val = reemplazos["flyer_url"]
-    if flyer_url_val.startswith("data:"):
+    # If flyer is a data URI (uploaded file), serve it from our server so Gmail
+    # and all email clients can load it as a normal HTTPS image.
+    if flyer_url.startswith("data:"):
         try:
-            meta, b64data = flyer_url_val.split(",", 1)
+            meta, b64data = flyer_url.split(",", 1)
             mime_type = meta.split(":")[1].split(";")[0]
             raw_bytes = _b64.b64decode(b64data)
             uid = _store_tmp_image(raw_bytes, mime_type)

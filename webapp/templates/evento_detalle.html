@@ -202,9 +202,13 @@ window._eventoData = {
           <span class="text-violet-600 font-semibold ml-1">— recomendado para correos</span>
         </label>
         <div class="flex gap-2">
-          <input type="url" x-model="flyerUrl" placeholder="https://..." class="input flex-1 text-sm"
-                 @click.stop>
+          <input type="text" x-model="flyerUrl" placeholder="https://..." class="input flex-1 text-sm"
+                 @click.stop @blur="flyerUrl = _normalizarUrl(flyerUrl)">
         </div>
+        <p x-show="flyerUrl && !flyerUrl.startsWith('data:') && _esDriveConvertido(flyerUrl)"
+           x-cloak class="text-xs text-green-600 mt-1 flex items-center gap-1">
+          <i class="fa-solid fa-circle-check"></i> URL de Google Drive convertida automáticamente
+        </p>
       </div>
 
       <!-- Aviso: flyer subido como archivo (no URL) -->
@@ -986,6 +990,23 @@ function eventoComms() {
       }
     },
 
+    _normalizarUrl(url) {
+      if (!url) return url;
+      url = url.trim();
+      // Google Drive: /file/d/{ID}/view  →  uc?export=view&id={ID}
+      let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+      if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+      // Google Drive: open?id={ID}  →  uc?export=view&id={ID}
+      m = url.match(/drive\.google\.com\/open\?.*[?&]id=([a-zA-Z0-9_-]+)/);
+      if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+      // Google Drive: uc?export=download  →  uc?export=view
+      if (url.includes('drive.google.com/uc') && url.includes('export=download'))
+        return url.replace('export=download', 'export=view');
+      return url;
+    },
+    _esDriveConvertido(url) {
+      return url && url.includes('drive.google.com/uc?export=view');
+    },
     handlePaste(e) {
       // Strip block-level HTML from clipboard to prevent emojis/text landing
       // on their own isolated line when pasted from web pages or Word.
