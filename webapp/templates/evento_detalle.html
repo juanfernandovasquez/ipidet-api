@@ -299,6 +299,27 @@ window._eventoData = {
                     class="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors">
               <i class="fa-solid fa-image"></i> Insertar flyer
             </button>
+            <!-- Tamaño del flyer -->
+            <div class="flex items-center gap-1 ml-0.5 pl-2 border-l border-slate-200">
+              <span class="text-[10px] text-slate-400 shrink-0">Tamaño:</span>
+              <template x-for="op in [{pct:40,label:'Pequeño'},{pct:60,label:'Mediano'},{pct:80,label:'Grande'},{pct:100,label:'Completo'}]" :key="op.pct">
+                <button type="button"
+                        @mousedown.prevent="flyerAncho = op.pct; actualizarAnchoFlyer()"
+                        :title="`Flyer al ${op.pct}% del ancho del correo`"
+                        :class="flyerAncho === op.pct
+                          ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-sm'
+                          : 'border-slate-200 text-slate-500 hover:bg-slate-50'"
+                        class="flex flex-col items-center justify-end gap-0.5 px-1.5 py-1 border rounded text-[10px] font-medium w-14 transition-colors">
+                  <!-- Visual bar proportional to size -->
+                  <div class="w-full flex items-end justify-center h-3">
+                    <div class="rounded-sm transition-all"
+                         :class="flyerAncho === op.pct ? 'bg-blue-400' : 'bg-slate-300'"
+                         :style="`width:${op.pct}%;height:${Math.round(op.pct*0.1)+2}px`"></div>
+                  </div>
+                  <span x-text="op.label"></span>
+                </button>
+              </template>
+            </div>
           </div>
 
           <!-- Variables para insertar -->
@@ -792,9 +813,10 @@ function eventoComms() {
     });
     tmp.querySelectorAll('[data-flyer]').forEach(el => {
       const img = document.createElement('img');
+      const w = el.getAttribute('data-width') || '100';
       img.setAttribute('src', '{{flyer_url}}');
       img.setAttribute('alt', 'Flyer del evento');
-      img.setAttribute('style', 'max-width:100%;display:block;margin:16px auto;');
+      img.setAttribute('style', `max-width:${w}%;width:${w}%;display:block;margin:16px auto;`);
       el.replaceWith(img);
     });
     return tmp.innerHTML;
@@ -811,7 +833,13 @@ function eventoComms() {
     });
     html = html.replace(
       /<img[^>]*src=["']\{\{flyer_url\}\}["'][^>]*>/gi,
-      '<div contenteditable="false" data-flyer="1" class="ev-flyer-block"><i class="fa-solid fa-image" style="margin-right:6px;"></i>Flyer del evento</div>'
+      (match) => {
+        const wm = match.match(/max-width:\s*(\d+)%/);
+        const w = wm ? wm[1] : '100';
+        return `<div contenteditable="false" data-flyer="1" data-width="${w}" ` +
+               `class="ev-flyer-block" style="max-width:${w}%;margin:10px auto;">` +
+               `<i class="fa-solid fa-image" style="margin-right:6px;"></i>Flyer del evento · ${w}%</div>`;
+      }
     );
     return html;
   }
@@ -833,6 +861,7 @@ function eventoComms() {
     emailAsunto: d.emailAsunto || '',
     emailCuerpo: d.emailCuerpo || '',
     flyerUrl:    _normDrive(d.flyerUrl || ''),
+    flyerAncho:  100,
     dragging:    false,
     savedRange:  null,
     syncTimer:   null,
@@ -901,6 +930,12 @@ function eventoComms() {
       const el = this.$refs.editor;
       if (!el) return;
       el.innerHTML = deserialize(this.emailCuerpo);
+      // Sync flyerAncho button state from existing placeholder
+      const fDiv = el.querySelector('[data-flyer]');
+      if (fDiv) {
+        const w = parseInt(fDiv.getAttribute('data-width') || '100', 10);
+        if ([40, 60, 80, 100].includes(w)) this.flyerAncho = w;
+      }
     },
 
     saveSelection() {
@@ -954,9 +989,22 @@ function eventoComms() {
     },
 
     insertFlyer() {
+      const w = this.flyerAncho;
       this.insertHtml(
-        '<div contenteditable="false" data-flyer="1" class="ev-flyer-block"><i class="fa-solid fa-image" style="margin-right:6px;"></i>Flyer del evento</div><p><br></p>'
+        `<div contenteditable="false" data-flyer="1" data-width="${w}" ` +
+        `class="ev-flyer-block" style="max-width:${w}%;margin:10px auto;">` +
+        `<i class="fa-solid fa-image" style="margin-right:6px;"></i>Flyer del evento · ${w}%</div><p><br></p>`
       );
+    },
+    actualizarAnchoFlyer() {
+      const el = this.$refs.editor;
+      if (!el) return;
+      el.querySelectorAll('[data-flyer]').forEach(div => {
+        div.setAttribute('data-width', this.flyerAncho);
+        div.style.maxWidth = this.flyerAncho + '%';
+        div.innerHTML = `<i class="fa-solid fa-image" style="margin-right:6px;"></i>Flyer del evento · ${this.flyerAncho}%`;
+      });
+      this._doSync();
     },
 
     async guardar() {
