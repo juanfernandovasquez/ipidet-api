@@ -294,6 +294,11 @@ window._eventoData = {
             <button type="button" @mousedown.prevent="fmt('foreColor','#16a34a')" title="Verde"
                     class="w-5 h-5 rounded-full border-2 border-white ring-1 ring-slate-300 hover:scale-110 transition-transform flex-shrink-0" style="background:#16a34a"></button>
             <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+            <button type="button" @mousedown.prevent="insertLink()"
+                    title="Insertar enlace"
+                    class="w-7 h-7 rounded hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
+              <i class="fa-solid fa-link text-xs"></i></button>
+            <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
             <button type="button" @mousedown.prevent="insertFlyer()"
                     title="Insertar la imagen del flyer en este punto del correo"
                     class="flex items-center gap-1 px-2 h-7 rounded text-xs font-medium text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors">
@@ -1080,10 +1085,35 @@ function eventoComms() {
       return url && url.includes('drive.google.com/thumbnail');
     },
     handlePaste(e) {
-      // Strip block-level HTML from clipboard to prevent emojis/text landing
-      // on their own isolated line when pasted from web pages or Word.
-      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-      document.execCommand('insertText', false, text);
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain').trim();
+      // If entire pasted content is a URL, insert it as a clickable link
+      if (/^https?:\/\/\S+$/.test(text)) {
+        const display = text.length > 60 ? text.slice(0, 57) + '…' : text;
+        document.execCommand('insertHTML', false, `<a href="${text}" target="_blank" rel="noopener">${display}</a>`);
+      } else {
+        // Auto-link any URLs embedded in the pasted text
+        const linked = text.replace(
+          /(https?:\/\/[^\s]+)/g,
+          (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
+        );
+        if (linked !== text) {
+          document.execCommand('insertHTML', false, linked);
+        } else {
+          document.execCommand('insertText', false, text);
+        }
+      }
+      this.saveSelection();
+      this._doSync();
+    },
+
+    insertLink() {
+      this.restoreSelection();
+      const sel = window.getSelection();
+      const selectedText = sel && !sel.isCollapsed ? sel.toString() : '';
+      const url = prompt('URL del enlace (ej: https://ipidet.org):', 'https://');
+      if (!url || !url.startsWith('http')) return;
+      const label = selectedText || url;
+      document.execCommand('insertHTML', false, `<a href="${url}" target="_blank" rel="noopener">${label}</a>`);
       this.saveSelection();
       this._doSync();
     },
