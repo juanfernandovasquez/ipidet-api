@@ -3339,6 +3339,7 @@ async def comunicaciones_enviar(request: Request):
 
     disclaimer            = data.get("disclaimer", True)
     plantilla_corporativa = data.get("plantilla_corporativa", True)
+    cc_secundario         = bool(data.get("cc_secundario", False))
     attachments_raw       = data.get("attachments", [])
     imagenesInline        = data.get("imagenesInline", [])
 
@@ -3358,7 +3359,10 @@ async def comunicaciones_enviar(request: Request):
             html_body = mailer._base_html(full_html, disclaimer=disclaimer)
         else:
             html_body = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;font-family:Arial,sans-serif">{full_html}</body></html>"""
-        mensajes.append({"to": d["email"], "nombre": d.get("nombre", ""), "subject": asunto_p, "html_body": html_body})
+        msg = {"to": d["email"], "nombre": d.get("nombre", ""), "subject": asunto_p, "html_body": html_body}
+        if cc_secundario and d.get("emails_cc"):
+            msg["cc"] = d["emails_cc"]
+        mensajes.append(msg)
 
     logo_att = [mailer.LOGO_INLINE_ATT] if plantilla_corporativa and mailer.LOGO_INLINE_ATT else []
     all_attachments = logo_att + list(attachments_raw) + (inline_atts if imagenesInline else [])

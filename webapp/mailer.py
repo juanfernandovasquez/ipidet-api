@@ -255,6 +255,8 @@ def _send_bulk_api(mensajes: list[dict], attachments: list[dict] | None = None) 
             "subject":     m["subject"],
             "htmlContent": m["html_body"],
         }
+        if m.get("cc"):
+            body["cc"] = [{"email": e} for e in m["cc"]]
         if att_brevo:
             body["attachment"] = att_brevo
         payload = _json.dumps(body).encode("utf-8")

@@ -790,9 +790,15 @@
           <input type="checkbox" x-model="plantillaCorporativa" class="rounded accent-blue-600">
           Usar plantilla corporativa IPIDET (logo, recuadro blanco, fondo gris)
         </label>
-        <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-5 select-none">
+        <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-2 select-none">
           <input type="checkbox" x-model="disclaimer" class="rounded accent-blue-600">
           Incluir aviso <em>"No responder directamente a este mensaje"</em> en el pie del email
+        </label>
+        <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-5 select-none"
+               title="Envía el mismo correo en CC al email secundario del socio. Si alguno rebota, Brevo lo reporta y se inhabilita automáticamente.">
+          <input type="checkbox" x-model="ccSecundario" class="rounded accent-amber-500">
+          Copiar al email secundario en CC
+          <span class="text-slate-400">(si el socio tiene uno)</span>
         </label>
 
         <!-- Vista previa + correo de prueba -->
@@ -1564,6 +1570,7 @@ function comunicaciones() {
 
     disclaimer:           true,
     plantillaCorporativa: true,
+    ccSecundario:         false,
     confirmando: false,
     enviando:    false,
     resultado:   null,
@@ -2005,6 +2012,7 @@ function comunicaciones() {
             plantilla:            this.plantilla,
             disclaimer:           this.disclaimer,
             plantilla_corporativa: this.plantillaCorporativa,
+            cc_secundario:        this.ccSecundario,
             destinatarios:        this.seleccionados,
             filtros:        this.filtros.modo === 'publico' ? { ...this.filtrosPublico } : { ...this.filtros, periodo: this._periodoParaFiltro() },
             attachments:    this.adjuntos,

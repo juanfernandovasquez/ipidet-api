@@ -2353,10 +2353,15 @@ def get_comunicacion_destinatarios(
         )
         if not email:
             continue
+        emails_cc = [
+            e["email"] for e in m.get("emails", [])
+            if e.get("estado") == "habilitado" and e["email"] != email
+        ]
         result.append({
             "member_id":   m["member_id"],
             "nombre":      f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
             "email":       email,
+            "emails_cc":   emails_cc,
             "titulo":      m.get("titulo", ""),
             "ubicacion":   m.get("ubicacion", ""),
             "estado_pago": pay_map.get(m["member_id"], "sin registro") if periodo else "",
