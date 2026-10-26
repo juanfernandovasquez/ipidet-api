@@ -3343,6 +3343,26 @@ async def comunicaciones_enviar(request: Request):
     attachments_raw       = data.get("attachments", [])
     imagenesInline        = data.get("imagenesInline", [])
 
+    # Si CC secundario está activo, resuelve emails_cc desde la DB en el momento
+    # del envío — no confiar en lo que el frontend mandó (puede ser stale si el
+    # usuario no refrescó el preview después de modificar emails de un socio).
+    if cc_secundario:
+        mids = [d.get("member_id") for d in destinatarios if d.get("member_id")]
+        if mids:
+            from webapp.db import members_col as _mc
+            members_map = {
+                m["member_id"]: m
+                for m in _mc.find({"member_id": {"$in": mids}}, {"member_id": 1, "emails": 1})
+            }
+            for d in destinatarios:
+                mid = d.get("member_id", "")
+                if mid in members_map:
+                    primary = d.get("email", "")
+                    d["emails_cc"] = [
+                        e["email"] for e in members_map[mid].get("emails", [])
+                        if e.get("estado") == "habilitado" and e.get("email") != primary
+                    ]
+
     mensajes = []
     for d in destinatarios:
         if not d.get("email"):
