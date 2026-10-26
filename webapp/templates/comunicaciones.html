@@ -618,6 +618,28 @@
           </div>
         </div>
 
+        <!-- Cargar desde evento -->
+        <div class="mb-4">
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-medium text-slate-600 shrink-0">
+              <i class="fa-solid fa-calendar-days text-violet-400 mr-1"></i> Desde evento
+            </label>
+            <select @change="cargarPlantillaEvento($event.target.value); $event.target.value=''"
+                    class="input text-xs py-1.5 flex-1"
+                    x-init="cargarEventosConPlantilla()">
+              <option value="">— Seleccionar evento —</option>
+              <template x-for="ev in eventosConPlantilla" :key="ev._id">
+                <option :value="ev._id"
+                        x-text="ev.titulo + (ev.fecha ? ' · ' + ev.fecha : '')"></option>
+              </template>
+            </select>
+          </div>
+          <p x-show="eventosConPlantilla.length === 0" x-cloak
+             class="text-xs text-slate-400 mt-1">
+            No hay eventos con plantilla guardada aún.
+          </p>
+        </div>
+
         <!-- Asunto -->
         <div class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Asunto <span class="text-red-500">*</span></label>
@@ -1512,7 +1534,8 @@ function comunicaciones() {
     plantillasList: [],
     asunto:         '',
     cuerpo:         '',
-    draftEventoBanner: false,
+    draftEventoBanner:    false,
+    eventosConPlantilla:  [],
 
     filtrosPublico: {
       estado: '', ciudad: '', titulo: '', fuente: '', tag: '',
@@ -1633,6 +1656,42 @@ function comunicaciones() {
         const el = this.$refs.cuerpoEditor;
         if (el) el.innerHTML = this.cuerpo || '';
       });
+    },
+
+    async cargarEventosConPlantilla() {
+      try {
+        const r = await fetch('/api/eventos/plantillas-email');
+        this.eventosConPlantilla = await r.json();
+      } catch(e) {}
+    },
+
+    cargarPlantillaEvento(eventoId) {
+      if (!eventoId) return;
+      const ev = this.eventosConPlantilla.find(e => e._id === eventoId);
+      if (!ev) return;
+      const norm = (url) => {
+        if (!url) return url;
+        const m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1600`;
+        const m2 = url.match(/drive\.google\.com\/uc\?.*[?&]id=([a-zA-Z0-9_-]+)/);
+        if (m2) return `https://drive.google.com/thumbnail?id=${m2[1]}&sz=w1600`;
+        return url;
+      };
+      const flyerUrl = norm(ev.flyer_url || '');
+      const repl = (str) => (str || '')
+        .replace(/\{\{flyer_url\}\}/g,     flyerUrl)
+        .replace(/\{\{evento_titulo\}\}/g, ev.titulo || '')
+        .replace(/\{\{evento_fecha\}\}/g,  ev.fecha  || '')
+        .replace(/\{\{evento_hora\}\}/g,   ev.hora   || '')
+        .replace(/\{\{evento_lugar\}\}/g,  ev.lugar  || '');
+      this.asunto = repl(ev.email_asunto);
+      this.cuerpo = repl(ev.email_cuerpo);
+      this.$nextTick(() => {
+        const el = this.$refs.cuerpoEditor;
+        if (el) el.innerHTML = this.cuerpo;
+      });
+      this.draftEventoBanner = true;
+      setTimeout(() => { this.draftEventoBanner = false; }, 8000);
     },
 
     async cargarPlantillas() {

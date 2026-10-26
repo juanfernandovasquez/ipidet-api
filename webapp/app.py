@@ -3778,6 +3778,32 @@ async def api_eventos(limit: int = 5):
     return {"eventos": eventos}
 
 
+@app.get("/api/eventos/plantillas-email")
+async def api_eventos_plantillas():
+    """Eventos que tienen plantilla de correo guardada (para dropdown en Comunicaciones)."""
+    eventos = pdb.get_eventos(search="", estado="activo") + pdb.get_eventos(search="", estado="cancelado")
+    resultado = []
+    seen = set()
+    for e in eventos:
+        eid = e.get("_id", "")
+        if eid in seen:
+            continue
+        seen.add(eid)
+        if e.get("email_asunto") or e.get("email_cuerpo"):
+            resultado.append({
+                "_id":         eid,
+                "titulo":      e.get("titulo", ""),
+                "fecha":       e.get("fecha", ""),
+                "hora":        e.get("hora", ""),
+                "lugar":       e.get("lugar", ""),
+                "email_asunto": e.get("email_asunto", ""),
+                "email_cuerpo": e.get("email_cuerpo", ""),
+                "flyer_url":   e.get("flyer_url", ""),
+            })
+    resultado.sort(key=lambda x: x["fecha"], reverse=True)
+    return resultado
+
+
 @app.get("/api/eventos/{evento_id}")
 async def api_evento_detalle(evento_id: str):
     """Detalle de evento con stats para bots."""
