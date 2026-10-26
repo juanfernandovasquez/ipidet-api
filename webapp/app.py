@@ -3360,7 +3360,8 @@ async def comunicaciones_enviar(request: Request):
             html_body = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;font-family:Arial,sans-serif">{full_html}</body></html>"""
         mensajes.append({"to": d["email"], "nombre": d.get("nombre", ""), "subject": asunto_p, "html_body": html_body})
 
-    all_attachments = list(attachments_raw) + inline_atts if imagenesInline else list(attachments_raw)
+    logo_att = [mailer.LOGO_INLINE_ATT] if plantilla_corporativa and mailer.LOGO_INLINE_ATT else []
+    all_attachments = logo_att + list(attachments_raw) + (inline_atts if imagenesInline else [])
     enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(
         mensajes, attachments=all_attachments or None
     )
@@ -3468,7 +3469,8 @@ async def comunicaciones_enviar_prueba(request: Request):
          "mime": a["mime"], "content_id": a["content_id"]}
         for a in inline_atts
     ]
-    all_atts = regular_atts + inline_atts_api
+    logo_att = [mailer.LOGO_INLINE_ATT] if plantilla_corporativa and mailer.LOGO_INLINE_ATT else []
+    all_atts = logo_att + regular_atts + inline_atts_api
     try:
         await mailer.send_email(
             email_prueba,

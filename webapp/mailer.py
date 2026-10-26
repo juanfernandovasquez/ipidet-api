@@ -25,9 +25,11 @@ from config.settings import (
     PORTAL_API_BASE,
 )
 
-# Pre-encode logo once at startup so emails never depend on an external URL.
-# Gmail/Outlook block external images by default; inline base64 always renders.
-def _load_logo_b64() -> str:
+# Pre-load logo as a CID inline attachment.
+# data: URIs are blocked by Gmail; external URLs are blocked by default too.
+# CID inline (multipart/related via Brevo API) renders in all clients.
+def _load_logo() -> tuple[str, str]:
+    """Returns (data_b64, path_found). Empty strings if file not found."""
     candidates = [
         _os.path.join(_os.path.dirname(__file__), "static", "logo.png"),
         _os.path.join(_os.path.dirname(__file__), "..", "webapp", "static", "logo.png"),
@@ -35,10 +37,18 @@ def _load_logo_b64() -> str:
     for path in candidates:
         if _os.path.isfile(path):
             with open(path, "rb") as f:
-                return "data:image/png;base64," + _b64.b64encode(f.read()).decode()
-    return ""   # fallback: empty src — broken icon but won't crash
+                return _b64.b64encode(f.read()).decode(), path
+    return "", ""
 
-_LOGO_DATA_URI = _load_logo_b64()
+_LOGO_B64, _ = _load_logo()
+
+# Ready-made attachment dict — include in every send that uses _base_html
+LOGO_INLINE_ATT: dict = {
+    "filename":   "logo_ipidet.png",
+    "data_b64":   _LOGO_B64,
+    "mime":       "image/png",
+    "content_id": "ipidet-logo",
+} if _LOGO_B64 else {}
 
 
 def _send_sync(
@@ -304,7 +314,7 @@ def _base_html(contenido: str, disclaimer: bool = True) -> str:
         <tr><td style="background:#1e3a5f;height:6px;font-size:0;line-height:0">&nbsp;</td></tr>
         <!-- Header con logo -->
         <tr><td style="background:#ffffff;padding:20px 32px;border-bottom:1px solid #e2e8f0">
-          <img src="{_LOGO_DATA_URI}" alt="IPIDET" height="38"
+          <img src="cid:ipidet-logo" alt="IPIDET" height="38"
                style="display:block;border:0;outline:none;max-width:200px">
         </td></tr>
         <!-- Body -->
