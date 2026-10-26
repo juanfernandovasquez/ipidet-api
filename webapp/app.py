@@ -18,11 +18,26 @@ import webapp.auth as auth
 import webapp.mailer as mailer
 import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
-from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN
+from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE
 from knowledge_base import db as kb_db
 from billing import db as billing_db
 import threading as _threading
 import time as _time
+import uuid as _uuid
+
+# ── Temporary image store for test emails (in-memory, 30-min TTL) ─────────────
+_tmp_images: dict = {}  # {uid: {"data": bytes, "mime": str, "exp": float}}
+
+def _store_tmp_image(data: bytes, mime: str) -> str:
+    uid = _uuid.uuid4().hex
+    exp = _time.time() + 1800  # 30 minutes
+    _tmp_images[uid] = {"data": data, "mime": mime, "exp": exp}
+    # Clean expired entries while we're here
+    now = _time.time()
+    expired = [k for k, v in _tmp_images.items() if v["exp"] < now]
+    for k in expired:
+        _tmp_images.pop(k, None)
+    return uid
 
 # ── Brute-force protection (in-memory, resets on redeploy) ────────────────────
 _login_attempts: dict = {}   # email → {"count": int, "locked_until": float}
@@ -3556,6 +3571,17 @@ async def evento_nuevo(
     return RedirectResponse("/eventos", status_code=303)
 
 
+@app.get("/eventos/flyer-tmp/{uid}")
+async def evento_flyer_tmp(uid: str):
+    """Sirve imágenes de flyer subidas como data URI durante el envío de prueba (TTL 30 min)."""
+    from fastapi.responses import Response
+    entry = _tmp_images.get(uid)
+    if not entry or entry["exp"] < _time.time():
+        raise HTTPException(status_code=404, detail="Imagen expirada o no encontrada")
+    return Response(content=entry["data"], media_type=entry["mime"],
+                    headers={"Cache-Control": "public, max-age=1800"})
+
+
 @app.get("/eventos/{evento_id}", response_class=HTMLResponse)
 async def evento_detalle(request: Request, evento_id: str):
     evento = pdb.get_evento(evento_id)
@@ -3667,27 +3693,27 @@ async def evento_enviar_prueba(request: Request, evento_id: str):
 
     asunto = f"[PRUEBA] {asunto}"
 
-    # Gmail blocks data URIs in <img src="data:...">. Convert to inline attachment.
-    attachments = None
+    # Gmail blocks data URIs in <img src="data:...">. Serve the image from our
+    # own server under a temporary URL so all email clients can load it normally.
     flyer_url_val = reemplazos["flyer_url"]
     if flyer_url_val.startswith("data:"):
         try:
             meta, b64data = flyer_url_val.split(",", 1)
             mime_type = meta.split(":")[1].split(";")[0]
             raw_bytes = _b64.b64decode(b64data)
-            ext = mime_type.split("/")[-1]
-            attachments = [{"filename": f"flyer.{ext}", "data": raw_bytes,
-                            "mime": mime_type, "content_id": "flyer"}]
+            uid = _store_tmp_image(raw_bytes, mime_type)
+            public_base = (PORTAL_API_BASE or "http://localhost:8000").rstrip("/")
+            tmp_url = f"{public_base}/eventos/flyer-tmp/{uid}"
             cuerpo = re.sub(
                 r'(<img[^>]*)src="data:[^"]*"([^>]*>)',
-                r'\1src="cid:flyer"\2',
+                rf'\1src="{tmp_url}"\2',
                 cuerpo
             )
         except Exception:
             pass
 
     try:
-        await mailer.send_email(email_dest, asunto, html_body=cuerpo, attachments=attachments)
+        await mailer.send_email(email_dest, asunto, html_body=cuerpo)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
