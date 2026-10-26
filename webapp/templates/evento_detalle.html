@@ -816,11 +816,23 @@ function eventoComms() {
     return html;
   }
 
+  function _normDrive(url) {
+    if (!url) return url;
+    url = url.trim();
+    let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1600`;
+    m = url.match(/drive\.google\.com\/open\?.*[?&]id=([a-zA-Z0-9_-]+)/);
+    if (m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1600`;
+    m = url.match(/drive\.google\.com\/uc\?.*[?&]id=([a-zA-Z0-9_-]+)/);
+    if (m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1600`;
+    return url;
+  }
+
   return {
     tab:         'flyer',
     emailAsunto: d.emailAsunto || '',
     emailCuerpo: d.emailCuerpo || '',
-    flyerUrl:    d.flyerUrl    || '',
+    flyerUrl:    _normDrive(d.flyerUrl || ''),
     dragging:    false,
     savedRange:  null,
     syncTimer:   null,
@@ -949,6 +961,7 @@ function eventoComms() {
 
     async guardar() {
       this._doSync();
+      this.flyerUrl = this._normalizarUrl(this.flyerUrl); // normaliza Drive antes de guardar
       this.guardando = true;
       const eventId = window.location.pathname.split('/').filter(Boolean)[1];
       try {
@@ -990,22 +1003,9 @@ function eventoComms() {
       }
     },
 
-    _normalizarUrl(url) {
-      if (!url) return url;
-      url = url.trim();
-      // Google Drive: /file/d/{ID}/view  →  uc?export=view&id={ID}
-      let m = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
-      if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-      // Google Drive: open?id={ID}  →  uc?export=view&id={ID}
-      m = url.match(/drive\.google\.com\/open\?.*[?&]id=([a-zA-Z0-9_-]+)/);
-      if (m) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
-      // Google Drive: uc?export=download  →  uc?export=view
-      if (url.includes('drive.google.com/uc') && url.includes('export=download'))
-        return url.replace('export=download', 'export=view');
-      return url;
-    },
+    _normalizarUrl(url) { return _normDrive(url); },
     _esDriveConvertido(url) {
-      return url && url.includes('drive.google.com/uc?export=view');
+      return url && url.includes('drive.google.com/thumbnail');
     },
     handlePaste(e) {
       // Strip block-level HTML from clipboard to prevent emojis/text landing
