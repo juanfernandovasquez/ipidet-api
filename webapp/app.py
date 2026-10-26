@@ -3358,7 +3358,7 @@ async def comunicaciones_enviar(request: Request):
             html_body = mailer._base_html(full_html, disclaimer=disclaimer)
         else:
             html_body = f"""<!DOCTYPE html><html><body style="margin:0;padding:0;font-family:Arial,sans-serif">{full_html}</body></html>"""
-        mensajes.append({"to": d["email"], "nombre": nombre, "subject": asunto_p, "html_body": html_body})
+        mensajes.append({"to": d["email"], "nombre": d.get("nombre", ""), "subject": asunto_p, "html_body": html_body})
 
     all_attachments = list(attachments_raw) + inline_atts if imagenesInline else list(attachments_raw)
     enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(
