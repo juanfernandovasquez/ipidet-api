@@ -3295,6 +3295,29 @@ def _process_inline_images(html: str, imagenesInline: list) -> tuple[str, list]:
     return html, inline_atts
 
 
+def _sustituir(tmpl: str, d: dict) -> str:
+    nombre_completo = d.get("nombre", "")
+    partes          = nombre_completo.split()
+    nombres_solo    = " ".join(partes[1:]) if len(partes) > 1 else nombre_completo
+    apellidos_solo  = partes[0] if partes else ""
+    titulo          = d.get("titulo", "")
+    vals = {
+        "nombre":           nombre_completo  or "Estimado/a asociado/a",
+        "nombres":          nombres_solo     or "",
+        "apellidos":        apellidos_solo   or "",
+        "apellido":         apellidos_solo   or "",
+        "titulo":           titulo           or "",
+        "ubicacion":        d.get("ubicacion", "")   or "",
+        "member_id":        d.get("member_id", "")   or "",
+        "numero_registro":  d.get("member_id", "")   or "",
+        "estado_pago":      d.get("estado_pago", "") or "",
+    }
+    for k, v in vals.items():
+        tmpl = tmpl.replace("{{" + k + "}}", v)
+    tmpl = re.sub(r'\{\{[^}]+\}\}', '', tmpl)
+    return tmpl
+
+
 @app.post("/api/comunicaciones/enviar")
 async def comunicaciones_enviar(request: Request):
     data          = await request.json()
@@ -3317,30 +3340,6 @@ async def comunicaciones_enviar(request: Request):
     disclaimer      = data.get("disclaimer", True)
     attachments_raw = data.get("attachments", [])
     imagenesInline  = data.get("imagenesInline", [])
-
-    def _sustituir(tmpl: str, d: dict) -> str:
-        nombre_completo = d.get("nombre", "")        # "GARCÍA RÍOS Carlos"
-        partes          = nombre_completo.split()
-        nombres_solo    = " ".join(partes[1:]) if len(partes) > 1 else nombre_completo
-        apellidos_solo  = partes[0] if partes else ""
-        titulo          = d.get("titulo", "")
-        vals = {
-            "nombre":           nombre_completo  or "Estimado/a asociado/a",
-            "nombres":          nombres_solo     or "",
-            "apellidos":        apellidos_solo   or "",
-            "apellido":         apellidos_solo   or "",   # alias del chip del editor de eventos
-            "titulo":           titulo           or "",
-            "ubicacion":        d.get("ubicacion", "")   or "",
-            "member_id":        d.get("member_id", "")   or "",
-            "numero_registro":  d.get("member_id", "")   or "",
-            "estado_pago":      d.get("estado_pago", "") or "",
-        }
-        for k, v in vals.items():
-            tmpl = tmpl.replace("{{" + k + "}}", v)
-        # Strip any leftover {{...}} placeholders that aren't in vals (safe default: empty)
-        import re as _re_inner
-        tmpl = _re_inner.sub(r'\{\{[^}]+\}\}', '', tmpl)
-        return tmpl
 
     mensajes = []
     for d in destinatarios:
@@ -3464,7 +3463,7 @@ async def comunicaciones_enviar_prueba(request: Request):
     try:
         await mailer.send_email(
             email_prueba,
-            f"[PRUEBA] {asunto.replace('{{nombre}}', nombre_muestra)}",
+            f"[PRUEBA] {asunto}",
             html_body,
             attachments=all_atts or None,
         )
