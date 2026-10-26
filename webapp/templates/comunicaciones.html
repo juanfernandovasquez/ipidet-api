@@ -12,6 +12,16 @@
 {% endif %}
 <div x-data="comunicaciones()" x-init="init()">
 
+  <!-- Banner: plantilla de evento cargada -->
+  <div x-show="draftEventoBanner" x-cloak x-transition
+       class="mb-4 flex items-center gap-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl px-4 py-3 text-sm">
+    <i class="fa-solid fa-circle-check text-blue-500 text-base shrink-0"></i>
+    <span><strong>Plantilla del evento cargada.</strong> Revisa el asunto y el cuerpo antes de enviar.</span>
+    <button type="button" @click="draftEventoBanner = false" class="ml-auto text-blue-400 hover:text-blue-600">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+  </div>
+
   <div class="grid grid-cols-1 xl:grid-cols-5 gap-5">
 
     <!-- ── Panel izquierdo: Filtros ── -->
@@ -1497,6 +1507,7 @@ function comunicaciones() {
     plantillasList: [],
     asunto:         '',
     cuerpo:         '',
+    draftEventoBanner: false,
 
     filtrosPublico: {
       estado: '', ciudad: '', titulo: '', fuente: '', tag: '',
@@ -1600,6 +1611,18 @@ function comunicaciones() {
       this.destinatarios = {{ pre_destinatarios | tojson }}.map(d => ({ ...d, selected: true }));
       this.showPreview = true;
       {% endif %}
+      // Load event draft if coming from evento_detalle
+      const rawDraft = localStorage.getItem('ipidet_evento_draft');
+      if (rawDraft) {
+        try {
+          const draft = JSON.parse(rawDraft);
+          this.asunto = draft.asunto || '';
+          this.cuerpo = draft.cuerpo || '';
+          this.draftEventoBanner = true;
+          setTimeout(() => { this.draftEventoBanner = false; }, 8000);
+        } catch(e) {}
+        localStorage.removeItem('ipidet_evento_draft');
+      }
       this.$nextTick(() => {
         const el = this.$refs.cuerpoEditor;
         if (el) el.innerHTML = this.cuerpo || '';
