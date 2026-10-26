@@ -3318,13 +3318,35 @@ async def comunicaciones_enviar(request: Request):
     attachments_raw = data.get("attachments", [])
     imagenesInline  = data.get("imagenesInline", [])
 
+    def _sustituir(tmpl: str, d: dict) -> str:
+        nombre_completo = d.get("nombre", "")        # "GARCÍA RÍOS Carlos"
+        partes          = nombre_completo.split()
+        nombres_solo    = " ".join(partes[1:]) if len(partes) > 1 else nombre_completo
+        apellidos_solo  = partes[0] if partes else ""
+        titulo          = d.get("titulo", "")
+        vals = {
+            "nombre":           nombre_completo  or "Estimado/a asociado/a",
+            "nombres":          nombres_solo     or "",
+            "apellidos":        apellidos_solo   or "",
+            "titulo":           titulo           or "",
+            "ubicacion":        d.get("ubicacion", "")   or "",
+            "member_id":        d.get("member_id", "")   or "",
+            "numero_registro":  d.get("member_id", "")   or "",
+            "estado_pago":      d.get("estado_pago", "") or "",
+        }
+        for k, v in vals.items():
+            tmpl = tmpl.replace("{{" + k + "}}", v)
+        # Strip any leftover {{...}} placeholders that aren't in vals (safe default: empty)
+        import re as _re_inner
+        tmpl = _re_inner.sub(r'\{\{[^}]+\}\}', '', tmpl)
+        return tmpl
+
     mensajes = []
     for d in destinatarios:
         if not d.get("email"):
             continue
-        nombre      = d.get("nombre", "asociado/a")
-        asunto_p    = asunto.replace("{{nombre}}", nombre)
-        cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
+        asunto_p    = _sustituir(asunto, d)
+        cuerpo_p    = _sustituir(cuerpo, d)
         cuerpo_html = mailer._render_body(cuerpo_p)
         full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
         if imagenesInline:
@@ -3408,8 +3430,11 @@ async def comunicaciones_enviar_prueba(request: Request):
     if not email_prueba or not asunto or not cuerpo:
         return JSONResponse({"error": "Faltan campos obligatorios."}, status_code=400)
 
-    nombre_muestra = "Juan Pérez"
-    cuerpo_p    = cuerpo.replace("{{nombre}}", nombre_muestra)
+    muestra = {"nombre": "Juan Pérez", "nombres": "Juan", "apellidos": "Pérez",
+               "titulo": "Contador", "ubicacion": "Lima", "member_id": "IPIDET-0001",
+               "numero_registro": "IPIDET-0001", "estado_pago": "pagado"}
+    cuerpo_p = _sustituir(cuerpo, muestra)
+    asunto   = _sustituir(asunto, muestra)
     cuerpo_html = mailer._render_body(cuerpo_p)
     banner = (
         '<div style="background:#f59e0b;color:#fff;text-align:center;'
