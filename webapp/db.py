@@ -2926,11 +2926,13 @@ def get_eventos(search: str = "", estado: str = "", page: int = 1, per_page: int
     docs = list(eventos_col.find(q).sort("fecha", 1).skip(skip).limit(per_page))
     for d in docs:
         d["_id"] = str(d["_id"])
-        n_ins = len(d.get("inscritos", []))
+        n_ins  = len(d.get("inscritos", []))
+        n_zoom = len(d.get("zoom_registrants", []))
+        total_ins = n_ins + n_zoom
         cupo = d.get("cupo_max")
-        d["n_inscritos"] = n_ins
-        d["cupo_disponible"] = (cupo - n_ins) if cupo else None
-        d["lleno"] = bool(cupo and n_ins >= cupo)
+        d["n_inscritos"]     = total_ins
+        d["cupo_disponible"] = (cupo - total_ins) if cupo else None
+        d["lleno"]           = bool(cupo and total_ins >= cupo)
     return docs, total
 
 

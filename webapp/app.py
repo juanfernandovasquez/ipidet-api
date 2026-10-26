@@ -3764,8 +3764,21 @@ async def evento_enviar_prueba(request: Request, evento_id: str):
         except Exception:
             pass
 
+    plantilla_corporativa = bool(data.get("plantilla_corporativa", True))
+    disclaimer            = bool(data.get("disclaimer", True))
+
+    cuerpo_html = mailer._render_body(cuerpo)
+    if plantilla_corporativa:
+        inner    = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
+        full_html = mailer._base_html(inner, disclaimer=disclaimer)
+        logo_att  = [mailer.LOGO_INLINE_ATT] if mailer.LOGO_INLINE_ATT else []
+    else:
+        full_html = cuerpo_html
+        logo_att  = []
+
     try:
-        await mailer.send_email(email_dest, asunto, html_body=cuerpo)
+        await mailer.send_email(email_dest, asunto, html_body=full_html,
+                                attachments=logo_att or None)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -3781,10 +3794,13 @@ async def api_eventos(limit: int = 5):
 @app.get("/api/eventos/plantillas-email")
 async def api_eventos_plantillas():
     """Eventos que tienen plantilla de correo guardada (para dropdown en Comunicaciones)."""
-    eventos = pdb.get_eventos(search="", estado="activo") + pdb.get_eventos(search="", estado="cancelado")
+    docs_activos,     _ = pdb.get_eventos(search="", estado="activo",     per_page=200)
+    docs_finalizados, _ = pdb.get_eventos(search="", estado="finalizado", per_page=200)
+    docs_cancelados,  _ = pdb.get_eventos(search="", estado="cancelado",  per_page=200)
+    eventos_list = docs_activos + docs_finalizados + docs_cancelados
     resultado = []
     seen = set()
-    for e in eventos:
+    for e in eventos_list:
         eid = e.get("_id", "")
         if eid in seen:
             continue

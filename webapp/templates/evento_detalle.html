@@ -91,16 +91,15 @@
       <div class="flex gap-3">
         <button type="submit" class="btn-primary text-sm">Guardar cambios</button>
         <button type="button" @click="editando = false" class="btn-ghost text-sm">Cancelar</button>
-        <form method="post" action="/eventos/{{ evento._id }}/delete" class="ml-auto"
-              onsubmit="return confirm('¿Cancelar este evento?')">
-          <button type="submit" class="text-sm text-red-500 hover:text-red-700 px-3 py-2">
-            <i class="fa-solid fa-ban mr-1"></i> Cancelar evento
-          </button>
-        </form>
+        <button type="button" class="ml-auto text-sm text-red-500 hover:text-red-700 px-3 py-2"
+                onclick="if(confirm('¿Eliminar este evento?')) document.getElementById('ev-delete-form').submit()">
+          <i class="fa-solid fa-ban mr-1"></i> Cancelar evento
+        </button>
       </div>
     </form>
   </div>
 </div>
+<form id="ev-delete-form" method="post" action="/eventos/{{ evento._id }}/delete" class="hidden"></form>
 
 <!-- ═══════════════════════════════════════════════════════════
      SECCIÓN — FLYER Y PLANTILLA DE CORREO
@@ -371,6 +370,21 @@ window._eventoData = {
           </span>
         </div>
 
+        <!-- Opciones de formato (compartidas con prueba y envío masivo) -->
+        <div class="border border-slate-200 rounded-xl p-4 space-y-2 bg-slate-50">
+          <p class="text-xs font-semibold text-slate-600">
+            <i class="fa-solid fa-sliders mr-1 text-slate-400"></i> Opciones de formato
+          </p>
+          <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+            <input type="checkbox" x-model="plantillaCorporativa" class="rounded accent-blue-600">
+            Usar plantilla corporativa IPIDET (recuadro 600px + logo)
+          </label>
+          <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
+            <input type="checkbox" x-model="disclaimer" class="rounded accent-blue-600">
+            Incluir aviso "no responder a este correo"
+          </label>
+        </div>
+
         <!-- Enviar prueba -->
         <div class="border border-slate-200 rounded-xl p-4 space-y-2 bg-slate-50">
           <p class="text-xs font-semibold text-slate-600">
@@ -398,7 +412,7 @@ window._eventoData = {
           <p class="text-xs font-semibold text-blue-700">
             <i class="fa-solid fa-bullhorn mr-1 text-blue-400"></i> Envío masivo a socios
           </p>
-          <p class="text-xs text-blue-600">Carga esta plantilla en la sección de Comunicaciones para enviarla a tu lista de socios.</p>
+          <p class="text-xs text-blue-600">Carga esta plantilla en la sección de Comunicaciones para enviarla a tu lista de socios (se aplicarán las opciones de formato seleccionadas arriba).</p>
           <button type="button" @click="cargarEnComunicaciones()"
                   class="btn-primary text-sm flex items-center gap-1.5 w-full justify-center">
             <i class="fa-solid fa-arrow-right-to-bracket"></i>
@@ -886,6 +900,8 @@ function eventoComms() {
     guardando:   false,
     guardadoOk:  false,
     pruebaEmail: '', pruebaEnviando: false, pruebaOk: false, pruebaError: '',
+    plantillaCorporativa: true,
+    disclaimer: true,
 
     get sampleVars() {
       return {
@@ -1057,7 +1073,13 @@ function eventoComms() {
         const r = await fetch('/eventos/' + eventId + '/enviar-prueba', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ email, asunto: this.emailAsunto, cuerpo: this.emailCuerpo }),
+          body: JSON.stringify({
+            email,
+            asunto: this.emailAsunto,
+            cuerpo: this.emailCuerpo,
+            plantilla_corporativa: this.plantillaCorporativa,
+            disclaimer: this.disclaimer,
+          }),
         });
         const resp = await r.json();
         if (resp.ok) { this.pruebaOk = true; setTimeout(() => { this.pruebaOk = false; }, 6000); }
@@ -1078,8 +1100,10 @@ function eventoComms() {
         .replace(/\{\{evento_hora\}\}/g,   d.hora   || '')
         .replace(/\{\{evento_lugar\}\}/g,  d.lugar  || '');
       localStorage.setItem('ipidet_evento_draft', JSON.stringify({
-        asunto: replaceEvento(this.emailAsunto),
-        cuerpo: replaceEvento(this.emailCuerpo),
+        asunto:               replaceEvento(this.emailAsunto),
+        cuerpo:               replaceEvento(this.emailCuerpo),
+        plantilla_corporativa: this.plantillaCorporativa,
+        disclaimer:            this.disclaimer,
       }));
       window.location.href = '/comunicaciones';
     },

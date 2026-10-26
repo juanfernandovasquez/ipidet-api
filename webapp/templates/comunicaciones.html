@@ -1647,6 +1647,8 @@ function comunicaciones() {
           const draft = JSON.parse(rawDraft);
           this.asunto = draft.asunto || '';
           this.cuerpo = draft.cuerpo || '';
+          if (draft.plantilla_corporativa !== undefined) this.plantillaCorporativa = draft.plantilla_corporativa;
+          if (draft.disclaimer !== undefined) this.disclaimer = draft.disclaimer;
           this.draftEventoBanner = true;
           setTimeout(() => { this.draftEventoBanner = false; }, 8000);
         } catch(e) {}
