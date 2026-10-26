@@ -10,6 +10,7 @@ import asyncio
 import json as _json
 import urllib.request
 import urllib.error
+import os as _os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -23,6 +24,21 @@ from config.settings import (
     GMAIL_ADDRESS, GMAIL_APP_PASSWORD,
     PORTAL_API_BASE,
 )
+
+# Pre-encode logo once at startup so emails never depend on an external URL.
+# Gmail/Outlook block external images by default; inline base64 always renders.
+def _load_logo_b64() -> str:
+    candidates = [
+        _os.path.join(_os.path.dirname(__file__), "static", "logo.png"),
+        _os.path.join(_os.path.dirname(__file__), "..", "webapp", "static", "logo.png"),
+    ]
+    for path in candidates:
+        if _os.path.isfile(path):
+            with open(path, "rb") as f:
+                return "data:image/png;base64," + _b64.b64encode(f.read()).decode()
+    return ""   # fallback: empty src — broken icon but won't crash
+
+_LOGO_DATA_URI = _load_logo_b64()
 
 
 def _send_sync(
@@ -276,7 +292,6 @@ async def send_bulk(mensajes: list[dict],
 # ── Plantillas ────────────────────────────────────────────────────────────────
 
 def _base_html(contenido: str, disclaimer: bool = True) -> str:
-    logo_url = f"{PORTAL_API_BASE.rstrip('/')}/static/logo.png"
     return f"""
 <!DOCTYPE html>
 <html lang="es">
@@ -289,7 +304,7 @@ def _base_html(contenido: str, disclaimer: bool = True) -> str:
         <tr><td style="background:#1e3a5f;height:6px;font-size:0;line-height:0">&nbsp;</td></tr>
         <!-- Header con logo -->
         <tr><td style="background:#ffffff;padding:20px 32px;border-bottom:1px solid #e2e8f0">
-          <img src="{logo_url}" alt="IPIDET" height="38"
+          <img src="{_LOGO_DATA_URI}" alt="IPIDET" height="38"
                style="display:block;border:0;outline:none;max-width:200px">
         </td></tr>
         <!-- Body -->
