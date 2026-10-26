@@ -4945,16 +4945,14 @@ async def redes_dashboard(request: Request):
     posts, _      = pdb.get_redes_posts(per_page=10)
     cronograma    = pdb.get_cronograma(estado="programado")
     todas_cuentas = pdb.get_redes_cuentas()
-    return templates.TemplateResponse("redes_dashboard.html", {
-        "request": request,
-        "cuentas": cuentas,
-        "historico": historico,
-        "posts_recientes": posts,
-        "cronograma_prox": cronograma[:6],
-        "todas_cuentas": todas_cuentas,
-        "plataformas_config": pdb.PLATAFORMAS_CONFIG,
-        **_ctx(request),
-    })
+    return templates.TemplateResponse(request, "redes_dashboard.html", _ctx(request,
+        cuentas=cuentas,
+        historico=historico,
+        posts_recientes=posts,
+        cronograma_prox=cronograma[:6],
+        todas_cuentas=todas_cuentas,
+        plataformas_config=pdb.PLATAFORMAS_CONFIG,
+    ))
 
 
 @app.post("/redes/cuentas/add")
@@ -5002,15 +5000,13 @@ async def redes_posts_view(
     posts, total = pdb.get_redes_posts(plataforma=plataforma, tipo=tipo,
                                         search=search, page=page)
     cuentas = pdb.get_redes_cuentas()
-    return templates.TemplateResponse("redes_posts.html", {
-        "request": request,
-        "posts": posts, "total": total, "page": page, "per_page": 50,
-        "plataforma": plataforma, "tipo": tipo, "search": search,
-        "cuentas": cuentas,
-        "tipos_contenido": pdb.TIPOS_CONTENIDO_REDES,
-        "plataformas_config": pdb.PLATAFORMAS_CONFIG,
-        **_ctx(request),
-    })
+    return templates.TemplateResponse(request, "redes_posts.html", _ctx(request,
+        posts=posts, total=total, page=page, per_page=50,
+        plataforma=plataforma, tipo=tipo, search=search,
+        cuentas=cuentas,
+        tipos_contenido=pdb.TIPOS_CONTENIDO_REDES,
+        plataformas_config=pdb.PLATAFORMAS_CONFIG,
+    ))
 
 
 @app.post("/redes/posts/add")
@@ -5080,16 +5076,14 @@ async def redes_cronograma_view(
                                   search=search, fecha_desde=fecha_desde,
                                   fecha_hasta=fecha_hasta)
     cuentas = pdb.get_redes_cuentas()
-    return templates.TemplateResponse("redes_cronograma.html", {
-        "request": request,
-        "items": items, "cuentas": cuentas,
-        "plataforma": plataforma, "estado": estado,
-        "search": search, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta,
-        "tipos_contenido": pdb.TIPOS_CONTENIDO_REDES,
-        "estados_cronograma": pdb.ESTADOS_CRONOGRAMA,
-        "plataformas_config": pdb.PLATAFORMAS_CONFIG,
-        **_ctx(request),
-    })
+    return templates.TemplateResponse(request, "redes_cronograma.html", _ctx(request,
+        items=items, cuentas=cuentas,
+        plataforma=plataforma, estado=estado,
+        search=search, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+        tipos_contenido=pdb.TIPOS_CONTENIDO_REDES,
+        estados_cronograma=pdb.ESTADOS_CRONOGRAMA,
+        plataformas_config=pdb.PLATAFORMAS_CONFIG,
+    ))
 
 
 @app.post("/redes/cronograma/add")
