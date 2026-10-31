@@ -484,7 +484,7 @@ def update_member_wp_user_id(member_id: str, wp_user_id: int | None):
 def update_member(member_id: str, fields: dict) -> None:
     ALLOWED = {"apellidos", "nombres", "titulo", "centro_trabajo", "celular",
                "ubicacion", "tipo_socio", "estado", "dni",
-               "fecha_ingreso", "fecha_nacimiento", "wp_user_id"}
+               "fecha_ingreso", "fecha_nacimiento", "wp_user_id", "linkedin"}
     update: dict = {}
     unset:  dict = {}
     for k, v in fields.items():

@@ -22,6 +22,7 @@
   "fecha_ingreso":    member.fecha_ingreso[:10] if member.fecha_ingreso else "",
   "fecha_nacimiento": member.fecha_nacimiento[:10] if member.fecha_nacimiento else "",
   "wp_user_id":       member.wp_user_id | string if member.wp_user_id else "",
+  "linkedin":         member.linkedin or "",
 } %}
 
 <script id="member-init" type="application/json">{{ mdata | tojson }}</script>
@@ -136,6 +137,19 @@
             <i class="fa-brands fa-wordpress"></i> ID WordPress
           </div>
           <div class="text-sm font-medium text-slate-700 font-mono">{{ member.wp_user_id or '—' }}</div>
+        </div>
+        <div class="px-5 py-4">
+          <div class="flex items-center gap-1.5 text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1.5">
+            <i class="fa-brands fa-linkedin"></i> LinkedIn
+          </div>
+          {% if member.linkedin %}
+          <a href="{{ member.linkedin }}" target="_blank"
+             class="text-sm font-medium text-blue-600 hover:underline truncate block">
+            {{ member.linkedin }}
+          </a>
+          {% else %}
+          <div class="text-sm font-medium text-slate-400">—</div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -498,6 +512,13 @@
             <input type="text" x-model="form.wp_user_id"
                    class="input w-full text-sm font-mono" placeholder="ej. 42">
           </div>
+          <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-slate-600 mb-1">
+              <i class="fa-brands fa-linkedin text-blue-500 mr-1"></i> LinkedIn <span class="text-slate-400 font-normal">(opcional)</span>
+            </label>
+            <input type="url" x-model="form.linkedin"
+                   class="input w-full text-sm" placeholder="https://linkedin.com/in/nombre">
+          </div>
         </div>
       </div>
 
@@ -538,6 +559,7 @@ function memberPage() {
       fecha_ingreso:    (raw.fecha_ingreso    || '').slice(0, 10),
       fecha_nacimiento: (raw.fecha_nacimiento || '').slice(0, 10),
       wp_user_id:       raw.wp_user_id != null ? String(raw.wp_user_id) : '',
+      linkedin:         raw.linkedin || '',
     },
     openEdit() {
       this.error     = '';
