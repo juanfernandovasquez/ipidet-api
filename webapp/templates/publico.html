@@ -23,6 +23,8 @@
 
 {% block content %}
 <div x-data="publicoPage()"
+     data-zoom-ids='{{ zoom_evento_ids | tojson }}'
+     data-zoom-asistio="{{ zoom_asistio }}"
      @open-nuevo.window="modalNuevo=true"
      @open-importar.window="modalImportar=true"
      @open-campana.window="abrirCampana()">
@@ -167,34 +169,69 @@
                 </div>
               </th>
 
-              <!-- Inscritos Zoom — sin filtro -->
+              <!-- Inscritos Zoom — dropdown multi-select -->
+              {% set _insc_active = zoom_evento_ids and zoom_asistio != 'true' %}
               <th class="px-4 py-2 text-left" style="min-width:160px">
-                <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Inscritos</span>
+                <div class="relative">
+                  <button type="button"
+                          @click="zoomInscOpen = !zoomInscOpen; zoomAsistOpen = false"
+                          class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider {{ 'text-violet-600' if _insc_active else 'text-slate-400' }}">
+                    Inscritos
+                    {% if _insc_active %}<span class="bg-violet-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold">{{ zoom_evento_ids|length }}</span>{% endif %}
+                    <i class="fa-solid fa-chevron-down text-[8px] opacity-60"></i>
+                  </button>
+                  <div x-show="zoomInscOpen" x-cloak @click.outside="zoomInscOpen = false"
+                       class="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg" style="min-width:240px">
+                    <div class="max-h-52 overflow-y-auto py-1">
+                      {% for e in zoom_eventos_disp %}
+                      <label class="flex items-start gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-xs text-slate-700">
+                        <input type="checkbox" class="mt-0.5 accent-violet-500 shrink-0"
+                               :checked="zoomInscSel.includes('{{ e._id }}')"
+                               @change="toggleZoomSel(zoomInscSel, '{{ e._id }}')">
+                        <span class="leading-snug">{{ e.titulo or 'Webinar' }} <span class="text-slate-400">({{ e.count }})</span></span>
+                      </label>
+                      {% endfor %}
+                    </div>
+                    <div class="border-t border-slate-100 px-3 py-2 flex items-center gap-2">
+                      <button type="button" @click="applyZoomFilt(zoomInscSel, 'insc')"
+                              class="flex-1 text-xs bg-violet-500 hover:bg-violet-600 text-white rounded-lg px-2 py-1.5 font-medium">Aplicar</button>
+                      <button type="button" @click="applyZoomFilt([], '')"
+                              class="text-xs text-red-400 hover:text-red-600 px-2 py-1.5">Limpiar</button>
+                    </div>
+                  </div>
+                </div>
               </th>
 
-              <!-- Eventos asistidos — filtro dinámico con conversatorios reales -->
-              {% set _cur_zoom = zoom_evento_ids[0] if zoom_evento_ids else ('excluir' if zoom_asistio == 'excluir' else '') %}
-              {% set _zoom_active = zoom_evento_ids or zoom_asistio %}
+              <!-- Asistió a — dropdown multi-select -->
+              {% set _asist_active = zoom_evento_ids and zoom_asistio == 'true' %}
               <th class="px-4 py-2 text-left" style="min-width:160px">
-                <div class="flex flex-col gap-0.5">
-                  <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Asistió a</span>
-                  <select @change="(v => {
-                            const u = new URL(location.href);
-                            u.searchParams.delete('zoom_evento_id');
-                            u.searchParams.delete('zoom_asistio');
-                            u.searchParams.delete('page');
-                            if (v === 'excluir') u.searchParams.set('zoom_asistio', 'excluir');
-                            else if (v) { u.searchParams.set('zoom_evento_id', v); u.searchParams.set('zoom_asistio', 'true'); }
-                            location.href = u.toString();
-                          })($event.target.value)"
-                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
-                                 {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if _zoom_active else 'border-slate-200 bg-white text-slate-500' }}">
-                    <option value="" {% if not _cur_zoom %}selected{% endif %}>Todos</option>
-                    {% for e in zoom_eventos_disp %}
-                    <option value="{{ e._id }}" {% if e._id == _cur_zoom %}selected{% endif %}>{{ e.titulo }}</option>
-                    {% endfor %}
-                    <option value="excluir" {% if _cur_zoom == 'excluir' %}selected{% endif %}>Sin webinars</option>
-                  </select>
+                <div class="relative">
+                  <button type="button"
+                          @click="zoomAsistOpen = !zoomAsistOpen; zoomInscOpen = false"
+                          class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider {{ 'text-violet-600' if _asist_active else 'text-slate-400' }}">
+                    Asistió a
+                    {% if _asist_active %}<span class="bg-violet-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold">{{ zoom_evento_ids|length }}</span>{% endif %}
+                    <i class="fa-solid fa-chevron-down text-[8px] opacity-60"></i>
+                  </button>
+                  <div x-show="zoomAsistOpen" x-cloak @click.outside="zoomAsistOpen = false"
+                       class="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-lg" style="min-width:240px">
+                    <div class="max-h-52 overflow-y-auto py-1">
+                      {% for e in zoom_eventos_disp %}
+                      <label class="flex items-start gap-2 px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-xs text-slate-700">
+                        <input type="checkbox" class="mt-0.5 accent-violet-500 shrink-0"
+                               :checked="zoomAsistSel.includes('{{ e._id }}')"
+                               @change="toggleZoomSel(zoomAsistSel, '{{ e._id }}')">
+                        <span class="leading-snug">{{ e.titulo or 'Webinar' }} <span class="text-slate-400">({{ e.count }})</span></span>
+                      </label>
+                      {% endfor %}
+                    </div>
+                    <div class="border-t border-slate-100 px-3 py-2 flex items-center gap-2">
+                      <button type="button" @click="applyZoomFilt(zoomAsistSel, 'asistio')"
+                              class="flex-1 text-xs bg-violet-500 hover:bg-violet-600 text-white rounded-lg px-2 py-1.5 font-medium">Aplicar</button>
+                      <button type="button" @click="applyZoomFilt([], '')"
+                              class="text-xs text-red-400 hover:text-red-600 px-2 py-1.5">Limpiar</button>
+                    </div>
+                  </div>
                 </div>
               </th>
 
@@ -565,6 +602,36 @@ function publicoPage() {
     destinatariosPreview: [],
 
     _t: null, _t2: null,
+
+    /* ── Filtros Zoom multi-select ── */
+    zoomInscOpen:  false,
+    zoomAsistOpen: false,
+    zoomInscSel:   [],
+    zoomAsistSel:  [],
+
+    init() {
+      const ids    = JSON.parse(this.$el.dataset.zoomIds  || '[]');
+      const asistio = this.$el.dataset.zoomAsistio || '';
+      this.zoomInscSel  = (asistio !== 'true') ? [...ids] : [];
+      this.zoomAsistSel = (asistio === 'true')  ? [...ids] : [];
+    },
+
+    toggleZoomSel(arr, id) {
+      const i = arr.indexOf(id);
+      if (i >= 0) arr.splice(i, 1); else arr.push(id);
+    },
+
+    applyZoomFilt(sel, type) {
+      const u = new URL(location.href);
+      u.searchParams.delete('zoom_evento_id');
+      u.searchParams.delete('zoom_asistio');
+      u.searchParams.delete('page');
+      if (sel.length > 0) {
+        sel.forEach(id => u.searchParams.append('zoom_evento_id', id));
+        if (type === 'asistio') u.searchParams.set('zoom_asistio', 'true');
+      }
+      location.href = u.toString();
+    },
 
     _filtros() {
       const p = new URLSearchParams(window.location.search);
