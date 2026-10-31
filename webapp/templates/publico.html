@@ -166,7 +166,7 @@
               </th>
 
               <!-- Total inscritos Zoom — con filtro -->
-              <th class="px-4 py-2 text-left hidden xl:table-cell w-28">
+              <th class="px-4 py-2 text-left w-28">
                 <div class="flex flex-col gap-0.5">
                   <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Webinars</span>
                   <select name="zoom_asistio" @change="$refs.filterForm.submit()"
@@ -181,7 +181,7 @@
               </th>
 
               <!-- Eventos asistidos (lista completa, sin comprimir) -->
-              <th class="px-4 py-2 text-left hidden xl:table-cell" style="min-width:160px">
+              <th class="px-4 py-2 text-left" style="min-width:160px">
                 <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Asistió a</span>
               </th>
 
@@ -247,7 +247,7 @@
                 {% endif %}
               </td>
               {# Columna: total de webinars inscritos #}
-              <td class="px-4 py-3 hidden xl:table-cell text-center">
+              <td class="px-4 py-3 text-center">
                 {% set ze = p.zoom_eventos or [] %}
                 {% if ze %}
                 <span class="inline-flex items-center justify-center w-7 h-7 text-xs font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-full">
@@ -258,15 +258,15 @@
                 {% endif %}
               </td>
               {# Columna: lista completa de eventos asistidos (sin comprimir) #}
-              <td class="px-4 py-3 hidden xl:table-cell align-top">
-                {% set ze_si = (p.zoom_eventos or []) | selectattr('asistio', 'equalto', True) | list %}
-                {% if ze_si %}
+              <td class="px-4 py-3 align-top">
+                {% set ze_todos = p.zoom_eventos or [] %}
+                {% if ze_todos | selectattr('asistio') | list %}
                 <div class="flex flex-col gap-1">
-                  {% for e in ze_si %}
+                  {% for e in ze_todos %}{% if e.asistio %}
                   <span class="inline-block text-[10px] font-medium text-cyan-700 bg-cyan-50 border border-cyan-100 rounded px-1.5 py-0.5 leading-snug">
                     <i class="fa-solid fa-circle-check text-[9px] mr-0.5"></i>{{ e.evento_titulo or 'Webinar' }}
                   </span>
-                  {% endfor %}
+                  {% endif %}{% endfor %}
                 </div>
                 {% else %}
                 <span class="text-slate-300 text-xs">—</span>
