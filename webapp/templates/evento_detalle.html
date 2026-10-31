@@ -37,10 +37,32 @@
           {% else %}
           <span><i class="fa-solid fa-users mr-1.5"></i>{{ evento.n_inscritos }} socio(s) inscrito(s)</span>
           {% endif %}
+          {% if evento.modalidad %}
+          <span class="capitalize"><i class="fa-solid fa-{% if evento.modalidad == 'virtual' %}laptop{% elif evento.modalidad == 'hibrido' %}arrow-right-arrow-left{% else %}building{% endif %} mr-1.5"></i>{{ evento.modalidad }}</span>
+          {% endif %}
           {% if evento.zoom_webinar_id %}
           <span class="text-blue-600"><i class="fa-solid fa-video mr-1.5"></i>Zoom vinculado · {{ evento.zoom_registrants | length }} registrados</span>
           {% endif %}
         </div>
+        {% if evento.link_registro or evento.link_zoom or evento.link_grabacion %}
+        <div class="flex flex-wrap gap-2 mt-3">
+          {% if evento.link_registro %}
+          <a href="{{ evento.link_registro }}" target="_blank" class="inline-flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 hover:bg-blue-100">
+            <i class="fa-solid fa-link text-[10px]"></i> Inscripción
+          </a>
+          {% endif %}
+          {% if evento.link_zoom %}
+          <a href="{{ evento.link_zoom }}" target="_blank" class="inline-flex items-center gap-1.5 text-xs bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-3 py-1 hover:bg-sky-100">
+            <i class="fa-solid fa-video text-[10px]"></i> Sesión Zoom
+          </a>
+          {% endif %}
+          {% if evento.link_grabacion %}
+          <a href="{{ evento.link_grabacion }}" target="_blank" class="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-700 border border-red-200 rounded-full px-3 py-1 hover:bg-red-100">
+            <i class="fa-solid fa-circle-play text-[10px]"></i> Grabación
+          </a>
+          {% endif %}
+        </div>
+        {% endif %}
         {% if evento.descripcion %}
         <p class="text-slate-600 text-sm mt-3 leading-relaxed">{{ evento.descripcion }}</p>
         {% endif %}
@@ -80,13 +102,38 @@
           </select>
         </div>
       </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Lugar</label>
-        <input name="lugar" value="{{ evento.lugar }}" class="input w-full">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Lugar</label>
+          <input name="lugar" value="{{ evento.lugar }}" class="input w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Modalidad</label>
+          <select name="modalidad" class="input w-full">
+            <option value=""           {% if not evento.modalidad            %}selected{% endif %}>— Sin especificar</option>
+            <option value="presencial" {% if evento.modalidad == 'presencial'%}selected{% endif %}>Presencial</option>
+            <option value="virtual"    {% if evento.modalidad == 'virtual'   %}selected{% endif %}>Virtual</option>
+            <option value="hibrido"    {% if evento.modalidad == 'hibrido'   %}selected{% endif %}>Híbrido</option>
+          </select>
+        </div>
       </div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
         <textarea name="descripcion" rows="3" class="input w-full resize-none">{{ evento.descripcion }}</textarea>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-link text-slate-400 mr-1"></i>Link de inscripción</label>
+          <input name="link_registro" type="url" value="{{ evento.link_registro or '' }}" placeholder="https://…" class="input w-full text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-video text-blue-400 mr-1"></i>Link Zoom / sesión</label>
+          <input name="link_zoom" type="url" value="{{ evento.link_zoom or '' }}" placeholder="https://zoom.us/…" class="input w-full text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-circle-play text-red-400 mr-1"></i>Link grabación</label>
+          <input name="link_grabacion" type="url" value="{{ evento.link_grabacion or '' }}" placeholder="https://…" class="input w-full text-sm">
+        </div>
       </div>
       <div class="flex gap-3">
         <button type="submit" class="btn-primary text-sm">Guardar cambios</button>
@@ -100,6 +147,303 @@
   </div>
 </div>
 <form id="ev-delete-form" method="post" action="/eventos/{{ evento._id }}/delete" class="hidden"></form>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECCIÓN — ESTADÍSTICAS
+     ═══════════════════════════════════════════════════════════ -->
+{% if stats.n_inscritos %}
+<div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+  <h2 class="text-sm font-semibold text-slate-700 mb-4">
+    <i class="fa-solid fa-chart-bar mr-1.5 text-violet-500"></i> Estadísticas
+  </h2>
+
+  <!-- KPIs principales -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+    <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+      <div class="text-2xl font-bold text-blue-700">{{ stats.n_inscritos }}</div>
+      <div class="text-xs text-blue-500 mt-0.5">Inscritos</div>
+    </div>
+    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+      <div class="text-2xl font-bold text-emerald-700">{{ stats.n_asistentes }}</div>
+      <div class="text-xs text-emerald-500 mt-0.5">Asistieron</div>
+    </div>
+    <div class="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
+      <div class="text-2xl font-bold text-amber-700">{{ stats.n_ausentes }}</div>
+      <div class="text-xs text-amber-500 mt-0.5">No asistieron</div>
+    </div>
+    <div class="bg-violet-50 border border-violet-100 rounded-xl p-3 text-center">
+      <div class="text-2xl font-bold text-violet-700">{{ stats.pct_asistencia }}%</div>
+      <div class="text-xs text-violet-500 mt-0.5">Tasa asistencia</div>
+    </div>
+  </div>
+
+  <!-- Desglose -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Por título -->
+    {% if stats.by_titulo %}
+    <div>
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Por título profesional</h3>
+      <div class="space-y-1.5">
+        {% for titulo, cnt in stats.by_titulo %}
+        <div class="flex items-center gap-2">
+          <div class="flex-1 text-xs text-slate-600">{{ titulo }}</div>
+          <div class="text-xs font-semibold text-slate-700 w-6 text-right">{{ cnt }}</div>
+          <div class="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-blue-500 h-1.5 rounded-full" style="width:{{ (cnt / stats.n_inscritos * 100)|round|int }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Por tipo de socio -->
+    {% if stats.by_tipo %}
+    <div>
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Por tipo de socio</h3>
+      <div class="space-y-1.5">
+        {% for tipo, cnt in stats.by_tipo %}
+        <div class="flex items-center gap-2">
+          <div class="flex-1 text-xs text-slate-600 capitalize">{{ tipo }}</div>
+          <div class="text-xs font-semibold text-slate-700 w-6 text-right">{{ cnt }}</div>
+          <div class="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-violet-500 h-1.5 rounded-full" style="width:{{ (cnt / stats.n_inscritos * 100)|round|int }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Por empresa -->
+    {% if stats.by_empresa %}
+    <div>
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Por empresa (top 10)</h3>
+      <div class="space-y-1.5">
+        {% for emp, cnt in stats.by_empresa %}
+        <div class="flex items-center gap-2">
+          <div class="flex-1 text-xs text-slate-600 truncate">{{ emp }}</div>
+          <div class="text-xs font-semibold text-slate-700 w-6 text-right">{{ cnt }}</div>
+          <div class="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div class="bg-emerald-500 h-1.5 rounded-full" style="width:{{ (cnt / stats.n_inscritos * 100)|round|int }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECCIÓN — EXPOSITORES
+     ═══════════════════════════════════════════════════════════ -->
+<div id="expositores" class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-sm font-semibold text-slate-700">
+      <i class="fa-solid fa-person-chalkboard mr-1.5 text-violet-500"></i> Expositores
+    </h2>
+    <button type="button" x-data @click="$dispatch('open-add-expositor')"
+            class="btn-ghost text-xs">
+      <i class="fa-solid fa-plus mr-1"></i> Agregar
+    </button>
+  </div>
+
+  {% set expositores = evento.expositores or [] %}
+  {% if expositores %}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    {% for exp in expositores %}
+    <div class="border border-slate-200 rounded-xl p-4" x-data="{ editExp: false }">
+      <div x-show="!editExp">
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-semibold text-slate-800 text-sm">{{ exp.nombre }}</span>
+              {% if exp.confirmado %}
+              <span class="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5">
+                <i class="fa-solid fa-circle-check text-[9px]"></i> Confirmado
+              </span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-2 py-0.5">
+                <i class="fa-regular fa-circle text-[9px]"></i> Por confirmar
+              </span>
+              {% endif %}
+            </div>
+            {% if exp.titulo or exp.empresa %}
+            <p class="text-xs text-slate-500 mt-0.5">{{ exp.titulo }}{% if exp.titulo and exp.empresa %} · {% endif %}{{ exp.empresa }}</p>
+            {% endif %}
+            {% if exp.linkedin %}
+            <a href="{{ exp.linkedin }}" target="_blank" class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1">
+              <i class="fa-brands fa-linkedin text-[11px]"></i> LinkedIn
+            </a>
+            {% endif %}
+            {% if exp.bio %}
+            <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">{{ exp.bio }}</p>
+            {% endif %}
+          </div>
+          <button @click="editExp = true" class="text-slate-400 hover:text-slate-600 text-xs p-1">
+            <i class="fa-solid fa-pen-to-square"></i>
+          </button>
+        </div>
+      </div>
+      <div x-show="editExp" x-cloak>
+        <form method="post" action="/eventos/{{ evento._id }}/expositores/{{ exp.numero }}/update" class="space-y-2">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Nombre *</label>
+              <input name="nombre" value="{{ exp.nombre }}" required class="input w-full text-xs">
+            </div>
+            <div>
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Título / cargo</label>
+              <input name="titulo" value="{{ exp.titulo or '' }}" class="input w-full text-xs">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Empresa / institución</label>
+              <input name="empresa" value="{{ exp.empresa or '' }}" class="input w-full text-xs">
+            </div>
+            <div>
+              <label class="block text-[10px] font-medium text-slate-500 mb-0.5">LinkedIn URL</label>
+              <input name="linkedin" type="url" value="{{ exp.linkedin or '' }}" placeholder="https://linkedin.com/in/…" class="input w-full text-xs">
+            </div>
+          </div>
+          <div>
+            <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Bio / presentación</label>
+            <textarea name="bio" rows="2" class="input w-full text-xs resize-none">{{ exp.bio or '' }}</textarea>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" name="confirmado" value="1" {% if exp.confirmado %}checked{% endif %} class="accent-emerald-500">
+              Confirmado
+            </label>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button type="submit" class="btn-primary text-xs py-1">Guardar</button>
+            <button type="button" @click="editExp = false" class="btn-ghost text-xs py-1">Cancelar</button>
+            <form method="post" action="/eventos/{{ evento._id }}/expositores/{{ exp.numero }}/delete" class="ml-auto"
+                  onsubmit="return confirm('¿Eliminar expositor?')">
+              <button type="submit" class="text-xs text-red-400 hover:text-red-600 px-2 py-1">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </form>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-400">No hay expositores registrados aún.</p>
+  {% endif %}
+</div>
+
+<!-- Modal: agregar expositor -->
+<div x-data="{ open: false }" @open-add-expositor.window="open = true">
+  <div x-show="open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6" @click.outside="open = false">
+      <h3 class="text-base font-semibold text-slate-800 mb-4"><i class="fa-solid fa-person-chalkboard mr-1.5 text-violet-500"></i> Nuevo expositor</h3>
+      <form method="post" action="/eventos/{{ evento._id }}/expositores/add" class="space-y-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Nombre *</label>
+            <input name="nombre" required class="input w-full">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Título / cargo</label>
+            <input name="titulo" class="input w-full">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Empresa / institución</label>
+            <input name="empresa" class="input w-full">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">LinkedIn URL</label>
+            <input name="linkedin" type="url" placeholder="https://linkedin.com/in/…" class="input w-full">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Bio / presentación</label>
+          <textarea name="bio" rows="3" class="input w-full resize-none"></textarea>
+        </div>
+        <div class="flex gap-3 pt-1">
+          <button type="submit" class="btn-primary text-sm">Agregar expositor</button>
+          <button type="button" @click="open = false" class="btn-ghost text-sm">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECCIÓN — CHECKLIST
+     ═══════════════════════════════════════════════════════════ -->
+{% set cl = evento.checklist or {} %}
+<div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+  <h2 class="text-sm font-semibold text-slate-700 mb-4">
+    <i class="fa-solid fa-list-check mr-1.5 text-violet-500"></i> Lista de verificación
+  </h2>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    <!-- Pre-evento -->
+    <div>
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> Pre-evento
+        {% set _ns = namespace(n=0) %}{% for item in checklist_pre %}{% if cl.get(item.id) %}{% set _ns.n = _ns.n + 1 %}{% endif %}{% endfor %}
+        <span class="ml-auto text-slate-400 font-normal normal-case">{{ _ns.n }} / {{ checklist_pre | length }}</span>
+      </h3>
+      <div class="space-y-2">
+        {% for item in checklist_pre %}
+        {% set done = cl.get(item.id, False) %}
+        <label class="flex items-center gap-2.5 cursor-pointer group">
+          <input type="checkbox"
+                 {% if done %}checked{% endif %}
+                 class="w-4 h-4 accent-violet-500 cursor-pointer"
+                 @change="fetch('/eventos/{{ evento._id }}/checklist/{{ item.id }}', {
+                   method: 'POST',
+                   headers: {'Content-Type': 'application/json'},
+                   body: JSON.stringify({done: $el.checked})
+                 })">
+          <span class="text-sm {{ 'line-through text-slate-400' if done else 'text-slate-700' }} group-hover:text-slate-900">
+            {{ item.label }}
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Post-evento -->
+    <div>
+      <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span> Post-evento
+        {% set _ns2 = namespace(n=0) %}{% for item in checklist_post %}{% if cl.get(item.id) %}{% set _ns2.n = _ns2.n + 1 %}{% endif %}{% endfor %}
+        <span class="ml-auto text-slate-400 font-normal normal-case">{{ _ns2.n }} / {{ checklist_post | length }}</span>
+      </h3>
+      <div class="space-y-2">
+        {% for item in checklist_post %}
+        {% set done = cl.get(item.id, False) %}
+        <label class="flex items-center gap-2.5 cursor-pointer group">
+          <input type="checkbox"
+                 {% if done %}checked{% endif %}
+                 class="w-4 h-4 accent-violet-500 cursor-pointer"
+                 @change="fetch('/eventos/{{ evento._id }}/checklist/{{ item.id }}', {
+                   method: 'POST',
+                   headers: {'Content-Type': 'application/json'},
+                   body: JSON.stringify({done: $el.checked})
+                 })">
+          <span class="text-sm {{ 'line-through text-slate-400' if done else 'text-slate-700' }} group-hover:text-slate-900">
+            {{ item.label }}
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════
      SECCIÓN — FLYER Y PLANTILLA DE CORREO

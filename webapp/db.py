@@ -2982,17 +2982,23 @@ def create_evento(titulo: str, descripcion: str, fecha: str, hora: str,
 
 
 def update_evento(evento_id: str, titulo: str, descripcion: str, fecha: str,
-                  hora: str, lugar: str, cupo_max: int | None, estado: str):
+                  hora: str, lugar: str, cupo_max: int | None, estado: str,
+                  modalidad: str = "", link_registro: str = "",
+                  link_zoom: str = "", link_grabacion: str = ""):
     eventos_col.update_one(
         {"_id": ObjectId(evento_id)},
         {"$set": {
-            "titulo":      titulo,
-            "descripcion": descripcion or "",
-            "fecha":       fecha,
-            "hora":        hora or "",
-            "lugar":       lugar or "",
-            "cupo_max":    cupo_max,
-            "estado":      estado,
+            "titulo":         titulo,
+            "descripcion":    descripcion or "",
+            "fecha":          fecha,
+            "hora":           hora or "",
+            "lugar":          lugar or "",
+            "cupo_max":       cupo_max,
+            "estado":         estado,
+            "modalidad":      modalidad or "",
+            "link_registro":  link_registro.strip(),
+            "link_zoom":      link_zoom.strip(),
+            "link_grabacion": link_grabacion.strip(),
         }},
     )
 
@@ -3071,23 +3077,113 @@ def get_eventos_proximos(limit: int = 5) -> list:
     return _clean(docs)
 
 
+CHECKLIST_PRE = [
+    {"id": "flyer",            "label": "Afiche / flyer diseñado"},
+    {"id": "inscripciones",    "label": "Página de inscripción activa"},
+    {"id": "zoom_config",      "label": "Sesión Zoom / plataforma configurada"},
+    {"id": "invit_socios",     "label": "Invitaciones enviadas a socios"},
+    {"id": "invit_publico",    "label": "Invitaciones enviadas a público general"},
+    {"id": "material",         "label": "Material de presentación recibido"},
+    {"id": "confirmaciones",   "label": "Confirmaciones de asistencia enviadas"},
+    {"id": "recordatorio",     "label": "Recordatorio enviado (24h antes)"},
+    {"id": "prueba_tecnica",   "label": "Prueba técnica realizada"},
+]
+
+CHECKLIST_POST = [
+    {"id": "asistencia",       "label": "Asistencia marcada en plataforma"},
+    {"id": "grabacion",        "label": "Grabación disponible"},
+    {"id": "link_grabacion",   "label": "Link de grabación compartido"},
+    {"id": "certificados",     "label": "Certificados de participación enviados"},
+    {"id": "agradecimiento",   "label": "Email de agradecimiento enviado"},
+    {"id": "rrss",             "label": "Post publicado en redes sociales"},
+    {"id": "memoria",          "label": "Memoria / resumen del evento redactado"},
+]
+
+
 def get_evento_stats(evento_id: str) -> dict:
     evento = get_evento(evento_id)
     if not evento:
         return {}
+    inscritos = evento.get("inscritos", [])
+    member_ids = [i["member_id"] for i in inscritos]
+    members_map = {}
+    if member_ids:
+        members_map = {m["member_id"]: m for m in
+                       members_col.find({"member_id": {"$in": member_ids}},
+                                        {"titulo": 1, "tipo_socio": 1, "centro_trabajo": 1, "member_id": 1})}
+    by_titulo: dict = {}
+    by_tipo:   dict = {}
+    by_empresa: dict = {}
+    for i in inscritos:
+        m = members_map.get(i["member_id"], {})
+        t = m.get("titulo") or "Sin datos"
+        tp = m.get("tipo_socio") or "Sin datos"
+        emp = m.get("centro_trabajo") or ""
+        by_titulo[t]  = by_titulo.get(t, 0) + 1
+        by_tipo[tp]   = by_tipo.get(tp, 0) + 1
+        if emp:
+            by_empresa[emp] = by_empresa.get(emp, 0) + 1
+    n_ins = evento["n_inscritos"]
+    n_asis = evento["n_asistentes"]
     return {
-        "titulo":       evento["titulo"],
-        "fecha":        evento["fecha"],
-        "lugar":        evento["lugar"],
-        "cupo_max":     evento.get("cupo_max"),
-        "n_inscritos":  evento["n_inscritos"],
-        "n_asistentes": evento["n_asistentes"],
-        "n_ausentes":   evento["n_ausentes"],
-        "n_pendientes": evento["n_pendientes"],
-        "pct_asistencia": round(
-            evento["n_asistentes"] / evento["n_inscritos"] * 100, 1
-        ) if evento["n_inscritos"] else 0,
+        "n_inscritos":    n_ins,
+        "n_asistentes":   n_asis,
+        "n_ausentes":     evento["n_ausentes"],
+        "n_pendientes":   evento["n_pendientes"],
+        "pct_asistencia": round(n_asis / n_ins * 100, 1) if n_ins else 0,
+        "pct_ausencia":   round(evento["n_ausentes"] / n_ins * 100, 1) if n_ins else 0,
+        "by_titulo":  sorted(by_titulo.items(),  key=lambda x: -x[1]),
+        "by_tipo":    sorted(by_tipo.items(),    key=lambda x: -x[1]),
+        "by_empresa": sorted(by_empresa.items(), key=lambda x: -x[1])[:10],
     }
+
+
+def toggle_checklist_item(evento_id: str, item_id: str, done: bool):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$set": {f"checklist.{item_id}": done}},
+    )
+
+
+def add_expositor(evento_id: str, nombre: str, titulo: str = "",
+                  empresa: str = "", linkedin: str = "", bio: str = "") -> int:
+    doc = eventos_col.find_one({"_id": ObjectId(evento_id)}, {"expositores": 1})
+    existentes = doc.get("expositores", []) if doc else []
+    numero = (max((e["numero"] for e in existentes), default=0) + 1)
+    entrada = {
+        "numero":     numero,
+        "nombre":     nombre.strip(),
+        "titulo":     titulo.strip(),
+        "empresa":    empresa.strip(),
+        "linkedin":   linkedin.strip(),
+        "bio":        bio.strip(),
+        "confirmado": False,
+    }
+    eventos_col.update_one({"_id": ObjectId(evento_id)}, {"$push": {"expositores": entrada}})
+    return numero
+
+
+def update_expositor(evento_id: str, numero: int, nombre: str, titulo: str = "",
+                     empresa: str = "", linkedin: str = "", bio: str = "",
+                     confirmado: bool = False):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id), "expositores.numero": numero},
+        {"$set": {
+            "expositores.$.nombre":     nombre.strip(),
+            "expositores.$.titulo":     titulo.strip(),
+            "expositores.$.empresa":    empresa.strip(),
+            "expositores.$.linkedin":   linkedin.strip(),
+            "expositores.$.bio":        bio.strip(),
+            "expositores.$.confirmado": confirmado,
+        }},
+    )
+
+
+def delete_expositor(evento_id: str, numero: int):
+    eventos_col.update_one(
+        {"_id": ObjectId(evento_id)},
+        {"$pull": {"expositores": {"numero": numero}}},
+    )
 
 
 def _parse_zoom_custom_fields(custom_questions: list) -> dict:

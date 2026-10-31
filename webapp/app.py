@@ -3650,24 +3650,74 @@ async def evento_detalle(request: Request, evento_id: str):
     stats = pdb.get_evento_stats(evento_id)
     return templates.TemplateResponse(request, "evento_detalle.html", _ctx(request,
         evento=evento, stats=stats,
+        checklist_pre=pdb.CHECKLIST_PRE,
+        checklist_post=pdb.CHECKLIST_POST,
     ))
 
 
 @app.post("/eventos/{evento_id}/update")
 async def evento_update(
     request: Request,
-    evento_id:   str,
-    titulo:      str = Form(...),
-    descripcion: str = Form(""),
-    fecha:       str = Form(...),
-    hora:        str = Form(""),
-    lugar:       str = Form(""),
-    cupo_max:    str = Form(""),
-    estado:      str = Form("activo"),
+    evento_id:      str,
+    titulo:         str = Form(...),
+    descripcion:    str = Form(""),
+    fecha:          str = Form(...),
+    hora:           str = Form(""),
+    lugar:          str = Form(""),
+    cupo_max:       str = Form(""),
+    estado:         str = Form("activo"),
+    modalidad:      str = Form(""),
+    link_registro:  str = Form(""),
+    link_zoom:      str = Form(""),
+    link_grabacion: str = Form(""),
 ):
     cupo = int(cupo_max) if cupo_max.strip() else None
-    pdb.update_evento(evento_id, titulo, descripcion, fecha, hora, lugar, cupo, estado)
+    pdb.update_evento(evento_id, titulo, descripcion, fecha, hora, lugar, cupo, estado,
+                      modalidad=modalidad, link_registro=link_registro,
+                      link_zoom=link_zoom, link_grabacion=link_grabacion)
     return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
+
+
+@app.post("/eventos/{evento_id}/checklist/{item_id}")
+async def evento_checklist_toggle(evento_id: str, item_id: str, request: Request):
+    body = await request.json()
+    pdb.toggle_checklist_item(evento_id, item_id, bool(body.get("done")))
+    return {"ok": True}
+
+
+@app.post("/eventos/{evento_id}/expositores/add")
+async def evento_expositor_add(
+    evento_id: str,
+    nombre:   str = Form(...),
+    titulo:   str = Form(""),
+    empresa:  str = Form(""),
+    linkedin: str = Form(""),
+    bio:      str = Form(""),
+):
+    pdb.add_expositor(evento_id, nombre, titulo, empresa, linkedin, bio)
+    return RedirectResponse(f"/eventos/{evento_id}#expositores", status_code=303)
+
+
+@app.post("/eventos/{evento_id}/expositores/{numero}/update")
+async def evento_expositor_update(
+    evento_id:  str,
+    numero:     int,
+    nombre:     str = Form(...),
+    titulo:     str = Form(""),
+    empresa:    str = Form(""),
+    linkedin:   str = Form(""),
+    bio:        str = Form(""),
+    confirmado: str = Form(""),
+):
+    pdb.update_expositor(evento_id, numero, nombre, titulo, empresa, linkedin, bio,
+                         confirmado=bool(confirmado))
+    return RedirectResponse(f"/eventos/{evento_id}#expositores", status_code=303)
+
+
+@app.post("/eventos/{evento_id}/expositores/{numero}/delete")
+async def evento_expositor_delete(evento_id: str, numero: int):
+    pdb.delete_expositor(evento_id, numero)
+    return RedirectResponse(f"/eventos/{evento_id}#expositores", status_code=303)
 
 
 @app.post("/eventos/{evento_id}/update-comunicaciones")
