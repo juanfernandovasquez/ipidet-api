@@ -22,6 +22,14 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 14. [Autenticación web](#auth)
 15. [Importación del padrón](#padron)
 16. [Decisiones de diseño relevantes](#diseno)
+17. [Público / Prospectos CRM](#publico)
+18. [Redes Sociales](#redes)
+19. [Facturación electrónica SUNAT](#sunat)
+20. [Zoom](#zoom)
+21. [Campañas y envíos programados](#campanias)
+22. [Plantillas de email guardadas](#plantillas)
+23. [Constancias de membresía](#constancias)
+24. [IA Tareas](#ia-tareas)
 
 ---
 
@@ -233,16 +241,24 @@ telegram_bot/
   notifications.py   — Envío de alertas al admin vía Telegram
 
 webapp/
-  app.py             — Rutas FastAPI (todas las páginas y APIs)
-  db.py              — Consultas MongoDB para la web admin (~2200 líneas)
+  app.py             — Rutas FastAPI (todas las páginas y APIs; ~170 rutas)
+  db.py              — Consultas MongoDB para la web admin (~5000 líneas)
   auth.py            — Autenticación con bcrypt + sessions; colección users
-  mailer.py          — Envío de emails via Brevo SMTP + historial de envíos
+  mailer.py          — Envío de emails via Brevo API + historial de envíos
   portal_db.py       — Consultas para el portal de socios + lógica WooCommerce
   portal_router.py   — Handlers del portal: build_member_status, handle_wc_webhook
-  scheduler.py       — Tareas periódicas (reminders, alertas)
+  scheduler.py       — Tareas periódicas (reminders, alertas, envíos programados)
   wc_client.py       — Cliente HTTP para la API REST de WooCommerce
+  zoom_client.py     — Server-to-Server OAuth Zoom: listar webinars, sincronizar registrantes
+  sunat_client.py    — Facturación electrónica SUNAT vía APISPERU (UBL 2.1)
+  pdf_builder.py     — Generación de PDFs de comprobantes con fpdf2
+  xml_parser.py      — Parseo de XMLs de comprobantes SUNAT (para importar pre-comprobantes)
+  constancia.py      — Generación de constancias de membresía en PDF
+  mongo_client.py    — Singleton del cliente MongoDB (importado por db.py y auth.py)
   templates/         — Ver sección 9
 
+sync_redes.py        — Scrapper Playwright (usa Brave) para métricas de RRSS; corre localmente
+                       vía Windows Task Scheduler (no en Render). Setup: python sync_redes.py --setup
 admin.py             — Script de administración CLI (utilidades)
 migrate_fks.py       — Backfill de FKs en documentos históricos (idempotente)
 telegram_main.py     — Punto de entrada del bot de Telegram (independiente)
@@ -346,6 +362,12 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `comunicaciones_col` | `comunicaciones` | `webapp/db.py` | Historial de emails masivos |
 | `eventos_col` | `eventos_ipidet` | `webapp/db.py` | Eventos y capacitaciones |
 | `pendientes_col` | `pendientes` | `webapp/db.py` | Tareas internas del equipo admin |
+| `config_col` | `config` | `webapp/db.py` | Config dinámica (ej. medios de pago editables) |
+| `publico_col` | `publico` | `webapp/db.py` | CRM de prospectos/público general |
+| `redes_cuentas_col` | `redes_cuentas` | `webapp/db.py` | Cuentas de redes sociales registradas |
+| `redes_metricas_col` | `redes_metricas` | `webapp/db.py` | Métricas históricas de RRSS (seguidores, etc.) |
+| `redes_posts_col` | `redes_posts` | `webapp/db.py` | Posts publicados en RRSS |
+| `redes_cronograma_col` | `redes_cronograma` | `webapp/db.py` | Calendario de publicaciones planificadas |
 | `users_col` | `users` | `webapp/auth.py` | Usuarios de la plataforma web |
 | `pending_approvals` | `pending_approvals` | `knowledge_base/db.py` | Cola de aprobaciones del agente vía Telegram |
 | `pending_clarifications` | `pending_clarifications` | `knowledge_base/db.py` | Hilos esperando respuesta de usuario |
@@ -690,21 +712,34 @@ ADMIN_PASSWORD              — Contraseña del admin inicial
 SESSION_SECRET              — Secret para firmar cookies de sesión
 
 # Brevo (email marketing)
-BREVO_SMTP_USER             — Login SMTP de Brevo
-BREVO_SMTP_PASS             — Password SMTP de Brevo
+BREVO_API_KEY               — HTTP API key de Brevo (canal principal en producción; ver R9)
+BREVO_SMTP_USER             — Login SMTP de Brevo (fallback local, no configurado en Render)
+BREVO_SMTP_PASS             — Password SMTP de Brevo (fallback local)
 BREVO_WEBHOOK_TOKEN         — Token para verificar webhooks de rebotes
-
-# Google / Sheets
-GOOGLE_CREDENTIALS_PATH     — google_credentials.json
-BILLING_SHEET_ID            — ID de la hoja de Google Sheets de cobranzas
+BREVO_FROM_EMAIL            — Remitente (default: administracion@ipidet.org)
+BREVO_FROM_NAME             — Nombre del remitente (default: IPIDET)
 
 # Portal de socios (WordPress ↔ FastAPI)
 PORTAL_SECRET               — secret Bearer para autenticar llamadas WP→FastAPI
 WC_WEBHOOK_SECRET           — secret HMAC-SHA256 del webhook WooCommerce (distinto de PORTAL_SECRET)
 PORTAL_API_BASE             — URL pública de FastAPI (para pruebas locales)
-WC_API_URL                  — URL base de la API REST de WooCommerce
-WC_CONSUMER_KEY             — Consumer key de WooCommerce
-WC_CONSUMER_SECRET          — Consumer secret de WooCommerce
+WC_API_KEY                  — Consumer key WooCommerce REST API
+WC_API_SECRET               — Consumer secret WooCommerce REST API
+WC_STORE_URL                — URL tienda (default: https://ipidet.org)
+
+# SUNAT / APISPERU — facturación electrónica (UBL 2.1)
+APISPERU_TOKEN              — Bearer token company-level (no expira)
+IPIDET_RUC                  — RUC de IPIDET (11 dígitos)
+IPIDET_RAZON_SOCIAL         — Razón social legal
+IPIDET_NOMBRE_COMERCIAL     — Nombre comercial
+IPIDET_DIRECCION            — Dirección fiscal
+IPIDET_UBIGUEO              — Código ubigeo (default: 150101 Lima Centro)
+SUNAT_ENVIRONMENT           — "beta" | "produccion"
+
+# Zoom Server-to-Server OAuth (webinars)
+ZOOM_ACCOUNT_ID             — Account ID de la app Zoom
+ZOOM_CLIENT_ID              — Client ID de la app Zoom
+ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 ```
 
 ---
@@ -737,6 +772,15 @@ WC_CONSUMER_SECRET          — Consumer secret de WooCommerce
 | `wc_orders.html` | `/wc-orders` | Pedidos WooCommerce: vincular a socios |
 | `sync_usuarios.html` | `/sync-usuarios` | Sync WP users ↔ socios IPIDET |
 | `rebotes.html` | `/comunicaciones/rebotes` | Emails rebotados (bounces de Brevo) |
+| `campanas.html` | `/comunicaciones/campanas` | Lista de campañas de email por lotes |
+| `campana_detalle.html` | `/comunicaciones/campanas/{id}` | Detalle + envío por lotes de una campaña |
+| `comprobantes_preparar.html` | `/comprobantes/preparar` | Pre-registro y completado de comprobantes SUNAT |
+| `publico.html` | `/publico` | CRM de prospectos: tabla con filtros en encabezados |
+| `publico_detalle.html` | `/publico/{id}` | Detalle de prospecto: tags, historial, postulación, conversión |
+| `redes_dashboard.html` | `/redes` | Dashboard de redes sociales: métricas por cuenta |
+| `redes_posts.html` | `/redes/posts` | Posts publicados con filtros |
+| `redes_cronograma.html` | `/redes/cronograma` | Calendario de publicaciones planificadas |
+| `inbox.html` | `/inbox` | Bandeja unificada: aprobaciones del agente + comprobantes de pago recibidos por email |
 | `login.html` | `/login` | Login de la plataforma |
 | `users.html` | `/admin/users` | Gestión de usuarios (solo admin) |
 
@@ -1308,3 +1352,245 @@ Normalización que aplica:
 - **`fecha_pago` vs `fecha_emision` en comprobantes:** Son tres fechas distintas — `fecha_emision` (fecha del documento tributario), `fecha_pago` (fecha en que se recibió el dinero, puede ser anterior o posterior), `fecha_carga` (fecha de registro en la plataforma). El sync a `payments` usa `fecha_pago or fecha_emision` para rellenar la fecha del pago en cobranzas.
 - **Vista de fraccionamientos agrupada por socio:** `fraccionamientos.html` usa `miembros` (no `fraccionamientos`) como variable principal. Cada socio aparece como cabecera `<tr>` de color gris que agrupa sus períodos fraccionados como sub-filas indentadas. El filtro de período es opcional (default vacío = todos). Los modales de cuotas se generan en un loop anidado `{% for m in miembros %}{% for f in m.fraccionamientos %}`. → Ver `get_fraccionamientos_agrupados()` y `_enrich_fracc_doc()`.
 - **Recordatorios de fraccionamientos:** El email de recordatorio se genera server-side en `_build_recordatorio_email()` (en `app.py`). Usa `_tratamiento_titulo()` para el saludo, ajusta el tono según días vencidos (≤7d suave, 8-30d medio, >30d urgente), e incluye tabla de cuotas vencidas, bloque empresa pagadora, progreso y próxima cuota. El preview en el modal usa `iframe srcdoc` para aislar el HTML sin riesgo XSS.
+- **`MEDIOS_PAGO` es editable desde la UI:** Ya no es solo una constante de módulo. `config_col` almacena los valores en `{"_id": "medios_pago", "valores": [...]}`. `get_medios_pago()` lee de DB primero y cae al hardcoded como fallback. `update_medios_pago()` escribe en DB.
+- **Filtros en encabezados de tabla (`publico.html`):** El patrón `<select name="X" @change="$refs.filterForm.submit()">` dentro de un `<th>` es parte del `<form method="get" x-ref="filterForm">` que envuelve toda la tabla. No usar sub-componentes Alpine.js para filtros en la misma tabla — perderían acceso a `$refs.filterForm`.
+
+---
+
+## 17. Público / Prospectos CRM {#publico}
+
+`/publico` — CRM para personas que no son socios IPIDET pero están en el radar (leads de webinars, ferias, eventos, referidos).
+
+### Flujo de estados
+
+```
+nuevo → interesado → postulante → convertido
+                                    ↓
+                              /members/{id}  (convert_prospecto_to_member)
+```
+
+`inactivo` = baja voluntaria o descarte.
+
+### Colección `publico`
+
+```
+nombre          string
+apellido        string
+email           string    (único — upsert por email)
+celular         string
+titulo          string    mismo vocabulario controlado que members.titulo
+empresa         string
+ciudad          string
+notas           string
+fuente          string    "manual"|"excel"|"zoom"|"portal"|"evento"|"referido"
+fuente_detalle  string    detalle libre de la fuente
+estado          string    "nuevo"|"interesado"|"postulante"|"convertido"|"inactivo"
+es_socio        bool      True si ya fue convertido a member
+tags            [string]  etiquetas libres
+zoom_eventos    [{
+                  evento_id:     string   ID del webinar Zoom
+                  evento_titulo: string
+                  evento_fecha:  string
+                  asistio:       bool | null
+                }]
+historial_comunicaciones  [{asunto, plantilla_nombre, fecha}]
+postulacion     {tipo_postulacion, notas_postulacion, fecha} | null
+created_at      datetime
+```
+
+### Funciones clave en db.py
+
+```python
+get_prospectos(search, estado, ciudad, titulo, empresa, fuente,
+               tags, es_socio, zoom_evento_ids, zoom_asistio, page) → (docs[], total)
+get_prospectos_all(...)  → docs[]   # sin paginación, para campañas
+get_prospecto(prospecto_id) → dict | None
+create_prospecto(nombre, apellido, email, ...) → str
+update_prospecto(prospecto_id, fields)
+delete_prospecto(prospecto_id)
+convert_prospecto_to_member(prospecto_id, periodo_actual) → member_id
+upsert_prospectos_from_zoom(evento_id, evento_titulo, evento_fecha, registrantes[])
+import_prospectos_bulk(rows[]) → {insertados, actualizados, errores}
+get_all_tags() → [{tag, count}]
+get_zoom_eventos_disponibles() → [{_id, titulo, fecha, count}]
+```
+
+### `zoom_asistio` — valores del filtro
+
+| Valor | Comportamiento en MongoDB |
+|-------|--------------------------|
+| `""` | Sin filtro zoom |
+| `"tiene"` | `zoom_eventos.0: {$exists: true}` — tiene al menos un webinar |
+| `"true"` | `zoom_eventos: {$elemMatch: {asistio: true}}` |
+| `"false"` | `zoom_eventos: {$elemMatch: {asistio: {$ne: true}}}` |
+| `"excluir"` | `zoom_eventos: {$not: {$elemMatch: {}}}` — sin webinars |
+| `"inscrito"` (con ids) | `zoom_eventos: {$elemMatch: {evento_id: {$in: ids}}}` |
+
+### Integración con Zoom
+
+`POST /eventos/{id}/sync-zoom` llama `zoom_client.get_webinar_registrants(webinar_id)` y luego `upsert_prospectos_from_zoom(...)`. Requiere que el evento tenga `zoom_webinar_id` guardado.
+
+---
+
+## 18. Redes Sociales {#redes}
+
+`/redes` — gestión de presencia en RRSS: Instagram, LinkedIn, YouTube, TikTok.
+
+### Sub-secciones
+
+| Ruta | Template | Descripción |
+|------|----------|-------------|
+| `/redes` | `redes_dashboard.html` | Dashboard: métricas actuales por cuenta |
+| `/redes/posts` | `redes_posts.html` | Posts publicados con filtros |
+| `/redes/cronograma` | `redes_cronograma.html` | Calendario de publicaciones planificadas |
+
+### Sincronización de métricas (`sync_redes.py`)
+
+**Corre solo localmente**, no en Render. Usa Playwright con Brave para scrapear seguidores/vistas.
+
+```bash
+# Primera vez — inicia sesión manualmente en las redes
+python sync_redes.py --setup
+
+# Uso normal — sincroniza métricas
+python sync_redes.py
+```
+
+El perfil del navegador se guarda en `chrome_profile_redes/`. La tarea se programa con Windows Task Scheduler (`setup_tarea_redes.bat`).
+
+### Funciones en db.py
+
+```python
+get_redes_cuentas(solo_activas=False) → list
+create_red_cuenta(plataforma, nombre, url, handle) → str
+save_red_metrica(cuenta_id, plataforma, seguidores, ...) → None
+get_redes_metricas_latest() → list    # última métrica por cuenta
+get_redes_metricas_historico() → dict # {cuenta_id: [metricas]}
+get_redes_posts(plataforma, tipo, search, page) → (docs[], total)
+create_red_post(cuenta_id, plataforma, url, tipo, ...) → str
+get_cronograma(plataforma, estado, search, page) → (docs[], total)
+create_cronograma_item(plataforma, titulo, descripcion, ...) → str
+```
+
+---
+
+## 19. Facturación electrónica SUNAT {#sunat}
+
+`webapp/sunat_client.py` — cliente APISPERU para emitir boletas/facturas electrónicas (UBL 2.1) directamente a SUNAT.
+
+### Flujo de emisión
+
+1. Crear comprobante en BD con `create_comprobante(...)` → estado `"pre_registrado"` si se importa sin número SUNAT, o `"emitido"` directo si se emite desde el sistema.
+2. `GET /api/sunat/preflight/{comp_id}` → valida datos antes de emitir (RUC, correlativo, etc.)
+3. `POST /comprobantes/{id}/sunat/emitir` → llama `sunat_client.emitir_comprobante(...)` → APISPERU → SUNAT → devuelve XML + PDF firmado.
+4. `GET /comprobantes/{id}/pdf` → genera PDF local con `pdf_builder.py` (como respaldo o para boletas sin XML).
+5. `POST /comprobantes/{id}/sunat/anular` → comunicación de baja a SUNAT.
+
+### Pre-comprobantes (importación XML)
+
+`POST /comprobantes/import-xml` — importa un XML de comprobante ya emitido externamente (ej. factura de empresa pagadora). El `xml_parser.py` extrae número, tipo, fechas, RUC, montos. Se crea con estado `"pre_registrado"`. Luego `/comprobantes/preparar` permite completar la vinculación con payments.
+
+### Correlativo automático
+
+`get_ultimo_correlativo_info(serie)` / `get_ultimo_correlativo_emitido(serie)` — busca el último número emitido para una serie (B001, F001, etc.) en la colección `comprobantes`. `GET /api/sunat/siguiente-correlativo` devuelve el siguiente disponible.
+
+---
+
+## 20. Zoom {#zoom}
+
+`webapp/zoom_client.py` — Server-to-Server OAuth. Token expira cada hora y se re-obtiene automáticamente.
+
+### Variables de entorno necesarias
+
+`ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`
+
+### Funciones del cliente
+
+```python
+get_webinars(page_size=100) → list         # lista webinars de la cuenta
+get_webinar(webinar_id) → dict             # detalle de un webinar
+get_webinar_registrants(webinar_id) → list # registrantes (nombre, email, ¿asistió?)
+```
+
+### Integración con eventos y prospectos
+
+- `GET /api/zoom/webinars` — devuelve webinars activos para el selector en eventos.
+- `POST /eventos/{id}/sync-zoom` — sincroniza registrantes del webinar vinculado al evento; hace upsert en `publico` y marca asistencia.
+- Los eventos pueden almacenar `zoom_webinar_id` y `zoom_webinar_url`.
+
+---
+
+## 21. Campañas y envíos programados {#campanias}
+
+### Campañas por lotes (`/comunicaciones/campanas`)
+
+Permiten crear una lista de destinatarios + contenido y enviar en lotes para no saturar el SMTP.
+
+```python
+create_campana(asunto, cuerpo, fuente, filtros, destinatarios) → str
+get_campanas(limit) → list
+get_campana(campana_id) → dict | None
+delete_campana(campana_id)
+marcar_rebote_campana(email)
+```
+
+`POST /campanas/crear` — crea campaña con `fuente="socios"` o `fuente="publico"`.
+`POST /campanas/{id}/enviar-lote` — envía el siguiente lote (paginado) de la campaña.
+
+### Envíos programados
+
+```python
+create_envio_programado(asunto, cuerpo, filtros, fecha_programada) → str
+get_envios_programados_pendientes() → list
+update_envio_programado_estado(envio_id, estado, ...)
+cancel_envio_programado(envio_id)
+get_envios_programados(limit) → list
+```
+
+`scheduler.run_programados_scheduler()` — tarea async que se lanza en startup y verifica cada 5 min si hay envíos programados listos para ejecutar.
+
+`POST /api/comunicaciones/programar` — crea un envío programado para una fecha/hora futura.
+`POST /api/comunicaciones/programados/{id}/cancelar` — cancela un envío pendiente.
+`GET /api/comunicaciones/programados` — lista envíos programados.
+
+---
+
+## 22. Plantillas de email guardadas {#plantillas}
+
+Las plantillas se almacenan en MongoDB (colección interna de `comunicaciones_col` o dedicada) y se reutilizan en comunicaciones masivas, campañas y eventos.
+
+```python
+get_plantillas(tipo="") → list            # tipo: "socios" | "publico" | ""
+create_plantilla(nombre, asunto, cuerpo, tipo) → str
+update_plantilla(plantilla_id, ...)
+delete_plantilla(plantilla_id)
+_seed_plantillas()                         # seed inicial en startup
+```
+
+Rutas: `GET/POST /api/plantillas`, `POST /api/plantillas/{id}/update`, `POST /api/plantillas/{id}/delete`.
+
+---
+
+## 23. Constancias de membresía {#constancias}
+
+`webapp/constancia.py` — genera constancias en PDF (fpdf2) que acreditan la membresía activa del socio.
+
+- `POST /members/{id}/constancia/enviar` — genera el PDF y lo envía por email al socio.
+- `get_next_constancia_number(year)` — correlativo anual.
+- `save_constancia(member_id, numero, ...)` — registra la constancia emitida en BD.
+
+---
+
+## 24. IA Tareas {#ia-tareas}
+
+Lista de tareas internas para el agente IA. Visible en `/pendientes` (misma pantalla) o vía API.
+
+```python
+get_ia_tareas(solo_pendientes=False) → list
+create_ia_tarea(texto) → str
+update_ia_tarea(tarea_id, texto, estado, ...)
+toggle_ia_tarea_stand_by(tarea_id)   # alterna estado stand-by
+delete_ia_tarea(tarea_id)
+```
+
+Rutas: `GET /api/ia-tareas`, `POST /ia-tareas/add`, `POST /ia-tareas/{id}/estado`, `POST /ia-tareas/{id}/update`, `POST /ia-tareas/{id}/stand-by`, `POST /ia-tareas/{id}/delete`.

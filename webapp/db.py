@@ -4669,6 +4669,8 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
         query["zoom_eventos"] = {"$elemMatch": {"asistio": True}}
     elif zoom_asistio == "false":
         query["zoom_eventos"] = {"$elemMatch": {"asistio": {"$ne": True}}}
+    elif zoom_asistio == "tiene":
+        query["zoom_eventos.0"] = {"$exists": True}
     if search:
         rx = {"$regex": _re.escape(search), "$options": "i"}
         query["$or"] = [{"nombre": rx}, {"apellido": rx}, {"email": rx},
