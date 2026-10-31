@@ -86,13 +86,15 @@
                class="input text-sm w-28"
                @input="clearTimeout(_t2); _t2=setTimeout(()=>$refs.filterForm.submit(),450)">
 
-        <!-- Tags activos preservados como hidden inputs -->
+        <!-- Tags y zoom preservados como hidden inputs para cuando otros filtros hagan submit -->
         {% for t in tags %}<input type="hidden" name="tags" value="{{ t }}">{% endfor %}
+        {% if zoom_asistio %}<input type="hidden" name="zoom_asistio" value="{{ zoom_asistio }}">{% endif %}
+        {% for eid in (zoom_evento_ids or []) %}<input type="hidden" name="zoom_evento_id" value="{{ eid }}">{% endfor %}
 
         <span class="text-xs text-slate-400 ml-auto whitespace-nowrap">
           {{ total }} prospecto{% if total != 1 %}s{% endif %}
         </span>
-        {% set _has_filters = search or estado or ciudad or titulo or fuente or es_socio or zoom_asistio or tags %}
+        {% set _has_filters = search or estado or ciudad or titulo or fuente or es_socio or zoom_asistio or zoom_evento_ids or tags %}
         {% if _has_filters %}
         <a href="/publico" class="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 whitespace-nowrap">
           <i class="fa-solid fa-xmark"></i> Limpiar
@@ -170,17 +172,28 @@
                 <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Inscritos</span>
               </th>
 
-              <!-- Eventos asistidos — con filtro -->
+              <!-- Eventos asistidos — filtro dinámico con conversatorios reales -->
+              {% set _cur_zoom = zoom_evento_ids[0] if zoom_evento_ids else ('excluir' if zoom_asistio == 'excluir' else '') %}
+              {% set _zoom_active = zoom_evento_ids or zoom_asistio %}
               <th class="px-4 py-2 text-left" style="min-width:160px">
                 <div class="flex flex-col gap-0.5">
                   <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Asistió a</span>
-                  <select name="zoom_asistio" @change="$refs.filterForm.submit()"
+                  <select @change="(v => {
+                            const u = new URL(location.href);
+                            u.searchParams.delete('zoom_evento_id');
+                            u.searchParams.delete('zoom_asistio');
+                            u.searchParams.delete('page');
+                            if (v === 'excluir') u.searchParams.set('zoom_asistio', 'excluir');
+                            else if (v) { u.searchParams.set('zoom_evento_id', v); u.searchParams.set('zoom_asistio', 'true'); }
+                            location.href = u.toString();
+                          })($event.target.value)"
                           class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
-                                 {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if zoom_asistio else 'border-slate-200 bg-white text-slate-500' }}">
-                    <option value=""       {% if not zoom_asistio         %}selected{% endif %}>Todos</option>
-                    <option value="tiene"  {% if zoom_asistio == 'tiene'  %}selected{% endif %}>Con webinars</option>
-                    <option value="true"   {% if zoom_asistio == 'true'   %}selected{% endif %}>Asistió</option>
-                    <option value="excluir"{% if zoom_asistio == 'excluir'%}selected{% endif %}>Sin webinars</option>
+                                 {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if _zoom_active else 'border-slate-200 bg-white text-slate-500' }}">
+                    <option value="" {% if not _cur_zoom %}selected{% endif %}>Todos</option>
+                    {% for e in zoom_eventos_disp %}
+                    <option value="{{ e._id }}" {% if e._id == _cur_zoom %}selected{% endif %}>{{ e.titulo }}</option>
+                    {% endfor %}
+                    <option value="excluir" {% if _cur_zoom == 'excluir' %}selected{% endif %}>Sin webinars</option>
                   </select>
                 </div>
               </th>
@@ -303,6 +316,7 @@
       {% if total > 50 %}
       {% set _pgns = namespace(pgp="search=" ~ (search|urlencode) ~ "&estado=" ~ (estado|urlencode) ~ "&ciudad=" ~ (ciudad|urlencode) ~ "&titulo=" ~ (titulo|urlencode) ~ "&fuente=" ~ (fuente|urlencode) ~ "&es_socio=" ~ (es_socio|urlencode) ~ "&zoom_asistio=" ~ (zoom_asistio|urlencode)) %}
       {% for t in tags %}{% set _pgns.pgp = _pgns.pgp ~ "&tags=" ~ (t|urlencode) %}{% endfor %}
+      {% for eid in (zoom_evento_ids or []) %}{% set _pgns.pgp = _pgns.pgp ~ "&zoom_evento_id=" ~ (eid|urlencode) %}{% endfor %}
       <div class="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
         <span>Página {{ page }} de {{ ((total - 1) // 50 + 1) }}</span>
         <div class="flex gap-2">
@@ -421,9 +435,14 @@
             {% if titulo %}<span class="badge badge-slate">Título: {{ titulo }}</span>{% endif %}
             {% if fuente %}<span class="badge badge-slate">Fuente: {{ fuente }}</span>{% endif %}
             {% if es_socio == 'false' %}<span class="badge badge-red">Solo no socios</span>{% elif es_socio == 'true' %}<span class="badge badge-green">Solo socios</span>{% endif %}
-            {% if zoom_asistio == 'tiene' %}<span class="badge badge-blue">Con webinars Zoom</span>{% elif zoom_asistio == 'true' %}<span class="badge badge-blue">Asistió a Zoom</span>{% elif zoom_asistio == 'excluir' %}<span class="badge badge-slate">Sin webinars Zoom</span>{% endif %}
+            {% if zoom_evento_ids %}
+              {% set _zev = zoom_eventos_disp | selectattr('_id', 'equalto', zoom_evento_ids[0]) | first | default(None) %}
+              <span class="badge badge-cyan">Asistió: {{ _zev.titulo if _zev else zoom_evento_ids[0] }}</span>
+            {% elif zoom_asistio == 'excluir' %}<span class="badge badge-slate">Sin webinars Zoom</span>
+            {% elif zoom_asistio == 'true' %}<span class="badge badge-blue">Asistió a Zoom</span>
+            {% elif zoom_asistio == 'tiene' %}<span class="badge badge-blue">Con webinars Zoom</span>{% endif %}
             {% for t in tags %}<span class="badge badge-purple"><i class="fa-solid fa-tag text-[9px] mr-0.5"></i>{{ t }}</span>{% endfor %}
-            {% if not (search or estado or ciudad or titulo or fuente or es_socio or zoom_asistio or tags) %}
+            {% if not (search or estado or ciudad or titulo or fuente or es_socio or zoom_asistio or zoom_evento_ids or tags) %}
             <span class="text-slate-400">Sin filtros — se enviará a todos los prospectos activos.</span>
             {% endif %}
           </div>
@@ -556,8 +575,9 @@ function publicoPage() {
         titulo:       p.get('titulo')       || '',
         fuente:       p.get('fuente')       || '',
         es_socio:     p.get('es_socio')     || '',
-        zoom_asistio: p.get('zoom_asistio') || '',
-        tags:         p.getAll('tags'),
+        zoom_asistio:     p.get('zoom_asistio')     || '',
+        zoom_evento_ids:  p.getAll('zoom_evento_id'),
+        tags:             p.getAll('tags'),
       };
     },
 
