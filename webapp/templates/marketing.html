@@ -15,14 +15,14 @@
     {% for p in periodos %}
     <button type="submit" name="periodo" value="{{ p }}"
       class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors
-        {% if periodo == p %}bg-blue-600 text-white{% else %}bg-white border border-slate-300 text-slate-600 hover:bg-slate-50{% endif %}">
+        {% if periodo == p %}bg-brand-700 text-white{% else %}bg-white border border-slate-300 text-slate-600 hover:bg-slate-50{% endif %}">
       {{ p }}
     </button>
     {% endfor %}
   </form>
 
   <!-- ── Resumen ── -->
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
     {% set pct = ((stats.con_email / stats.total_activos * 100) | round(1)) if stats.total_activos else 0 %}
     <div class="bg-white rounded-xl border border-slate-200 p-5">
       <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Socios activos</div>
@@ -37,10 +37,6 @@
       <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Sin email</div>
       <div class="text-3xl font-bold text-red-500">{{ stats.sin_email }}</div>
     </div>
-    <div class="bg-white rounded-xl border border-slate-200 p-5">
-      <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Período analizado</div>
-      <div class="text-3xl font-bold text-blue-600">{{ periodo }}</div>
-    </div>
   </div>
 
   <!-- ── Gráficos ── -->
@@ -49,7 +45,7 @@
     <!-- Por título -->
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <h3 class="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-        <i class="fa-solid fa-graduation-cap text-blue-500"></i> Por título profesional
+        <i class="fa-solid fa-graduation-cap text-slate-500"></i> Por título profesional
       </h3>
       <canvas id="chartTitulo" height="200"></canvas>
     </div>
@@ -57,7 +53,7 @@
     <!-- Por ubicación -->
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <h3 class="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-        <i class="fa-solid fa-map-pin text-green-500"></i> Por ubicación
+        <i class="fa-solid fa-map-pin text-slate-500"></i> Por ubicación
       </h3>
       <canvas id="chartUbicacion" height="200"></canvas>
     </div>
@@ -65,7 +61,7 @@
     <!-- Por estado de pago -->
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <h3 class="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-        <i class="fa-solid fa-money-bill-wave text-amber-500"></i> Por estado de pago {{ periodo }}
+        <i class="fa-solid fa-money-bill-wave text-slate-500"></i> Por estado de pago {{ periodo }}
       </h3>
       <div class="flex items-center justify-center">
         <canvas id="chartPago" style="max-height:240px; max-width:360px;"></canvas>
@@ -75,7 +71,7 @@
     <!-- Por empresa pagadora -->
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <h3 class="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-        <i class="fa-solid fa-building text-purple-500"></i> Por empresa pagadora {{ periodo }}
+        <i class="fa-solid fa-building text-slate-500"></i> Por empresa pagadora {{ periodo }}
       </h3>
       <canvas id="chartEmpresa" height="200"></canvas>
     </div>
@@ -85,7 +81,7 @@
   <!-- ── Extracción de correos ── -->
   <div class="bg-white rounded-xl border border-slate-200 p-6">
     <h2 class="font-semibold text-slate-800 mb-5 flex items-center gap-2">
-      <i class="fa-solid fa-envelope-open-text text-blue-500"></i> Extracción de correos
+      <i class="fa-solid fa-envelope-open-text text-slate-500"></i> Extracción de correos
     </h2>
 
     <!-- Filtros -->
@@ -140,7 +136,7 @@
             <span class="font-semibold text-slate-800">{{ emails | length }}</span> correos encontrados
           </span>
           <a href="/marketing/export?periodo={{ periodo }}&titulo={{ titulo }}&ubicacion={{ ubicacion }}&estado_pago={{ estado_pago }}&empresa={{ empresa }}"
-            class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+            class="inline-flex items-center gap-2 bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
             <i class="fa-solid fa-file-csv"></i> Exportar CSV
           </a>
         </div>
@@ -200,15 +196,19 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
+Chart.defaults.font.family = '"IBM Plex Sans", system-ui, sans-serif';
+Chart.defaults.color = '#5a665f';
+Chart.defaults.scale.grid.color = '#eff1ed';
+const ESTADOS = {{ status_labels | tojson }};
 const BLUE_PALETTE = [
   '#3b82f6','#60a5fa','#93c5fd','#1d4ed8','#2563eb',
   '#6366f1','#818cf8','#a5b4fc','#4f46e5','#7c3aed','#a78bfa','#c4b5fd'
 ];
 const PAGO_COLORS = {
-  pagado:'#22c55e', debe:'#ef4444', fraccionamiento:'#f59e0b',
-  exonerado:'#94a3b8', no_aplica:'#cbd5e1', pendiente:'#eab308',
-  retirar:'#64748b', en_revision:'#a855f7', revisar:'#f97316',
-  parcial:'#3b82f6'
+  pagado:'#33703b', debe:'#c8503f', fraccionamiento:'#c79a3e',
+  exonerado:'#8a949c', no_aplica:'#c9cfc7', pendiente:'#dcb95f',
+  retirar:'#5a665f', en_revision:'#7f6db0', revisar:'#c9772f',
+  parcial:'#6d9dd6'
 };
 
 // Título
@@ -217,12 +217,12 @@ new Chart(document.getElementById('chartTitulo'), {
   type: 'bar',
   data: {
     labels: dataTitulo.map(d => d.label),
-    datasets: [{ data: dataTitulo.map(d => d.count), backgroundColor: BLUE_PALETTE, borderRadius: 4 }]
+    datasets: [{ data: dataTitulo.map(d => d.count), backgroundColor: '#33703b', borderRadius: 4 }]
   },
   options: {
     indexAxis: 'y',
     plugins: { legend: { display: false } },
-    scales: { x: { ticks: { stepSize: 1 } } }
+    scales: { x: { ticks: { precision: 0 } } }
   }
 });
 
@@ -232,11 +232,11 @@ new Chart(document.getElementById('chartUbicacion'), {
   type: 'bar',
   data: {
     labels: dataUbic.map(d => d.label),
-    datasets: [{ data: dataUbic.map(d => d.count), backgroundColor: '#10b981', borderRadius: 4 }]
+    datasets: [{ data: dataUbic.map(d => d.count), backgroundColor: '#33703b', borderRadius: 4 }]
   },
   options: {
     plugins: { legend: { display: false } },
-    scales: { y: { ticks: { stepSize: 1 } } }
+    scales: { y: { ticks: { precision: 0 } } }
   }
 });
 
@@ -245,7 +245,7 @@ const dataPago = {{ stats.by_pago | tojson }};
 new Chart(document.getElementById('chartPago'), {
   type: 'doughnut',
   data: {
-    labels: dataPago.map(d => d.label),
+    labels: dataPago.map(d => (ESTADOS[d.label] || [d.label])[0]),
     datasets: [{ data: dataPago.map(d => d.count),
       backgroundColor: dataPago.map(d => PAGO_COLORS[d.label] || '#94a3b8'),
       borderWidth: 2, borderColor: '#fff' }]
@@ -259,11 +259,11 @@ new Chart(document.getElementById('chartEmpresa'), {
   type: 'bar',
   data: {
     labels: dataEmp.map(d => d.label),
-    datasets: [{ data: dataEmp.map(d => d.count), backgroundColor: '#a855f7', borderRadius: 4 }]
+    datasets: [{ data: dataEmp.map(d => d.count), backgroundColor: '#c79a3e', borderRadius: 4 }]
   },
   options: {
     plugins: { legend: { display: false } },
-    scales: { y: { ticks: { stepSize: 1 } } }
+    scales: { y: { ticks: { precision: 0 } } }
   }
 });
 </script>

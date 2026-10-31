@@ -160,7 +160,7 @@
             </div>
             <div class="flex items-center gap-3 flex-shrink-0 text-right">
               {% if p.precio %}
-              <span class="text-sm font-bold text-green-700">S/ {{ p.precio | int }}</span>
+              <span class="text-sm font-bold text-green-700">{{ p.precio | soles(0) }}</span>
               {% else %}
               <span class="text-xs text-slate-400 italic">Precio libre</span>
               {% endif %}
@@ -176,7 +176,7 @@
                   </button>
                 </form>
                 <form method="post" action="/productos/{{ p._id }}/delete"
-                      onsubmit="return confirm('¿Eliminar este producto?')">
+                      data-confirm="¿Eliminar este producto?">
                   <button type="submit" class="text-xs text-slate-400 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50 transition-colors">
                     <i class="fa-solid fa-trash text-[11px]"></i>
                   </button>
@@ -212,7 +212,7 @@
                 </div>
                 <div class="flex items-end gap-2">
                   <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                    <input type="checkbox" name="activo" value="on" {% if p.activo %}checked{% endif %} class="rounded accent-blue-600">
+                    <input type="checkbox" name="activo" value="on" {% if p.activo %}checked{% endif %} class="rounded accent-brand-700">
                     Activo
                   </label>
                 </div>

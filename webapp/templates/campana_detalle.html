@@ -35,7 +35,7 @@
     } catch(e) { alert('Error de red'); this.sending = false; }
   },
   async eliminar() {
-    if (!confirm('¿Eliminar esta campaña? No se puede deshacer.')) return;
+    if (!await confirmar('¿Eliminar esta campaña? No se puede deshacer.')) return;
     this.deleting = true;
     const r = await fetch('/campanas/{{ campana._id }}/delete', {method: 'POST'});
     window.location.href = '/comunicaciones/campanas';
@@ -119,7 +119,7 @@
     {% if pendientes > 0 %}
     <div class="md:col-span-1 bg-white rounded-2xl border border-slate-200 p-5 flex flex-col gap-4">
       <h3 class="font-semibold text-slate-700 flex items-center gap-2">
-        <i class="fa-solid fa-paper-plane text-blue-500"></i> Enviar lote
+        <i class="fa-solid fa-paper-plane text-slate-500"></i> Enviar lote
       </h3>
       <p class="text-sm text-slate-500">
         Quedan <strong class="text-slate-700">{{ pendientes }}</strong> destinatarios pendientes.

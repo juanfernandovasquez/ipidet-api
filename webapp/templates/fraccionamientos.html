@@ -4,13 +4,16 @@
 
 {% block header_actions %}
 <span class="text-sm text-slate-500">{{ total }} activo{% if total != 1 %}s{% endif %}</span>
+<button type="button" class="btn-primary" onclick="document.getElementById('modal-nuevo-fracc').classList.remove('hidden')">
+  <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Nuevo fraccionamiento
+</button>
 {% endblock %}
 
 {% block content %}
 <div x-data="{ t: null }">
 
   <!-- Stats cards -->
-  <div class="grid grid-cols-2 xl:grid-cols-5 gap-4 mb-5">
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
     <div class="bg-white rounded-xl border border-slate-200 p-4">
       <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Fraccionamientos activos</div>
       <div class="text-2xl font-bold text-slate-800">{{ stats.total }}</div>
@@ -24,17 +27,12 @@
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-4">
       <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Total cobrado</div>
-      <div class="text-2xl font-bold text-green-700">S/ {{ stats.total_cobrado | int }}</div>
+      <div class="text-2xl font-bold text-green-700">{{ stats.total_cobrado | soles(0) }}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 p-4">
       <div class="text-xs text-slate-500 uppercase tracking-wide mb-1">Total pendiente</div>
-      <div class="text-2xl font-bold text-blue-700">S/ {{ stats.total_pendiente | int }}</div>
+      <div class="text-2xl font-bold text-amber-700">{{ stats.total_pendiente | soles(0) }}</div>
     </div>
-    <button onclick="document.getElementById('modal-nuevo-fracc').classList.remove('hidden')"
-            class="bg-violet-600 hover:bg-violet-700 rounded-xl p-4 text-white flex flex-col items-center justify-center gap-2 transition-colors cursor-pointer col-span-2 xl:col-span-1">
-      <i class="fa-solid fa-calendar-plus text-2xl"></i>
-      <div class="text-sm font-semibold">Nuevo fraccionamiento</div>
-    </button>
   </div>
 
   <!-- Filters -->
@@ -59,11 +57,11 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Estado de alerta</label>
         <select name="alerta" class="input" @change="$refs.filterForm.submit()">
           <option value="" {% if not alerta %}selected{% endif %}>Todos</option>
-          <option value="vencida"     {% if alerta == 'vencida'     %}selected{% endif %}>🔴 Cuota vencida</option>
-          <option value="proxima_7d"  {% if alerta == 'proxima_7d'  %}selected{% endif %}>🟡 Vence esta semana</option>
-          <option value="proxima_30d" {% if alerta == 'proxima_30d' %}selected{% endif %}>🟨 Vence este mes</option>
-          <option value="al_dia"      {% if alerta == 'al_dia'      %}selected{% endif %}>🟢 Al día</option>
-          <option value="sin_fechas"  {% if alerta == 'sin_fechas'  %}selected{% endif %}>⚪ Sin fechas</option>
+          <option value="vencida"     {% if alerta == 'vencida'     %}selected{% endif %}>Cuota vencida</option>
+          <option value="proxima_7d"  {% if alerta == 'proxima_7d'  %}selected{% endif %}>Vence esta semana</option>
+          <option value="proxima_30d" {% if alerta == 'proxima_30d' %}selected{% endif %}>Vence este mes</option>
+          <option value="al_dia"      {% if alerta == 'al_dia'      %}selected{% endif %}>Al día</option>
+          <option value="sin_fechas"  {% if alerta == 'sin_fechas'  %}selected{% endif %}>Sin fechas</option>
         </select>
       </div>
       <button type="submit" class="sr-only">Filtrar</button>
@@ -72,11 +70,11 @@
       {% endif %}
       <div class="ml-auto">
         <button @click="$dispatch('recordatorios-abrir', { periodo: '{{ periodo }}' }); document.getElementById('modal-recordatorios').classList.remove('hidden')"
-                class="inline-flex items-center gap-2 {% if stats.cuotas_vencidas > 0 %}bg-red-600 hover:bg-red-700 text-white{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %} text-sm font-medium px-4 py-2 rounded-xl transition-colors shadow-sm">
-          <i class="fa-solid fa-bell {% if stats.cuotas_vencidas > 0 %}animate-pulse{% endif %}"></i>
+                class="inline-flex items-center gap-2 {% if stats.cuotas_vencidas > 0 %}bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300{% else %}bg-white border border-slate-200 text-slate-600 hover:bg-slate-50{% endif %} text-sm font-medium px-4 py-2 rounded-xl transition-colors shadow-sm">
+          <i class="fa-solid fa-bell"></i>
           Recordatorios
           {% if stats.cuotas_vencidas > 0 %}
-          <span class="bg-white/25 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full">{{ stats.cuotas_vencidas }}</span>
+          <span class="bg-amber-600 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full">{{ stats.cuotas_vencidas }}</span>
           {% endif %}
         </button>
       </div>
@@ -84,7 +82,7 @@
   </div>
 
   <!-- Table: miembros como filas principales, períodos como sub-filas -->
-  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
         <tr class="bg-slate-50 border-b border-slate-200 text-left">
@@ -119,7 +117,7 @@
               <span class="text-xs text-slate-400 truncate max-w-[200px]">{{ m.email_principal }}</span>
               {% endif %}
               {% if m.periodos_count > 1 %}
-              <span class="text-[10px] font-bold bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full shrink-0">{{ m.periodos_count }} períodos</span>
+              <span class="text-[10px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-full shrink-0">{{ m.periodos_count }} períodos</span>
               {% endif %}
               {% if m.cuotas_vencidas > 0 %}
               <span class="text-[10px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full shrink-0">
@@ -127,9 +125,9 @@
               </span>
               {% endif %}
               <div class="ml-auto text-xs flex items-center gap-1.5">
-                <span class="font-semibold text-green-700">S/ {{ m.total_cobrado | int }}</span>
+                <span class="font-semibold text-green-700">{{ m.total_cobrado | soles(0) }}</span>
                 <span class="text-slate-300">·</span>
-                <span class="font-semibold text-blue-700">S/ {{ m.total_pendiente | int }} pendiente</span>
+                <span class="font-semibold text-amber-700">{{ m.total_pendiente | soles(0) }} pendiente</span>
               </div>
             </div>
           </td>
@@ -139,11 +137,11 @@
         {% for f in m.fraccionamientos %}
         {% set pct = ((f.cuotas_pagadas_count / f.cuotas_total * 100) | int) if f.cuotas_total > 0 else 0 %}
         <tr class="border-b border-slate-100 cursor-pointer transition-colors select-none
-                   {% if f.alerta == 'vencida' %}bg-red-50/60 hover:bg-red-100{% else %}hover:bg-violet-50{% endif %}"
+                   {% if f.alerta == 'vencida' %}bg-red-50/60 hover:bg-red-100{% else %}hover:bg-slate-100{% endif %}"
             onclick="document.getElementById('frac-modal-{{ f._id }}').classList.remove('hidden')">
 
           <td class="px-4 py-2.5 pl-8">
-            <span class="inline-flex items-center gap-1 text-xs font-bold text-violet-700 bg-violet-100 px-2 py-1 rounded-full">
+            <span class="inline-flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded-full">
               <i class="fa-solid fa-calendar text-[9px]"></i> {{ f.periodo }}
             </span>
           </td>
@@ -163,12 +161,12 @@
             {% endif %}
           </td>
 
-          <td class="px-4 py-2.5 text-green-700 font-semibold text-xs">S/ {{ f.total_cobrado | int }}</td>
-          <td class="px-4 py-2.5 text-blue-700 font-semibold text-xs">S/ {{ f.total_pendiente | int }}</td>
+          <td class="px-4 py-2.5 text-green-700 font-semibold text-xs">{{ f.total_cobrado | soles(0) }}</td>
+          <td class="px-4 py-2.5 text-amber-700 font-semibold text-xs">{{ f.total_pendiente | soles(0) }}</td>
 
           <td class="px-4 py-2.5 text-xs">
             {% if f.get('proxima_cuota') %}
-              <div class="font-medium text-slate-700">S/ {{ f.proxima_cuota.monto }}</div>
+              <div class="font-medium text-slate-700">{{ f.proxima_cuota.monto | soles }}</div>
               {% if f.get('proxima_cuota_fecha_iso') %}
                 <div class="text-slate-400">
                   {{ f.proxima_cuota_fecha_iso | format_fecha }}
@@ -194,15 +192,15 @@
 
           <td class="px-4 py-2.5">
             {% if f.alerta == 'vencida' %}
-              <span class="badge badge-red">🔴 Vencida</span>
+              <span class="badge badge-red">Vencida</span>
             {% elif f.alerta == 'proxima_7d' %}
-              <span class="badge badge-amber">🟡 Esta semana</span>
+              <span class="badge badge-amber">Esta semana</span>
             {% elif f.alerta == 'proxima_30d' %}
-              <span class="badge badge-yellow">🟨 Este mes</span>
+              <span class="badge badge-yellow">Este mes</span>
             {% elif f.alerta == 'al_dia' %}
-              <span class="badge badge-green">🟢 Al día</span>
+              <span class="badge badge-green">Al día</span>
             {% else %}
-              <span class="badge badge-gray">⚪ Sin fechas</span>
+              <span class="badge badge-gray">Sin fechas</span>
             {% endif %}
           </td>
         </tr>
@@ -256,7 +254,7 @@
     <!-- ── Header ── -->
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
       <div class="flex items-center gap-3 min-w-0">
-        <div class="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center text-violet-600 shrink-0">
+        <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
           <i class="fa-solid fa-calendar-days text-sm"></i>
         </div>
         <div class="min-w-0">
@@ -265,14 +263,14 @@
             <span class="text-xs font-mono text-slate-400 shrink-0">{{ f.member_id }}</span>
           </div>
           <div class="flex items-center gap-2 mt-1 flex-wrap">
-            <span class="inline-flex items-center gap-1 text-xs font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full shrink-0">
+            <span class="inline-flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
               <i class="fa-solid fa-calendar text-[9px]"></i> Membresía {{ f.periodo }}
             </span>
             {% if f.get('empresa_pagadora') %}
             <span class="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{{ f.empresa_pagadora }}</span>
             {% endif %}
             {% if f.alerta == 'vencida' %}
-            <span class="badge badge-red shrink-0">🔴 Cuota vencida</span>
+            <span class="badge badge-red shrink-0">Cuota vencida</span>
             {% endif %}
           </div>
         </div>
@@ -296,18 +294,18 @@
         </div>
         <div class="bg-green-50 rounded-xl p-3 text-center">
           <div class="text-xs text-green-600 mb-1">Cobrado</div>
-          <div class="text-xl font-bold text-green-700">S/ {{ f.total_cobrado | int }}</div>
+          <div class="text-xl font-bold text-green-700">{{ f.total_cobrado | soles(0) }}</div>
         </div>
         <div class="bg-blue-50 rounded-xl p-3 text-center">
-          <div class="text-xs text-blue-600 mb-1">Pendiente</div>
-          <div class="text-xl font-bold text-blue-700">S/ {{ f.total_pendiente | int }}</div>
+          <div class="text-xs text-amber-700 mb-1">Pendiente</div>
+          <div class="text-xl font-bold text-amber-700">{{ f.total_pendiente | soles(0) }}</div>
         </div>
         {% if f.get('monto_objetivo') %}
         <div class="{% if f.gap_cuotas and f.gap_cuotas > 0 %}bg-red-50{% else %}bg-emerald-50{% endif %} rounded-xl p-3 text-center">
           <div class="text-xs {% if f.gap_cuotas and f.gap_cuotas > 0 %}text-red-600{% else %}text-emerald-600{% endif %} mb-1">Total esperado</div>
-          <div class="text-xl font-bold {% if f.gap_cuotas and f.gap_cuotas > 0 %}text-red-700{% else %}text-emerald-700{% endif %}">S/ {{ f.monto_objetivo | int }}</div>
+          <div class="text-xl font-bold {% if f.gap_cuotas and f.gap_cuotas > 0 %}text-red-700{% else %}text-emerald-700{% endif %}">{{ f.monto_objetivo | soles(0) }}</div>
           {% if f.gap_cuotas and f.gap_cuotas > 0 %}
-          <div class="text-[10px] text-red-600 mt-1">Faltan S/ {{ f.gap_cuotas | int }}</div>
+          <div class="text-[10px] text-red-600 mt-1">Faltan {{ f.gap_cuotas | soles(0) }}</div>
           {% else %}
           <div class="text-[10px] text-emerald-600 mt-1">✓ Suma completa</div>
           {% endif %}
@@ -320,7 +318,7 @@
             <div class="flex gap-1">
               <input name="monto_objetivo" type="number" step="0.01" min="0"
                      placeholder="0.00" class="input text-xs py-1 w-full min-w-0">
-              <button type="submit" class="text-xs font-semibold text-violet-600 hover:text-violet-800 px-1 shrink-0">✓</button>
+              <button type="submit" class="text-xs font-semibold text-slate-700 hover:text-slate-700 px-1 shrink-0">✓</button>
             </div>
           </form>
         </div>
@@ -344,7 +342,7 @@
             </button>
             <div x-show="confirmar" x-cloak class="inline-flex items-center gap-1">
               <span class="text-xs text-slate-600">¿Confirmar?</span>
-              <button type="submit" class="text-xs font-semibold text-white bg-green-600 hover:bg-green-700 px-2 py-1 rounded-lg">Sí</button>
+              <button type="submit" class="text-xs font-semibold text-white bg-brand-700 hover:bg-brand-800 px-2 py-1 rounded-lg">Sí</button>
               <button type="button" @click="confirmar = false" class="text-xs text-slate-400 hover:text-slate-600 px-1">No</button>
             </div>
           </div>
@@ -355,7 +353,7 @@
       <!-- ─ Cuotas de la membresía ─ -->
       <div>
         <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <span class="w-4 h-4 inline-flex items-center justify-center bg-violet-100 text-violet-600 rounded-full text-[8px] font-bold shrink-0">
+          <span class="w-4 h-4 inline-flex items-center justify-center bg-slate-100 text-slate-700 rounded-full text-[8px] font-bold shrink-0">
             <i class="fa-solid fa-list text-[7px]"></i>
           </span>
           Cuotas — membresía {{ f.periodo }}
@@ -395,7 +393,7 @@
               <div class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm
                           {% if cuota.estado == 'pagado' %}bg-green-100 text-green-700
                           {% elif es_vencida %}bg-red-100 text-red-700
-                          {% else %}bg-violet-100 text-violet-700{% endif %}">
+                          {% else %}bg-slate-100 text-slate-700{% endif %}">
                 #{{ cuota.numero }}
               </div>
 
@@ -425,7 +423,7 @@
                           {% if cuota.estado == 'pagado' %}text-green-700
                           {% elif es_vencida %}text-red-700
                           {% else %}text-slate-800{% endif %}">
-                S/ {{ cuota.monto }}
+                {{ cuota.monto | soles }}
               </div>
             </div>
 
@@ -433,7 +431,7 @@
             {% if cuota.estado == 'pagado' and (cuota.get('fecha_pago') or cuota.get('medio_pago') or cuota.get('num_comprobante')) %}
             <div class="px-4 py-2 border-t border-green-100 bg-white flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600">
               {% if cuota.get('fecha_pago') %}
-              <span><span class="text-slate-400">Fecha pago:</span> {{ cuota.fecha_pago }}</span>
+              <span><span class="text-slate-400">Fecha pago:</span> {{ cuota.fecha_pago | format_fecha }}</span>
               {% endif %}
               {% if cuota.get('medio_pago') %}
               <span><span class="text-slate-400">Medio:</span> {{ cuota.medio_pago }}{% if cuota.get('banco_origen') %} · {{ cuota.banco_origen }}{% endif %}</span>
@@ -459,14 +457,14 @@
               <button type="button"
                       @click="registrandoPago = !registrandoPago; editandoDatos = false"
                       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
-                             {% if es_vencida %}bg-red-600 hover:bg-red-700 text-white{% else %}bg-green-600 hover:bg-green-700 text-white{% endif %}">
+                             {% if es_vencida %}bg-red-600 hover:bg-red-700 text-white{% else %}bg-brand-700 hover:bg-brand-800 text-white{% endif %}">
                 <i class="fa-solid fa-check text-[10px]"></i>
                 <span x-text="registrandoPago ? 'Cancelar' : 'Registrar pago'"></span>
               </button>
               <button type="button"
                       @click="editandoDatos = !editandoDatos; registrandoPago = false"
                       class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors
-                             text-violet-600 border-violet-200 hover:bg-violet-50">
+                             text-slate-700 border-slate-200 hover:bg-slate-100">
                 <i class="fa-solid fa-pen text-[9px]"></i>
                 <span x-text="editandoDatos ? 'Cancelar' : 'Editar cuota'"></span>
               </button>
@@ -559,7 +557,7 @@
                   </div>
                 </div>
                 <div class="flex gap-2">
-                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-brand-700 hover:bg-brand-800 text-white text-xs font-semibold transition-colors">
                     <i class="fa-solid fa-check text-[10px]"></i> Registrar pago
                   </button>
                   <button type="button" @click="registrandoPago = false"
@@ -571,23 +569,23 @@
             </div>
 
             <!-- Expandable: Edit cuota data (monto + fecha venc) -->
-            <div x-show="editandoDatos" x-cloak class="border-t border-violet-200 px-4 py-4 bg-violet-50">
-              <p class="text-[10px] font-bold text-violet-500 uppercase tracking-wider mb-3">Editar datos de cuota</p>
+            <div x-show="editandoDatos" x-cloak class="border-t border-slate-200 px-4 py-4 bg-slate-100">
+              <p class="text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-3">Editar datos de cuota</p>
               <form method="post" action="/billing/{{ f._id }}/cuotas/{{ cuota.numero }}/update">
                 <input type="hidden" name="redirect_to" value="{{ rf }}">
                 <input type="hidden" name="estado" value="pendiente">
                 <div class="flex flex-wrap gap-3 mb-3">
                   <div>
-                    <label class="block text-[11px] font-medium text-violet-600 mb-1">Monto (S/) <span class="text-red-500">*</span></label>
+                    <label class="block text-[11px] font-medium text-slate-700 mb-1">Monto (S/) <span class="text-red-500">*</span></label>
                     <input name="monto" type="number" step="0.01" min="0" value="{{ cuota.monto }}" class="input text-xs py-1.5 w-28" required>
                   </div>
                   <div>
-                    <label class="block text-[11px] font-medium text-violet-600 mb-1">Fecha vencimiento</label>
+                    <label class="block text-[11px] font-medium text-slate-700 mb-1">Fecha vencimiento</label>
                     <input name="fecha_venc" type="date" value="{{ cuota.get('fecha_venc','') }}" class="input text-xs py-1.5 w-36">
                   </div>
                 </div>
                 <div class="flex gap-2">
-                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-brand-700 hover:bg-brand-800 text-white text-xs font-semibold transition-colors">
                     <i class="fa-solid fa-check text-[10px]"></i> Guardar cambios
                   </button>
                   <button type="button" @click="editandoDatos = false"
@@ -621,7 +619,7 @@
                   </div>
                 </div>
                 <div class="flex gap-2">
-                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-brand-700 hover:bg-brand-800 text-white text-xs font-semibold transition-colors">
                     <i class="fa-solid fa-receipt text-[10px]"></i> Crear comprobante
                   </button>
                   <button type="button" @click="emitiendo = false"
@@ -684,7 +682,7 @@
                   </div>
                 </div>
                 <div class="flex gap-2">
-                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors">
+                  <button type="submit" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-brand-700 hover:bg-brand-800 text-white text-xs font-semibold transition-colors">
                     <i class="fa-solid fa-check text-[10px]"></i> Guardar cambios
                   </button>
                   <button type="button" @click="editingCuota = false"
@@ -746,11 +744,11 @@
           <div class="mt-2">
             <button type="button" @click="generando = !generando"
                     class="text-xs flex items-center gap-1 transition-colors"
-                    :class="generando ? 'text-slate-400' : 'text-violet-600 hover:text-violet-800'">
+                    :class="generando ? 'text-slate-400' : 'text-slate-700 hover:text-slate-700'">
               <i class="fa-solid" :class="generando ? 'fa-chevron-up' : 'fa-wand-magic-sparkles'"></i>
               <span x-text="generando ? 'Ocultar generador' : 'Generar calendario automático'"></span>
             </button>
-            <div x-show="generando" x-cloak class="mt-2 p-3 bg-violet-50 border border-violet-200 rounded-xl">
+            <div x-show="generando" x-cloak class="mt-2 p-3 bg-slate-100 border border-slate-200 rounded-xl">
               <form method="post" action="/fraccionamientos/{{ f._id }}/cuotas/generar" class="flex flex-wrap gap-2 items-end">
                 <input type="hidden" name="redirect_to" value="{{ rf }}">
                 <div>
@@ -775,13 +773,13 @@
                     <option value="6">Semestral</option>
                   </select>
                 </div>
-                <button type="submit" class="text-violet-700 hover:text-violet-900 border border-violet-300 bg-white hover:bg-violet-50 font-semibold text-xs px-3 py-1 rounded-lg transition-colors">
+                <button type="submit" class="text-slate-700 hover:text-violet-900 border border-slate-200 bg-white hover:bg-slate-100 font-semibold text-xs px-3 py-1 rounded-lg transition-colors">
                   Generar <span x-text="genN"></span> cuotas
                 </button>
               </form>
               <div x-show="genPreview.length > 0" class="mt-2 flex flex-wrap gap-1.5">
                 <template x-for="q in genPreview" :key="q.num">
-                  <span class="text-[11px] bg-white border border-violet-200 rounded px-2 py-0.5 text-slate-600">
+                  <span class="text-[11px] bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600">
                     <strong x-text="'#' + q.num"></strong>
                     <span x-text="' S/' + q.m.toFixed(0)"></span>
                     <span class="text-slate-400" x-text="' · ' + q.f"></span>
@@ -870,11 +868,11 @@
             </template>
           </div>
         </div>
-        <div x-show="socio" x-cloak class="mt-2 flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
-          <i class="fa-solid fa-user-check text-violet-500 text-xs"></i>
-          <span class="text-sm text-violet-800 font-medium truncate" x-text="socio?.nombre"></span>
-          <span class="text-xs font-mono text-violet-500 shrink-0" x-text="socio?.member_id"></span>
-          <button type="button" @click="socio = null; sSearch = ''" class="ml-auto text-violet-300 hover:text-violet-600">
+        <div x-show="socio" x-cloak class="mt-2 flex items-center gap-2 bg-slate-100 border border-slate-200 rounded-lg px-3 py-2">
+          <i class="fa-solid fa-user-check text-slate-700 text-xs"></i>
+          <span class="text-sm text-slate-700 font-medium truncate" x-text="socio?.nombre"></span>
+          <span class="text-xs font-mono text-slate-700 shrink-0" x-text="socio?.member_id"></span>
+          <button type="button" @click="socio = null; sSearch = ''" class="ml-auto text-violet-300 hover:text-slate-700">
             <i class="fa-solid fa-xmark text-xs"></i>
           </button>
         </div>
@@ -947,7 +945,7 @@
           </span>
           Calendario generado
         </p>
-        <div class="border border-slate-200 rounded-xl overflow-hidden">
+        <div class="border border-slate-200 rounded-xl overflow-x-auto">
           <table class="w-full text-xs">
             <thead class="bg-slate-50 border-b border-slate-200">
               <tr>
@@ -991,7 +989,7 @@
       <button @click="if (canCrear) $refs.formNuevo.submit()"
               :disabled="!canCrear"
               class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all"
-              :class="canCrear ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-sm cursor-pointer' : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
+              :class="canCrear ? 'bg-brand-700 hover:bg-brand-800 text-white shadow-sm cursor-pointer' : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
         <i class="fa-solid fa-calendar-plus"></i>
         Crear fraccionamiento
       </button>
@@ -1143,7 +1141,7 @@ function nuevoFraccModal() {
       <!-- Loading -->
       <template x-if="cargando">
         <div class="flex items-center justify-center py-12">
-          <i class="fa-solid fa-spinner fa-spin text-2xl text-violet-500 mr-3"></i>
+          <i class="fa-solid fa-spinner fa-spin text-2xl text-slate-700 mr-3"></i>
           <span class="text-sm text-slate-500">Cargando…</span>
         </div>
       </template>
@@ -1183,7 +1181,7 @@ function nuevoFraccModal() {
             <template x-if="sinEmail.length > 0">
               <span class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-full cursor-help"
                     :title="'Sin email: ' + sinEmail.map(s=>s.nombre_completo).join(', ')">
-                <i class="fa-solid fa-envelope-slash text-[10px]"></i>
+                <i class="fa-solid fa-ban text-[10px]"></i>
                 <span x-text="sinEmail.length + ' sin email'"></span>
               </span>
             </template>
@@ -1238,7 +1236,7 @@ function nuevoFraccModal() {
                   </div>
                   <!-- Botón preview -->
                   <button @click="previewId = (previewId === it.member_id ? null : it.member_id)"
-                          class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                          class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                           :title="previewId === it.member_id ? 'Ocultar mensaje' : 'Ver mensaje'">
                     <i class="fa-solid text-xs" :class="previewId === it.member_id ? 'fa-chevron-up' : 'fa-eye'"></i>
                   </button>

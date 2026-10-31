@@ -39,7 +39,7 @@
             <button type="button"
                     @click="filtros.modo = 'padron'; cargarPlantillas()"
                     :class="filtros.modo === 'padron'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-brand-700 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-50'"
                     class="flex-1 px-3 py-2 transition-colors text-center">
               <i class="fa-solid fa-users mr-1"></i> Padrón completo
@@ -47,7 +47,7 @@
             <button type="button"
                     @click="filtros.modo = 'periodo'; cargarPlantillas()"
                     :class="filtros.modo === 'periodo'
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-brand-700 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-50'"
                     class="flex-1 px-3 py-2 border-l border-slate-200 transition-colors text-center">
               <i class="fa-solid fa-coins mr-1"></i> Por período de pago
@@ -58,7 +58,7 @@
                       ? 'bg-violet-600 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-50'"
                     class="flex-1 px-3 py-2 border-l border-slate-200 transition-colors text-center">
-              <i class="fa-solid fa-user-magnifying-glass mr-1"></i> Público
+              <i class="fa-solid fa-address-book mr-1"></i> Público
             </button>
           </div>
           <p class="text-xs text-slate-400 mt-1.5">
@@ -84,7 +84,7 @@
             <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
               <input type="checkbox" value="{{ val }}"
                 @change="toggleEstado($event.target.value, $event.target.checked)"
-                class="rounded accent-blue-600">
+                class="rounded accent-brand-700">
               {{ lbl }}
             </label>
             {% endfor %}
@@ -384,7 +384,7 @@
         <!-- Botón preview -->
         <button type="button" @click="filtros.modo === 'publico' ? previewPublico() : preview()"
           :disabled="previewing"
-          :class="filtros.modo === 'publico' ? 'bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors w-full disabled:opacity-40' : 'btn-primary w-full disabled:opacity-40'">
+          :class="filtros.modo === 'publico' ? 'bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors w-full disabled:opacity-40' : 'btn-primary w-full disabled:opacity-40'">
           <i class="fa-solid fa-magnifying-glass mr-1.5" x-show="!previewing"></i>
           <i class="fa-solid fa-spinner fa-spin mr-1.5" x-show="previewing" x-cloak></i>
           <span x-text="previewing ? 'Buscando…' : 'Ver destinatarios'"></span>
@@ -599,7 +599,7 @@
               <button type="button"
                 @click="setPlantillaObj(p)"
                 :class="plantillaSelId === p._id
-                  ? 'bg-blue-600 text-white border-blue-600'
+                  ? 'bg-brand-700 text-white border-brand-700'
                   : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'"
                 class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors"
                 x-text="p.nombre">
@@ -615,7 +615,7 @@
               <i class="fa-solid fa-calendar-days text-violet-400 mr-1"></i> Desde evento
             </label>
             <select @change="cargarPlantillaEvento($event.target.value); $event.target.value=''"
-                    class="input text-xs py-1.5 flex-1"
+                    class="input text-xs py-1.5 flex-1 min-w-0 w-0"
                     x-init="cargarEventosConPlantilla()">
               <option value="">— Seleccionar evento —</option>
               <template x-for="ev in eventosConPlantilla" :key="ev._id">
@@ -656,13 +656,13 @@
               <div class="flex border-b border-slate-200 mb-3 text-xs font-medium">
                 <button type="button"
                         @click="imagenTab = 'archivo'"
-                        :class="imagenTab === 'archivo' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'"
+                        :class="imagenTab === 'archivo' ? 'border-b-2 border-brand-700 text-brand-800' : 'text-slate-500 hover:text-slate-700'"
                         class="flex-1 pb-2 transition-colors">
                   <i class="fa-solid fa-upload mr-1"></i> Subir archivo
                 </button>
                 <button type="button"
                         @click="imagenTab = 'url'"
-                        :class="imagenTab === 'url' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'"
+                        :class="imagenTab === 'url' ? 'border-b-2 border-brand-700 text-brand-800' : 'text-slate-500 hover:text-slate-700'"
                         class="flex-1 pb-2 transition-colors">
                   <i class="fa-solid fa-link mr-1"></i> URL pública
                 </button>
@@ -734,7 +734,7 @@
                  @keyup="saveSel()"
                  @mouseup="saveSel()"
                  @paste.prevent="handlePaste($event)"
-                 class="input w-full text-sm overflow-auto focus:outline-none focus:ring-2 focus:ring-blue-500"
+                 class="input w-full text-sm overflow-auto focus:outline-none focus:ring-2 focus:ring-brand-500"
                  style="min-height:220px; max-height:520px; white-space:pre-wrap; word-break:break-word; line-height:1.65">
             </div>
             <div x-show="!cuerpo || !cuerpo.replace(/<[^>]*>/g,'').trim()"
@@ -777,11 +777,11 @@
 
         <!-- Opciones de formato -->
         <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-2 select-none">
-          <input type="checkbox" x-model="plantillaCorporativa" class="rounded accent-blue-600">
+          <input type="checkbox" x-model="plantillaCorporativa" class="rounded accent-brand-700">
           Usar plantilla corporativa IPIDET (logo, recuadro blanco, fondo gris)
         </label>
         <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-2 select-none">
-          <input type="checkbox" x-model="disclaimer" class="rounded accent-blue-600">
+          <input type="checkbox" x-model="disclaimer" class="rounded accent-brand-700">
           Incluir aviso <em>"No responder directamente a este mensaje"</em> en el pie del email
         </label>
         <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer mb-5 select-none"
@@ -826,7 +826,7 @@
         <div x-show="resultado" x-cloak class="mb-4 space-y-2">
           <div class="flex items-start gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700">
             <i class="fa-solid fa-circle-check mt-0.5"></i>
-            <span x-text="'Enviado correctamente a ' + resultado.enviados + ' destinatario(s).'"></span>
+            <span x-text="'Enviado correctamente a ' + (resultado?.enviados ?? 0) + ' destinatario(s).'"></span>
           </div>
           <!-- Banner lote completado -->
           <div x-show="resultado && lotes.activo && resultado.lote_pendientes > 0" x-cloak
@@ -834,10 +834,10 @@
             <i class="fa-solid fa-layer-group text-blue-500 mt-0.5 flex-shrink-0"></i>
             <div>
               <p class="font-semibold">
-                Lote <span x-text="resultado.lote_numero"></span> completado.
+                Lote <span x-text="resultado?.lote_numero"></span> completado.
               </p>
               <p class="text-xs mt-0.5">
-                Quedan <strong x-text="resultado.lote_pendientes"></strong> socios pendientes para el siguiente lote.
+                Quedan <strong x-text="resultado?.lote_pendientes"></strong> socios pendientes para el siguiente lote.
                 Haz Preview nuevamente mañana para continuar.
               </p>
             </div>
@@ -851,10 +851,10 @@
                class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
             <p class="font-medium text-amber-800 mb-2">
               <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-              <span x-text="resultado.fallidos + ' envío(s) fallaron:'"></span>
+              <span x-text="(resultado?.fallidos ?? 0) + ' envío(s) fallaron:'"></span>
             </p>
             <div class="space-y-1 max-h-40 overflow-y-auto">
-              <template x-for="f in (resultado.fallidos_detalle || [])" :key="f.email">
+              <template x-for="f in (resultado?.fallidos_detalle || [])" :key="f.email">
                 <div class="text-xs text-amber-900 flex gap-2">
                   <span class="font-medium truncate" x-text="f.nombre || f.email"></span>
                   <span class="text-amber-500 font-mono truncate" x-text="'<' + f.email + '>'"></span>
@@ -1024,7 +1024,7 @@
                   <div class="text-sm font-medium text-slate-800 truncate" x-text="e.asunto"></div>
                   <div class="flex flex-wrap items-center gap-2 mt-1">
                     <span class="text-xs text-slate-500">
-                      <i class="fa-solid fa-calendar-clock mr-1"></i>
+                      <i class="fa-solid fa-clock mr-1"></i>
                       <span x-text="formatFecha(e.fecha_envio)"></span>
                     </span>
                     <span class="text-xs text-slate-400">
@@ -1077,7 +1077,7 @@
         <div>
           <h2 class="font-semibold text-slate-800">
             Destinatarios
-            <span class="ml-2 inline-flex items-center justify-center bg-blue-600 text-white text-xs font-bold rounded-full w-6 h-6"
+            <span class="ml-2 inline-flex items-center justify-center bg-brand-700 text-white text-xs font-bold rounded-full w-6 h-6"
                   x-text="seleccionados.length"></span>
           </h2>
           <p class="text-xs text-slate-400 mt-0.5"
@@ -1106,12 +1106,12 @@
         <div class="flex items-center gap-2 text-xs text-slate-500">
           <span class="font-medium">Ordenar:</span>
           <button @click="destSort = 'nombre'"
-                  :class="destSort === 'nombre' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                  :class="destSort === 'nombre' ? 'bg-brand-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
                   class="px-2.5 py-1 rounded-full transition-colors">
             <i class="fa-solid fa-arrow-down-a-z mr-1"></i> Nombre
           </button>
           <button @click="destSort = 'estado'"
-                  :class="destSort === 'estado' ? 'bg-blue-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
+                  :class="destSort === 'estado' ? 'bg-brand-700 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'"
                   class="px-2.5 py-1 rounded-full transition-colors">
             <i class="fa-solid fa-tag mr-1"></i> Estado de pago
           </button>
@@ -1136,7 +1136,7 @@
         </div>
         <template x-for="d in destFiltrados" :key="d.member_id">
           <label class="flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-slate-50 cursor-pointer group border-b border-slate-50 last:border-0">
-            <input type="checkbox" x-model="d.selected" class="rounded accent-blue-600 flex-shrink-0 w-4 h-4">
+            <input type="checkbox" x-model="d.selected" class="rounded accent-brand-700 flex-shrink-0 w-4 h-4">
             <div class="min-w-0 flex-1">
               <div class="text-sm font-medium text-slate-800 truncate" x-text="d.nombre"></div>
               <div class="text-xs text-slate-400 truncate font-mono" x-text="d.email"></div>
@@ -1295,7 +1295,7 @@
             @click="nuevaPlantillaAbierta = !nuevaPlantillaAbierta; editandoPlantilla = null"
             :class="nuevaPlantillaAbierta
               ? 'bg-blue-700 text-white'
-              : 'bg-blue-600 hover:bg-blue-700 text-white'"
+              : 'bg-brand-700 hover:bg-brand-800 text-white'"
             class="inline-flex items-center gap-1.5 text-sm font-semibold px-3.5 py-2 rounded-lg shadow-sm transition-colors">
             <i class="fa-solid fa-plus text-xs"></i> Nueva plantilla
           </button>
@@ -1350,7 +1350,7 @@
                spellcheck="true"
                @input="nuevaPlantillaCuerpo = $el.innerHTML"
                @blur="nuevaPlantillaCuerpo = $el.innerHTML"
-               class="input w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-auto"
+               class="input w-full text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 overflow-auto"
                style="min-height:130px; max-height:240px; white-space:pre-wrap; word-break:break-word; line-height:1.65">
           </div>
         </div>
@@ -1358,7 +1358,7 @@
           <button type="button" @click="crearPlantilla()"
             :disabled="!nuevaPlantillaNombre.trim()"
             class="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg
-                   bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                   bg-brand-700 hover:bg-brand-800 text-white shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             <i class="fa-solid fa-plus text-xs"></i> Crear plantilla
           </button>
           <button type="button"
@@ -1449,14 +1449,14 @@
                      spellcheck="true"
                      @input="editPlantillaCuerpo = $el.innerHTML"
                      @blur="editPlantillaCuerpo = $el.innerHTML"
-                     class="input w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 overflow-auto"
+                     class="input w-full text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 overflow-auto"
                      style="min-height:130px; max-height:260px; white-space:pre-wrap; word-break:break-word; line-height:1.65">
                 </div>
               </div>
               <div class="flex gap-2 pt-1">
                 <button type="button" @click="guardarEditPlantilla(p)"
                   class="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg
-                         bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors">
+                         bg-brand-700 hover:bg-brand-800 text-white shadow-sm transition-colors">
                   <i class="fa-solid fa-check text-xs"></i> Guardar cambios
                 </button>
                 <button type="button" @click="editandoPlantilla = null"
@@ -1883,10 +1883,10 @@ function comunicaciones() {
       document.execCommand(cmd, false, val ?? null);
     },
 
-    tplEditInsertLink() {
-      const url  = prompt('URL del enlace:');
+    async tplEditInsertLink() {
+      const url  = await solicitar('URL del enlace');
       if (!url) return;
-      const txt  = prompt('Texto del enlace:', url) || url;
+      const txt  = await solicitar('Texto del enlace', url) || url;
       this.$refs.tplEditEditor && this.$refs.tplEditEditor.focus();
       document.execCommand('insertHTML', false, `<a href="${url}" style="color:#2563eb">${txt}</a>`);
     },
@@ -1896,16 +1896,16 @@ function comunicaciones() {
       document.execCommand(cmd, false, val ?? null);
     },
 
-    tplNuevaInsertLink() {
-      const url  = prompt('URL del enlace:');
+    async tplNuevaInsertLink() {
+      const url  = await solicitar('URL del enlace');
       if (!url) return;
-      const txt  = prompt('Texto del enlace:', url) || url;
+      const txt  = await solicitar('Texto del enlace', url) || url;
       this.$refs.tplNuevaEditor && this.$refs.tplNuevaEditor.focus();
       document.execCommand('insertHTML', false, `<a href="${url}" style="color:#2563eb">${txt}</a>`);
     },
 
     async eliminarPlantilla(p) {
-      if (!confirm(`¿Eliminar la plantilla "${p.nombre}"?`)) return;
+      if (!await confirmar(`¿Eliminar la plantilla "${p.nombre}"?`)) return;
       await fetch(`/api/plantillas/${p._id}/delete`, { method: 'POST' });
       await this.cargarPlantillas();
     },
@@ -2154,10 +2154,10 @@ function comunicaciones() {
       this.imagenUrl   = '';
     },
 
-    insertarLink() {
-      const url  = prompt('URL del enlace:');
+    async insertarLink() {
+      const url  = await solicitar('URL del enlace');
       if (!url) return;
-      const texto = prompt('Texto del enlace:', url) || url;
+      const texto = await solicitar('Texto del enlace', url) || url;
       this.insertAtCursor(`<a href="${url}" style="color:#2563eb">${texto}</a>`);
     },
 
@@ -2446,7 +2446,7 @@ function programados() {
     },
 
     async cancelar(id) {
-      if (!confirm('¿Cancelar este envío programado?')) return;
+      if (!await confirmar('¿Cancelar este envío programado?')) return;
       await fetch('/api/comunicaciones/programados/' + id + '/cancelar', { method: 'POST' });
       await this.cargar();
     },

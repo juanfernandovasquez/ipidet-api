@@ -53,7 +53,7 @@
             </div>
             <div class="font-semibold text-slate-800 text-sm">{{ faq.question }}</div>
           </button>
-          <form method="post" action="/faqs/{{ faq._id }}/delete" onsubmit="return confirm('¿Eliminar esta FAQ?')">
+          <form method="post" action="/faqs/{{ faq._id }}/delete" data-confirm="¿Eliminar esta FAQ?">
             <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0">
               <i class="fa-solid fa-trash text-sm"></i>
             </button>
@@ -87,7 +87,7 @@
   <div>
     <div class="bg-white rounded-xl border border-slate-200 p-6 sticky top-20">
       <h2 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-        <i class="fa-solid fa-plus-circle text-blue-500"></i>
+        <i class="fa-solid fa-plus-circle text-slate-500"></i>
         Nueva FAQ
       </h2>
       <form method="post" action="/faqs/add" class="space-y-4">

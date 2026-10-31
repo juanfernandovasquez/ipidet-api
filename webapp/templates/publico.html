@@ -116,7 +116,7 @@
               </th>
 
               <!-- Email: no filtro -->
-              <th class="px-4 py-2 text-left hidden md:table-cell">
+              <th class="px-4 py-2 text-left hidden min-[1700px]:table-cell">
                 <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Email</span>
               </th>
 
@@ -125,7 +125,7 @@
                 <div class="flex flex-col gap-0.5">
                   <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Título / Empresa</span>
                   <select name="titulo" @change="$refs.filterForm.submit()"
-                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
+                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full min-w-[5.5rem] focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if titulo else 'border-slate-200 bg-white text-slate-500' }}">
                     <option value="" {% if not titulo %}selected{% endif %}>Todos los títulos</option>
                     {% for t in titulos %}
@@ -145,7 +145,7 @@
                 <div class="flex flex-col gap-0.5">
                   <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Fuente</span>
                   <select name="fuente" @change="$refs.filterForm.submit()"
-                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
+                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full min-w-[5.5rem] focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if fuente else 'border-slate-200 bg-white text-slate-500' }}">
                     <option value="" {% if not fuente %}selected{% endif %}>Todas</option>
                     {% for v, l in [("manual","Manual"),("excel","Excel"),("zoom","Zoom"),("portal","Portal"),("evento","Evento"),("referido","Referido")] %}
@@ -160,7 +160,7 @@
                 <div class="flex flex-col gap-0.5">
                   <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">¿Socio?</span>
                   <select name="es_socio" @change="$refs.filterForm.submit()"
-                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
+                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full min-w-[5.5rem] focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if es_socio else 'border-slate-200 bg-white text-slate-500' }}">
                     <option value="" {% if not es_socio %}selected{% endif %}>Todos</option>
                     <option value="false" {% if es_socio == 'false' %}selected{% endif %}>Solo prospectos</option>
@@ -171,7 +171,7 @@
 
               <!-- Inscritos Zoom — dropdown multi-select -->
               {% set _insc_active = zoom_evento_ids and zoom_asistio != 'true' %}
-              <th class="px-4 py-2 text-left" style="min-width:160px">
+              <th class="px-3 py-2 text-left" style="min-width:130px">
                 <div class="relative">
                   <button type="button"
                           @click="zoomInscOpen = !zoomInscOpen; zoomAsistOpen = false"
@@ -194,7 +194,7 @@
                     </div>
                     <div class="border-t border-slate-100 px-3 py-2 flex items-center gap-2">
                       <button type="button" @click="applyZoomFilt(zoomInscSel, 'insc')"
-                              class="flex-1 text-xs bg-violet-500 hover:bg-violet-600 text-white rounded-lg px-2 py-1.5 font-medium">Aplicar</button>
+                              class="flex-1 text-xs bg-brand-700 hover:bg-brand-800 text-white rounded-lg px-2 py-1.5 font-medium">Aplicar</button>
                       <button type="button" @click="applyZoomFilt([], '')"
                               class="text-xs text-red-400 hover:text-red-600 px-2 py-1.5">Limpiar</button>
                     </div>
@@ -204,7 +204,7 @@
 
               <!-- Asistió a — dropdown multi-select -->
               {% set _asist_active = zoom_evento_ids and zoom_asistio == 'true' %}
-              <th class="px-4 py-2 text-left" style="min-width:160px">
+              <th class="px-3 py-2 text-left" style="min-width:130px">
                 <div class="relative">
                   <button type="button"
                           @click="zoomAsistOpen = !zoomAsistOpen; zoomInscOpen = false"
@@ -227,7 +227,7 @@
                     </div>
                     <div class="border-t border-slate-100 px-3 py-2 flex items-center gap-2">
                       <button type="button" @click="applyZoomFilt(zoomAsistSel, 'asistio')"
-                              class="flex-1 text-xs bg-violet-500 hover:bg-violet-600 text-white rounded-lg px-2 py-1.5 font-medium">Aplicar</button>
+                              class="flex-1 text-xs bg-brand-700 hover:bg-brand-800 text-white rounded-lg px-2 py-1.5 font-medium">Aplicar</button>
                       <button type="button" @click="applyZoomFilt([], '')"
                               class="text-xs text-red-400 hover:text-red-600 px-2 py-1.5">Limpiar</button>
                     </div>
@@ -240,7 +240,7 @@
                 <div class="flex flex-col gap-0.5">
                   <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Estado</span>
                   <select name="estado" @change="$refs.filterForm.submit()"
-                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
+                          class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full min-w-[5.5rem] focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if estado else 'border-slate-200 bg-white text-slate-500' }}">
                     <option value="" {% if not estado %}selected{% endif %}>Todos</option>
                     {% for v, l in [("nuevo","Nuevo"),("interesado","Interesado"),("postulante","Postulante"),("convertido","Convertido"),("inactivo","Inactivo")] %}
@@ -260,6 +260,7 @@
                 <a href="/publico/{{ p._id }}" class="hover:text-blue-600">
                   {{ p.apellido }} {{ p.nombre }}
                 </a>
+                <div class="min-[1700px]:hidden font-mono text-xs text-slate-500 mt-0.5 max-w-[240px] truncate" title="{{ p.email }}">{{ p.email }}</div>
                 {% set ptags = p.tags or [] %}
                 {% if ptags %}
                 <div class="flex flex-wrap gap-0.5 mt-1">
@@ -273,7 +274,7 @@
                 </div>
                 {% endif %}
               </td>
-              <td class="px-4 py-3 text-slate-600 font-mono text-xs hidden md:table-cell">{{ p.email }}</td>
+              <td class="px-4 py-3 text-slate-600 font-mono text-xs hidden min-[1700px]:table-cell">{{ p.email }}</td>
               <td class="px-4 py-3 text-slate-600 text-xs">
                 {% if p.titulo %}<span class="font-medium text-slate-700">{{ p.titulo }}</span>{% endif %}
                 {% if p.titulo and p.empresa %} · {% endif %}
@@ -283,7 +284,7 @@
               <td class="px-4 py-3 text-slate-600 text-xs hidden lg:table-cell">{{ p.ciudad or '—' }}</td>
               <td class="px-4 py-3">
                 {% set fuente_colors = {"manual": "slate", "excel": "blue", "portal": "green", "evento": "purple", "zoom": "cyan", "referido": "orange"} %}
-                <span class="badge badge-{{ fuente_colors.get(p.fuente, 'gray') }}">{{ p.fuente or 'manual' }}</span>
+                <span class="badge badge-{{ fuente_colors.get(p.fuente, 'gray') }}">{{ (p.fuente or 'manual') | capitalize }}</span>
               </td>
               <td class="px-4 py-3 hidden sm:table-cell">
                 {% if p.es_socio %}
@@ -301,11 +302,10 @@
                 {% set ze = p.zoom_eventos or [] %}
                 {% if ze %}
                 <div class="flex flex-col gap-1">
-                  {% for e in ze %}
-                  <span class="inline-block text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 leading-snug">
-                    <i class="fa-solid fa-video text-[9px] mr-0.5 text-slate-400"></i>{{ e.evento_titulo or 'Webinar' }}
-                  </span>
+                  {% for e in ze[:2] %}
+                  <span title="{{ e.evento_titulo or 'Webinar' }}" class="clamp-2 max-w-[130px] text-[11px] text-slate-600 bg-slate-100 rounded px-1.5 py-0.5 leading-snug">{{ e.evento_titulo or 'Webinar' }}</span>
                   {% endfor %}
+                  {% if ze | length > 2 %}<span class="text-[11px] text-slate-500">+{{ ze | length - 2 }} más</span>{% endif %}
                 </div>
                 {% else %}
                 <span class="text-slate-300 text-xs">—</span>
@@ -314,13 +314,13 @@
               {# Columna: lista completa de eventos asistidos (sin comprimir) #}
               <td class="px-4 py-3 align-top">
                 {% set ze_todos = p.zoom_eventos or [] %}
-                {% if ze_todos | selectattr('asistio') | list %}
+                {% set asistidos = ze_todos | selectattr('asistio') | list %}
+                {% if asistidos %}
                 <div class="flex flex-col gap-1">
-                  {% for e in ze_todos %}{% if e.asistio %}
-                  <span class="inline-block text-[10px] font-medium text-cyan-700 bg-cyan-50 border border-cyan-100 rounded px-1.5 py-0.5 leading-snug">
-                    <i class="fa-solid fa-circle-check text-[9px] mr-0.5"></i>{{ e.evento_titulo or 'Webinar' }}
-                  </span>
-                  {% endif %}{% endfor %}
+                  {% for e in asistidos[:2] %}
+                  <span title="{{ e.evento_titulo or 'Webinar' }}" class="clamp-2 max-w-[130px] text-[11px] text-brand-800 bg-brand-50 rounded px-1.5 py-0.5 leading-snug">{{ e.evento_titulo or 'Webinar' }}</span>
+                  {% endfor %}
+                  {% if asistidos | length > 2 %}<span class="text-[11px] text-slate-500">+{{ asistidos | length - 2 }} más</span>{% endif %}
                 </div>
                 {% else %}
                 <span class="text-slate-300 text-xs">—</span>
@@ -328,7 +328,7 @@
               </td>
               <td class="px-4 py-3">
                 {% set estado_colors = {"nuevo": "slate", "interesado": "blue", "postulante": "amber", "convertido": "green", "inactivo": "gray"} %}
-                <span class="badge badge-{{ estado_colors.get(p.estado, 'gray') }}">{{ p.estado or 'nuevo' }}</span>
+                <span class="badge badge-{{ estado_colors.get(p.estado, 'gray') }}">{{ (p.estado or 'nuevo') | capitalize }}</span>
               </td>
               <td class="px-3 py-3">
                 <a href="/publico/{{ p._id }}" class="text-slate-400 hover:text-blue-500 text-xs px-2 py-1 rounded hover:bg-blue-50 transition-colors">
@@ -339,7 +339,7 @@
             {% else %}
             <tr>
               <td colspan="10" class="px-4 py-12 text-center text-slate-400">
-                <i class="fa-solid fa-user-magnifying-glass text-3xl mb-3 block opacity-25"></i>
+                <i class="fa-solid fa-address-book text-3xl mb-3 block opacity-25"></i>
                 No se encontraron prospectos.
                 <a href="#" @click.prevent="modalNuevo=true" class="text-blue-500 hover:underline ml-1">Agregar el primero</a>
               </td>
@@ -378,7 +378,7 @@
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg" @click.stop>
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
         <h3 class="font-semibold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-user-plus text-violet-500"></i> Nuevo prospecto
+          <i class="fa-solid fa-user-plus text-slate-500"></i> Nuevo prospecto
         </h3>
         <button @click="modalNuevo=false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
       </div>
@@ -457,7 +457,7 @@
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" @click.stop>
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
         <h3 class="font-semibold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-paper-plane text-violet-500"></i> Enviar campaña
+          <i class="fa-solid fa-paper-plane text-slate-500"></i> Enviar campaña
         </h3>
         <button @click="modalCampana=false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
       </div>
@@ -555,7 +555,7 @@
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md" @click.stop>
       <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200">
         <h3 class="font-semibold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-file-arrow-up text-blue-500"></i> Importar desde Excel
+          <i class="fa-solid fa-file-arrow-up text-slate-500"></i> Importar desde Excel
         </h3>
         <button @click="modalImportar=false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
       </div>

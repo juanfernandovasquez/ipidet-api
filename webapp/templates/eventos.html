@@ -46,7 +46,7 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {% for ev in grupo.eventos %}
-      <div class="relative bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all group cursor-pointer"
+      <div class="relative bg-white rounded-xl border border-slate-200 p-4 hover:border-brand-300 hover:shadow-sm transition-all group cursor-pointer"
            onclick="window.location='/eventos/{{ ev._id }}'">
 
         <!-- Header: fecha + estado + delete -->
@@ -55,10 +55,10 @@
             <div class="w-10 h-10 rounded-lg flex-shrink-0 flex flex-col items-center justify-center text-center
               {% if ev.estado == 'cancelado' %}bg-red-50 text-red-600
               {% elif ev.estado == 'finalizado' %}bg-slate-100 text-slate-500
-              {% else %}bg-blue-50 text-blue-700{% endif %}">
+              {% else %}bg-brand-50 text-brand-800{% endif %}">
               {% if ev.fecha %}
-              <span class="text-[10px] font-medium leading-none">{{ ev.fecha[5:7] }}/{{ ev.fecha[:4] }}</span>
-              <span class="text-lg font-bold leading-tight">{{ ev.fecha[8:10] }}</span>
+              <span class="text-lg font-semibold leading-tight tabular-nums">{{ ev.fecha[8:10] }}</span>
+              <span class="text-[10px] uppercase tracking-wide leading-none">{{ ['ene','feb','mar','abr','may','jun','jul','ago','set','oct','nov','dic'][ev.fecha[5:7] | int - 1] }}</span>
               {% else %}
               <i class="fa-solid fa-calendar text-lg"></i>
               {% endif %}
@@ -76,7 +76,7 @@
             {% endif %}
             <form method="post" action="/eventos/{{ ev._id }}/delete" class="shrink-0"
                   onclick="event.stopPropagation()"
-                  onsubmit="return confirm('¿Eliminar el evento &quot;{{ ev.titulo | replace('&quot;', '&#34;') }}&quot;?')">
+                  data-confirm="¿Eliminar el evento «{{ ev.titulo }}»?">
               <button type="submit"
                       class="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-md bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 flex items-center justify-center"
                       title="Eliminar evento">
@@ -87,7 +87,7 @@
         </div>
 
         <!-- Título -->
-        <h3 class="font-semibold text-slate-800 text-sm group-hover:text-blue-700 transition-colors leading-snug mb-3">
+        <h3 class="font-semibold text-slate-800 text-sm group-hover:text-brand-700 transition-colors leading-snug mb-3">
           {{ ev.titulo }}
         </h3>
 
@@ -123,7 +123,7 @@
 
 {% else %}
 <div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
-  <i class="fa-solid fa-calendar-star text-4xl text-slate-300 mb-3"></i>
+  <i class="fa-solid fa-calendar-week text-4xl text-slate-300 mb-3"></i>
   <p class="text-slate-600 font-medium">Sin eventos registrados</p>
   <button onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
     class="mt-4 btn-primary text-sm">

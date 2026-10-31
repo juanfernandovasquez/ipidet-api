@@ -3,19 +3,17 @@
 {% block heading %}Emails rebotados{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl">
+<div>
 
-  <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5 text-sm text-amber-800 flex gap-3 items-start">
-    <i class="fa-solid fa-triangle-exclamation mt-0.5 flex-shrink-0"></i>
-    <div>
-      <strong>¿Cómo funciona?</strong> Cada vez que Brevo detecta un rebote (hard o soft) en un email enviado,
+  <details class="bg-white border border-slate-200 rounded-xl px-4 py-3 mb-5 text-sm text-slate-600">
+    <summary class="cursor-pointer font-medium text-slate-700">¿Cómo funciona?</summary>
+    <p class="mt-2">Cada vez que Brevo detecta un rebote (hard o soft) en un email enviado,
       notifica a IPIDET vía webhook. Los rebotes <em>hard</em> se inhabilitan automáticamente;
       los <em>soft</em> quedan marcados para revisión. Para activar el webhook en Brevo:
       <strong>Transactional → Settings → Webhooks → Add</strong>, URL:
       <code class="bg-amber-100 px-1 rounded">https://[tu-dominio]/webhook/brevo/bounce</code>,
-      eventos: <em>hard_bounce, soft_bounce, invalid_email, blocked</em>.
-    </div>
-  </div>
+      eventos: <em>hard_bounce, soft_bounce, invalid_email, blocked</em>.</p>
+  </details>
 
   {% if not rebotes %}
   <div class="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400">
@@ -52,7 +50,7 @@
                class="text-blue-600 hover:underline font-medium">
               {{ r.apellidos }}, {{ r.nombres }}
             </a>
-            <div class="text-xs text-slate-400">{{ r.member_id }}</div>
+            <div class="text-xs text-slate-500 font-mono whitespace-nowrap">{{ r.member_id }}</div>
           </td>
           <td class="px-4 py-3 font-mono text-xs text-slate-700">{{ r.email }}</td>
           <td class="px-4 py-3 text-center">
@@ -70,7 +68,7 @@
             {{ r.bounce_reason or '—' }}
           </td>
           <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-            {{ r.bounce_at[:10] if r.bounce_at else '—' }}
+            {{ r.bounce_at | format_fecha }}
           </td>
           <td class="px-4 py-3 text-center">
             {% if r.estado == 'inhabilitado' %}
@@ -83,7 +81,7 @@
             <div class="flex items-center justify-end gap-3">
               {% if r.estado != 'inhabilitado' %}
               <form method="post" action="/comunicaciones/rebotes/inhabilitar"
-                    onsubmit="return confirm('¿Inhabilitar {{ r.email }}?')">
+                    data-confirm="¿Inhabilitar {{ r.email }}?">
                 <input type="hidden" name="member_id" value="{{ r.member_id }}">
                 <input type="hidden" name="email" value="{{ r.email }}">
                 <button type="submit"

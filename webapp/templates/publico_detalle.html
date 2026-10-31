@@ -73,7 +73,7 @@
             </div>
             <div>
               <dt class="text-xs font-medium text-slate-400 mb-0.5">Fuente</dt>
-              <dd class="text-slate-700">{{ prospecto.fuente or 'manual' }}{% if prospecto.fuente_detalle %} — {{ prospecto.fuente_detalle }}{% endif %}</dd>
+              <dd class="text-slate-700">{{ (prospecto.fuente or 'manual') | capitalize }}{% if prospecto.fuente_detalle %} — {{ prospecto.fuente_detalle }}{% endif %}</dd>
             </div>
             <div class="col-span-2">
               <dt class="text-xs font-medium text-slate-400 mb-1">Etiquetas</dt>
@@ -178,7 +178,7 @@
       {% if prospecto.zoom_eventos %}
       <div class="bg-white rounded-2xl border border-slate-200">
         <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
-          <i class="fa-brands fa-zoom text-cyan-500"></i>
+          <i class="fa-solid fa-video text-cyan-500"></i>
           <h2 class="font-semibold text-slate-800">Eventos Zoom</h2>
           <span class="ml-auto text-xs text-slate-400">{{ prospecto.zoom_eventos | length }} registro{% if prospecto.zoom_eventos | length != 1 %}s{% endif %}</span>
         </div>
@@ -195,7 +195,7 @@
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium text-slate-700 truncate">{{ ze.evento_titulo or 'Webinar' }}</div>
               {% if ze.evento_fecha %}
-              <div class="text-xs text-slate-400">{{ ze.evento_fecha[:10] }}</div>
+              <div class="text-xs text-slate-400">{{ ze.evento_fecha | format_fecha }}</div>
               {% endif %}
             </div>
             <span class="text-xs font-medium px-2 py-0.5 rounded-full shrink-0
@@ -226,7 +226,7 @@
               </div>
               <div>
                 <div class="font-medium text-slate-700">{{ c.asunto }}</div>
-                <div class="text-xs text-slate-400">{{ c.fecha }}{% if c.plantilla %} · {{ c.plantilla }}{% endif %}</div>
+                <div class="text-xs text-slate-400">{{ c.fecha | format_fecha }}{% if c.plantilla %} · {{ c.plantilla }}{% endif %}</div>
               </div>
             </li>
             {% endfor %}
@@ -250,7 +250,7 @@
         <div class="mb-4">
           {% set estado_colors = {"nuevo": "slate", "interesado": "blue", "postulante": "amber", "convertido": "green", "inactivo": "gray"} %}
           <span class="badge badge-{{ estado_colors.get(prospecto.estado, 'gray') }} text-sm px-3 py-1">
-            {{ prospecto.estado or 'nuevo' }}
+            {{ (prospecto.estado or 'nuevo') | capitalize }}
           </span>
         </div>
         <form method="post" action="/publico/{{ prospecto._id }}/estado" class="flex gap-2">
@@ -269,7 +269,7 @@
       <div class="bg-white rounded-2xl border border-slate-200 p-5"
            x-data="tagsManager({{ (prospecto.tags or []) | tojson }}, {{ all_tags | tojson }}, '{{ prospecto._id }}')">
         <h2 class="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-tags text-violet-500"></i> Etiquetas
+          <i class="fa-solid fa-tags text-slate-500"></i> Etiquetas
         </h2>
         <!-- Tags actuales -->
         <div class="flex flex-wrap gap-1.5 mb-3 min-h-[28px]">
@@ -329,7 +329,7 @@
         {% if prospecto.postulacion %}
         <div class="mb-3 text-sm bg-amber-50 border border-amber-200 rounded-xl p-3">
           <div class="font-medium text-amber-800">Tipo: {{ prospecto.postulacion.tipo }}</div>
-          {% if prospecto.postulacion.fecha %}<div class="text-xs text-amber-600 mt-0.5">{{ prospecto.postulacion.fecha }}</div>{% endif %}
+          {% if prospecto.postulacion.fecha %}<div class="text-xs text-amber-600 mt-0.5">{{ prospecto.postulacion.fecha | format_fecha }}</div>{% endif %}
           {% if prospecto.postulacion.notas %}<div class="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{{ prospecto.postulacion.notas }}</div>{% endif %}
         </div>
         {% endif %}
@@ -357,11 +357,11 @@
       {% if prospecto.estado in ('postulante', 'interesado') %}
       <div class="bg-white rounded-2xl border border-green-200 p-5">
         <h2 class="font-semibold text-green-800 text-sm mb-3 flex items-center gap-2">
-          <i class="fa-solid fa-user-check text-green-600"></i> Convertir a socio
+          <i class="fa-solid fa-user-check text-slate-500"></i> Convertir a socio
         </h2>
         <p class="text-xs text-slate-500 mb-3">Crea un nuevo socio en el padrón con los datos de este prospecto.</p>
         <form method="post" action="/publico/{{ prospecto._id }}/convertir"
-              onsubmit="return confirm('¿Convertir este prospecto en socio? Esta acción no se puede deshacer.')">
+              data-confirm="¿Convertir este prospecto en socio? Esta acción no se puede deshacer.">
           <div class="mb-3">
             <label class="block text-xs font-medium text-slate-600 mb-1">Período inicial</label>
             <select name="periodo_actual" class="input w-full text-sm">
@@ -369,7 +369,7 @@
             </select>
           </div>
           <button type="submit"
-                  class="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+                  class="w-full bg-brand-700 hover:bg-brand-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
             <i class="fa-solid fa-user-plus"></i> Convertir a socio IPIDET
           </button>
         </form>
@@ -390,7 +390,7 @@
       <div class="bg-white rounded-2xl border border-slate-200 p-5">
         <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Zona de peligro</h2>
         <form method="post" action="/publico/{{ prospecto._id }}/delete"
-              onsubmit="return confirm('¿Desactivar este prospecto?')">
+              data-confirm="¿Desactivar este prospecto?">
           <button type="submit"
                   class="w-full text-red-600 hover:text-red-800 hover:bg-red-50 border border-red-200 text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
             <i class="fa-solid fa-user-slash"></i> Desactivar prospecto

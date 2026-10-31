@@ -1,92 +1,145 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — IPIDET{% endblock %}
-{% block heading %}Dashboard{% endblock %}
+{% block title %}Inicio — IPIDET{% endblock %}
+{% block heading %}Inicio{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+{% set e = resumen.por_estado %}
+{% set fracc = e.get('fraccionamiento', 0) %}
+{% set parcial = e.get('parcial', 0) %}
+{% set debe = e.get('debe', 0) + e.get('pendiente', 0) %}
+{% set revision = e.get('en_revision', 0) + e.get('revisar', 0) + e.get('por_cobrar', 0) %}
+{% set segmentos = [
+  ('Pagado', resumen.pagados, '#33703b', '/billing?estado=pagado'),
+  ('Fraccionamiento', fracc, '#c79a3e', '/billing?estado=fraccionamiento'),
+  ('Parcial', parcial, '#6d9dd6', '/billing?estado=parcial'),
+  ('En revisión', revision, '#8a949c', '/billing?estado=en_revision'),
+  ('Debe', debe, '#c8503f', '/billing?estado=debe'),
+] %}
+{% set tareas = [
+  (inbox_count, 'fa-inbox', 'correo(s) esperando respuesta', 'Revisar la cola', '/inbox', 'amber'),
+  (cuotas_vencidas, 'fa-triangle-exclamation', 'cuota(s) vencida(s) de ' ~ socios_con_vencidas ~ ' socio(s), por ' ~ (monto_vencido | soles), 'Ver fraccionamientos', '/fraccionamientos?alerta=vencida', 'red'),
+  (debe, 'fa-circle-exclamation', 'socio(s) deben su cuota ' ~ resumen.periodo, 'Ver morosos', '/billing?estado=debe', 'red'),
+  (resumen.sin_comprobante, 'fa-receipt', 'pago(s) ' ~ resumen.periodo ~ ' sin comprobante emitido', 'Emitir', '/billing/facturacion', 'amber'),
+  (pendientes.alta, 'fa-flag', 'pendiente(s) de prioridad alta', 'Ver pendientes', '/pendientes', 'amber'),
+] | selectattr(0) | list %}
 
-  <!-- Stat cards -->
-  <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-    {% set cards = [
-      ("fa-users",          "Total socios",     stats.total_miembros, "blue",  "/members"),
-      ("fa-user-check",     "Activos",          stats.activos,        "green", "/members?estado=activo"),
-      ("fa-circle-check",   "Pagados " ~ stats.periodo, stats.pagados, "green", "/billing?estado=pagado"),
-      ("fa-circle-xmark",   "Deben " ~ stats.periodo,   stats.deben,   "red",   "/billing?estado=debe"),
-      ("fa-hourglass-half", "Fraccionamiento",  stats.fraccionamiento, "amber", "/billing?estado=fraccionamiento"),
-    ] %}
-    {% for icon, label, value, color, link in cards %}
-    <a href="{{ link }}" class="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow flex items-center gap-4">
-      <div class="w-10 h-10 rounded-lg bg-{{ color }}-100 flex items-center justify-center flex-shrink-0">
-        <i class="fa-solid {{ icon }} text-{{ color }}-600"></i>
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
+
+  <div class="xl:col-span-2 space-y-5 min-w-0">
+
+    <!-- Avance de cobranza -->
+    <section class="bg-white rounded-xl border border-slate-200 p-5 sm:p-6">
+      <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 mb-4">
+        <div>
+          <h2 class="text-sm font-semibold text-slate-600">Cobranza {{ resumen.periodo }}</h2>
+          <p class="font-display text-[40px] leading-[46px] font-semibold text-slate-900 mt-1">{{ resumen.avance }}%</p>
+        </div>
+        <p class="text-sm text-slate-600 pb-1.5">
+          <strong class="text-slate-900">{{ resumen.pagados }}</strong> de {{ resumen.cobrables }} socios han pagado
+        </p>
       </div>
-      <div>
-        <div class="text-2xl font-bold text-slate-800">{{ value }}</div>
-        <div class="text-xs text-slate-500 mt-0.5">{{ label }}</div>
+      <div class="barra-cobranza" role="img" aria-label="{{ resumen.pagados }} de {{ resumen.cobrables }} socios han pagado">
+        {% for nombre, n, color, url in segmentos %}{% if n %}
+        <span style="width:{{ n * 100 / resumen.cobrables }}%;background:{{ color }}" title="{{ nombre }}: {{ n }}"></span>
+        {% endif %}{% endfor %}
       </div>
-    </a>
-    {% endfor %}
+      <dl class="grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-3 mt-5">
+        {% for nombre, n, color, url in segmentos %}
+        <a href="{{ url }}" class="group block rounded-lg -m-1.5 p-1.5 hover:bg-slate-50 transition-colors">
+          <dt class="flex items-center gap-1.5 text-xs text-slate-600">
+            <span class="w-2 h-2 rounded-full shrink-0" style="background:{{ color }}"></span>{{ nombre }}
+          </dt>
+          <dd class="text-xl font-semibold text-slate-900 mt-0.5 tabular-nums">{{ n }}</dd>
+        </a>
+        {% endfor %}
+      </dl>
+    </section>
+
+    <!-- Lo que requiere atención -->
+    <section class="bg-white rounded-xl border border-slate-200">
+      <h2 class="text-sm font-semibold text-slate-800 px-5 sm:px-6 pt-5 pb-3">Requiere atención</h2>
+      {% if tareas %}
+      <ul class="divide-y divide-slate-100 border-t border-slate-100">
+        {% for n, icono, texto, accion, url, color in tareas %}
+        <li>
+          <a href="{{ url }}" class="flex items-center gap-3 sm:gap-4 px-5 sm:px-6 py-3.5 hover:bg-slate-50 transition-colors group">
+            <span class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 {{ 'bg-red-50 text-red-700' if color == 'red' else 'bg-amber-50 text-amber-700' }}">
+              <i class="fa-solid {{ icono }} text-sm" aria-hidden="true"></i>
+            </span>
+            <span class="flex-1 min-w-0 text-sm text-slate-700">
+              <strong class="text-slate-900 tabular-nums">{{ n }}</strong> {{ texto }}
+            </span>
+            <span class="hidden sm:inline text-sm font-medium text-brand-700 whitespace-nowrap group-hover:underline">{{ accion }}</span>
+            <i class="fa-solid fa-chevron-right text-xs text-slate-400 sm:hidden" aria-hidden="true"></i>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="px-5 sm:px-6 pb-6 text-sm text-slate-600 border-t border-slate-100 pt-4">
+        <i class="fa-solid fa-circle-check text-brand-600 mr-1.5" aria-hidden="true"></i>Todo al día. No hay nada pendiente por revisar.
+      </p>
+      {% endif %}
+    </section>
   </div>
 
-  <!-- Público mini-card -->
-  {% if stats_publico is defined and stats_publico.total > 0 %}
-  <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-6">
-    <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
-        <i class="fa-solid fa-user-magnifying-glass text-violet-600 text-sm"></i>
+  <div class="space-y-5 min-w-0">
+
+    <!-- Próximos eventos -->
+    <section class="bg-white rounded-xl border border-slate-200">
+      <div class="flex items-center justify-between px-5 pt-5 pb-3">
+        <h2 class="text-sm font-semibold text-slate-800">Próximos eventos</h2>
+        <a href="/eventos" class="text-sm text-brand-700 hover:underline">Ver todos</a>
       </div>
-      <div>
-        <div class="text-xl font-bold text-slate-800">{{ stats_publico.total }}</div>
-        <div class="text-xs text-slate-500">Prospectos totales</div>
-      </div>
-    </div>
-    <div class="flex gap-4 text-sm flex-wrap">
-      <span class="text-slate-500">Nuevos: <strong class="text-slate-800">{{ stats_publico.nuevos }}</strong></span>
-      <span class="text-slate-500">Interesados: <strong class="text-slate-800">{{ stats_publico.interesados }}</strong></span>
-      <span class="text-slate-500">Postulantes: <strong class="text-amber-700">{{ stats_publico.postulantes }}</strong></span>
-      <span class="text-slate-500">Convertidos: <strong class="text-green-700">{{ stats_publico.convertidos }}</strong></span>
-    </div>
-    <a href="/publico" class="ml-auto btn-ghost text-xs flex-shrink-0">Ver todos →</a>
+      {% if eventos %}
+      <ul class="divide-y divide-slate-100 border-t border-slate-100">
+        {% for ev in eventos %}
+        {% set partes = ev.fecha.split('-') %}
+        <li>
+          <a href="/eventos/{{ ev._id }}" class="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+            <span class="w-11 shrink-0 text-center rounded-lg border border-slate-200 py-1">
+              <span class="block text-base font-semibold leading-5 text-slate-900 tabular-nums">{{ partes[2] }}</span>
+              <span class="block text-[10px] uppercase tracking-wide text-slate-500">{{ ['ene','feb','mar','abr','may','jun','jul','ago','set','oct','nov','dic'][partes[1] | int - 1] }}</span>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm text-slate-800 clamp-2">{{ ev.titulo }}</span>
+              <span class="block text-xs text-slate-500 mt-0.5">{{ (ev.inscritos | length) + (ev.zoom_registrants | default([]) | length) }} inscrito(s){% if ev.hora %} · {{ ev.hora }}{% endif %}</span>
+            </span>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="px-5 pb-5 text-sm text-slate-600">No hay eventos programados. <a href="/eventos" class="text-brand-700 hover:underline">Crear uno</a></p>
+      {% endif %}
+    </section>
+
+    <!-- Comunidad -->
+    <section class="bg-white rounded-xl border border-slate-200 p-5">
+      <h2 class="text-sm font-semibold text-slate-800 mb-3">Comunidad</h2>
+      <dl class="space-y-2.5 text-sm">
+        <div class="flex justify-between gap-3">
+          <dt><a href="/members?estado=activo" class="text-slate-600 hover:text-brand-700 hover:underline">Socios activos</a></dt>
+          <dd class="font-semibold text-slate-900 tabular-nums">{{ resumen.socios_activos }} <span class="font-normal text-slate-500">de {{ resumen.socios_total }}</span></dd>
+        </div>
+        <div class="flex justify-between gap-3">
+          <dt><a href="/publico" class="text-slate-600 hover:text-brand-700 hover:underline">Público registrado</a></dt>
+          <dd class="font-semibold text-slate-900 tabular-nums">{{ stats_publico.total }}</dd>
+        </div>
+        <div class="flex justify-between gap-3">
+          <dt><a href="/publico?estado=postulante" class="text-slate-600 hover:text-brand-700 hover:underline">Postulantes</a></dt>
+          <dd class="font-semibold text-slate-900 tabular-nums">{{ stats_publico.postulantes }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    {% if not resumen.faqs %}
+    <section class="rounded-xl border border-amber-200 bg-amber-50 p-5">
+      <h2 class="text-sm font-semibold text-amber-900">El agente de email no tiene FAQs</h2>
+      <p class="text-sm text-amber-900/80 mt-1">Sin preguntas frecuentes, no puede responder consultas por su cuenta.</p>
+      <a href="/faqs" class="inline-block text-sm font-medium text-amber-900 underline mt-2">Agregar FAQs</a>
+    </section>
+    {% endif %}
   </div>
-  {% endif %}
-
-  <!-- Quick links grid -->
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-    <div class="bg-white rounded-xl border border-slate-200 p-6">
-      <div class="flex items-center gap-3 mb-4">
-        <i class="fa-solid fa-users text-blue-600 text-lg"></i>
-        <h2 class="font-semibold text-slate-800">Padrón de Socios</h2>
-      </div>
-      <p class="text-sm text-slate-500 mb-4">Gestión de miembros, correos habilitados/inhabilitados y estado de membresía.</p>
-      <div class="flex flex-col gap-2">
-        <a href="/members" class="btn-primary text-center">Ver todos los socios</a>
-        <a href="/members?estado=activo" class="btn-ghost text-center">Solo activos</a>
-      </div>
-    </div>
-
-    <div class="bg-white rounded-xl border border-slate-200 p-6">
-      <div class="flex items-center gap-3 mb-4">
-        <i class="fa-solid fa-money-bill-wave text-green-600 text-lg"></i>
-        <h2 class="font-semibold text-slate-800">Cobranzas {{ stats.periodo }}</h2>
-      </div>
-      <p class="text-sm text-slate-500 mb-4">Seguimiento de pagos, morosos y fraccionamientos del período actual.</p>
-      <div class="flex flex-col gap-2">
-        <a href="/billing?estado=debe" class="btn-primary text-center">Ver morosos</a>
-        <a href="/billing" class="btn-ghost text-center">Vista completa</a>
-      </div>
-    </div>
-
-    <div class="bg-white rounded-xl border border-slate-200 p-6">
-      <div class="flex items-center gap-3 mb-4">
-        <i class="fa-solid fa-circle-question text-purple-600 text-lg"></i>
-        <h2 class="font-semibold text-slate-800">FAQs del Agente</h2>
-      </div>
-      <p class="text-sm text-slate-500 mb-4">Preguntas frecuentes que el agente responde automáticamente por email.</p>
-      <div class="flex flex-col gap-2">
-        <a href="/faqs" class="btn-primary text-center">Gestionar FAQs</a>
-        <div class="text-center text-sm text-slate-400">{{ stats.total_faqs }} FAQs activas</div>
-      </div>
-    </div>
-  </div>
-
 </div>
 {% endblock %}

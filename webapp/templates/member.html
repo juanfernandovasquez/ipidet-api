@@ -81,7 +81,7 @@
         {# Botón Editar + dropdown Acciones #}
         <div class="flex items-center gap-2 shrink-0">
           <button @click="openEdit()"
-                  class="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
+                  class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-700 hover:bg-brand-800 active:bg-blue-800 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
             <i class="fa-solid fa-pen-to-square text-[12px]"></i> Editar
           </button>
           <div x-data="{ open: false }" class="relative">
@@ -158,7 +158,7 @@
     <div class="bg-white rounded-xl border border-slate-200 p-6" x-data="{ addEmail: false }">
       <div class="flex items-center justify-between mb-4">
         <h2 class="font-semibold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-envelope text-blue-500"></i> Correos electrónicos
+          <i class="fa-solid fa-envelope text-slate-500"></i> Correos electrónicos
         </h2>
         <button @click="addEmail = !addEmail" class="btn-ghost text-xs">
           <i class="fa-solid fa-plus mr-1"></i> Agregar
@@ -233,7 +233,7 @@
                      @keydown.escape="editing = false">
               <button type="submit"
                 class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg
-                       bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                       bg-brand-700 hover:bg-brand-800 text-white transition-colors">
                 <i class="fa-solid fa-check text-[10px]"></i> Guardar
               </button>
               <button type="button" @click="editing = false"
@@ -256,7 +256,7 @@
     <div class="bg-white rounded-xl border border-slate-200 p-6" x-data="{ addComentario: false }">
       <div class="flex items-center justify-between mb-4">
         <h2 class="font-semibold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-note-sticky text-yellow-500"></i> Comentarios
+          <i class="fa-solid fa-note-sticky text-slate-500"></i> Comentarios
         </h2>
         <button @click="addComentario = !addComentario" class="btn-ghost text-xs">
           <i class="fa-solid fa-plus mr-1"></i> Agregar
@@ -287,7 +287,7 @@
           <div class="flex items-start justify-between gap-2">
             <p class="text-sm text-slate-700 whitespace-pre-wrap flex-1">{{ c.texto | autolink }}</p>
             <form method="post" action="/members/{{ member.member_id }}/comentarios/{{ c.id }}/delete"
-                  onsubmit="return confirm('¿Eliminar este comentario?')">
+                  data-confirm="¿Eliminar este comentario?">
               <button type="submit" class="opacity-0 group-hover:opacity-100 transition-opacity text-slate-300 hover:text-red-500 text-xs px-1 py-0.5 rounded">
                 <i class="fa-solid fa-trash"></i>
               </button>
@@ -309,7 +309,7 @@
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="font-semibold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-money-bill-wave text-green-500"></i> Historial de pagos
+          <i class="fa-solid fa-money-bill-wave text-slate-500"></i> Historial de pagos
         </h2>
         <a href="/billing?search={{ member.member_id }}"
            class="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
@@ -334,7 +334,7 @@
                 <i class="fa-solid fa-arrow-up-right-from-square text-[8px] ml-0.5"></i>
               </a>
             {% elif p.estado == 'parcial' and p.get('monto_total') %}
-              <span class="badge badge-blue">Parcial S/{{ monto_pagado_sum | int }}/{{ p.monto_total | int }}</span>
+              <span class="badge badge-blue">Parcial {{ monto_pagado_sum | soles(0) }}/{{ p.monto_total | int }}</span>
             {% else %}
               <span class="badge badge-{{ sl[1] }}">{{ sl[0] }}</span>
             {% endif %}
@@ -525,7 +525,7 @@
     <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between shrink-0">
       <button @click="editOpen = false" class="btn-ghost text-sm">Cancelar</button>
       <button @click="guardar()" :disabled="guardando"
-              class="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
+              class="inline-flex items-center gap-2 px-5 py-2 bg-brand-700 hover:bg-brand-800 active:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
         <i class="fa-solid fa-spinner fa-spin text-xs" x-show="guardando" x-cloak></i>
         <i class="fa-solid fa-check text-xs" x-show="!guardando"></i>
         <span x-text="guardando ? 'Guardando…' : 'Guardar cambios'"></span>
@@ -689,7 +689,7 @@ function memberPage() {
       <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between shrink-0">
         <button type="button" @click="open = false" class="btn-ghost text-sm">Cancelar</button>
         <button type="submit" :disabled="enviando"
-                class="inline-flex items-center gap-2 px-5 py-2 bg-violet-600 hover:bg-violet-700 active:bg-violet-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
+                class="inline-flex items-center gap-2 px-5 py-2 bg-brand-700 hover:bg-brand-800 active:bg-violet-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
           <i class="fa-solid fa-spinner fa-spin text-xs" x-show="enviando" x-cloak></i>
           <i class="fa-solid fa-paper-plane text-xs" x-show="!enviando"></i>
           <span x-text="enviando ? 'Enviando…' : 'Generar y enviar'"></span>

@@ -178,7 +178,7 @@
           <button type="button" @click="registrarNuevaEmpresa()" :disabled="!empNewForm.nombre.trim() || empSaving"
                   class="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all"
                   :class="empNewForm.nombre.trim() && !empSaving
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    ? 'bg-brand-700 hover:bg-brand-800 text-white'
                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
             <i class="fa-solid" :class="empSaving ? 'fa-circle-notch fa-spin' : 'fa-building-circle-arrow-right'"></i>
             <span x-text="empSaving ? 'Registrando…' : 'Registrar y seleccionar'"></span>
@@ -323,7 +323,7 @@
         <!-- Header -->
         <div class="border-b-2 border-slate-800 pb-2">
           <div class="text-center font-bold text-slate-900 text-sm" x-text="form.tipo === 'factura' ? 'FACTURA DE VENTA' : 'BOLETA DE VENTA'"></div>
-          <div class="text-center text-[11px] text-slate-500 mt-0.5">IPIDET — Fecha: <span x-text="form.fecha || '—'"></span></div>
+          <div class="text-center text-[11px] text-slate-500 mt-0.5">IPIDET — Fecha: <span x-text="fechaPe(form.fecha)"></span></div>
         </div>
 
         <!-- Empresa (solo factura) -->
@@ -500,7 +500,7 @@
                 class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
                 :class="(canGuardar && !guardando)
                   ? (form.numero.trim()
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
+                      ? 'bg-brand-700 hover:bg-brand-800 text-white shadow-sm'
                       : 'bg-amber-500 hover:bg-amber-600 text-white shadow-sm')
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed'">
           <i class="fa-solid"

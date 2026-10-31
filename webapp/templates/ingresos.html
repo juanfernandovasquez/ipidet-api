@@ -7,24 +7,7 @@
 {% endblock %}
 
 {% block content %}
-<!-- Tabs -->
-<div class="flex gap-1 mb-5 border-b border-slate-200 flex-wrap">
-  <a href="/billing" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-money-bill-wave mr-1.5"></i> Cobranzas
-  </a>
-  <a href="/billing/ingresos" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-blue-600 text-blue-600 bg-white">
-    <i class="fa-solid fa-arrow-trend-up mr-1.5"></i> Ingresos
-  </a>
-  <a href="/billing/facturacion" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-clock mr-1.5"></i> Sin Comprobante
-  </a>
-  <a href="/comprobantes" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-receipt mr-1.5"></i> Comprobantes
-  </a>
-  <a href="/billing/credito" class="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
-    <i class="fa-solid fa-building-columns mr-1.5"></i> Crédito
-  </a>
-</div>
+{% include "_tabs_cobranzas.html" %}
 
 <!-- Stats -->
 <div class="grid grid-cols-3 gap-4 mb-5">
@@ -35,7 +18,7 @@
   </div>
   <div class="bg-white rounded-xl border border-green-200 p-4">
     <div class="text-xs text-green-600 uppercase tracking-wide mb-1">Monto registrado</div>
-    <div class="text-2xl font-bold text-green-700">S/ {{ "%.2f"|format(stats.monto_total) }}</div>
+    <div class="text-2xl font-bold text-green-700">{{ stats.monto_total | soles }}</div>
     <div class="text-xs text-slate-400 mt-0.5">{{ stats.con_monto }} pago{% if stats.con_monto != 1 %}s{% endif %} con monto</div>
   </div>
   <div class="bg-white rounded-xl border border-slate-200 p-4">
@@ -54,14 +37,14 @@
       <label class="block text-xs font-medium text-slate-600 mb-1">Mostrar</label>
       <div class="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
         <label class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer
-          {% if tipo_fecha == 'pago' %}bg-blue-600 text-white font-medium{% else %}bg-white text-slate-600 hover:bg-slate-50{% endif %}">
+          {% if tipo_fecha == 'pago' %}bg-brand-700 text-white font-medium{% else %}bg-white text-slate-600 hover:bg-slate-50{% endif %}">
           <input type="radio" name="tipo_fecha" value="pago"
             {% if tipo_fecha == 'pago' %}checked{% endif %}
             class="hidden" @change="$el.form.submit()">
           Todos los pagos
         </label>
         <label class="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer border-l border-slate-200
-          {% if tipo_fecha == 'emision' %}bg-blue-600 text-white font-medium{% else %}bg-white text-slate-600 hover:bg-slate-50{% endif %}">
+          {% if tipo_fecha == 'emision' %}bg-brand-700 text-white font-medium{% else %}bg-white text-slate-600 hover:bg-slate-50{% endif %}">
           <input type="radio" name="tipo_fecha" value="emision"
             {% if tipo_fecha == 'emision' %}checked{% endif %}
             class="hidden" @change="$el.form.submit()">
@@ -148,7 +131,7 @@
         {% for e in ingresos %}
         <tr class="hover:bg-slate-50 transition-colors">
 
-          <td class="px-4 py-3 text-slate-600 text-xs font-mono whitespace-nowrap">{{ e.fecha or '—' }}</td>
+          <td class="px-4 py-3 text-slate-600 text-xs font-mono whitespace-nowrap">{{ e.fecha | format_fecha }}</td>
 
           <td class="px-4 py-3">
             <a href="/members/{{ e.member_id }}" class="font-medium text-slate-800 hover:text-blue-600 transition-colors">
@@ -179,7 +162,7 @@
 
           <td class="px-4 py-3 text-right font-semibold text-slate-800">
             {% if e.monto %}
-            S/ {{ "%.2f"|format(e.monto) }}
+            {{ e.monto | soles }}
             {% else %}
             <span class="text-slate-300 font-normal">—</span>
             {% endif %}

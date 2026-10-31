@@ -1,0 +1,24 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/static/ipidet.css?v=1">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'sans-serif'],
+          mono: ['"IBM Plex Mono"', 'ui-monospace', 'Consolas', 'monospace'],
+          display: ['Newsreader', 'Georgia', 'serif'],
+        },
+        colors: {
+          brand: { 50: '#eff6ef', 100: '#dcebdc', 200: '#bad7ba', 300: '#8fbe90', 400: '#64a166', 500: '#44864a', 600: '#33703b', 700: '#295a31', 800: '#21482a', 900: '#173420' },
+          // Neutros con un leve matiz verde; el 400 está oscurecido para leerse sobre blanco.
+          slate: { 50: '#f7f8f5', 100: '#eff1ed', 200: '#e0e4de', 300: '#c9cfc7', 400: '#6b7770', 500: '#5a665f', 600: '#47524c', 700: '#353f3a', 800: '#232b27', 900: '#141a17' },
+        },
+      },
+    },
+  };
+</script>

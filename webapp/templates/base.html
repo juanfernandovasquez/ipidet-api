@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}IPIDET Admin{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" type="image/png" href="/static/isotipo.png">
+  {% include "_head.html" %}
+  <script src="/static/ipidet.js?v=1"></script>
   <script>
     document.addEventListener('alpine:init', () => {
       Alpine.store('picker', {
@@ -44,232 +46,210 @@
       });
     });
   </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <style>
-    [x-cloak] { display: none !important; }
-
-    /* ── Sidebar ── */
-    .sidebar-link {
-      display: flex; align-items: center; gap: 10px;
-      padding: 7px 10px; border-radius: 7px;
-      color: #94a3b8; font-size: 13.5px; font-weight: 500;
-      transition: background 0.12s, color 0.12s;
-      white-space: nowrap;
-    }
-    .sidebar-link:hover { background: rgba(255,255,255,0.07); color: #e2e8f0; }
-    .sidebar-link.active { background: #2563eb; color: #fff; }
-    .sidebar-link i { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
-    .sidebar-section {
-      padding: 18px 10px 5px;
-      font-size: 10px; font-weight: 700; letter-spacing: 0.09em;
-      text-transform: uppercase; color: #475569;
-    }
-
-    /* ── Badges ── */
-    .badge { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold; }
-    .badge-green  { @apply bg-green-100 text-green-800; }
-    .badge-red    { @apply bg-red-100 text-red-800; }
-    .badge-amber  { @apply bg-amber-100 text-amber-800; }
-    .badge-yellow { @apply bg-yellow-100 text-yellow-800; }
-    .badge-gray   { @apply bg-gray-100 text-gray-700; }
-    .badge-slate  { @apply bg-slate-200 text-slate-700; }
-    .badge-purple { @apply bg-purple-100 text-purple-800; }
-    .badge-orange { @apply bg-orange-100 text-orange-800; }
-    .badge-blue   { @apply bg-blue-100 text-blue-800; }
-
-    /* ── Buttons / Inputs ── */
-    .btn-primary { @apply bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors; }
-    .btn-ghost   { @apply text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-sm font-medium px-3 py-2 rounded-lg transition-colors; }
-    .input       { @apply border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500; }
-  </style>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen flex">
+{% macro nav(href, icono, nombre, activo, contador=0) %}
+<a href="{{ href }}" data-nombre="{{ nombre }}" class="sidebar-link {{ 'active' if activo }}" {% if activo %}aria-current="page"{% endif %}>
+  <i class="{{ icono }}" aria-hidden="true"></i>
+  <span class="flex-1 truncate">{{ nombre }}</span>
+  {% if contador %}<span class="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-bold">{{ contador }}</span>{% endif %}
+</a>
+{% endmacro %}
+<body class="bg-slate-50 text-slate-800 min-h-screen font-sans" data-flash="{{ flash or '' }}">
+  <a href="#contenido" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:bg-white focus:px-3 focus:py-2 focus:rounded-lg">Saltar al contenido</a>
 
-  <!-- Sidebar -->
-  <aside class="w-56 bg-slate-900 min-h-screen flex flex-col fixed top-0 left-0 z-10">
+  <!-- Fondo del menú en móvil -->
+  <div x-data x-show="$store.ui.menu" x-cloak @click="$store.ui.menu = false"
+       class="fixed inset-0 bg-black/40 z-30 lg:hidden"></div>
 
-    <!-- Logo -->
-    <div class="px-4 py-5 border-b border-slate-800">
-      <div class="flex items-center gap-2.5">
-        <div class="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center flex-shrink-0">
-          <i class="fa-solid fa-shield-halved text-white text-xs"></i>
-        </div>
-        <div>
-          <div class="text-white font-bold text-sm leading-tight">IPIDET</div>
-          <div class="text-slate-500 text-xs leading-tight">Admin</div>
-        </div>
-      </div>
+  <!-- Menú lateral -->
+  <aside x-data :class="$store.ui.menu ? 'translate-x-0' : '-translate-x-full'"
+         @keydown.escape.window="$store.ui.menu = false"
+         class="sidebar w-60 h-screen flex flex-col fixed top-0 left-0 z-40 -translate-x-full lg:!translate-x-0 transition-transform duration-200"
+         aria-label="Menú principal">
+
+    <div class="px-4 h-[61px] flex items-center justify-between border-b border-white/10 shrink-0">
+      <a href="/" aria-label="IPIDET, ir al inicio"><img src="/static/logo-blanco.png" alt="IPIDET" class="h-7 w-auto"></a>
+      <button type="button" @click="$store.ui.menu = false" class="lg:hidden text-slate-300 hover:text-white p-2" aria-label="Cerrar menú">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
     </div>
 
-    <!-- Nav -->
-    <nav class="flex-1 px-2.5 py-3 overflow-y-auto">
-
+    <nav class="sidebar-scroll flex-1 min-h-0 px-2.5 py-3 overflow-y-auto">
       {% set p = current_user_permisos %}
       {% set is_admin = current_user_role == 'admin' %}
+      {% set ruta = request.url.path %}
 
       {% if is_admin or 'dashboard' in p %}
-      <a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}">
-        <i class="fa-solid fa-chart-pie"></i> Dashboard
-      </a>
+      {{ nav('/', 'fa-solid fa-house', 'Inicio', ruta == '/') }}
       {% endif %}
-
-      <a href="/inbox" class="sidebar-link {% if '/inbox' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-inbox"></i>
-        <span class="flex-1">Cola de Emails</span>
-        {% if inbox_count | default(0) > 0 %}
-        <span class="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-bold">{{ inbox_count }}</span>
-        {% endif %}
-      </a>
+      {{ nav('/inbox', 'fa-solid fa-inbox', 'Cola de emails', ruta.startswith('/inbox'), inbox_count | default(0)) }}
 
       {% if is_admin or 'members' in p or 'empresas' in p %}
-      <div class="sidebar-section">Padrón</div>
+      <div class="sidebar-section">Personas</div>
       {% endif %}
       {% if is_admin or 'members' in p %}
-      <a href="/members" class="sidebar-link {% if '/members' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-users"></i> Socios
-      </a>
-      <a href="/publico" class="sidebar-link {% if '/publico' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-user-magnifying-glass"></i> Público
-      </a>
+      {{ nav('/members', 'fa-solid fa-users', 'Socios', ruta.startswith('/members')) }}
+      {{ nav('/publico', 'fa-solid fa-address-book', 'Público', ruta.startswith('/publico')) }}
       {% endif %}
       {% if is_admin or 'empresas' in p %}
-      <a href="/empresas" class="sidebar-link {% if '/empresas' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-building"></i> Empresas
-      </a>
+      {{ nav('/empresas', 'fa-solid fa-building', 'Empresas', ruta.startswith('/empresas')) }}
       {% endif %}
-      <a href="/comprobantes" class="sidebar-link {% if request.url.path == '/comprobantes' %}active{% endif %}">
-        <i class="fa-solid fa-receipt"></i> Comprobantes
-      </a>
-      <a href="/comprobantes/preparar" class="sidebar-link {% if request.url.path == '/comprobantes/preparar' %}active{% endif %}">
-        <i class="fa-solid fa-file-pen"></i> Preparar comprobante
-      </a>
 
-      {% if is_admin or 'billing' in p or 'fraccionamientos' in p or 'finanzas' in p %}
       <div class="sidebar-section">Finanzas</div>
+      {% if is_admin or 'billing' in p %}
+      {{ nav('/billing', 'fa-solid fa-money-bill-wave', 'Cobranzas', ruta.startswith('/billing')) }}
+      {% endif %}
+      {{ nav('/comprobantes', 'fa-solid fa-receipt', 'Comprobantes', ruta == '/comprobantes') }}
+      {{ nav('/comprobantes/preparar', 'fa-solid fa-file-pen', 'Preparar comprobante', ruta == '/comprobantes/preparar') }}
+      {% if is_admin or 'fraccionamientos' in p %}
+      {{ nav('/fraccionamientos', 'fa-solid fa-calendar-days', 'Fraccionamientos', ruta.startswith('/fraccionamientos')) }}
       {% endif %}
       {% if is_admin or 'billing' in p %}
-      <a href="/billing" class="sidebar-link {% if request.url.path == '/billing' %}active{% endif %}">
-        <i class="fa-solid fa-money-bill-wave"></i> Cobranzas
-      </a>
-      <a href="/productos" class="sidebar-link {% if '/productos' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-tags"></i> Productos
-      </a>
-      <a href="/configuracion" class="sidebar-link {% if '/configuracion' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-sliders"></i> Configuración
-      </a>
-      {% endif %}
-      {% if is_admin or 'fraccionamientos' in p %}
-      <a href="/fraccionamientos" class="sidebar-link {% if '/fraccionamientos' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-calendar-days"></i> Fraccionamientos
-      </a>
+      {{ nav('/productos', 'fa-solid fa-tags', 'Productos', ruta.startswith('/productos')) }}
       {% endif %}
       {% if is_admin or 'finanzas' in p %}
-      <a href="/wc-orders" class="sidebar-link {% if '/wc-orders' in request.url.path %}active{% endif %}">
-        <i class="fa-brands fa-wordpress"></i> Pedidos WC
-      </a>
-      <a href="/sync-usuarios" class="sidebar-link {% if '/sync-usuarios' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-users-between-lines"></i> Sync usuarios
-      </a>
+      {{ nav('/wc-orders', 'fa-brands fa-wordpress', 'Pedidos web', ruta.startswith('/wc-orders')) }}
       {% endif %}
 
       {% if is_admin or 'faqs' in p or 'marketing' in p or 'comunicaciones' in p or 'eventos' in p %}
       <div class="sidebar-section">Comunicación</div>
       {% endif %}
-      {% if is_admin or 'faqs' in p %}
-      <a href="/faqs" class="sidebar-link {% if '/faqs' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-circle-question"></i> FAQs
-      </a>
-      {% endif %}
-      {% if is_admin or 'marketing' in p %}
-      <a href="/marketing" class="sidebar-link {% if '/marketing' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-bullhorn"></i> Marketing
-      </a>
-      {% endif %}
       {% if is_admin or 'comunicaciones' in p %}
-      <a href="/comunicaciones" class="sidebar-link {% if request.url.path == '/comunicaciones' %}active{% endif %}">
-        <i class="fa-solid fa-paper-plane"></i> Comunicaciones
-      </a>
-      <a href="/comunicaciones/campanas" class="sidebar-link {% if '/comunicaciones/campanas' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-layer-group"></i> Campañas
-      </a>
-      <a href="/comunicaciones/rebotes" class="sidebar-link {% if '/comunicaciones/rebotes' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-envelope-circle-check"></i> Rebotes
-      </a>
+      {{ nav('/comunicaciones', 'fa-solid fa-paper-plane', 'Comunicaciones', ruta == '/comunicaciones') }}
+      {{ nav('/comunicaciones/campanas', 'fa-solid fa-layer-group', 'Campañas', ruta.startswith('/comunicaciones/campanas')) }}
+      {{ nav('/comunicaciones/rebotes', 'fa-solid fa-envelope-circle-check', 'Rebotes', ruta.startswith('/comunicaciones/rebotes')) }}
       {% endif %}
       {% if is_admin or 'eventos' in p %}
-      <a href="/eventos" class="sidebar-link {% if '/eventos' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-calendar-star"></i> Eventos
-      </a>
+      {{ nav('/eventos', 'fa-solid fa-calendar-week', 'Eventos', ruta.startswith('/eventos')) }}
+      {% endif %}
+      {% if is_admin or 'marketing' in p %}
+      {{ nav('/marketing', 'fa-solid fa-bullhorn', 'Marketing', ruta.startswith('/marketing')) }}
+      {% endif %}
+      {% if is_admin or 'faqs' in p %}
+      {{ nav('/faqs', 'fa-solid fa-circle-question', 'FAQs', ruta.startswith('/faqs')) }}
       {% endif %}
 
       {% if is_admin or 'redes' in p %}
-      <div class="sidebar-section">Redes Sociales</div>
-      <a href="/redes" class="sidebar-link {% if request.url.path == '/redes' %}active{% endif %}">
-        <i class="fa-solid fa-chart-line"></i> Dashboard
-      </a>
-      <a href="/redes/cronograma" class="sidebar-link {% if '/redes/cronograma' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-calendar-days"></i> Cronograma
-      </a>
-      <a href="/redes/posts" class="sidebar-link {% if '/redes/posts' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-grip"></i> Posts
-      </a>
+      <div class="sidebar-section">Redes sociales</div>
+      {{ nav('/redes', 'fa-solid fa-chart-line', 'Métricas', ruta == '/redes') }}
+      {{ nav('/redes/cronograma', 'fa-solid fa-calendar-plus', 'Cronograma', ruta.startswith('/redes/cronograma')) }}
+      {{ nav('/redes/posts', 'fa-solid fa-grip', 'Posts', ruta.startswith('/redes/posts')) }}
       {% endif %}
 
-      {% if is_admin or 'pendientes' in p %}
       <div class="sidebar-section">Gestión</div>
-      <a href="/pendientes" class="sidebar-link {% if '/pendientes' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-clipboard-list"></i>
-        <span class="flex-1">Pendientes</span>
-        {% if stats is defined and stats.get('pendientes_alta', 0) > 0 %}
-        <span class="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-bold">!</span>
-        {% endif %}
-      </a>
+      {% if is_admin or 'pendientes' in p %}
+      {{ nav('/pendientes', 'fa-solid fa-clipboard-list', 'Pendientes', ruta.startswith('/pendientes')) }}
       {% endif %}
-
-      {% if current_user_role == 'admin' %}
-      <div class="sidebar-section">Sistema</div>
-      <a href="/admin/users" class="sidebar-link {% if '/admin/users' in request.url.path %}active{% endif %}">
-        <i class="fa-solid fa-user-shield"></i> Usuarios
-      </a>
+      {% if is_admin or 'finanzas' in p %}
+      {{ nav('/sync-usuarios', 'fa-solid fa-users-between-lines', 'Sincronizar usuarios', ruta.startswith('/sync-usuarios')) }}
       {% endif %}
-
+      {% if is_admin or 'billing' in p %}
+      {{ nav('/configuracion', 'fa-solid fa-sliders', 'Configuración', ruta.startswith('/configuracion')) }}
+      {% endif %}
+      {% if is_admin %}
+      {{ nav('/admin/users', 'fa-solid fa-user-shield', 'Usuarios', ruta.startswith('/admin/users')) }}
+      {% endif %}
     </nav>
 
-    <!-- Usuario / logout -->
-    <div class="px-3 py-3 border-t border-slate-800">
+    <div class="px-3 py-3 border-t border-white/10 shrink-0">
       <div class="flex items-center gap-2.5 px-1">
-        <div class="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0 text-slate-300 text-xs font-bold">
+        <div class="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center shrink-0 text-slate-200 text-xs font-bold" aria-hidden="true">
           {{ current_user_email[0].upper() if current_user_email else '?' }}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-slate-200 text-xs font-medium truncate">{{ current_user_email }}</div>
-          <div class="text-slate-500 text-[11px]">{{ 'Administrador' if current_user_role == 'admin' else 'Visualizador' }}</div>
+          <div class="text-slate-100 text-xs font-medium truncate" title="{{ current_user_email }}">{{ current_user_email }}</div>
+          <div class="text-[#a9b8ae] text-[11px]">{{ 'Administrador' if current_user_role == 'admin' else 'Visualizador' }}</div>
         </div>
         <a href="/logout" title="Cerrar sesión"
-          class="text-slate-500 hover:text-slate-200 hover:bg-slate-800 p-1.5 rounded-md transition-colors flex-shrink-0">
-          <i class="fa-solid fa-right-from-bracket text-xs"></i>
+           class="text-[#a9b8ae] hover:text-white hover:bg-white/10 p-1.5 rounded-md transition-colors shrink-0">
+          <i class="fa-solid fa-right-from-bracket text-xs" aria-hidden="true"></i>
         </a>
       </div>
     </div>
-
   </aside>
 
-  <!-- Main -->
-  <main class="ml-56 flex-1 flex flex-col min-h-screen">
-    <!-- Top bar -->
-    <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
-      <h1 class="text-lg font-semibold text-slate-800">{% block heading %}{% endblock %}</h1>
-      <div class="flex items-center gap-3">
+  <main class="lg:pl-60 min-h-screen flex flex-col min-w-0">
+    <header class="bg-white border-b border-slate-200 px-4 lg:px-8 min-h-[61px] py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 sticky top-0 z-20">
+      <button type="button" x-data @click="$store.ui.menu = true" class="lg:hidden -ml-1 p-2 text-slate-600 hover:text-slate-900" aria-label="Abrir menú">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <h1 class="font-display text-[22px] leading-7 font-semibold text-slate-900 min-w-0">{% block heading %}{% endblock %}</h1>
+      <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
         {% block header_actions %}{% endblock %}
+        <button type="button" onclick="window.dispatchEvent(new CustomEvent('abrir-buscador'))"
+                class="flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 text-sm transition-colors" title="Buscar en toda la plataforma">
+          <i class="fa-solid fa-magnifying-glass text-xs" aria-hidden="true"></i>
+          <span class="hidden xl:inline">Buscar</span>
+          <kbd class="hidden xl:inline text-[11px] font-mono text-slate-500 bg-white border border-slate-200 rounded px-1">Ctrl K</kbd>
+        </button>
       </div>
     </header>
 
-    <!-- Content -->
-    <div class="flex-1 px-8 py-6">
+    <div id="contenido" class="page-content flex-1 px-4 lg:px-8 py-6">
       {% block content %}{% endblock %}
     </div>
   </main>
+
+  <!-- Búsqueda global (Ctrl+K) -->
+  <div x-data="buscador" x-show="abierto" x-cloak @abrir-buscador.window="abrir()" @keydown.escape.window="abierto && cerrar()"
+       class="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-4 pt-[12vh]" @click.self="cerrar()" role="dialog" aria-modal="true" aria-label="Buscar">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[70vh]">
+      <div class="flex items-center gap-3 px-4 border-b border-slate-200">
+        <i class="fa-solid fa-magnifying-glass text-slate-400" :class="cargando && 'fa-beat-fade'" aria-hidden="true"></i>
+        <input x-ref="q" x-model="q" @input="buscar()" type="text" autocomplete="off"
+               @keydown.down.prevent="mover(1)" @keydown.up.prevent="mover(-1)" @keydown.enter.prevent="ir()"
+               placeholder="Socio, empresa, comprobante o pantalla…" aria-label="Buscar"
+               class="flex-1 min-w-0 py-3.5 text-[15px] bg-transparent focus:outline-none">
+        <kbd class="text-[11px] font-mono text-slate-500 border border-slate-200 rounded px-1.5 py-0.5">Esc</kbd>
+      </div>
+      <ul x-ref="lista" class="overflow-y-auto py-1.5">
+        <template x-for="(r, i) in resultados" :key="r.url + i">
+          <li>
+            <a :href="r.url" :data-activo="i === indice" @mouseenter="indice = i"
+               class="flex items-center gap-3 px-4 py-2" :class="i === indice ? 'bg-brand-50' : ''">
+              <i class="w-4 text-center text-slate-400 text-sm" :class="r.icono" aria-hidden="true"></i>
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm text-slate-800 truncate" x-text="r.titulo"></span>
+                <span class="block text-xs text-slate-500 truncate" x-show="r.detalle" x-text="r.detalle"></span>
+              </span>
+              <span class="text-[11px] text-slate-500 shrink-0" x-text="r.grupo"></span>
+            </a>
+          </li>
+        </template>
+        <li x-show="!resultados.length && !cargando" class="px-4 py-8 text-center text-sm text-slate-500">Sin resultados</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Diálogo de confirmación -->
+  <div x-data x-show="$store.dialogo.abierto" x-cloak
+       @keydown.escape.window="$store.dialogo.abierto && $store.dialogo.responder($store.dialogo.pideTexto ? null : false)"
+       class="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4" role="alertdialog" aria-modal="true">
+    <form class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+          x-effect="if ($store.dialogo.abierto) $nextTick(() => ($el.querySelector('input:not([type=hidden])') || $el.querySelector('[data-principal]')).focus())"
+          @submit.prevent="$store.dialogo.responder($store.dialogo.pideTexto ? $store.dialogo.valor : true)">
+      <p class="text-[15px] leading-6 text-slate-800" x-text="$store.dialogo.mensaje"></p>
+      <input x-show="$store.dialogo.pideTexto" x-model="$store.dialogo.valor" type="text" class="input w-full mt-3" aria-label="Respuesta">
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" class="btn-ghost" @click="$store.dialogo.responder($store.dialogo.pideTexto ? null : false)">Cancelar</button>
+        <button type="submit" data-principal :class="$store.dialogo.peligro ? 'btn-danger' : 'btn-primary'"
+                x-text="$store.dialogo.peligro ? 'Sí, continuar' : 'Aceptar'"></button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Avisos -->
+  <div x-data class="fixed bottom-4 right-4 left-4 sm:left-auto z-[90] flex flex-col items-end gap-2 pointer-events-none" role="status" aria-live="polite">
+    <template x-for="a in $store.avisos.lista" :key="a.id">
+      <div class="pointer-events-auto max-w-sm flex items-start gap-2.5 px-4 py-3 rounded-xl shadow-lg text-sm text-white"
+           :class="a.tipo === 'error' ? 'bg-[#912018]' : 'bg-[#12241a]'">
+        <i class="fa-solid mt-0.5" :class="a.tipo === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check text-[#8fbe90]'" aria-hidden="true"></i>
+        <span class="min-w-0 break-words" x-text="a.mensaje"></span>
+        <button type="button" class="ml-1 opacity-70 hover:opacity-100" @click="$store.avisos.quitar(a.id)" aria-label="Cerrar aviso"><i class="fa-solid fa-xmark text-xs"></i></button>
+      </div>
+    </template>
+  </div>
 
   <!-- ── Comprobante Picker Modal (global, via Alpine.store) ─────── -->
   <div x-data
@@ -283,7 +263,7 @@
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
         <h3 class="font-semibold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-receipt text-blue-500"></i> Buscar y vincular comprobante
+          <i class="fa-solid fa-receipt text-slate-500"></i> Buscar y vincular comprobante
         </h3>
         <button @click="$store.picker.cerrar()" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
       </div>
@@ -322,7 +302,7 @@
                       x-text="c.tipo"></span>
                 <span class="ml-auto font-semibold text-slate-700 text-xs" x-text="c.monto_total != null ? 'S/ ' + Number(c.monto_total).toFixed(2) : ''"></span>
               </div>
-              <div class="text-xs text-slate-500 font-mono mb-0.5" x-text="c.fecha_emision || '—'"></div>
+              <div class="text-xs text-slate-500 font-mono mb-0.5" x-text="fechaPe(c.fecha_emision)"></div>
               <div class="text-xs text-slate-600 truncate"
                    x-text="c.socios_info && c.socios_info.length ? c.socios_info.map(s => s.nombre || s.member_id).join(', ') : (c.empresa || '—')"></div>
             </button>
@@ -348,7 +328,7 @@
               <dl class="space-y-2.5 text-sm">
                 <div class="flex gap-3">
                   <dt class="text-slate-400 w-28 flex-shrink-0">Fecha emisión</dt>
-                  <dd class="font-mono text-slate-700" x-text="$store.picker.sel.fecha_emision || '—'"></dd>
+                  <dd class="font-mono text-slate-700" x-text="fechaPe($store.picker.sel.fecha_emision)"></dd>
                 </div>
                 <div class="flex gap-3">
                   <dt class="text-slate-400 w-28 flex-shrink-0">Empresa</dt>

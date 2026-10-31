@@ -8,7 +8,7 @@
   <!-- ── Agregar usuario ── -->
   <div class="bg-white rounded-xl border border-slate-200 p-6" x-data="{ role: 'viewer' }">
     <h2 class="font-semibold text-slate-800 mb-5 flex items-center gap-2">
-      <i class="fa-solid fa-user-plus text-blue-500"></i> Nuevo usuario
+      <i class="fa-solid fa-user-plus text-slate-500"></i> Nuevo usuario
     </h2>
     <form method="post" action="/admin/users/add" class="space-y-4">
       <div class="grid grid-cols-2 gap-3">
@@ -26,7 +26,7 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Rol</label>
         <div class="flex gap-3">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="radio" name="role" value="viewer" x-model="role" checked class="accent-blue-600">
+            <input type="radio" name="role" value="viewer" x-model="role" checked class="accent-brand-700">
             <span class="text-sm text-slate-700">Visualizador</span>
           </label>
           <label class="flex items-center gap-2 cursor-pointer">
@@ -42,7 +42,7 @@
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {% for key, label, icon in secciones %}
           <label class="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
-            <input type="checkbox" name="permisos" value="{{ key }}" checked class="accent-blue-600">
+            <input type="checkbox" name="permisos" value="{{ key }}" checked class="accent-brand-700">
             <i class="fa-solid {{ icon }} text-slate-400 text-xs w-3"></i>
             <span class="text-sm text-slate-700">{{ label }}</span>
           </label>
@@ -91,20 +91,18 @@
               <span class="text-xs text-slate-500">Visualizador</span>
               {% endif %}
               {% if u.get('created_at') %}
-              <span class="text-xs text-slate-400">· desde {{ u.created_at[:10] }}</span>
+              <span class="text-xs text-slate-400">· desde {{ u.created_at | format_fecha }}</span>
               {% endif %}
             </div>
             <!-- Permisos actuales (solo viewers) -->
             {% if u.role != 'admin' %}
             <div class="flex flex-wrap gap-1 mt-1.5">
               {% set permisos_u = u.get('permisos', []) %}
-              {% for key, label, icon in secciones %}
-              <span class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded
-                {% if key in permisos_u %}bg-green-50 text-green-700 border border-green-200
-                {% else %}bg-slate-100 text-slate-400 border border-slate-200 line-through{% endif %}">
-                <i class="fa-solid {{ icon }} text-[10px]"></i> {{ label }}
+              {% for key, label, icon in secciones %}{% if key in permisos_u %}
+              <span class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-brand-50 text-brand-800 border border-brand-100">
+                <i class="fa-solid {{ icon }} text-[10px]" aria-hidden="true"></i> {{ label }}
               </span>
-              {% endfor %}
+              {% endif %}{% endfor %}
             </div>
             {% endif %}
           </div>
@@ -120,7 +118,7 @@
           {% endif %}
           {% if u.email != current_user_email %}
           <form method="post" action="/admin/users/{{ u._id }}/delete"
-                onsubmit="return confirm('¿Eliminar a {{ u.email }}?')">
+                data-confirm="¿Eliminar a {{ u.email }}?">
             <button type="submit"
               class="text-xs text-slate-400 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
               <i class="fa-solid fa-trash"></i>
@@ -141,7 +139,7 @@
             <label class="flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors
               {% if key in permisos_u %}border-green-200 bg-green-50{% else %}border-slate-200 hover:bg-slate-50{% endif %}">
               <input type="checkbox" name="permisos" value="{{ key }}"
-                {% if key in permisos_u %}checked{% endif %} class="accent-blue-600">
+                {% if key in permisos_u %}checked{% endif %} class="accent-brand-700">
               <i class="fa-solid {{ icon }} text-slate-400 text-xs w-3"></i>
               <span class="text-sm text-slate-700">{{ label }}</span>
             </label>

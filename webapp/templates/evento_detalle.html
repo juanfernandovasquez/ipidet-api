@@ -27,7 +27,7 @@
         <h1 class="text-xl font-bold text-slate-800 mb-2">{{ evento.titulo }}</h1>
         <div class="flex flex-wrap gap-4 text-sm text-slate-500">
           {% if evento.fecha %}
-          <span><i class="fa-solid fa-calendar mr-1.5"></i>{{ evento.fecha }}{% if evento.hora %} — {{ evento.hora }}{% endif %}</span>
+          <span><i class="fa-solid fa-calendar mr-1.5"></i>{{ evento.fecha | format_fecha }}{% if evento.hora %} — {{ evento.hora }}{% endif %}</span>
           {% endif %}
           {% if evento.lugar %}
           <span><i class="fa-solid fa-location-dot mr-1.5"></i>{{ evento.lugar }}</span>
@@ -149,7 +149,7 @@
         <button type="submit" class="btn-primary text-sm">Guardar cambios</button>
         <button type="button" @click="editando = false" class="btn-ghost text-sm">Cancelar</button>
         <button type="button" class="ml-auto text-sm text-red-500 hover:text-red-700 px-3 py-2"
-                onclick="if(confirm('¿Eliminar este evento?')) document.getElementById('ev-delete-form').submit()">
+                onclick="confirmar('¿Eliminar este evento?').then(ok => { if (ok) document.getElementById('ev-delete-form').submit(); })">
           <i class="fa-solid fa-ban mr-1"></i> Cancelar evento
         </button>
       </div>
@@ -164,7 +164,7 @@
 {% if stats.n_inscritos %}
 <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
   <h2 class="text-sm font-semibold text-slate-700 mb-4">
-    <i class="fa-solid fa-chart-bar mr-1.5 text-violet-500"></i> Estadísticas
+    <i class="fa-solid fa-chart-bar mr-1.5 text-slate-500"></i> Estadísticas
   </h2>
 
   <!-- KPIs principales -->
@@ -252,7 +252,7 @@
 <div id="expositores" class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-sm font-semibold text-slate-700">
-      <i class="fa-solid fa-person-chalkboard mr-1.5 text-violet-500"></i> Expositores
+      <i class="fa-solid fa-person-chalkboard mr-1.5 text-slate-500"></i> Expositores
     </h2>
     <button type="button" x-data @click="$dispatch('open-add-expositor')"
             class="btn-ghost text-xs">
@@ -333,7 +333,7 @@
             <button type="submit" class="btn-primary text-xs py-1">Guardar</button>
             <button type="button" @click="editExp = false" class="btn-ghost text-xs py-1">Cancelar</button>
             <form method="post" action="/eventos/{{ evento._id }}/expositores/{{ exp.numero }}/delete" class="ml-auto"
-                  onsubmit="return confirm('¿Eliminar expositor?')">
+                  data-confirm="¿Eliminar expositor?">
               <button type="submit" class="text-xs text-red-400 hover:text-red-600 px-2 py-1">
                 <i class="fa-solid fa-trash-can"></i>
               </button>
@@ -353,7 +353,7 @@
 <div x-data="{ open: false }" @open-add-expositor.window="open = true">
   <div x-show="open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6" @click.outside="open = false">
-      <h3 class="text-base font-semibold text-slate-800 mb-4"><i class="fa-solid fa-person-chalkboard mr-1.5 text-violet-500"></i> Nuevo expositor</h3>
+      <h3 class="text-base font-semibold text-slate-800 mb-4"><i class="fa-solid fa-person-chalkboard mr-1.5 text-slate-500"></i> Nuevo expositor</h3>
       <form method="post" action="/eventos/{{ evento._id }}/expositores/add" class="space-y-3">
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -394,7 +394,7 @@
 {% set cl = evento.checklist or {} %}
 <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
   <h2 class="text-sm font-semibold text-slate-700 mb-4">
-    <i class="fa-solid fa-list-check mr-1.5 text-violet-500"></i> Lista de verificación
+    <i class="fa-solid fa-list-check mr-1.5 text-slate-500"></i> Lista de verificación
   </h2>
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -481,7 +481,7 @@ window._eventoData = {
   <!-- Cabecera con tabs -->
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-sm font-semibold text-slate-700">
-      <i class="fa-solid fa-bullhorn mr-1.5 text-violet-500"></i> Comunicaciones del evento
+      <i class="fa-solid fa-bullhorn mr-1.5 text-slate-500"></i> Comunicaciones del evento
     </h2>
     <div class="flex gap-1 bg-slate-100 p-0.5 rounded-lg">
       <button type="button" @click="tab='flyer'"
@@ -730,11 +730,11 @@ window._eventoData = {
             <i class="fa-solid fa-sliders mr-1 text-slate-400"></i> Opciones de formato
           </p>
           <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
-            <input type="checkbox" x-model="plantillaCorporativa" class="rounded accent-blue-600">
+            <input type="checkbox" x-model="plantillaCorporativa" class="rounded accent-brand-700">
             Usar plantilla corporativa IPIDET (recuadro 600px + logo)
           </label>
           <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
-            <input type="checkbox" x-model="disclaimer" class="rounded accent-blue-600">
+            <input type="checkbox" x-model="disclaimer" class="rounded accent-brand-700">
             Incluir aviso "no responder a este correo"
           </label>
         </div>
@@ -843,7 +843,7 @@ window._eventoData = {
 <!-- Inscribir socio -->
 <div class="bg-white rounded-xl border border-slate-200 p-4 mb-4" x-data="inscribirSocio()">
   <h2 class="text-sm font-semibold text-slate-700 mb-3">
-    <i class="fa-solid fa-id-card mr-1.5 text-indigo-600"></i> Inscribir socio IPIDET
+    <i class="fa-solid fa-id-card mr-1.5 text-slate-500"></i> Inscribir socio IPIDET
   </h2>
   <div class="flex gap-2">
     <div class="relative flex-1">
@@ -875,7 +875,7 @@ window._eventoData = {
 <div class="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
   <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
     <h2 class="text-sm font-semibold text-slate-700">
-      <i class="fa-solid fa-users mr-1.5 text-indigo-500"></i> Socios IPIDET inscritos
+      <i class="fa-solid fa-users mr-1.5 text-slate-500"></i> Socios IPIDET inscritos
     </h2>
     <span class="text-xs text-slate-400">{{ evento.n_inscritos }} socio(s)</span>
   </div>
@@ -899,7 +899,7 @@ window._eventoData = {
           <div class="text-xs text-slate-400 font-mono">{{ ins.email }}</div>
           {% endif %}
         </td>
-        <td class="px-4 py-3 text-xs text-slate-500">{{ ins.fecha_ins or '—' }}</td>
+        <td class="px-4 py-3 text-xs text-slate-500">{{ ins.fecha_ins | format_fecha }}</td>
         <td class="px-4 py-3 text-center">
           <form method="post" action="/eventos/{{ evento._id }}/asistencia/{{ ins.member_id }}"
                 class="inline-flex gap-1">
@@ -996,7 +996,7 @@ window._eventoData = {
 <div class="bg-white rounded-xl border border-slate-200 p-4 mb-4" x-data="zoomSync()">
   <div class="flex items-center justify-between mb-3">
     <h3 class="text-sm font-semibold text-slate-700">
-      <i class="fa-solid fa-rotate mr-1.5 text-blue-500"></i>
+      <i class="fa-solid fa-rotate mr-1.5 text-slate-500"></i>
       {% if evento.zoom_webinar_id %}Zoom sincronización{% else %}Vincular webinar Zoom{% endif %}
     </h3>
     {% if evento.zoom_webinar_id %}
@@ -1098,7 +1098,7 @@ window._eventoData = {
 <div class="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
   <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
     <h3 class="text-sm font-semibold text-slate-700">
-      <i class="fa-solid fa-list-ul mr-1.5 text-blue-500"></i>
+      <i class="fa-solid fa-list-ul mr-1.5 text-slate-500"></i>
       Participantes Zoom
       {% if evento.zoom_titulo %}
       <span class="ml-2 font-normal text-slate-400 text-xs">— {{ evento.zoom_titulo }}</span>
@@ -1488,12 +1488,13 @@ function eventoComms() {
       this._doSync();
     },
 
-    insertLink() {
+    async insertLink() {
       this.restoreSelection();
       const sel = window.getSelection();
       const selectedText = sel && !sel.isCollapsed ? sel.toString() : '';
-      const url = prompt('URL del enlace (ej: https://ipidet.org):', 'https://');
+      const url = await solicitar('URL del enlace', 'https://');
       if (!url || !url.startsWith('http')) return;
+      this.restoreSelection();
       const label = selectedText || url;
       document.execCommand('insertHTML', false, `<a href="${url}" target="_blank" rel="noopener">${label}</a>`);
       this.saveSelection();

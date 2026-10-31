@@ -1,5 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Pedidos WooCommerce{% endblock %}
+{% block title %}Pedidos web — IPIDET{% endblock %}
+{% block heading %}Pedidos web{% endblock %}
+{% block header_actions %}<span class="text-xs text-slate-500">Datos de WooCommerce</span>{% endblock %}
 
 {% block content %}
 
@@ -194,16 +196,12 @@ document.addEventListener('alpine:init', () => {
 });
 </script>
 
-<div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-slate-800">Pedidos WooCommerce</h1>
-  <span class="text-xs text-slate-400">Solo lectura desde WooCommerce</span>
-</div>
 
 {# ── Filtros ─────────────────────────────────────────────────────────────── #}
 <form method="get" class="bg-white border border-slate-200 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end">
   <div class="flex flex-col gap-1">
     <label class="text-xs font-semibold text-slate-500">Estado WC</label>
-    <select name="status" onchange="this.form.submit()" class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    <select name="status" onchange="this.form.submit()" class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
       <option value="any"        {% if status == "any"        %}selected{% endif %}>Todos</option>
       <option value="completed"  {% if status == "completed"  %}selected{% endif %}>Completado</option>
       <option value="processing" {% if status == "processing" %}selected{% endif %}>Procesando</option>
@@ -214,7 +212,7 @@ document.addEventListener('alpine:init', () => {
   </div>
   <div class="flex flex-col gap-1">
     <label class="text-xs font-semibold text-slate-500">Año</label>
-    <select name="year" onchange="this.form.submit()" class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    <select name="year" onchange="this.form.submit()" class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
       <option value=""     {% if not year    %}selected{% endif %}>Todos</option>
       {% for yr in periodos %}<option value="{{ yr }}" {% if year == yr %}selected{% endif %}>{{ yr }}</option>{% endfor %}
     </select>
@@ -222,9 +220,9 @@ document.addEventListener('alpine:init', () => {
   <div class="flex flex-col gap-1 flex-1 min-w-[180px]">
     <label class="text-xs font-semibold text-slate-500">Buscar</label>
     <input type="text" name="search" value="{{ search }}" placeholder="email o nombre"
-           class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+           class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
   </div>
-  <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">Buscar</button>
+  <button type="submit" class="px-4 py-2 bg-brand-700 text-white rounded-lg text-sm font-semibold hover:bg-brand-800">Buscar</button>
   {% if search or status != "any" or year %}
   <a href="/wc-orders" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg text-sm font-semibold hover:bg-slate-200">Limpiar</a>
   {% endif %}
@@ -249,8 +247,8 @@ document.addEventListener('alpine:init', () => {
         <th class="px-4 py-3 text-right">Total</th>
         <th class="px-4 py-3 text-left">Estado WC</th>
         <th class="px-4 py-3 text-left">IPIDET ID</th>
-        <th class="px-4 py-3 text-left">Socio</th>
-        <th class="px-4 py-3 text-left">Pago en cobranzas</th>
+        <th class="px-4 py-3 text-left min-w-[190px]">Socio</th>
+        <th class="px-4 py-3 text-left min-w-[170px]">Pago en cobranzas</th>
         <th class="px-4 py-3 text-left">Comprobante</th>
       </tr>
     </thead>
@@ -269,7 +267,7 @@ document.addEventListener('alpine:init', () => {
         </td>
 
         {# ── Fecha ── #}
-        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ o.date }}</td>
+        <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ o.date | format_fecha }}</td>
 
         {# ── Cliente WC ── #}
         <td class="px-4 py-3">
@@ -288,7 +286,7 @@ document.addEventListener('alpine:init', () => {
         </td>
 
         {# ── Total ── #}
-        <td class="px-4 py-3 text-right font-semibold text-slate-800 whitespace-nowrap">S/ {{ o.total }}</td>
+        <td class="px-4 py-3 text-right font-semibold text-slate-800 whitespace-nowrap">{{ o.total | soles }}</td>
 
         {# ── Estado WC ── #}
         <td class="px-4 py-3">
@@ -354,7 +352,7 @@ document.addEventListener('alpine:init', () => {
               </div>
               <input type="text" x-model="q" @input.debounce.350ms="search()"
                      placeholder="Buscar por apellido o nombre…"
-                     class="w-full border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 mb-1">
+                     class="w-full border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 mb-1">
               <template x-if="results.length">
                 <div class="border border-slate-200 rounded bg-white shadow text-xs max-h-40 overflow-y-auto">
                   <template x-for="m in results" :key="m.member_id">
@@ -547,7 +545,7 @@ document.addEventListener('alpine:init', () => {
               </template>
               <button @click="vincular()"
                       :disabled="loading || !selMember"
-                      class="mt-2 w-full px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                      class="mt-2 w-full px-3 py-1.5 bg-brand-700 text-white rounded text-xs font-semibold hover:bg-brand-800 disabled:opacity-40 disabled:cursor-not-allowed">
                 <span x-text="loading ? 'Guardando…' : (selCuota ? 'Vincular C' + selCuota.numero + ' · ' + selPayment.periodo : (selPayment ? 'Vincular con pago' : 'Vincular solo al socio'))"></span>
               </button>
             </div>

@@ -99,7 +99,7 @@ app.add_middleware(
 )
 
 _PUBLIC_PATHS = {"/login", "/logout"}
-_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/")
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/")
 
 class _AuthMiddleware:
     """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
@@ -130,7 +130,17 @@ class _AuthMiddleware:
                 response = RedirectResponse("/?sin_acceso=1", status_code=302)
                 await response(scope, receive, send)
                 return
-        await self.app(scope, receive, send)
+
+        # Todo formulario guardado da respuesta visible, salvo que la ruta ya informe algo.
+        async def enviar(message):
+            if (message["type"] == "http.response.start" and scope.get("method") == "POST"
+                    and message["status"] == 303):
+                destino = dict(message.get("headers", [])).get(b"location", b"")
+                if not re.search(rb"[?&](ok|msg|error)=", destino):
+                    session["_flash"] = "Cambios guardados"
+            await send(message)
+
+        await self.app(scope, receive, enviar)
 
 app.add_middleware(_AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=True, same_site="lax", max_age=86400)
@@ -166,6 +176,16 @@ def _format_fecha(value) -> str:
 
 templates.env.filters["format_fecha"] = _format_fecha
 
+
+def _soles(value, decimales: int = 2) -> str:
+    """S/ 3,120.00 — único formato de dinero en pantalla."""
+    try:
+        return f"S/\u00a0{float(value):,.{decimales}f}"
+    except (TypeError, ValueError):
+        return "—"
+
+templates.env.filters["soles"] = _soles
+
 STATUS_LABELS = catalogos.ESTADOS_PAGO
 STATUS_ES = {k: v[0] for k, v in STATUS_LABELS.items()}
 
@@ -182,6 +202,7 @@ def _ctx(request: Request, **kwargs):
         inbox_count = 0
     tipos_socio = catalogos.get_catalogo("tipos_socio")
     return {
+        "flash": request.session.pop("_flash", None),
         "status_labels": STATUS_LABELS,
         "medios_pago": pdb.get_medios_pago(),
         "bancos": pdb.get_bancos(),
@@ -232,9 +253,18 @@ async def dashboard(request: Request):
             if sec in permisos:
                 return RedirectResponse(path, status_code=302)
         return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>Sin acceso asignado. Contacta al administrador.</h2>")
-    stats = pdb.get_stats()
-    stats_publico = pdb.get_publico_stats()
-    return templates.TemplateResponse(request, "dashboard.html", _ctx(request, stats=stats, stats_publico=stats_publico))
+    from billing.db import get_overdue_cuotas
+    vencidas = get_overdue_cuotas()
+    return templates.TemplateResponse(request, "dashboard.html", _ctx(
+        request,
+        resumen=pdb.get_resumen_inicio(),
+        stats_publico=pdb.get_publico_stats(),
+        pendientes=pdb.get_pendientes_stats(),
+        eventos=pdb.get_eventos_proximos(4),
+        cuotas_vencidas=len(vencidas),
+        socios_con_vencidas=len({v["payment"]["member_id"] for v in vencidas}),
+        monto_vencido=sum(pdb._sf(v["cuota"].get("monto")) for v in vencidas),
+    ))
 
 
 # ── Padrón ────────────────────────────────────────────────────────────────────
@@ -774,6 +804,7 @@ async def billing(
         total_pages=max(1, (total + 49) // 50),
         productos_list=productos_list,
         periodo_anterior=catalogos.get_periodo_anterior(),
+        conteos=pdb.get_resumen_inicio()["por_estado"],
     ))
 
 
@@ -1758,6 +1789,12 @@ async def api_empresa_comprobantes(empresa: str = ""):
 
 
 # ── API (para uso del bot) ────────────────────────────────────────────────────
+
+@app.get("/api/buscar")
+async def api_buscar(q: str = ""):
+    """Resultados de la búsqueda global (Ctrl+K)."""
+    return pdb.buscar_global(q)
+
 
 @app.get("/api/members")
 async def api_members(search: str = "", estado: str = "", pago: str = ""):
@@ -3614,6 +3651,13 @@ async def eventos_list(
         else:
             label = clave
         grupos_list.append({"clave": clave, "label": label, "eventos": evs})
+    # Primero lo que viene, del más cercano al más lejano; después lo ya realizado.
+    from datetime import date as _d
+    mes_actual = _d.today().strftime("%Y-%m")
+    grupos_list = (
+        [g for g in grupos_list if g["clave"] >= mes_actual]
+        + sorted((g for g in grupos_list if g["clave"] < mes_actual), key=lambda g: g["clave"], reverse=True)
+    )
     pages = (total + 39) // 40
     return templates.TemplateResponse(request, "eventos.html", _ctx(request,
         grupos=grupos_list, total=total, page=page, pages=pages,

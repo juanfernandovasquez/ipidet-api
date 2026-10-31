@@ -1,0 +1,13 @@
+{% set _ruta = request.url.path %}
+<nav class="flex flex-wrap gap-1 mb-5 border-b border-slate-200" aria-label="Secciones de cobranzas">
+  {% for href, icono, nombre, activo in [
+    ('/billing', 'fa-money-bill-wave', 'Cobranzas', _ruta == '/billing'),
+    ('/billing/ingresos', 'fa-arrow-trend-up', 'Ingresos', _ruta.startswith('/billing/ingresos')),
+    ('/billing/facturacion', 'fa-clock', 'Sin comprobante', _ruta.startswith('/billing/facturacion')),
+  ] %}
+  <a href="{{ href }}" {% if activo %}aria-current="page"{% endif %}
+     class="px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors {{ 'border-brand-700 text-brand-800' if activo else 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300' }}">
+    <i class="fa-solid {{ icono }} mr-1.5" aria-hidden="true"></i>{{ nombre }}
+  </a>
+  {% endfor %}
+</nav>

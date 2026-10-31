@@ -32,12 +32,12 @@
   <!-- Tabs -->
   <div class="flex gap-0 mb-6 border-b border-slate-200">
     <button @click="tab='dashboard'"
-      :class="tab==='dashboard' ? 'border-b-2 border-blue-600 text-blue-700 bg-white' : 'text-slate-500 hover:text-slate-700'"
+      :class="tab==='dashboard' ? 'border-b-2 border-brand-700 text-brand-800 bg-white' : 'text-slate-500 hover:text-slate-700'"
       class="px-5 py-2.5 text-sm font-medium transition-colors -mb-px">
       <i class="fa-solid fa-chart-line mr-1.5"></i> Dashboard
     </button>
     <button @click="tab='cuentas'"
-      :class="tab==='cuentas' ? 'border-b-2 border-blue-600 text-blue-700 bg-white' : 'text-slate-500 hover:text-slate-700'"
+      :class="tab==='cuentas' ? 'border-b-2 border-brand-700 text-brand-800 bg-white' : 'text-slate-500 hover:text-slate-700'"
       class="px-5 py-2.5 text-sm font-medium transition-colors -mb-px">
       <i class="fa-solid fa-link mr-1.5"></i> Cuentas
     </button>
@@ -272,11 +272,11 @@
                   <input type="hidden" name="url"      :value="url">
                   <input type="hidden" name="handle"   :value="handle">
                   <input type="hidden" name="activo"   :value="activo ? 'on' : ''">
-                  <button type="submit" class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700">Guardar</button>
+                  <button type="submit" class="text-xs bg-brand-700 text-white px-2 py-1 rounded hover:bg-brand-800">Guardar</button>
                   <button type="button" @click="editing=false" class="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded hover:bg-slate-200">Cancelar</button>
                 </form>
                 <form x-show="!editing" action="/redes/cuentas/{{ c._id | string }}/delete" method="post"
-                      onsubmit="return confirm('¿Eliminar esta cuenta?')">
+                      data-confirm="¿Eliminar esta cuenta?">
                   <button type="submit" class="text-slate-400 hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors">
                     <i class="fa-solid fa-trash text-xs"></i>
                   </button>
@@ -352,6 +352,11 @@
 <!-- Chart.js -->
 {% if historico %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  Chart.defaults.font.family = '"IBM Plex Sans", system-ui, sans-serif';
+  Chart.defaults.color = '#5a665f';
+  Chart.defaults.scale.grid.color = '#eff1ed';
+</script>
 <script>
 (function() {
   const historico = {{ historico | tojson }};

@@ -191,6 +191,32 @@ Si un valor puede cambiar sin que cambie la lógica (período, precio, producto,
 
 Un filtro de período se resuelve con `periodo: str | None = None`: `None` es el período de trabajo y `""` significa «todos».
 
+### R11 — Sistema de diseño: usar los componentes compartidos
+
+Los estilos viven en `webapp/static/ipidet.css` y la configuración de Tailwind en `webapp/templates/_head.html`. **Nunca usar `@apply`**: un `<style>` normal no lo procesa y todos los botones, campos y etiquetas pierden su estilo.
+
+| Necesitas | Usa | Nunca |
+|-----------|-----|-------|
+| Acción principal | `btn-primary` (o `bg-brand-700 hover:bg-brand-800`) | `bg-blue-600`, `bg-violet-600`, tarjetas gigantes como botón |
+| Acción secundaria / destructiva | `btn-ghost` / `btn-danger` | otro color por pantalla |
+| Campo de formulario | `input` | bordes y anillos escritos a mano |
+| Estado | `badge badge-green\|red\|amber\|blue\|gray...` | pastillas con colores sueltos |
+| Dinero | `{{ monto \| soles }}` o `{{ monto \| soles(0) }}` | `S/ {{ monto }}`, `"%.2f"\|format` |
+| Fecha en pantalla | `{{ fecha \| format_fecha }}` / `fechaPe(fecha)` en Alpine | mostrar `2026-10-31` |
+| Confirmación | `<form data-confirm="¿Seguro?">` o `await confirmar(texto)` | `confirm()` |
+| Pedir un dato | `await solicitar(texto, valor)` | `prompt()` |
+| Avisar | `avisar(texto)` / `avisar(texto, 'error')` | `alert()` (queda redirigido a `avisar`) |
+| Título de página | `{% block heading %}` y acciones en `{% block header_actions %}` | `<h1>` dentro del contenido |
+| Pestañas de cobranzas | `{% include "_tabs_cobranzas.html" %}` | copiar la barra de pestañas |
+
+**Significado del color:** verde marca = acción; azul = enlace e información; ámbar = advertencia o pendiente; rojo = error, deuda o acción destructiva. Los iconos de título van en gris: el color se reserva para los estados.
+
+**Otras reglas:**
+- Solo iconos gratuitos de Font Awesome 6.5: los de pago se ven vacíos sin dar error.
+- Una tabla ancha va en un contenedor `overflow-x-auto`, nunca `overflow-hidden`. Con filtros desplegables dentro: `overflow-x-auto lg:overflow-visible`.
+- Un POST que redirige (303) muestra «Cambios guardados» automáticamente; una ruta que quiera su propio mensaje redirige con `?ok=`, `?msg=` o `?error=`.
+- Los contadores deben mostrar el total real, no solo los registros de la página visible.
+
 ---
 
 ## 3. Archivos más frecuentemente modificados {#frecuentes}
@@ -203,7 +229,8 @@ El 90 % de las tareas toca estos archivos:
 | `webapp/db.py` | Todas las queries MongoDB para la web (~2300 líneas) |
 | `webapp/templates/billing.html` | Vista de cobranzas: la más compleja, con cuotas y parciales |
 | `webapp/templates/fraccionamientos.html` | Vista de fraccionamientos: creación, calendario, emitir comprobante |
-| `webapp/templates/base.html` | Layout, sidebar, modal picker global |
+| `webapp/templates/base.html` | Layout, menú, búsqueda global, diálogos, avisos, modal picker |
+| `webapp/static/ipidet.css` / `ipidet.js` | Sistema de diseño y componentes compartidos (ver R11) |
 | `webapp/templates/member.html` | Detalle de socio |
 | `webapp/templates/credito.html` | Facturas empresa en crédito |
 
@@ -296,8 +323,9 @@ launcher.py          — Lanzador de procesos
 
 ## 6. Stack tecnológico — Frontend {#frontend}
 
-- **Tailwind CSS v3** (CDN) — estilos utility-first
-- **Alpine.js 3** (CDN) — reactividad declarativa en templates
+- **Tailwind CSS 3.4.17** (CDN, versión fija) — estilos utility-first; colores en `_head.html` (ver R11)
+- **Alpine.js 3.14.9** (CDN, versión fija) — reactividad declarativa en templates
+- **IBM Plex Sans / Mono y Newsreader** (Google Fonts) — interfaz, códigos y títulos
 - **Jinja2** — renderizado server-side (FastAPI)
 - **FontAwesome 6** — íconos
 
@@ -771,8 +799,10 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 
 | Template | Ruta principal | Descripción |
 |----------|---------------|-------------|
-| `base.html` | — | Layout base: sidebar, topbar, modal picker comprobantes |
-| `dashboard.html` | `/` | Stats: socios activos, pagados, deben, FAQs |
+| `base.html` | — | Layout base: menú, barra superior, búsqueda global (Ctrl+K), diálogos, avisos, modal picker |
+| `_head.html` | — | Fuentes, Tailwind y estilos; lo incluyen `base.html` y `login.html` |
+| `_tabs_cobranzas.html` | — | Pestañas compartidas de cobranzas |
+| `dashboard.html` | `/` | Inicio: avance de cobranza, lo que requiere atención, próximos eventos |
 | `members.html` | `/members` | Padrón paginado con filtros |
 | `member.html` | `/members/{id}` | Detalle de socio: emails, comentarios, pagos |
 | `billing.html` | `/billing` | Cobranzas: tabla, edición inline, cuotas, parciales |
@@ -991,6 +1021,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
+| `GET` | `/api/buscar?q=` | Búsqueda global: socios, empresas, comprobantes y público |
 | `GET` | `/api/members` | Lista socios JSON; filtros: search, estado, pago |
 | `GET` | `/api/members/{id}` | Detalle socio JSON |
 | `GET` | `/api/payments` | Pagos JSON; filtros: periodo, estado |

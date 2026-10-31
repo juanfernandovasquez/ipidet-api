@@ -1,0 +1,139 @@
+/* Sistema de diseño IPIDET — regla R11 en CLAUDE.md.
+   Se carga antes de las utilidades de Tailwind: una utilidad (text-xs, w-full...)
+   siempre puede ajustar un componente. No usar @apply: requiere un compilador. */
+:root {
+  --brand-50:  #eff6ef;
+  --brand-100: #dcebdc;
+  --brand-500: #44864a;
+  --brand-600: #33703b;
+  --brand-700: #295a31;
+  --brand-800: #21482a;
+  --tinta:     #12241a;
+  --tinta-2:   #1b3226;
+  --ocre:      #c79a3e;
+  --papel:     #f7f8f5;
+  --linea:     #e0e4de;
+  --linea-2:   #c9cfc7;
+  --texto:     #232b27;
+  --texto-2:   #5a665f;
+  --peligro:   #b42318;
+  --peligro-2: #912018;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body { font-feature-settings: "cv01"; }
+table { font-variant-numeric: tabular-nums; }
+[x-cloak] { display: none !important; }
+
+a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible,
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.page-content { animation: aparecer .18s ease-out both; min-width: 0; }
+@keyframes aparecer { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Menú lateral ─────────────────────────────────────────── */
+.sidebar { background: var(--tinta); }
+.sidebar-link {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 7px;
+  color: #a9b8ae; font-size: 13.5px; font-weight: 500;
+  transition: background .12s, color .12s;
+  white-space: nowrap;
+}
+.sidebar-link:hover { background: rgba(255,255,255,.07); color: #f0f4f0; }
+.sidebar-link.active { background: var(--tinta-2); color: #fff; }
+.sidebar-link.active::before {
+  content: ""; position: absolute; left: -10px; top: 7px; bottom: 7px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--ocre);
+}
+.sidebar-link i { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; }
+.sidebar-section {
+  padding: 18px 10px 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: #7f9186;
+}
+.sidebar-scroll { scrollbar-width: thin; scrollbar-color: #33493c transparent; }
+
+/* ── Etiquetas de estado ──────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 6px;
+  font-size: 12px; line-height: 16px; font-weight: 600;
+  white-space: nowrap;
+}
+.badge-green  { background: #dff3e4; color: #166534; }
+.badge-red    { background: #fde8e6; color: #a51d12; }
+.badge-amber  { background: #fdf0d3; color: #8a5a06; }
+.badge-yellow { background: #fbf4c9; color: #7a6204; }
+.badge-gray   { background: #eff1ed; color: #47524c; }
+.badge-slate  { background: #e0e4de; color: #353f3a; }
+.badge-purple { background: #efe9fb; color: #5b34a8; }
+.badge-orange { background: #fdeadb; color: #a4490f; }
+.badge-blue   { background: #e3edfb; color: #1e4f9c; }
+
+/* ── Botones ──────────────────────────────────────────────── */
+.btn-primary, .btn-ghost, .btn-danger {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 14px; border-radius: 8px;
+  font-size: 14px; line-height: 20px; font-weight: 500;
+  border: 1px solid transparent; cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
+  white-space: nowrap;
+}
+/* El selector con elemento vence al reset de Tailwind sobre [type=button]. */
+button.btn-primary, a.btn-primary, input.btn-primary {
+  background: var(--brand-700); color: #fff; box-shadow: 0 1px 2px rgba(18,36,26,.2);
+}
+button.btn-primary:hover, a.btn-primary:hover { background: var(--brand-800); }
+button.btn-ghost, a.btn-ghost {
+  background: #fff; color: var(--texto); border-color: var(--linea-2);
+}
+button.btn-ghost:hover, a.btn-ghost:hover { background: var(--papel); border-color: #aeb6ac; }
+button.btn-danger, a.btn-danger { background: var(--peligro); color: #fff; }
+button.btn-danger:hover, a.btn-danger:hover { background: var(--peligro-2); }
+.btn-primary:disabled, .btn-ghost:disabled, .btn-danger:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
+/* ── Campos ───────────────────────────────────────────────── */
+.input {
+  display: block; max-width: 100%;
+  padding: 8px 12px; border: 1px solid var(--linea-2); border-radius: 8px;
+  background: #fff; color: var(--texto);
+  font-size: 14px; line-height: 20px;
+  transition: border-color .12s, box-shadow .12s;
+}
+.input::placeholder { color: #7a857e; }
+.input:hover { border-color: #aeb6ac; }
+.input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px rgba(68,134,74,.2); }
+.input:disabled { background: #eff1ed; color: var(--texto-2); cursor: not-allowed; }
+
+/* ── Tablas ───────────────────────────────────────────────── */
+.celda-fija { white-space: nowrap; }
+/* Códigos y números (IPIDET-0505, B001-00003): nunca partidos en el guion. */
+td.font-mono, td > .font-mono, td > a.font-mono, td > div > .font-mono { white-space: nowrap; }
+.clamp-2 {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* ── Inicio ───────────────────────────────────────────────── */
+.barra-cobranza { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: #eff1ed; }
+.barra-cobranza > span { display: block; height: 100%; }
+.barra-cobranza > span + span { border-left: 2px solid #fff; }
+
+/* ── Pantalla de ingreso ──────────────────────────────────── */
+.login-marca {
+  background-color: var(--tinta);
+  background-image:
+    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

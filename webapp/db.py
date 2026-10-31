@@ -1,4 +1,5 @@
 import re as _re
+from urllib.parse import quote as _quote
 from datetime import datetime, timezone, date as _date, timedelta as _timedelta
 from bson import ObjectId
 from config import catalogos
@@ -79,6 +80,69 @@ def get_stats() -> dict:
         "fraccionamiento": fraccionamiento,
         "total_faqs": total_faqs,
     }
+
+
+def get_resumen_inicio() -> dict:
+    """Datos de la pantalla de inicio: avance de cobranza del período de trabajo."""
+    periodo = catalogos.get_periodo_actual()
+    por_estado = {
+        d["_id"]: d["n"] for d in payments_col.aggregate([
+            {"$match": {"periodo": periodo}},
+            {"$group": {"_id": "$estado", "n": {"$sum": 1}}},
+        ])
+    }
+    # Quien no debe pagar este período no cuenta para el avance.
+    fuera = ("exonerado", "no_aplica", "retirar")
+    cobrables = sum(n for e, n in por_estado.items() if e not in fuera)
+    pagados = por_estado.get("pagado", 0)
+    return {
+        "periodo": periodo,
+        "por_estado": por_estado,
+        "cobrables": cobrables,
+        "pagados": pagados,
+        "avance": round(pagados * 100 / cobrables) if cobrables else 0,
+        "sin_comprobante": payments_col.count_documents({
+            "periodo": periodo, "estado": "pagado", "comprobante_emitido": {"$ne": True},
+        }),
+        "socios_activos": members_col.count_documents({"estado": "activo"}),
+        "socios_total": members_col.count_documents({}),
+        "faqs": faqs_col.count_documents({"active": True}),
+    }
+
+
+def buscar_global(q: str, limite: int = 5) -> list:
+    """Socios, público, empresas y comprobantes que coinciden con el texto."""
+    q = q.strip()
+    if len(q) < 2:
+        return []
+    rx = {"$regex": _re.escape(q), "$options": "i"}
+    salida: list = []
+    palabras = [{"$or": [{"apellidos": {"$regex": _re.escape(p), "$options": "i"}},
+                         {"nombres": {"$regex": _re.escape(p), "$options": "i"}}]}
+                for p in q.split()]
+    socios = members_col.find(
+        {"$or": [{"$and": palabras}, {"member_id": rx}, {"dni": rx}, {"emails.email": rx}]},
+        {"member_id": 1, "apellidos": 1, "nombres": 1, "emails": 1},
+    ).limit(limite)
+    for m in socios:
+        correo = next((e["email"] for e in m.get("emails", []) if e.get("principal")), "")
+        salida.append({"grupo": "Socio", "titulo": f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
+                       "detalle": " · ".join(x for x in (m["member_id"], correo) if x),
+                       "url": f"/members/{m['member_id']}", "icono": "fa-solid fa-user"})
+    for e in companies_col.find({"$or": [{"nombre": rx}, {"razon_social": rx}, {"ruc": rx}]},
+                                {"nombre": 1, "ruc": 1}).limit(limite):
+        salida.append({"grupo": "Empresa", "titulo": e.get("nombre", ""), "detalle": e.get("ruc") or "",
+                       "url": f"/empresas?search={_quote(e.get('nombre', ''))}", "icono": "fa-solid fa-building"})
+    for c in comprobantes_col.find({"$or": [{"numero": rx}, {"empresa": rx}]},
+                                   {"numero": 1, "empresa": 1, "monto_total": 1}).sort("fecha_emision", -1).limit(limite):
+        salida.append({"grupo": "Comprobante", "titulo": c.get("numero", ""), "detalle": c.get("empresa") or "",
+                       "url": f"/comprobantes?search={_quote(c.get('numero', ''))}", "icono": "fa-solid fa-receipt"})
+    for p in publico_col.find({"$or": [{"nombre": rx}, {"apellido": rx}, {"email": rx}]},
+                              {"nombre": 1, "apellido": 1, "email": 1}).limit(limite):
+        salida.append({"grupo": "Público", "titulo": f"{p.get('nombre', '')} {p.get('apellido', '')}".strip(),
+                       "detalle": p.get("email") or "", "url": f"/publico/{p['_id']}",
+                       "icono": "fa-solid fa-address-book"})
+    return salida
 
 
 # ── Members ───────────────────────────────────────────────────────────────────

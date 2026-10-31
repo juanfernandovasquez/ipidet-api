@@ -8,7 +8,7 @@ users_col = _db.users
 
 # Secciones de la plataforma (clave, etiqueta, ícono FA)
 SECCIONES = [
-    ("dashboard",        "Dashboard",        "fa-chart-pie"),
+    ("dashboard",        "Inicio",           "fa-house"),
     ("members",          "Socios",           "fa-users"),
     ("billing",          "Cobranzas",        "fa-money-bill-wave"),
     ("fraccionamientos", "Fraccionamientos", "fa-calendar-days"),
@@ -16,7 +16,7 @@ SECCIONES = [
     ("faqs",             "FAQs",             "fa-circle-question"),
     ("marketing",        "Marketing",        "fa-bullhorn"),
     ("comunicaciones",   "Comunicaciones",   "fa-paper-plane"),
-    ("eventos",          "Eventos",          "fa-calendar-star"),
+    ("eventos",          "Eventos",          "fa-calendar-week"),
     ("pendientes",       "Pendientes",       "fa-clipboard-list"),
     ("redes",            "Redes Sociales",   "fa-share-nodes"),
 ]

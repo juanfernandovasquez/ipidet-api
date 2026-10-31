@@ -1,12 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Sync Usuarios WP{% endblock %}
+{% block title %}Sincronizar usuarios — IPIDET{% endblock %}
+{% block heading %}Sincronizar usuarios{% endblock %}
+{% block header_actions %}<span class="text-xs text-slate-500">Al vincular, el correo de WordPress se agrega al padrón</span>{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-between mb-6">
-  <h1 class="text-2xl font-bold text-slate-800">Usuarios WordPress ↔ Padrón</h1>
-  <span class="text-xs text-slate-400">Solo lectura desde WooCommerce — la vinculación agrega el correo al padrón</span>
-</div>
-
 {# ── Filtros ─────────────────────────────────────────────────────────────── #}
 <form method="get" x-ref="filterForm"
       class="bg-white border border-slate-200 rounded-xl p-4 mb-6 flex flex-wrap gap-3 items-end"
@@ -15,8 +12,8 @@
   <div class="flex flex-col gap-1">
     <label class="text-xs font-semibold text-slate-500">Mostrar</label>
     <select name="filtro" onchange="this.form.submit()"
-            class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-      <option value="sin_match" {% if filtro == "sin_match" %}selected{% endif %}>Sin match en padrón</option>
+            class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+      <option value="sin_match" {% if filtro == "sin_match" %}selected{% endif %}>Sin vincular</option>
       <option value="match"     {% if filtro == "match"     %}selected{% endif %}>Con match</option>
       <option value="todos"     {% if filtro == "todos"     %}selected{% endif %}>Todos</option>
     </select>
@@ -29,11 +26,11 @@
            x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }"
            @input.debounce.450ms="$refs.filterForm.submit()"
            placeholder="nombre o email..."
-           class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+           class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
   </div>
 
   <button type="submit"
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">
+          class="px-4 py-2 bg-brand-700 text-white rounded-lg text-sm font-semibold hover:bg-brand-800">
     Buscar
   </button>
   {% if search or filtro != "sin_match" %}
@@ -75,7 +72,7 @@
 
 {# ── Tabla ───────────────────────────────────────────────────────────────── #}
 {% if customers %}
-<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+<div class="bg-white border border-slate-200 rounded-xl overflow-x-auto">
   <table class="w-full text-sm">
     <thead>
       <tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -118,7 +115,7 @@
           {% endif %}
           {% else %}
           <span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-            Sin match en padrón
+            Sin vincular
           </span>
           {% endif %}
         </td>
@@ -151,7 +148,7 @@
                            .then(d => { results = d.members ? d.members.slice(0, 8) : []; })
                        "
                        placeholder="Buscar apellido o nombre..."
-                       class="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400">
+                       class="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand-500">
 
                 <template x-if="results.length">
                   <div class="border border-slate-200 rounded bg-white shadow text-xs max-h-40 overflow-y-auto z-10 relative">
@@ -187,7 +184,7 @@
                     .catch(() => { loading = false; err = 'Error de red'; });
                   "
                   :disabled="loading"
-                  class="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 disabled:opacity-50">
+                  class="w-full px-2 py-1 bg-brand-700 text-white rounded text-xs font-semibold hover:bg-brand-800 disabled:opacity-50">
                   <span x-text="loading ? 'Guardando...' : 'Guardar vínculo'"></span>
                 </button>
               </div>
