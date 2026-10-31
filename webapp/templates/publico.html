@@ -165,10 +165,10 @@
                 </div>
               </th>
 
-              <!-- Asistió a (Zoom) — con filtro -->
-              <th class="px-4 py-2 text-left hidden xl:table-cell" style="min-width:130px">
+              <!-- Total inscritos Zoom — con filtro -->
+              <th class="px-4 py-2 text-left hidden xl:table-cell w-28">
                 <div class="flex flex-col gap-0.5">
-                  <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Asistió a</span>
+                  <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Webinars</span>
                   <select name="zoom_asistio" @change="$refs.filterForm.submit()"
                           class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if zoom_asistio else 'border-slate-200 bg-white text-slate-500' }}">
@@ -180,9 +180,9 @@
                 </div>
               </th>
 
-              <!-- Inscrito sin asistir (Zoom) — solo display -->
-              <th class="px-4 py-2 text-left hidden xl:table-cell" style="min-width:130px">
-                <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Inscrito</span>
+              <!-- Eventos asistidos (lista completa, sin comprimir) -->
+              <th class="px-4 py-2 text-left hidden xl:table-cell" style="min-width:160px">
+                <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Asistió a</span>
               </th>
 
               <!-- Estado — selector (más importante) -->
@@ -246,39 +246,27 @@
                 </span>
                 {% endif %}
               </td>
-              {# Columna: eventos Zoom a los que SÍ asistió #}
-              <td class="px-4 py-3 hidden xl:table-cell align-top">
-                {% set ze_si = (p.zoom_eventos or []) | selectattr('asistio', 'equalto', True) | list %}
-                {% if ze_si %}
-                <div class="flex flex-col gap-0.5">
-                  {% for e in ze_si[:3] %}
-                  <span class="inline-block text-[10px] font-medium text-cyan-700 bg-cyan-50 border border-cyan-100 rounded px-1.5 py-0.5 truncate max-w-[150px]"
-                        title="{{ e.evento_titulo or 'Webinar' }}">
-                    <i class="fa-solid fa-circle-check text-[9px] mr-0.5"></i>{{ e.evento_titulo or 'Webinar' }}
-                  </span>
-                  {% endfor %}
-                  {% if ze_si | length > 3 %}
-                  <span class="text-[10px] text-slate-400 pl-1">+{{ ze_si | length - 3 }} más</span>
-                  {% endif %}
-                </div>
+              {# Columna: total de webinars inscritos #}
+              <td class="px-4 py-3 hidden xl:table-cell text-center">
+                {% set ze = p.zoom_eventos or [] %}
+                {% if ze %}
+                <span class="inline-flex items-center justify-center w-7 h-7 text-xs font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-full">
+                  {{ ze|length }}
+                </span>
                 {% else %}
                 <span class="text-slate-300 text-xs">—</span>
                 {% endif %}
               </td>
-              {# Columna: eventos Zoom inscritos pero NO asistió (o sin registro) #}
+              {# Columna: lista completa de eventos asistidos (sin comprimir) #}
               <td class="px-4 py-3 hidden xl:table-cell align-top">
-                {% set ze_no = (p.zoom_eventos or []) | rejectattr('asistio', 'equalto', True) | list %}
-                {% if ze_no %}
-                <div class="flex flex-col gap-0.5">
-                  {% for e in ze_no[:3] %}
-                  <span class="inline-block text-[10px] font-medium text-orange-600 bg-orange-50 border border-orange-100 rounded px-1.5 py-0.5 truncate max-w-[150px]"
-                        title="{{ e.evento_titulo or 'Webinar' }}">
-                    <i class="fa-regular fa-circle text-[9px] mr-0.5"></i>{{ e.evento_titulo or 'Webinar' }}
+                {% set ze_si = (p.zoom_eventos or []) | selectattr('asistio', 'equalto', True) | list %}
+                {% if ze_si %}
+                <div class="flex flex-col gap-1">
+                  {% for e in ze_si %}
+                  <span class="inline-block text-[10px] font-medium text-cyan-700 bg-cyan-50 border border-cyan-100 rounded px-1.5 py-0.5 leading-snug">
+                    <i class="fa-solid fa-circle-check text-[9px] mr-0.5"></i>{{ e.evento_titulo or 'Webinar' }}
                   </span>
                   {% endfor %}
-                  {% if ze_no | length > 3 %}
-                  <span class="text-[10px] text-slate-400 pl-1">+{{ ze_no | length - 3 }} más</span>
-                  {% endif %}
                 </div>
                 {% else %}
                 <span class="text-slate-300 text-xs">—</span>
