@@ -50,7 +50,7 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
         <select name="periodo" class="input" @change="$refs.filterForm.submit()">
           <option value="" {% if not periodo %}selected{% endif %}>Todos</option>
-          {% for yr in ["2027","2026","2025","2024"] %}
+          {% for yr in periodos %}
           <option value="{{ yr }}" {% if periodo == yr %}selected{% endif %}>{{ yr }}</option>
           {% endfor %}
         </select>
@@ -319,7 +319,7 @@
             <div class="text-xs text-slate-500 mb-1.5 text-center">Fijar total esperado</div>
             <div class="flex gap-1">
               <input name="monto_objetivo" type="number" step="0.01" min="0"
-                     placeholder="780.00" class="input text-xs py-1 w-full min-w-0">
+                     placeholder="0.00" class="input text-xs py-1 w-full min-w-0">
               <button type="submit" class="text-xs font-semibold text-violet-600 hover:text-violet-800 px-1 shrink-0">✓</button>
             </div>
           </form>
@@ -890,10 +890,7 @@
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">Período <span class="text-red-500">*</span></label>
             <select x-model="periodo" class="input w-full text-sm">
-              <option value="2027">2027</option>
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
+              {% for yr in periodos %}<option value="{{ yr }}">{{ yr }}</option>{% endfor %}
             </select>
           </div>
           <div>
@@ -917,7 +914,7 @@
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Monto por cuota (S/)</label>
-              <input type="number" step="0.01" x-model="montoCuota" placeholder="260.00" class="input w-full text-sm">
+              <input type="number" step="0.01" x-model="montoCuota" placeholder="0.00" class="input w-full text-sm">
             </div>
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">Primera vence</label>
@@ -1015,7 +1012,7 @@ document.addEventListener('keydown', function(e) {
 function nuevoFraccModal() {
   return {
     sSearch: '', sResults: [], socio: null, sTimer: null,
-    periodo: '{{ periodo or "2026" }}', empresa: '',
+    periodo: '{{ periodo or periodo_actual }}', empresa: '',
     numCuotas: 3, montoCuota: '', fechaPrimera: '', frecuencia: '1',
 
     get canCrear() {

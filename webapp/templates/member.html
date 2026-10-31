@@ -485,10 +485,7 @@
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de socio</label>
             <select x-model="form.tipo_socio" class="input w-full text-sm">
-              <option value="ordinario">Ordinario</option>
-              <option value="filial">Filial</option>
-              <option value="honorario">Honorario</option>
-              <option value="afiliado">Afiliado</option>
+              {% for t in tipos_socio %}<option value="{{ t.valor }}">{{ t.label }}</option>{% endfor %}
             </select>
           </div>
         </div>

@@ -121,6 +121,16 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Descripción</label>
         <textarea name="descripcion" rows="3" class="input w-full resize-none">{{ evento.descripcion }}</textarea>
       </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-tag text-slate-400 mr-1"></i>Precio</label>
+          <input name="precio" type="text" value="{{ evento.precio or '' }}" placeholder="Gratuito, S/ 150…" class="input w-full text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-calendar-xmark text-slate-400 mr-1"></i>Cierre de inscripciones</label>
+          <input name="fecha_limite_inscripcion" type="date" value="{{ evento.fecha_limite_inscripcion or '' }}" class="input w-full text-sm">
+        </div>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-link text-slate-400 mr-1"></i>Link de inscripción</label>
@@ -774,7 +784,7 @@ window._eventoData = {
           <div class="bg-slate-50 border-b border-slate-100 px-4 py-3 space-y-1">
             <div class="flex items-start gap-2 text-xs">
               <span class="text-slate-400 w-12 shrink-0">De:</span>
-              <span class="text-slate-700">IPIDET &lt;administracion@ipidet.org&gt;</span>
+              <span class="text-slate-700">IPIDET &lt;{{ org.email }}&gt;</span>
             </div>
             <div class="flex items-start gap-2 text-xs">
               <span class="text-slate-400 w-12 shrink-0">Para:</span>

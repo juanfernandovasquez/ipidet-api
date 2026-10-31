@@ -20,10 +20,7 @@
   <select name="tipo" onchange="this.form.submit()"
     class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
     <option value="">Todos los tipos</option>
-    <option value="auditora"    {% if tipo == 'auditora'    %}selected{% endif %}>Auditora</option>
-    <option value="firma_legal" {% if tipo == 'firma_legal' %}selected{% endif %}>Firma legal</option>
-    <option value="empresa"     {% if tipo == 'empresa'     %}selected{% endif %}>Empresa</option>
-    <option value="otro"        {% if tipo == 'otro'        %}selected{% endif %}>Otro</option>
+    {% for t in tipos_empresa %}<option value="{{ t.valor }}" {% if tipo == t.valor %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
   </select>
   <button type="submit" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm px-4 py-2 rounded-lg">
     <i class="fa-solid fa-magnifying-glass"></i>
@@ -120,10 +117,7 @@
             <div>
               <label class="block text-xs text-slate-500 mb-1">Tipo</label>
               <select name="tipo" class="border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="auditora"    {% if e.tipo == 'auditora'    %}selected{% endif %}>Auditora</option>
-                <option value="firma_legal" {% if e.tipo == 'firma_legal' %}selected{% endif %}>Firma legal</option>
-                <option value="empresa"     {% if e.tipo == 'empresa'     %}selected{% endif %}>Empresa</option>
-                <option value="otro"        {% if e.tipo == 'otro'        %}selected{% endif %}>Otro</option>
+                {% for t in tipos_empresa %}<option value="{{ t.valor }}" {% if e.tipo == t.valor %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
               </select>
             </div>
             <div>
@@ -279,10 +273,7 @@
               <select x-model="sociosPeriodo"
                       @change="cargarSocios()"
                       class="text-xs border border-slate-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
-                <option value="2026">2026</option>
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-                <option value="2023">2023</option>
+                {% for yr in periodos %}<option value="{{ yr }}">{{ yr }}</option>{% endfor %}
               </select>
             </div>
             <div x-show="loadingSocios" class="text-xs text-slate-400 py-2">
@@ -347,10 +338,7 @@
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1">Tipo</label>
           <select name="tipo" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <option value="auditora">Auditora</option>
-            <option value="firma_legal">Firma legal</option>
-            <option value="empresa" selected>Empresa</option>
-            <option value="otro">Otro</option>
+            {% for t in tipos_empresa %}<option value="{{ t.valor }}" {% if t.valor == 'empresa' %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
           </select>
         </div>
       </div>
@@ -401,7 +389,7 @@ function empresaRow(nombre) {
     editing:       false,
     expanded:      false,
     activeTab:     'facturas',
-    sociosPeriodo: '2026',
+    sociosPeriodo: '{{ periodo_actual }}',
     socios:        [],
     loadingSocios: false,
     documentos:    [],

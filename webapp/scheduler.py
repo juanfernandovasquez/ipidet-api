@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from config import catalogos
 from config.settings import (
     SCHEDULER_ENABLED,
     SCHEDULER_INTERVAL_HOURS,
@@ -38,7 +39,7 @@ async def run_scheduler():
     _estado["activo"] = True
     logger.info(
         "Scheduler iniciado — período %s, estados %s, intervalo %sh",
-        SCHEDULER_PERIODO, SCHEDULER_ESTADOS, SCHEDULER_INTERVAL_HOURS,
+        SCHEDULER_PERIODO or catalogos.get_periodo_actual(), SCHEDULER_ESTADOS, SCHEDULER_INTERVAL_HOURS,
     )
 
     while True:
@@ -50,10 +51,11 @@ async def _ejecutar_ciclo():
     logger.info("Scheduler: iniciando ciclo de recordatorios")
     enviados, fallidos = 0, 0
     destinatarios = []
+    periodo = SCHEDULER_PERIODO or catalogos.get_periodo_actual()
 
     try:
         destinatarios = pdb.get_comunicacion_destinatarios(
-            periodo=SCHEDULER_PERIODO,
+            periodo=periodo,
             estados_pago=SCHEDULER_ESTADOS,
         )
     except Exception as exc:
@@ -62,10 +64,10 @@ async def _ejecutar_ciclo():
 
     for dest in destinatarios:
         try:
-            html = mailer.tpl_recordatorio_cuota(dest["nombre"], SCHEDULER_PERIODO)
+            html = mailer.tpl_recordatorio_cuota(dest["nombre"], periodo)
             await mailer.send_email(
                 dest["email"],
-                f"Recordatorio: cuota IPIDET {SCHEDULER_PERIODO} pendiente",
+                f"Recordatorio: cuota IPIDET {periodo} pendiente",
                 html,
             )
             enviados += 1
@@ -75,9 +77,9 @@ async def _ejecutar_ciclo():
 
     try:
         pdb.save_comunicacion_log(
-            asunto=f"Recordatorio automático cuota {SCHEDULER_PERIODO}",
+            asunto=f"Recordatorio automático cuota {periodo}",
             plantilla="recordatorio_auto",
-            filtros={"periodo": SCHEDULER_PERIODO, "estados": SCHEDULER_ESTADOS},
+            filtros={"periodo": periodo, "estados": SCHEDULER_ESTADOS},
             destinatarios=destinatarios,
             usuario="scheduler",
         )

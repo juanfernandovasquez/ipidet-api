@@ -47,6 +47,9 @@ python import_padron.py
 
 # Backfill de FKs en documentos históricos (idempotente, seguro correr varias veces)
 python migrate_fks.py
+
+# Crea catálogos, organización y productos WC faltantes (idempotente; no pisa ediciones)
+python migrate_catalogos.py
 ```
 
 El servidor de producción corre en Render.com (auto-deploy desde GitHub `main`). El archivo `passenger_wsgi.py` es para entornos cPanel/Passenger y no se usa en Render.
@@ -168,6 +171,26 @@ pdb.update_payment(payment_id, estado="pagado", num_comprobante="B001-001")
 - `comprobante_id` debe pasarse explícitamente desde la ruta que acaba de crear el comprobante.
 - Si hay documentos históricos sin FK, correr `python migrate_fks.py` para backfill antes de sincronizar.
 
+### R10 — Nada de datos de negocio en el código: todo sale de la base de datos
+
+Si un valor puede cambiar sin que cambie la lógica (período, precio, producto, ID de WooCommerce, banco, medio de pago, tipo de socio, tipo de empresa, checklist, email de contacto, firmante...), **no se escribe en Python ni en un template**. Se lee de su colección o de `config/catalogos.py`, y se edita desde la plataforma (`/configuracion`, `/productos`, `/empresas`).
+
+| Necesitas | Usa | Nunca |
+|-----------|-----|-------|
+| Período de trabajo | `catalogos.get_periodo_actual()` / `{{ periodo_actual }}` | `"2026"`, `pago_2026`, `periodo: str = "2026"` |
+| Lista de períodos | `{{ periodos }}` (todos) o `{{ periodos_cobro }}` (con cuota activa) | `["2025","2026"]` en un template |
+| Producto de WooCommerce | `portal_db.get_wc_product_map()` / `get_portal_products()` | diccionarios de IDs en el código |
+| Nombre del producto de un pago | `pdb.get_nombre_producto_de_pago(pago)` | `"Cuota anual"` escrito a mano |
+| Bancos, tipos de socio, etc. | `catalogos.get_catalogo(key)` / `{{ bancos }}`, `{{ tipos_socio }}`, `{{ tipos_empresa }}` | `<option>` fijos o listas `_TIPOS_*` |
+| Email, web, teléfono, firmante | `catalogos.get_organizacion()` / `{{ org.email }}` | `"administracion@ipidet.org"` |
+| Etiqueta de un estado de pago | `{{ status_labels[estado][0] }}` | otro diccionario de estados |
+
+**Qué sí va en código:** la lógica que el programa ejecuta — la máquina de estados (`catalogos.ESTADOS_PAGO`), los tipos de producto y las reglas asociadas. Se define una sola vez.
+
+**Tampoco se permiten:** seeds que pisen datos al arrancar, datos de ejemplo en pantallas productivas, ni dos colecciones para lo mismo. Para cargar datos nuevos en bloque se usa un script `migrate_*.py` idempotente.
+
+Un filtro de período se resuelve con `periodo: str | None = None`: `None` es el período de trabajo y `""` significa «todos».
+
 ---
 
 ## 3. Archivos más frecuentemente modificados {#frecuentes}
@@ -197,6 +220,8 @@ El 90 % de las tareas toca estos archivos:
 | Cambiar lógica de estado de pago | `webapp/db.py` (funciones `_sync_*`) — **no tocar desde templates** |
 | Nuevo campo en comprobantes | `webapp/db.py` (create_comprobante, update_comprobante) → `comprobantes.html` → `base.html` (modal picker si aplica) |
 | Cambiar filtros de cobranzas | `webapp/db.py` (get_payments) → `webapp/app.py` (ruta GET /billing) → `billing.html` |
+| Nuevo período o producto WooCommerce | Solo datos: crear el producto en `/productos` con su ID de WC. **No requiere código** |
+| Nuevo catálogo editable | `config/catalogos.py` (`CATALOGOS`) → se edita solo en `/configuracion` |
 | Nueva integración WooCommerce | `webapp/portal_db.py` + `webapp/portal_router.py` → `webapp/app.py` (webhook route) |
 | Crear/emitir comprobante desde payment | Crear comprobante primero → pasar `comp_id` a `emitir_comprobante()` / `update_cuota()` — ver R7 |
 | Nuevo fraccionamiento | `webapp/app.py` (`POST /fraccionamientos/nuevo`) → `fraccionamientos.html` (modal) |
@@ -214,6 +239,7 @@ import_to_atlas.py   — Migración local → Atlas
 
 config/
   settings.py        — Todas las variables de entorno centralizadas
+  catalogos.py       — Períodos, catálogos editables y datos de la organización (ver R10)
 
 gmail/
   client.py          — IMAP/SMTP con Gmail (polling por UID)
@@ -354,15 +380,14 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `members_col` | `members` | `webapp/db.py` | Padrón de socios |
 | `payments_col` | `payments` | `webapp/db.py` | Pagos/cobranzas por período |
 | `faqs_col` | `faqs` | `webapp/db.py` | Base de conocimiento del agente |
-| `events_col` | `events` | `webapp/db.py` | (reservado, poco usado actualmente) |
 | `companies_col` | `companies` | `webapp/db.py` | Empresas empleadoras |
 | `credito_col` | `facturas_credito` | `webapp/db.py` | Crédito empresa (facturas a cobrar) |
 | `productos_col` | `productos` | `webapp/db.py` | Productos facturables (cuotas, eventos) |
 | `comprobantes_col` | `comprobantes` | `webapp/db.py` | Comprobantes emitidos (boletas/facturas) |
 | `comunicaciones_col` | `comunicaciones` | `webapp/db.py` | Historial de emails masivos |
-| `eventos_col` | `eventos_ipidet` | `webapp/db.py` | Eventos y capacitaciones |
+| `eventos_col` | `eventos_ipidet` | `webapp/db.py`, `knowledge_base/db.py` | Eventos y capacitaciones (web, agente y Telegram usan esta misma colección) |
 | `pendientes_col` | `pendientes` | `webapp/db.py` | Tareas internas del equipo admin |
-| `config_col` | `config` | `webapp/db.py` | Config dinámica (ej. medios de pago editables) |
+| `config_col` | `config` | `config/catalogos.py` | Catálogos editables, organización y período de trabajo (ver R10) |
 | `publico_col` | `publico` | `webapp/db.py` | CRM de prospectos/público general |
 | `redes_cuentas_col` | `redes_cuentas` | `webapp/db.py` | Cuentas de redes sociales registradas |
 | `redes_metricas_col` | `redes_metricas` | `webapp/db.py` | Métricas históricas de RRSS (seguidores, etc.) |
@@ -461,8 +486,8 @@ empresa_pagadora        string | null    "EY" | "BDO" | "PWC" | "KPMG" | "PPU"
 empresa_id              string | null    FK → companies._id  (auto-resuelto al setear empresa_pagadora)
 pagado_por              string | null    texto libre o "WC#<order_id>" si vino de WooCommerce
 fecha_pago              string | null    "YYYY-MM-DD"
-medio_pago              string | null    ver MEDIOS_PAGO en webapp/db.py
-banco_origen            string | null    ver BANCOS en webapp/db.py
+medio_pago              string | null    catálogo `medios_pago` en /configuracion
+banco_origen            string | null    catálogo `bancos` en /configuracion
 num_comprobante         string | null    número del comprobante (texto display)
 comprobante_id          string | null    FK → comprobantes._id  (ver R7)
 tipo_comprobante        string | null    "boleta" | "factura" | "recibo"
@@ -602,11 +627,7 @@ wc_product_id   int | null    ID del producto en WooCommerce
 created_at      datetime
 ```
 
-Productos seeded al startup:
-- Cuota anual Lima 2026 → S/780, `wc_product_id: 8882`
-- Cuota anual provincia 2026 → S/350, `wc_product_id: 19105`
-- Cuota de fraccionamiento → S/260, `wc_product_id: 8880`
-- Entrada a evento → precio variable
+No hay seeds al arrancar: los productos se administran en `/productos`. `wc_product_id` es la única correspondencia con WooCommerce — un producto con `periodo` vacío es genérico (se aplica al período pendiente más antiguo del socio). Los genéricos van con `activo: false`: quedan fuera de los selectores de facturación y del portal, pero el webhook los reconoce.
 
 ### 7.9 Colección `eventos_ipidet`
 
@@ -769,6 +790,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `pendientes.html` | `/pendientes` | Tareas internas del equipo |
 | `empresas.html` | `/empresas` | CRUD de empresas empleadoras |
 | `productos.html` | `/productos` | Catálogo de productos facturables |
+| `configuracion.html` | `/configuracion` | Período de trabajo, organización y catálogos editables |
 | `wc_orders.html` | `/wc-orders` | Pedidos WooCommerce: vincular a socios |
 | `sync_usuarios.html` | `/sync-usuarios` | Sync WP users ↔ socios IPIDET |
 | `rebotes.html` | `/comunicaciones/rebotes` | Emails rebotados (bounces de Brevo) |
@@ -783,8 +805,6 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `inbox.html` | `/inbox` | Bandeja unificada: aprobaciones del agente + comprobantes de pago recibidos por email |
 | `login.html` | `/login` | Login de la plataforma |
 | `users.html` | `/admin/users` | Gestión de usuarios (solo admin) |
-
-Templates no productivos (mockup): `finanzas_mockup.html`.
 
 ### Rutas completas — webapp/app.py
 
@@ -880,6 +900,10 @@ Templates no productivos (mockup): `finanzas_mockup.html`.
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
+| `GET` | `/configuracion` | Período de trabajo, organización y catálogos (permiso `billing`) |
+| `POST` | `/configuracion/catalogos/{key}` | Guarda un catálogo; body: `{valores}` |
+| `POST` | `/configuracion/organizacion` | Guarda los datos de la organización |
+| `POST` | `/configuracion/periodo` | Fija el período de trabajo; vacío = automático |
 | `GET` | `/productos` | Lista de productos facturables |
 | `POST` | `/productos/add` | Nuevo producto |
 | `POST` | `/productos/{id}/update` | Editar producto |
@@ -972,21 +996,9 @@ Templates no productivos (mockup): `finanzas_mockup.html`.
 | `GET` | `/api/payments` | Pagos JSON; filtros: periodo, estado |
 | `POST` | `/api/email/test` | Test de envío de email |
 
-**Productos WooCommerce mapeados** (en `webapp/portal_db.py::WC_PRODUCT_MAP`):
+**Productos WooCommerce:** la correspondencia sale de `productos.wc_product_id` (`portal_db.get_wc_product_map()`). El tipo decide la acción: `cuota_anual` / `cuota_provincia` marcan el pago; `fraccionamiento` registra una cuota.
 
-| wc_product_id | action | periodo | ubicacion | descripción |
-|--------------|--------|---------|-----------|-------------|
-| `8882` | `pagar` | dinámico | lima | Pago Ordinario (genérico) |
-| `19105` | `pagar` | dinámico | provincia | Cuota anual provincia (genérico) |
-| `8880` | `fraccionamiento` | dinámico | — | Fraccionamiento 3 cuotas (genérico) |
-| `19364` | `pagar` | 2025 | lima | Pago 2025 |
-| `19361` | `pagar` | 2026 | lima | Pago 2026 |
-| `19363` | `pagar` | 2027 | lima | Pago 2027 |
-| `19359` | `pagar` | 2025 | provincia | Cuota Filial 2025 |
-| `19360` | `pagar` | 2026 | provincia | Cuota Filial 2026 |
-| `19362` | `pagar` | 2027 | provincia | Cuota Filial 2027 |
-
-Los productos con `periodo` fijo lo usan directamente. Los genéricos (periodo `None`) buscan el año pendiente más antiguo del socio en `PERIODOS_ACTIVOS = ["2025", "2026", "2027"]`.
+Los productos con `periodo` lo usan directamente. Los genéricos buscan el año pendiente más antiguo del socio entre `catalogos.get_periodos_cobro()` — los períodos con un producto de cuota activo. Ese mismo conjunto define los botones de pago del portal.
 
 ---
 
@@ -1000,7 +1012,7 @@ get_members(search="", estado="", pago="", ubicacion="", wp="", page=1, per_page
 get_member(member_id: str) → dict | None
 create_member(apellidos, nombres, titulo="", email="", celular="",
               centro_trabajo="", ubicacion="", fecha_ingreso="",
-              notas="", periodo_actual="2026") → str  # devuelve member_id
+              notas="", periodo_actual=None) → str  # devuelve member_id
 update_email_status(member_id, email, estado)
 set_email_principal(member_id, email)
 add_email(member_id, email)
@@ -1019,7 +1031,7 @@ auto_set_wp_user_id(member_id, wp_user_id)
 
 ```python
 generar_cobros_periodo(periodo: str) → dict  # {"creados": n, "existentes": n}
-get_payments(periodo="", estado="", empresa="", search="",
+get_payments(periodo=None, estado="", empresa="", search="",
              comprobante_emitido="", page=1) → (docs[], total)
 get_payments_export(...) → docs[]  # sin paginación
 update_payment(payment_id: str, estado: str, empresa=None, fecha_pago=None,
@@ -1252,7 +1264,9 @@ get_member_ubicaciones() → list[str]
 4. `workflows/approvals.py` — si confianza baja, Telegram pide aprobación al admin; la respuesta aprobada se envía vía SMTP
 5. Respuesta aprobada → `workflows/learning.py` → guarda como FAQ si es recurrente
 
-Colecciones usadas por el agente (en `knowledge_base/db.py`): `pending_approvals`, `pending_clarifications`, `processed_emails`, `bot_state`. No compartidas con `webapp/db.py`.
+Colecciones propias del agente (en `knowledge_base/db.py`): `pending_approvals`, `pending_clarifications`, `processed_emails`, `bot_state`.
+
+Colecciones compartidas con la web: `faqs` y `eventos_ipidet`. `knowledge_base/db.py::_evento_para_agente()` traduce cada evento a los campos que usa el agente; precio, cierre de inscripción y link de registro se editan en `/eventos/{id}`.
 
 ---
 
@@ -1348,11 +1362,11 @@ Normalización que aplica:
 - **`sync_credito_to_cobranzas`:** Se llama automáticamente desde `create_factura_credito` y `update_factura_credito_estado`. Sincroniza el estado de `payments` de los socios vinculados a la factura de crédito.
 - **`certifi` en Atlas:** → ver R6.
 - **Paginación por defecto:** `per_page=50` en `get_members`; `page_size=50` implícito en la mayoría de endpoints paginados. El parámetro se llama `page` (1-indexed).
-- **`MEDIOS_PAGO` y `BANCOS`:** Listas canónicas definidas en `webapp/db.py` al inicio del archivo. Usarlas en cualquier formulario o validación.
+- **Catálogos editables:** medios de pago, bancos, tipos de socio y de empresa y checklists de eventos están en la colección `config` y se editan en `/configuracion`. → ver R10.
+- **Período de trabajo:** `catalogos.get_periodo_actual()` usa el valor fijado en `/configuracion`; si no hay, el año en curso cuando ya tiene cobros y, si no, el último período con cobros. Así el cambio de año ocurre al generar los cobros del año nuevo.
 - **`fecha_pago` vs `fecha_emision` en comprobantes:** Son tres fechas distintas — `fecha_emision` (fecha del documento tributario), `fecha_pago` (fecha en que se recibió el dinero, puede ser anterior o posterior), `fecha_carga` (fecha de registro en la plataforma). El sync a `payments` usa `fecha_pago or fecha_emision` para rellenar la fecha del pago en cobranzas.
 - **Vista de fraccionamientos agrupada por socio:** `fraccionamientos.html` usa `miembros` (no `fraccionamientos`) como variable principal. Cada socio aparece como cabecera `<tr>` de color gris que agrupa sus períodos fraccionados como sub-filas indentadas. El filtro de período es opcional (default vacío = todos). Los modales de cuotas se generan en un loop anidado `{% for m in miembros %}{% for f in m.fraccionamientos %}`. → Ver `get_fraccionamientos_agrupados()` y `_enrich_fracc_doc()`.
 - **Recordatorios de fraccionamientos:** El email de recordatorio se genera server-side en `_build_recordatorio_email()` (en `app.py`). Usa `_tratamiento_titulo()` para el saludo, ajusta el tono según días vencidos (≤7d suave, 8-30d medio, >30d urgente), e incluye tabla de cuotas vencidas, bloque empresa pagadora, progreso y próxima cuota. El preview en el modal usa `iframe srcdoc` para aislar el HTML sin riesgo XSS.
-- **`MEDIOS_PAGO` es editable desde la UI:** Ya no es solo una constante de módulo. `config_col` almacena los valores en `{"_id": "medios_pago", "valores": [...]}`. `get_medios_pago()` lee de DB primero y cae al hardcoded como fallback. `update_medios_pago()` escribe en DB.
 - **Filtros en encabezados de tabla (`publico.html`):** El patrón `<select name="X" @change="$refs.filterForm.submit()">` dentro de un `<th>` es parte del `<form method="get" x-ref="filterForm">` que envuelve toda la tabla. No usar sub-componentes Alpine.js para filtros en la misma tabla — perderían acceso a `$refs.filterForm`.
 
 ---

@@ -7,6 +7,8 @@ from datetime import date as _date
 
 from fpdf import FPDF
 
+from config import catalogos
+
 _LOGO_PATH  = os.path.join(os.path.dirname(__file__), "..", "mockup_assets", "logo.png")
 _FIRMA_PATH = os.path.join(os.path.dirname(__file__), "..", "mockup_assets", "firma_presidenta.png")
 
@@ -31,6 +33,7 @@ def generar_constancia_pdf(
 ) -> bytes:
     """Devuelve los bytes del PDF de constancia."""
     fecha = fecha_emision or _date.today()
+    org = catalogos.get_organizacion()
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_margins(left=25, top=25, right=25)
@@ -110,9 +113,9 @@ def generar_constancia_pdf(
     # ── Nombre y cargo ──────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_text_color(30, 30, 30)
-    pdf.cell(0, 6, "KATARZYNA DUNIN BORKOWSKI", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, org["firmante_nombre"], align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, "Presidenta del Consejo Directivo", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, org["firmante_cargo"], align="C", new_x="LMARGIN", new_y="NEXT")
 
     # ── Footer ──────────────────────────────────────────────────────────────
     footer_y = 267
@@ -127,8 +130,9 @@ def generar_constancia_pdf(
     pdf.set_xy(30, footer_y + 2)
     pdf.set_font("Helvetica", "", 8)
     pdf.set_text_color(80, 80, 80)
-    pdf.cell(0, 4, "administracion@ipidet.org  |  www.ipidet.org  |  (01) 422-6048", new_x="LMARGIN", new_y="NEXT")
+    contacto = "  |  ".join(v for v in (org["email"], org["web"], org["telefono"]) if v)
+    pdf.cell(0, 4, contacto, new_x="LMARGIN", new_y="NEXT")
     pdf.set_x(30)
-    pdf.cell(0, 4, "Lima, Perú")
+    pdf.cell(0, 4, org["ciudad"])
 
     return bytes(pdf.output())

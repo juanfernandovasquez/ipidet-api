@@ -4,6 +4,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
+from config import catalogos
 from config.settings import (
     IPIDET_RUC,
     IPIDET_RAZON_SOCIAL,
@@ -202,7 +203,7 @@ def build_comprobante_pdf(
     pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(f"RUC: {IPIDET_RUC or '-'}"))
     if IPIDET_DIRECCION:
         _emit_text(_safe(IPIDET_DIRECCION))
-    pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, "administracion@ipidet.org")
+    pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(catalogos.get_organizacion()["email"]))
 
     left_bottom = pdf.get_y()
     header_h    = left_bottom - header_top   # altura total de la columna izquierda
@@ -410,7 +411,7 @@ def build_comprobante_pdf(
     pdf.cell(txt_w, 4, _safe(nota), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_x(LM)
     pdf.cell(txt_w, 4,
-             _safe(f"RUC: {IPIDET_RUC}  -  {IPIDET_NOMBRE_COMERCIAL}  -  administracion@ipidet.org"),
+             _safe(f"RUC: {IPIDET_RUC}  -  {IPIDET_NOMBRE_COMERCIAL}  -  {catalogos.get_organizacion()['email']}"),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # QR a la derecha, alineado con el inicio del pie

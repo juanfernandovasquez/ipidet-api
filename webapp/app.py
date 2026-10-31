@@ -18,7 +18,8 @@ import webapp.auth as auth
 import webapp.mailer as mailer
 import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
-from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE
+from config import catalogos
+from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE, WC_STORE_URL
 from knowledge_base import db as kb_db
 from billing import db as billing_db
 import threading as _threading
@@ -92,7 +93,7 @@ app = FastAPI(title="IPIDET Admin")
 # CORS: solo permite llamadas desde el servidor WordPress (server-to-server)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://ipidet.org"],
+    allow_origins=[WC_STORE_URL.rstrip("/")],
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type", "X-WC-Webhook-Signature"],
 )
@@ -165,29 +166,34 @@ def _format_fecha(value) -> str:
 
 templates.env.filters["format_fecha"] = _format_fecha
 
-STATUS_LABELS = {
-    "pagado":        ("Pagado",        "green"),
-    "debe":          ("Debe",          "red"),
-    "fraccionamiento":("Fraccionamiento","amber"),
-    "exonerado":     ("Exonerado",     "gray"),
-    "no_aplica":     ("N/A",           "gray"),
-    "pendiente":     ("Pendiente",     "yellow"),
-    "retirar":       ("Retirar",       "slate"),
-    "en_revision":   ("En revisión",   "purple"),
-    "revisar":       ("Revisar",       "orange"),
-    "parcial":       ("Parcial",       "blue"),
-    "por_cobrar":    ("Por cobrar",    "orange"),
-}
+STATUS_LABELS = catalogos.ESTADOS_PAGO
+STATUS_ES = {k: v[0] for k, v in STATUS_LABELS.items()}
+
+
+def _periodo(periodo: str | None) -> str:
+    """Sin parámetro → período de trabajo. Un "" explícito se respeta (= todos)."""
+    return catalogos.get_periodo_actual() if periodo is None else periodo
+
 
 def _ctx(request: Request, **kwargs):
     try:
         inbox_count = kb_db.count_inbox_items() + billing_db.count_pending_proofs()
     except Exception:
         inbox_count = 0
+    tipos_socio = catalogos.get_catalogo("tipos_socio")
     return {
         "status_labels": STATUS_LABELS,
         "medios_pago": pdb.get_medios_pago(),
-        "bancos": pdb.BANCOS,
+        "bancos": pdb.get_bancos(),
+        "periodos": catalogos.get_periodos(),
+        "periodos_cobro": catalogos.get_periodos_cobro(),
+        "periodo_actual": catalogos.get_periodo_actual(),
+        "tipos_socio": tipos_socio,
+        "tipos_socio_items": [(t["valor"], t["label"]) for t in tipos_socio],
+        "tipos_socio_labels": {t["valor"]: t["label"] for t in tipos_socio},
+        "tipos_empresa": catalogos.get_catalogo("tipos_empresa"),
+        "org": catalogos.get_organizacion(),
+        "wc_store_url": WC_STORE_URL.rstrip("/"),
         "current_user_email":   request.session.get("user_email", ""),
         "current_user_role":    request.session.get("user_role", ""),
         "current_user_permisos":request.session.get("user_permisos", []),
@@ -199,8 +205,6 @@ def _ctx(request: Request, **kwargs):
 
 @app.on_event("startup")
 async def _startup():
-    pdb.seed_companies()
-    pdb._seed_productos()
     auth.seed_admin()
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
@@ -215,7 +219,7 @@ async def _startup():
 
 _SECTION_PATHS = [
     ("members", "/members"), ("billing", "/billing"),
-    ("fraccionamientos", "/fraccionamientos"), ("finanzas", "/finanzas"),
+    ("fraccionamientos", "/fraccionamientos"), ("finanzas", "/wc-orders"),
     ("faqs", "/faqs"), ("marketing", "/marketing"),
 ]
 
@@ -284,7 +288,7 @@ MEMBERS_COLS = [
     ("ubicacion",      "Ubicación"),
     ("tipo_socio",     "Tipo de socio"),
     ("estado",         "Estado"),
-    ("pago_2026",      "Pago 2026"),
+    ("pago_actual",    "Pago período actual"),
 ]
 
 @app.get("/members/export")
@@ -314,6 +318,7 @@ async def members_export(
     ws.title = "Socios"
 
     col_labels = {k: lbl for k, lbl in MEMBERS_COLS}
+    col_labels["pago_actual"] = f"Pago {catalogos.get_periodo_actual()}"
     headers = [col_labels[c] for c in selected if c in col_labels]
     header_fill = PatternFill("solid", fgColor="1E3A5F")
     header_font = Font(bold=True, color="FFFFFF")
@@ -323,19 +328,14 @@ async def members_export(
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center")
 
-    STATUS_ES = {
-        "pagado": "Pagado", "debe": "Debe", "fraccionamiento": "Fraccionamiento",
-        "parcial": "Parcial", "exonerado": "Exonerado", "no_aplica": "N/A",
-        "pendiente": "Pendiente", "retirar": "Retirar", "en_revision": "En revisión",
-    }
 
     for ri, d in enumerate(docs, 2):
         emails = d.get("emails") or []
         ep = next((e["email"] for e in emails if e.get("principal") and e.get("estado") == "habilitado"),
                   next((e["email"] for e in emails if e.get("principal")), ""))
         alts = [e["email"] for e in emails if not e.get("principal") and e.get("email")]
-        p26 = d.get("pago_2026") or {}
-        p26_str = STATUS_ES.get(p26.get("estado", ""), p26.get("estado", "")) if p26 else ""
+        pago = d.get("pago_actual") or {}
+        pago_str = STATUS_ES.get(pago.get("estado", ""), pago.get("estado", "")) if pago else ""
 
         val_map = {
             "id":             d.get("member_id", ""),
@@ -349,7 +349,7 @@ async def members_export(
             "ubicacion":      d.get("ubicacion") or "",
             "tipo_socio":     d.get("tipo_socio") or "",
             "estado":         d.get("estado") or "",
-            "pago_2026":      p26_str,
+            "pago_actual":    pago_str,
         }
         for ci, col_key in enumerate(selected, 1):
             if col_key in val_map:
@@ -553,9 +553,10 @@ async def enviar_constancia(
 @app.get("/billing/facturacion", response_class=HTMLResponse)
 async def facturacion(
     request: Request,
-    periodo: str = "2026",
+    periodo: str | None = None,
     search: str = "",
 ):
+    periodo = _periodo(periodo)
     pendientes = pdb.get_comprobantes_pendientes(periodo, search)
     return templates.TemplateResponse(request, "facturacion.html", _ctx(request,
         pendientes=pendientes, periodo=periodo, search=search,
@@ -564,19 +565,21 @@ async def facturacion(
 
 
 @app.get("/billing/facturacion/empresa", response_class=HTMLResponse)
-async def facturacion_empresa(request: Request, periodo: str = "2026"):
+async def facturacion_empresa(request: Request, periodo: str | None = None):
+    periodo = _periodo(periodo)
     return templates.TemplateResponse(request, "facturacion_empresa.html",
                                       _ctx(request, periodo=periodo))
 
 
 @app.get("/api/facturacion/pendientes")
-async def api_pendientes_socio(member_id: str, periodo: str = "2026"):
-    return pdb.get_pendientes_socio(member_id, periodo)
+async def api_pendientes_socio(member_id: str, periodo: str | None = None):
+    return pdb.get_pendientes_socio(member_id, _periodo(periodo))
 
 
 @app.get("/api/facturacion/socio-info")
-async def api_socio_info(member_id: str, periodo: str = "2026"):
+async def api_socio_info(member_id: str, periodo: str | None = None):
     """Devuelve el estado actual del pago de un socio para el período indicado."""
+    periodo = _periodo(periodo)
     p = pdb.payments_col.find_one({"member_id": member_id, "periodo": periodo})
     if not p:
         return {"payment_id": None, "estado": "sin_registro", "empresa_pagadora": ""}
@@ -598,7 +601,7 @@ async def guardar_factura_empresa(request: Request):
     fecha_vencimiento = data.get("fecha_vencimiento", "")
     empresa           = data.get("empresa", "").strip()
     enviar_email      = data.get("enviar_email", False)
-    periodo           = data.get("periodo", "2026")
+    periodo           = data.get("periodo") or catalogos.get_periodo_actual()
 
     if not socios or not empresa or not num_comprobante or not tipo_comprobante or not fecha_emision:
         return JSONResponse({"error": "Faltan datos obligatorios"}, status_code=422)
@@ -611,10 +614,19 @@ async def guardar_factura_empresa(request: Request):
         resolved.append((member_id, payment_id))
 
     # Create one comprobante document covering all members before marking payments
-    items_comp = [{"member_id": mid, "producto_nombre": "Cuota anual",
+    from bson import ObjectId as _OId
+    nombres_producto = {
+        pid: pdb.get_nombre_producto_de_pago(
+            pdb.payments_col.find_one({"_id": _OId(pid)}, {"producto_id": 1, "periodo": 1}) or {"periodo": periodo}
+        )
+        for _, pid in resolved
+    }
+    items_comp = [{"member_id": mid, "producto_nombre": nombres_producto[pid],
                    "monto": round(monto / len(resolved), 2) if len(resolved) else 0,
                    "payment_id": pid, "tipo_pago": "principal", "cuota_numero": None}
                   for mid, pid in resolved]
+    distintos = set(nombres_producto.values())
+    producto_comp = distintos.pop() if len(distintos) == 1 else f"Membresías {periodo}"
     existing_comp = pdb.comprobantes_col.find_one({"numero": num_comprobante}, {"_id": 1})
     if existing_comp:
         comp_id = str(existing_comp["_id"])
@@ -622,7 +634,7 @@ async def guardar_factura_empresa(request: Request):
         comp_id = pdb.create_comprobante(
             numero=num_comprobante, tipo=tipo_comprobante,
             fecha_emision=fecha_emision, monto_total=monto,
-            producto_nombre="Cuota anual", concepto=f"Membresías {periodo}",
+            producto_nombre=producto_comp, concepto=f"Membresías {periodo}",
             empresa=empresa, socios=[mid for mid, _ in resolved],
             items=items_comp,
             fecha_vencimiento=fecha_vencimiento,
@@ -664,11 +676,12 @@ async def emitir_comprobante(
     tipo_comprobante: str = Form(""),
     fecha_emision: str    = Form(""),
     enviar_email: str     = Form(""),
-    periodo: str          = Form("2026"),
+    periodo: str          = Form(""),
     search: str           = Form(""),
 ):
     from bson import ObjectId as _OId
     from datetime import date as _date_cls
+    periodo = periodo or catalogos.get_periodo_actual()
     num = num_comprobante.strip()
     comp_id = None
     # Capture FK from existing comprobante or create a new one
@@ -682,14 +695,14 @@ async def emitir_comprobante(
                 mid  = pmt.get("member_id", "")
                 emp  = pmt.get("empresa_pagadora", "") or ""
                 per  = pmt.get("periodo", periodo)
-                monto_val, prod_name, concepto = None, "Cuota anual", f"Período {per}"
+                monto_val, prod_name, concepto = None, pdb.get_nombre_producto_de_pago(pmt), f"Período {per}"
                 if tipo == "principal":
                     monto_val = pmt.get("monto") or pmt.get("monto_total")
                 elif tipo == "cuota":
                     c = next((c for c in pmt.get("cuotas", []) if c.get("numero") == numero), None)
                     if c:
                         monto_val  = c.get("monto")
-                        prod_name  = c.get("producto_nombre") or "Cuota de fraccionamiento"
+                        prod_name  = c.get("producto_nombre") or pdb.get_nombre_producto_fraccionamiento()
                         concepto   = f"Cuota {numero} — Fraccionamiento {per}"
                 elif tipo == "parcial":
                     pp = next((p for p in pmt.get("pagos_parciales", []) if p.get("numero") == numero), None)
@@ -760,16 +773,18 @@ async def billing(
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
         productos_list=productos_list,
+        periodo_anterior=catalogos.get_periodo_anterior(),
     ))
 
 
 @app.get("/billing/export")
 async def billing_export(
-    periodo: str = "2026",
+    periodo: str | None = None,
     estado: str = "",
     empresa: str = "",
     search: str = "",
 ):
+    periodo = _periodo(periodo)
     docs = pdb.get_payments_export(periodo, estado, empresa, search)
 
     wb = openpyxl.Workbook()
@@ -786,11 +801,6 @@ async def billing_export(
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center")
 
-    STATUS_ES = {
-        "pagado": "Pagado", "debe": "Debe", "fraccionamiento": "Fraccionamiento",
-        "exonerado": "Exonerado", "no_aplica": "N/A", "pendiente": "Pendiente",
-        "retirar": "Retirar", "en_revision": "En revisión", "revisar": "Revisar",
-    }
     for row, d in enumerate(docs, 2):
         cuotas = d.get("cuotas", [])
         cuotas_pagadas = sum(1 for c in cuotas if c.get("estado") == "pagado")
@@ -1186,8 +1196,9 @@ async def marketing(
     ubicacion: str = "",
     estado_pago: str = "",
     empresa: str = "",
-    periodo: str = "2026",
+    periodo: str | None = None,
 ):
+    periodo = _periodo(periodo)
     stats = pdb.get_marketing_stats(periodo)
     emails = pdb.get_marketing_emails(titulo, ubicacion, estado_pago, empresa, periodo)
     titulos = sorted(set(t for t in pdb.members_col.distinct("titulo") if t))
@@ -1206,8 +1217,9 @@ async def marketing_export(
     ubicacion: str = "",
     estado_pago: str = "",
     empresa: str = "",
-    periodo: str = "2026",
+    periodo: str | None = None,
 ):
+    periodo = _periodo(periodo)
     emails = pdb.get_marketing_emails(titulo, ubicacion, estado_pago, empresa, periodo)
     buf = io.StringIO()
     buf.write("Nombre,Email Principal,Email Secundario,Título,Ubicación,Centro de Trabajo,Estado Pago\n")
@@ -1226,13 +1238,6 @@ async def marketing_export(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=marketing_{periodo}.csv"},
     )
-
-
-# ── Finanzas (mockup) ─────────────────────────────────────────────────────────
-
-@app.get("/finanzas", response_class=HTMLResponse)
-async def finanzas_mockup(request: Request):
-    return templates.TemplateResponse(request, "finanzas_mockup.html", _ctx(request))
 
 
 # ── Fraccionamientos ─────────────────────────────────────────────────────────
@@ -1383,7 +1388,7 @@ def _build_recordatorio_email(frac: dict, today) -> dict:
     <div style="border-top:1px solid #e2e8f0;margin-top:24px;padding-top:16px;
                 font-size:12px;color:#94a3b8;text-align:center;">
       <p style="margin:0;">Para consultas o coordinar su pago:</p>
-      <p style="margin:4px 0;"><strong>administracion@ipidet.org</strong></p>
+      <p style="margin:4px 0;"><strong>{catalogos.get_organizacion()["email"]}</strong></p>
       <p style="margin:4px 0;">IPIDET — Período {periodo}</p>
     </div>
   </div>
@@ -1394,8 +1399,9 @@ def _build_recordatorio_email(frac: dict, today) -> dict:
 
 
 @app.get("/api/fraccionamientos/recordatorios")
-async def api_recordatorios_preview(request: Request, periodo: str = "2026"):
+async def api_recordatorios_preview(request: Request, periodo: str | None = None):
     from datetime import date as _d
+    periodo = _periodo(periodo)
     today = _d.today()
     docs, _, _ = pdb.get_fraccionamientos(periodo=periodo, alerta="vencida", page=1, per_page=9999)
     result = []
@@ -1426,7 +1432,7 @@ async def enviar_recordatorios(request: Request):
     from webapp.mailer import send_email as _send_mail
     data     = await request.json()
     selected = data.get("selected", [])
-    periodo  = data.get("periodo", "2026")
+    periodo  = data.get("periodo") or catalogos.get_periodo_actual()
     if not selected:
         return {"ok": False, "error": "No hay socios seleccionados"}
     today = _d.today()
@@ -1581,7 +1587,7 @@ async def frac_emitir_comprobante(
         return RedirectResponse(redirect_to, status_code=303)
     fecha = fecha_emision.strip() or _date_cls.today().isoformat()
     periodo = pmt.get("periodo", "")
-    prod_name = cuota.get("producto_nombre") or "Cuota de fraccionamiento"
+    prod_name = cuota.get("producto_nombre") or pdb.get_nombre_producto_fraccionamiento()
     mid = pmt.get("member_id", "")
     monto_val = float(cuota.get("monto", 0))
     emp = pmt.get("empresa_pagadora", "") or ""
@@ -1728,11 +1734,11 @@ async def api_delete_company(company_id: str):
 
 
 @app.get("/api/empresas/socios")
-async def api_empresa_socios(empresa: str = "", periodo: str = "2026"):
+async def api_empresa_socios(empresa: str = "", periodo: str | None = None):
     """Socios con payments.empresa_pagadora == empresa para el período dado."""
     if not empresa.strip():
         return []
-    return pdb.get_socios_por_empresa(empresa.strip(), periodo)
+    return pdb.get_socios_por_empresa(empresa.strip(), _periodo(periodo))
 
 
 @app.get("/api/empresas/facturas")
@@ -1982,8 +1988,8 @@ async def factura_credito_enviar_email(factura_id: str, request: Request):
 
 
 @app.get("/api/payments")
-async def api_payments(periodo: str = "2026", estado: str = ""):
-    docs, total = pdb.get_payments(periodo, estado)
+async def api_payments(periodo: str | None = None, estado: str = ""):
+    docs, total = pdb.get_payments(_periodo(periodo), estado)
     return {"total": total, "payments": docs}
 
 
@@ -2161,7 +2167,6 @@ async def billing_ingresos(
         stats       = stats,
         empresas    = pdb.get_all_companies(),
         medios      = pdb.get_medios_pago(),
-        periodos    = ["2025", "2026", "2027"],
         fecha_desde = fecha_desde,
         fecha_hasta = fecha_hasta,
         periodo     = periodo,
@@ -3140,14 +3145,14 @@ async def comunicaciones(
             )
             if not email:
                 continue
-            p26 = m.get("pago_2026") or {}
+            pago_m = m.get("pago_actual") or {}
             pre_destinatarios.append({
                 "member_id":   m["member_id"],
                 "nombre":      f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip(),
                 "email":       email,
                 "titulo":      m.get("titulo", ""),
                 "ubicacion":   m.get("ubicacion", ""),
-                "estado_pago": p26.get("estado", "") if p26 else "",
+                "estado_pago": pago_m.get("estado", "") if pago_m else "",
             })
 
     elif pre_member_id:
@@ -3650,8 +3655,8 @@ async def evento_detalle(request: Request, evento_id: str):
     stats = pdb.get_evento_stats(evento_id)
     return templates.TemplateResponse(request, "evento_detalle.html", _ctx(request,
         evento=evento, stats=stats,
-        checklist_pre=pdb.CHECKLIST_PRE,
-        checklist_post=pdb.CHECKLIST_POST,
+        checklist_pre=catalogos.get_catalogo("checklist_evento_pre"),
+        checklist_post=catalogos.get_catalogo("checklist_evento_post"),
     ))
 
 
@@ -3670,11 +3675,14 @@ async def evento_update(
     link_registro:  str = Form(""),
     link_zoom:      str = Form(""),
     link_grabacion: str = Form(""),
+    precio:         str = Form(""),
+    fecha_limite_inscripcion: str = Form(""),
 ):
     cupo = int(cupo_max) if cupo_max.strip() else None
     pdb.update_evento(evento_id, titulo, descripcion, fecha, hora, lugar, cupo, estado,
                       modalidad=modalidad, link_registro=link_registro,
-                      link_zoom=link_zoom, link_grabacion=link_grabacion)
+                      link_zoom=link_zoom, link_grabacion=link_grabacion,
+                      precio=precio, fecha_limite_inscripcion=fecha_limite_inscripcion)
     return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
 
 
@@ -4107,15 +4115,40 @@ async def productos_list(request: Request, tipo: str = ""):
     productos = pdb.get_productos(tipo=tipo)
     return templates.TemplateResponse(request, "productos.html", _ctx(request,
         productos=productos, tipo=tipo, tipos=pdb.TIPOS_PRODUCTO,
-        medios_pago_lista=pdb.get_medios_pago(),
     ))
 
 
-@app.post("/productos/medios-pago")
-async def productos_medios_pago_update(request: Request):
+# ── Configuración: catálogos, período de trabajo y datos de la organización ──
+
+@app.get("/configuracion", response_class=HTMLResponse)
+async def configuracion(request: Request):
+    return templates.TemplateResponse(request, "configuracion.html", _ctx(request,
+        catalogos_def=catalogos.CATALOGOS,
+        catalogos_valores={k: catalogos.get_catalogo(k) for k in catalogos.CATALOGOS},
+        campos_org=catalogos.CAMPOS_ORGANIZACION,
+        periodo_fijado=catalogos.es_periodo_fijado(),
+    ))
+
+
+@app.post("/configuracion/catalogos/{key}")
+async def configuracion_catalogo(key: str, request: Request):
+    if key not in catalogos.CATALOGOS:
+        raise HTTPException(status_code=404, detail="Catálogo desconocido")
     data = await request.json()
-    pdb.update_medios_pago(data.get("valores", []))
+    return {"ok": True, "valores": catalogos.set_catalogo(key, data.get("valores", []))}
+
+
+@app.post("/configuracion/organizacion")
+async def configuracion_organizacion(request: Request):
+    catalogos.set_organizacion(await request.json())
     return {"ok": True}
+
+
+@app.post("/configuracion/periodo")
+async def configuracion_periodo(request: Request):
+    data = await request.json()
+    catalogos.set_periodo_actual(data.get("valor", ""))
+    return {"ok": True, "periodo_actual": catalogos.get_periodo_actual()}
 
 
 @app.post("/productos/add")
@@ -4128,11 +4161,13 @@ async def producto_add(
     codigo_wc:     str = Form(""),
     codigo_sunat:  str = Form(""),
     cuota_numero:  str = Form(""),
+    wc_product_id: str = Form(""),
 ):
     precio_val     = _safe_float(precio) if precio.strip() else None
     cuota_num_val  = int(cuota_numero) if cuota_numero.strip().isdigit() else None
+    wc_id_val      = int(wc_product_id) if wc_product_id.strip().isdigit() else None
     pdb.create_producto(nombre, tipo, precio_val, periodo, descripcion,
-                        codigo_wc, codigo_sunat, cuota_num_val)
+                        codigo_wc, codigo_sunat, cuota_num_val, wc_id_val)
     return RedirectResponse("/productos", status_code=303)
 
 
@@ -4225,7 +4260,7 @@ async def wc_orders_page(
     year: str = Query(""),
 ):
     from webapp.wc_client import get_orders
-    from webapp.portal_db import WC_PRODUCT_MAP
+    wc_map = portal_db.get_wc_product_map()
 
     error = None
     orders_out = []
@@ -4258,13 +4293,13 @@ async def wc_orders_page(
             productos = []
             for item in o.get("line_items", []):
                 pid = item.get("product_id")
-                cfg = WC_PRODUCT_MAP.get(pid, {})
+                cfg = wc_map.get(pid, {})
                 productos.append({
                     "nombre":      item.get("name", ""),
                     "product_id":  pid,
                     "descripcion": cfg.get("descripcion", ""),
                     "periodo":     cfg.get("periodo"),
-                    "action":      cfg.get("action", ""),
+                    "action":      cfg.get("action") or "",
                 })
 
             periodo_guess = next((p["periodo"] for p in productos if p["periodo"]), None)
@@ -4880,10 +4915,10 @@ async def publico_postulacion(
 async def publico_convertir(
     request:       Request,
     prospecto_id:  str,
-    periodo_actual: str = Form("2026"),
+    periodo_actual: str = Form(""),
 ):
     try:
-        member_id = pdb.convert_prospecto_to_member(prospecto_id, periodo_actual=periodo_actual)
+        member_id = pdb.convert_prospecto_to_member(prospecto_id, periodo_actual=periodo_actual or None)
     except Exception as exc:
         return RedirectResponse(f"/publico/{prospecto_id}?error={str(exc)}", status_code=303)
     return RedirectResponse(f"/members/{member_id}?ok=convertido", status_code=303)

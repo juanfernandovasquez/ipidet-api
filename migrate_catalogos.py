@@ -1,0 +1,144 @@
+"""
+migrate_catalogos.py — Lleva a MongoDB los datos que antes estaban fijos en el código.
+
+Qué hace (idempotente, seguro correr varias veces):
+  1. config: crea los catálogos y los datos de la organización que aún no existan.
+     Nunca pisa lo que ya se haya editado desde /configuracion.
+  2. productos: agrega los productos de WooCommerce que faltan (cuotas 2027 y los dos
+     genéricos), verificados contra la API de WC el 2026-10-31.
+  3. productos: quita el ID 8882 de "Cuota anual Lima 2024" (inactivo): ese ID es el
+     producto genérico «Pago Ordinario», no el de 2024.
+  4. payments: limpia empresa_pagadora con el texto literal "None".
+
+También sirve para inicializar una base nueva. Uso:
+  python migrate_catalogos.py          # aplica
+  python migrate_catalogos.py --dry    # solo muestra qué haría
+"""
+import sys
+from datetime import datetime, timezone
+
+from config.mongo_client import db
+
+DRY = "--dry" in sys.argv
+
+CATALOGOS = {
+    "medios_pago": ["Transferencia bancaria", "Depósito bancario", "Efectivo", "Yape / Plin",
+                    "Niubiz", "WooCommerce", "Cheque", "Otro"],
+    "bancos": ["BCP", "Interbank", "BBVA", "Scotiabank", "BanBif", "Banco de la Nación", "Otro"],
+    "tipos_socio": [
+        {"valor": "ordinario",  "label": "Ordinario"},
+        {"valor": "filial",     "label": "Filial"},
+        {"valor": "afiliado",   "label": "Afiliado"},
+        {"valor": "honorario",  "label": "Honorario"},
+        {"valor": "asociado",   "label": "Asociado"},
+        {"valor": "jubilado",   "label": "Jubilado"},
+        {"valor": "estudiante", "label": "Estudiante"},
+        {"valor": "retirado",   "label": "Retirado"},
+    ],
+    "tipos_empresa": [
+        {"valor": "auditora",    "label": "Auditora"},
+        {"valor": "firma_legal", "label": "Firma legal"},
+        {"valor": "empresa",     "label": "Empresa"},
+        {"valor": "otro",        "label": "Otro"},
+    ],
+    "checklist_evento_pre": [
+        {"id": "flyer",          "label": "Afiche / flyer diseñado"},
+        {"id": "inscripciones",  "label": "Página de inscripción activa"},
+        {"id": "zoom_config",    "label": "Sesión Zoom / plataforma configurada"},
+        {"id": "invit_socios",   "label": "Invitaciones enviadas a socios"},
+        {"id": "invit_publico",  "label": "Invitaciones enviadas a público general"},
+        {"id": "material",       "label": "Material de presentación recibido"},
+        {"id": "confirmaciones", "label": "Confirmaciones de asistencia enviadas"},
+        {"id": "recordatorio",   "label": "Recordatorio enviado (24h antes)"},
+        {"id": "prueba_tecnica", "label": "Prueba técnica realizada"},
+    ],
+    "checklist_evento_post": [
+        {"id": "asistencia",     "label": "Asistencia marcada en plataforma"},
+        {"id": "grabacion",      "label": "Grabación disponible"},
+        {"id": "link_grabacion", "label": "Link de grabación compartido"},
+        {"id": "certificados",   "label": "Certificados de participación enviados"},
+        {"id": "agradecimiento", "label": "Email de agradecimiento enviado"},
+        {"id": "rrss",           "label": "Post publicado en redes sociales"},
+        {"id": "memoria",        "label": "Memoria / resumen del evento redactado"},
+    ],
+}
+
+ORGANIZACION = {
+    "email": "administracion@ipidet.org",
+    "web": "www.ipidet.org",
+    "telefono": "(01) 422-6048",
+    "ciudad": "Lima, Perú",
+    "firmante_nombre": "KATARZYNA DUNIN BORKOWSKI",
+    "firmante_cargo": "Presidenta del Consejo Directivo",
+}
+
+# Genéricos: `activo: False` los deja fuera de los selectores de facturación y del
+# portal, pero el webhook los sigue reconociendo (se venden en la tienda).
+PRODUCTOS_WC = [
+    {"wc_product_id": 19363, "nombre": "Cuota anual Lima 2027", "tipo": "cuota_anual", "precio": 780.0,
+     "periodo": "2027", "activo": True, "codigo_sunat": "CUOTA-2027",
+     "descripcion": "Membresía ordinaria Lima — período 2027"},
+    {"wc_product_id": 19362, "nombre": "Cuota anual provincia 2027", "tipo": "cuota_provincia", "precio": 350.0,
+     "periodo": "2027", "activo": True, "codigo_sunat": "CUOTA-F-2027",
+     "descripcion": "Membresía socios en provincia — período 2027"},
+    {"wc_product_id": 8882, "nombre": "Pago Ordinario (genérico WC)", "tipo": "cuota_anual", "precio": 780.0,
+     "periodo": "", "activo": False,
+     "descripcion": "Producto genérico de la tienda: se aplica al período pendiente más antiguo del socio."},
+    {"wc_product_id": 19105, "nombre": "Cuota anual provincia (genérico WC)", "tipo": "cuota_provincia", "precio": 350.0,
+     "periodo": "", "activo": False,
+     "descripcion": "Producto genérico de la tienda: se aplica al período pendiente más antiguo del socio."},
+]
+
+
+def _log(msg: str) -> None:
+    print(("[dry] " if DRY else "") + msg)
+
+
+def migrar_config() -> None:
+    for key, valores in CATALOGOS.items():
+        if db.config.find_one({"_id": key}):
+            _log(f"config.{key}: ya existe, no se toca")
+            continue
+        _log(f"config.{key}: se crea con {len(valores)} valores")
+        if not DRY:
+            db.config.insert_one({"_id": key, "valores": valores})
+    if db.config.find_one({"_id": "organizacion"}):
+        _log("config.organizacion: ya existe, no se toca")
+    else:
+        _log("config.organizacion: se crea")
+        if not DRY:
+            db.config.insert_one({"_id": "organizacion", **ORGANIZACION})
+
+
+def migrar_productos() -> None:
+    quitar = db.productos.count_documents(
+        {"tipo": "cuota_anual", "periodo": "2024", "wc_product_id": 8882}
+    )
+    _log(f"productos: Lima 2024 con ID 8882 a limpiar: {quitar}")
+    if quitar and not DRY:
+        db.productos.update_many(
+            {"tipo": "cuota_anual", "periodo": "2024", "wc_product_id": 8882},
+            {"$set": {"wc_product_id": None}},
+        )
+    for prod in PRODUCTOS_WC:
+        if db.productos.find_one({"wc_product_id": prod["wc_product_id"], "periodo": prod["periodo"]}):
+            _log(f"productos: WC #{prod['wc_product_id']} ya existe")
+            continue
+        _log(f"productos: se agrega WC #{prod['wc_product_id']} — {prod['nombre']}")
+        if not DRY:
+            db.productos.insert_one({**prod, "created_at": datetime.now(timezone.utc)})
+
+
+def limpiar_empresa_none() -> None:
+    filtro = {"empresa_pagadora": "None"}
+    total = db.payments.count_documents(filtro)
+    _log(f'payments: empresa_pagadora = "None" a limpiar: {total}')
+    if total and not DRY:
+        db.payments.update_many(filtro, {"$set": {"empresa_pagadora": None, "empresa_id": None}})
+
+
+if __name__ == "__main__":
+    migrar_config()
+    migrar_productos()
+    limpiar_empresa_none()
+    _log("Listo.")

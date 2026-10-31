@@ -1,5 +1,6 @@
 from datetime import datetime
 from bson import ObjectId
+from config import catalogos
 from webapp.mongo_client import db as _db
 
 
@@ -16,6 +17,7 @@ def _clean(obj):
 
 members_col = _db.members
 payments_col = _db.payments
+productos_col = _db.productos
 
 
 def get_member_by_email(email: str) -> dict | None:
@@ -34,50 +36,58 @@ def get_member_by_email(email: str) -> dict | None:
     return _clean(member)
 
 
-# ── Mapeo de productos WooCommerce → acción en MongoDB ────────────────────────
+# ── Productos de WooCommerce ──────────────────────────────────────────────────
 #
-# INSTRUCCIONES PARA AGREGAR NUEVOS PRODUCTOS:
-# 1. En WooCommerce Admin → Productos → Añadir nuevo, crea un producto por cada año y tipo.
-# 2. Al guardar, anota el ID del producto (aparece en la URL: post=XXXXX).
-# 3. Agrega ese ID aquí con el periodo y action correspondientes.
+# La correspondencia producto WC ↔ producto IPIDET vive en la colección `productos`
+# (campo wc_product_id, editable en /productos). Para vender un período nuevo basta
+# crear ahí el producto con su ID de WooCommerce; no hay que tocar código.
 #
-# CAMPOS:
-#   action   : "pagar" | "fraccionamiento"
-#   periodo  : "2025" | "2026" | "2027" | None  (None = usar año de la fecha de pago)
-#   ubicacion: "lima" | "provincia" | None       (para filtrar botones de pago en portal)
-#
-WC_PRODUCT_MAP = {
-    # ── Genéricos (fallback / fraccionamiento) ────────────────────────────────
-    8882:  {"action": "pagar",          "descripcion": "Pago Ordinario",           "periodo": None, "ubicacion": "lima"},
-    19105: {"action": "pagar",          "descripcion": "Cuota anual provincia",    "periodo": None, "ubicacion": "provincia"},
-    8880:  {"action": "fraccionamiento","descripcion": "Fraccionamiento 3 cuotas", "periodo": None, "ubicacion": None},
+#   tipo cuota_anual / cuota_provincia → marca el pago del período como pagado
+#   tipo fraccionamiento               → registra una cuota pagada
+#   periodo vacío                      → producto genérico: se aplica al período
+#                                        pendiente más antiguo del socio
 
-    # ── Ordinario (Lima) por año ───────────────────────────────────────────────
-    19364: {"action": "pagar", "descripcion": "Pago 2025",        "periodo": "2025", "ubicacion": "lima"},
-    19361: {"action": "pagar", "descripcion": "Pago 2026",        "periodo": "2026", "ubicacion": "lima"},
-    19363: {"action": "pagar", "descripcion": "Pago 2027",        "periodo": "2027", "ubicacion": "lima"},
+_UBICACION_POR_TIPO = {"cuota_anual": "lima", "cuota_provincia": "provincia"}
 
-    # ── Filial (Provincia) por año ────────────────────────────────────────────
-    19359: {"action": "pagar", "descripcion": "Cuota Filial 2025","periodo": "2025", "ubicacion": "provincia"},
-    19360: {"action": "pagar", "descripcion": "Cuota Filial 2026","periodo": "2026", "ubicacion": "provincia"},
-    19362: {"action": "pagar", "descripcion": "Cuota Filial 2027","periodo": "2027", "ubicacion": "provincia"},
-}
 
-# ── Mapa de botones de pago para el portal de WordPress ──────────────────────
-WC_PORTAL_PRODUCTS = {
-    "lima": {
-        "2025": 19364,  # Pago 2025
-        "2026": 19361,  # Pago 2026
-        "2027": 19363,  # Pago 2027
-    },
-    "provincia": {
-        "2025": 19359,  # Cuota Filial 2025
-        "2026": 19360,  # Cuota Filial 2026
-        "2027": 19362,  # Cuota Filial 2027
-    },
-}
+def _accion_de_producto(tipo: str) -> str | None:
+    if tipo in _UBICACION_POR_TIPO:
+        return "pagar"
+    if tipo == "fraccionamiento":
+        return "fraccionamiento"
+    return None
 
-PERIODOS_ACTIVOS = ["2025", "2026", "2027"]
+
+def get_wc_product_map() -> dict:
+    """{wc_product_id: {action, descripcion, periodo, ubicacion, producto_id}}"""
+    docs = productos_col.find({"wc_product_id": {"$nin": [None, "", 0]}})
+    # Si dos productos comparten ID de WC gana el activo y, a igualdad, el genérico.
+    orden = sorted(docs, key=lambda d: (not d.get("activo"), d.get("periodo") or ""))
+    mapa: dict = {}
+    for d in orden:
+        mapa.setdefault(d["wc_product_id"], {
+            "action":      _accion_de_producto(d.get("tipo", "")),
+            "descripcion": d.get("nombre", ""),
+            "periodo":     d.get("periodo") or None,
+            "ubicacion":   _UBICACION_POR_TIPO.get(d.get("tipo", "")),
+            "producto_id": str(d["_id"]),
+        })
+    return mapa
+
+
+def get_portal_products() -> dict:
+    """{"lima": {periodo: wc_id}, "provincia": {periodo: wc_id}} — botones de pago del portal."""
+    salida: dict = {"lima": {}, "provincia": {}}
+    docs = productos_col.find({
+        "activo": True,
+        "tipo": {"$in": list(_UBICACION_POR_TIPO)},
+        "wc_product_id": {"$nin": [None, "", 0]},
+        "periodo": {"$nin": [None, ""]},
+    })
+    for d in docs:
+        salida[_UBICACION_POR_TIPO[d["tipo"]]][d["periodo"]] = d["wc_product_id"]
+    return salida
+
 
 ESTADOS_PENDIENTES = {"debe", "pendiente", "sin_registro", "parcial"}
 
@@ -101,16 +111,18 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
     anio_pago_default  = str(order.get("date_paid", "")[:4]) or str(datetime.now(timezone.utc).year)
     order_id = str(order.get("id", ""))
     results = []
+    wc_map = get_wc_product_map()
+    periodos_activos = catalogos.get_periodos_cobro()
 
     for item in order.get("line_items", []):
         product_id = item.get("product_id")
-        cfg = WC_PRODUCT_MAP.get(product_id)
-        if not cfg:
+        cfg = wc_map.get(product_id)
+        if not cfg or not cfg["action"]:
             results.append({"product_id": product_id, "skipped": True, "reason": "producto no mapeado"})
             continue
 
         # Si el producto tiene periodo fijo, lo usamos directamente.
-        # Si no, buscamos el año pendiente más antiguo del socio en PERIODOS_ACTIVOS.
+        # Si no, buscamos el año pendiente más antiguo del socio entre los períodos activos.
         # Esto permite que un producto genérico (ej. "Pago Ordinario") marque
         # el año correcto aunque el botón diga "Pagar 2025" o "Pagar 2026".
         if cfg.get("periodo"):
@@ -119,7 +131,7 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
             periodos_pendientes = sorted([
                 p["periodo"] for p in payments_col.find({
                     "member_id": member_id,
-                    "periodo":   {"$in": PERIODOS_ACTIVOS},
+                    "periodo":   {"$in": periodos_activos},
                     "estado":    {"$in": list(ESTADOS_PENDIENTES)},
                 })
             ])
@@ -130,14 +142,18 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
 
         if cfg["action"] == "pagar":
             if payment:
+                pagado = {
+                    "estado": "pagado",
+                    "fecha_pago": fecha_pago,
+                    "medio_pago": "WooCommerce",
+                    "pagado_por": f"WC#{order_id}",
+                }
+                # El producto comprado es el del pago, salvo que sea genérico (sin período).
+                if cfg["periodo"]:
+                    pagado["producto_id"] = cfg["producto_id"]
                 payments_col.update_one(
                     {"member_id": member_id, "periodo": periodo},
-                    {"$set": {
-                        "estado": "pagado",
-                        "fecha_pago": fecha_pago,
-                        "medio_pago": "WooCommerce",
-                        "pagado_por": f"WC#{order_id}",
-                    }}
+                    {"$set": pagado},
                 )
             else:
                 payments_col.insert_one({
@@ -148,6 +164,7 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
                     "medio_pago": "WooCommerce",
                     "pagado_por": f"WC#{order_id}",
                     "empresa_pagadora": None,
+                    "producto_id": cfg["producto_id"],
                     "raw_original": cfg["descripcion"],
                     "cuotas": [],
                 })
@@ -192,6 +209,7 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
                     "medio_pago": "WooCommerce",
                     "pagado_por": f"WC#{order_id}",
                     "empresa_pagadora": None,
+                    "producto_id": cfg["producto_id"],
                     "raw_original": cfg["descripcion"],
                     "cuotas": [{
                         "numero": 1,

@@ -5,7 +5,8 @@ import json
 from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from config.settings import WC_WEBHOOK_SECRET
+from config import catalogos
+from config.settings import WC_WEBHOOK_SECRET, WC_STORE_URL
 import webapp.portal_db as pdb
 
 # ── Caché en memoria para respuestas del portal (2 min TTL) ──────────────────
@@ -24,17 +25,11 @@ def _cache_set(email: str, data: dict):
 def _cache_del(email: str):
     _cache.pop(email, None)
 
-STATUS_ES = {
-    "pagado":          "Pagado",
-    "debe":            "Debe",
-    "fraccionamiento": "Fraccionamiento",
-    "exonerado":       "Exonerado",
-    "no_aplica":       "N/A",
-    "pendiente":       "Pendiente",
-    "retirar":         "Retirar",
-    "en_revision":     "En revisión",
-    "revisar":         "Revisar",
-}
+STATUS_ES = {k: v[0] for k, v in catalogos.ESTADOS_PAGO.items()}
+
+
+def _url_pago(wc_id: int) -> str:
+    return f"{WC_STORE_URL.rstrip('/')}/carrito/?add-to-cart={wc_id}"
 
 
 def _find_member(email: str, wp_user_id: int = None) -> dict | None:
@@ -66,8 +61,8 @@ def build_member_status(email: str, wp_user_id: int = None) -> dict:
     ubicacion = member.get("ubicacion", "")
     tipo_socio = member.get("tipo_socio", "ordinario")
     ubicacion_key = "provincia" if tipo_socio == "filial" else "lima"
-    # Usar el dict estático directamente — siempre sincronizado con los IDs reales de WC.
-    wc_products = pdb.WC_PORTAL_PRODUCTS
+    wc_products = pdb.get_portal_products()
+    periodos_activos = catalogos.get_periodos_cobro()
 
     payments_out = []
     periodos_con_registro = set()
@@ -99,16 +94,16 @@ def build_member_status(email: str, wp_user_id: int = None) -> dict:
         }
 
         # Agregar botón de pago si el período está pendiente y hay producto WC configurado
-        if estado in pdb.ESTADOS_PENDIENTES and periodo in pdb.PERIODOS_ACTIVOS:
+        if estado in pdb.ESTADOS_PENDIENTES and periodo in periodos_activos:
             wc_id = wc_products.get(ubicacion_key, {}).get(periodo)
             if wc_id:
                 payment_entry["wc_product_id"] = wc_id
-                payment_entry["wc_pay_url"] = f"https://ipidet.org/carrito/?add-to-cart={wc_id}"
+                payment_entry["wc_pay_url"] = _url_pago(wc_id)
 
         payments_out.append(payment_entry)
 
     # Agregar períodos activos sin registro (nunca pagaron ese año)
-    for periodo in pdb.PERIODOS_ACTIVOS:
+    for periodo in periodos_activos:
         if periodo not in periodos_con_registro:
             wc_id = wc_products.get(ubicacion_key, {}).get(periodo)
             entry = {
@@ -123,7 +118,7 @@ def build_member_status(email: str, wp_user_id: int = None) -> dict:
             }
             if wc_id:
                 entry["wc_product_id"] = wc_id
-                entry["wc_pay_url"] = f"https://ipidet.org/carrito/?add-to-cart={wc_id}"
+                entry["wc_pay_url"] = _url_pago(wc_id)
             payments_out.append(entry)
 
     # Ordenar por período descendente

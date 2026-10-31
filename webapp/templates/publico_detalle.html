@@ -337,7 +337,7 @@
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de membresía</label>
             <select name="tipo_postulacion" class="input w-full text-sm">
-              {% for v, l in [("ordinario","Ordinario"),("afiliado","Afiliado"),("honorario","Honorario"),("estudiante","Estudiante")] %}
+              {% for v, l in tipos_socio_items %}
               <option value="{{ v }}" {% if prospecto.postulacion and prospecto.postulacion.tipo == v %}selected{% endif %}>{{ l }}</option>
               {% endfor %}
             </select>
@@ -365,8 +365,7 @@
           <div class="mb-3">
             <label class="block text-xs font-medium text-slate-600 mb-1">Período inicial</label>
             <select name="periodo_actual" class="input w-full text-sm">
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
+              {% for yr in periodos_cobro %}<option value="{{ yr }}" {% if yr == periodo_actual %}selected{% endif %}>{{ yr }}</option>{% endfor %}
             </select>
           </div>
           <button type="submit"

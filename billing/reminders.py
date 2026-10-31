@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from config import catalogos
 from gmail.client import GmailClient
 from billing import db
 from telegram_bot import notifications
@@ -6,6 +7,11 @@ from config.settings import BILLING_REMINDER_DAYS, BILLING_OVERDUE_ALERT_HOURS
 
 
 def _reminder_body(nombre: str, nro: int, total: int, monto: str, vencimiento: str, id_cuota: str) -> str:
+    medios = catalogos.get_catalogo("medios_pago")
+    bloque_medios = (
+        "Formas de pago aceptadas:\n" + "".join(f"  - {m}\n" for m in medios) + "\n"
+        if medios else ""
+    )
     return (
         f"Estimado/a {nombre},\n\n"
         f"Le recordamos que tiene una cuota pendiente de pago:\n\n"
@@ -13,10 +19,7 @@ def _reminder_body(nombre: str, nro: int, total: int, monto: str, vencimiento: s
         f"  Monto: {monto}\n"
         f"  Fecha de vencimiento: {vencimiento}\n"
         f"  Referencia: {id_cuota}\n\n"
-        f"Formas de pago aceptadas:\n"
-        f"  - Transferencia bancaria\n"
-        f"  - Pago web\n"
-        f"  - Efectivo en oficina\n\n"
+        f"{bloque_medios}"
         f"Para confirmar su pago, responda este correo adjuntando la constancia "
         f"o comprobante de pago.\n\n"
         f"Ante cualquier consulta, estamos a su disposición.\n\n"

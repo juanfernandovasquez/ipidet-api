@@ -16,6 +16,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from functools import partial
+from config import catalogos
 from config.settings import (
     BREVO_SMTP_HOST, BREVO_SMTP_PORT,
     BREVO_SMTP_USER, BREVO_SMTP_PASSWORD,
@@ -326,7 +327,7 @@ def _base_html(contenido: str, disclaimer: bool = True) -> str:
         <!-- Footer -->
         <tr><td style="background:#f1f5f9;padding:16px 32px;border-top:1px solid #e2e8f0">
           <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center">
-            IPIDET · administracion@ipidet.org
+            IPIDET · {catalogos.get_organizacion()["email"]}
           </p>
         </td></tr>
       </table>

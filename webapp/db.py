@@ -1,6 +1,7 @@
 import re as _re
 from datetime import datetime, timezone, date as _date, timedelta as _timedelta
 from bson import ObjectId
+from config import catalogos
 from config.settings import DB_NAME
 
 
@@ -29,7 +30,6 @@ from webapp.mongo_client import db as _db
 members_col = _db.members
 payments_col = _db.payments
 faqs_col = _db.faqs
-events_col = _db.events
 companies_col = _db.companies
 credito_col = _db.facturas_credito
 productos_col = _db.productos
@@ -42,43 +42,22 @@ redes_metricas_col   = _db.redes_metricas
 redes_posts_col      = _db.redes_posts
 redes_cronograma_col = _db.redes_cronograma
 
-MEDIOS_PAGO = [
-    "Transferencia bancaria",
-    "Depósito bancario",
-    "Efectivo",
-    "Yape / Plin",
-    "Niubiz",
-    "WooCommerce",
-    "Cheque",
-    "Otro",
-]
-
-
 def get_medios_pago() -> list:
-    doc = config_col.find_one({"_id": "medios_pago"})
-    if doc and doc.get("valores"):
-        return doc["valores"]
-    return MEDIOS_PAGO
+    return catalogos.get_catalogo("medios_pago")
 
 
-def update_medios_pago(valores: list) -> None:
-    clean = [v.strip() for v in valores if isinstance(v, str) and v.strip()]
-    config_col.replace_one(
-        {"_id": "medios_pago"},
-        {"_id": "medios_pago", "valores": clean},
-        upsert=True,
-    )
+def get_bancos() -> list:
+    return catalogos.get_catalogo("bancos")
 
 
-BANCOS = [
-    "BCP",
-    "Interbank",
-    "BBVA",
-    "Scotiabank",
-    "BanBif",
-    "Banco de la Nación",
-    "Otro",
-]
+get_periodo_actual = catalogos.get_periodo_actual
+get_periodo_anterior = catalogos.get_periodo_anterior
+get_periodos = catalogos.get_periodos
+
+
+def _periodo_o_actual(periodo: str | None) -> str:
+    """None → período de trabajo. "" se respeta: en varios filtros significa «todos»."""
+    return catalogos.get_periodo_actual() if periodo is None else periodo
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -86,16 +65,18 @@ BANCOS = [
 def get_stats() -> dict:
     total = members_col.count_documents({})
     activos = members_col.count_documents({"estado": "activo"})
-    paid_2026 = payments_col.count_documents({"periodo": "2026", "estado": "pagado"})
-    debe_2026 = payments_col.count_documents({"periodo": "2026", "estado": "debe"})
-    fraccionamiento = payments_col.count_documents({"periodo": "2026", "estado": "fraccionamiento"})
+    periodo = catalogos.get_periodo_actual()
+    pagados = payments_col.count_documents({"periodo": periodo, "estado": "pagado"})
+    deben = payments_col.count_documents({"periodo": periodo, "estado": "debe"})
+    fraccionamiento = payments_col.count_documents({"periodo": periodo, "estado": "fraccionamiento"})
     total_faqs = faqs_col.count_documents({"active": True})
     return {
         "total_miembros": total,
         "activos": activos,
-        "pagados_2026": paid_2026,
-        "deben_2026": debe_2026,
-        "fraccionamiento_2026": fraccionamiento,
+        "periodo": periodo,
+        "pagados": pagados,
+        "deben": deben,
+        "fraccionamiento": fraccionamiento,
         "total_faqs": total_faqs,
     }
 
@@ -147,11 +128,13 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
     elif wp == "sin":
         query["wp_user_id"] = {"$exists": False}
 
-    # Filtro por pago 2026
+    periodo_actual = catalogos.get_periodo_actual()
+
+    # Filtro por estado de pago del período de trabajo
     if pago:
         paying_ids = [
             p["member_id"] for p in
-            payments_col.find({"periodo": "2026", "estado": pago}, {"member_id": 1})
+            payments_col.find({"periodo": periodo_actual, "estado": pago}, {"member_id": 1})
         ]
         if paying_ids:
             query["member_id"] = {"$in": paying_ids}
@@ -199,19 +182,14 @@ def get_members(search: str = "", estado: str = "", pago: str = "",
     skip = (page - 1) * per_page
     docs = list(members_col.find(query).sort(sort_key, sort_order).skip(skip).limit(per_page))
 
-    # Attach payment status for 2025 and 2026
+    # Estado de pago del período de trabajo
     member_ids = [d["member_id"] for d in docs]
-    all_payments = payments_col.find(
-        {"member_id": {"$in": member_ids}, "periodo": {"$in": ["2025", "2026"]}}
-    )
-    pago_map: dict[str, dict] = {}
-    for p in all_payments:
-        mid = p["member_id"]
-        periodo = p["periodo"]
-        pago_map.setdefault(mid, {})[periodo] = p
+    pago_map = {
+        p["member_id"]: p
+        for p in payments_col.find({"member_id": {"$in": member_ids}, "periodo": periodo_actual})
+    }
     for d in docs:
-        d["pago_2026"] = pago_map.get(d["member_id"], {}).get("2026", {})
-        d["pago_2025"] = pago_map.get(d["member_id"], {}).get("2025", {})
+        d["pago_actual"] = pago_map.get(d["member_id"], {})
 
     return [_clean(d) for d in docs], total
 
@@ -256,9 +234,10 @@ def create_member(
     ubicacion: str = "",
     fecha_ingreso: str = "",
     notas: str = "",
-    periodo_actual: str = "2026",
+    periodo_actual: str | None = None,
 ) -> str:
     """Crea un socio nuevo y su registro de pago del período actual. Devuelve el member_id."""
+    periodo_actual = periodo_actual or catalogos.get_periodo_actual()
     member_id = _next_member_id()
     # Guard against race condition where two requests call _next_member_id() simultaneously
     if member_id != "IPIDET-?" and members_col.find_one({"member_id": member_id}, {"_id": 1}):
@@ -291,11 +270,12 @@ def create_member(
         "created_at":      datetime.now(timezone.utc),
     })
 
-    payments_col.insert_one({
-        "member_id": member_id,
-        "periodo":   periodo_actual,
-        "estado":    "pendiente",
-    })
+    pago = {"member_id": member_id, "periodo": periodo_actual, "estado": "pendiente"}
+    producto_id = _producto_cuota_id(periodo_actual, _tipo_cuota(ubicacion))
+    if producto_id:
+        pago["producto_id"] = producto_id
+    payments_col.insert_one(pago)
+    catalogos.invalidar()
 
     return member_id
 
@@ -456,10 +436,8 @@ def get_excluidos_comunicaciones() -> list:
     return sorted(result, key=lambda x: x["nombre"])
 
 
-_TIPOS_SOCIO = ("ordinario", "filial", "afiliado", "honorario", "jubilado", "estudiante", "retirado")
-
 def update_member_tipo_socio(member_id: str, tipo_socio: str):
-    if tipo_socio not in _TIPOS_SOCIO:
+    if tipo_socio not in catalogos.get_valores_validos("tipos_socio"):
         return
     members_col.update_one(
         {"member_id": member_id},
@@ -523,13 +501,19 @@ def auto_set_wp_user_id(member_id: str, wp_user_id: int):
 
 # ── Payments ──────────────────────────────────────────────────────────────────
 
+def _tipo_cuota(ubicacion: str | None) -> str:
+    """Tipo de producto de cuota según la ubicación del socio (Lima vs. provincia)."""
+    return "cuota_anual" if (ubicacion or "").strip().lower() == "lima" else "cuota_provincia"
+
+
+def _producto_cuota_id(periodo: str, tipo: str) -> str | None:
+    prod = productos_col.find_one({"tipo": tipo, "periodo": periodo, "activo": True}, {"_id": 1})
+    return str(prod["_id"]) if prod else None
+
+
 def generar_cobros_periodo(periodo: str) -> dict:
     """Crea registros 'debe' para todos los socios activos sin registro en ese período."""
-    # Resolve product IDs for this period (Lima vs. provincia)
-    prod_lima = productos_col.find_one({"tipo": "cuota_anual",    "periodo": periodo, "activo": True}, {"_id": 1})
-    prod_prov = productos_col.find_one({"tipo": "cuota_provincia", "periodo": periodo, "activo": True}, {"_id": 1})
-    pid_lima = str(prod_lima["_id"]) if prod_lima else None
-    pid_prov = str(prod_prov["_id"]) if prod_prov else None
+    producto_por_tipo = {t: _producto_cuota_id(periodo, t) for t in catalogos.TIPOS_CUOTA}
 
     activos = list(members_col.find({"estado": "activo"}, {"member_id": 1, "ubicacion": 1}))
     existentes = {
@@ -540,8 +524,7 @@ def generar_cobros_periodo(periodo: str) -> dict:
     creados = 0
     ya_existian = len(existentes)
     for m in faltantes:
-        es_lima = (m.get("ubicacion") or "").strip().lower() == "lima"
-        prod_id = pid_lima if es_lima else pid_prov
+        prod_id = producto_por_tipo[_tipo_cuota(m.get("ubicacion"))]
         doc: dict = {"member_id": m["member_id"], "periodo": periodo, "estado": "debe"}
         if prod_id:
             doc["producto_id"] = prod_id
@@ -554,12 +537,14 @@ def generar_cobros_periodo(periodo: str) -> dict:
             creados += 1
         else:
             ya_existian += 1
+    catalogos.invalidar()
     return {"creados": creados, "ya_existian": ya_existian, "total_activos": len(activos)}
 
 
-def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
+def get_payments(periodo: str | None = None, estado: str = "", empresa: str = "",
                  search: str = "", page: int = 1, per_page: int = 50,
                  comprobante_emitido: str = ""):
+    periodo = _periodo_o_actual(periodo)
     query: dict = {}
     if periodo:
         query["periodo"] = periodo
@@ -570,7 +555,7 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
     if comprobante_emitido == "emitido":
         query["comprobante_emitido"] = True
     elif comprobante_emitido == "pendiente":
-        query["$or"] = [{"comprobante_emitido": False}, {"comprobante_emitido": {"$exists": False}}]
+        _push_or(query, [{"comprobante_emitido": False}, {"comprobante_emitido": {"$exists": False}}])
 
     if search:
         rx = {"$regex": _re.escape(search), "$options": "i"}
@@ -649,10 +634,12 @@ def get_payments(periodo: str = "2026", estado: str = "", empresa: str = "",
 
 def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
                          comprobante_emitido: str = "", page: int = 1, per_page: int = 50):
-    """Una fila por socio, con pago_2025 y pago_2026 anidados."""
-    YEARS = ["2025", "2026"]
+    """Una fila por socio, con el pago del período de trabajo y el del anterior."""
+    periodo_actual = catalogos.get_periodo_actual()
+    periodo_anterior = catalogos.get_periodo_anterior(periodo_actual)
+    YEARS = [periodo_anterior, periodo_actual]
 
-    # 1. Fetch all 2025+2026 payments (empresa filter applied here)
+    # 1. Fetch payments de ambos períodos (empresa filter applied here)
     pay_match: dict = {"periodo": {"$in": YEARS}}
     if empresa:
         pay_match.update(_build_empresa_filter(empresa))
@@ -663,23 +650,23 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
     by_mid: dict = {}
     for p in all_pays:
         mid = p["member_id"]
-        yr  = p["periodo"]
         if mid not in by_mid:
-            by_mid[mid] = {"pago_2025": None, "pago_2026": None}
-        by_mid[mid][f"pago_{yr}"] = p
+            by_mid[mid] = {"pago_anterior": None, "pago_actual": None}
+        clave = "pago_actual" if p["periodo"] == periodo_actual else "pago_anterior"
+        by_mid[mid][clave] = p
 
-    # 3. Apply 2026 estado filter
+    # 3. Filtro de estado sobre el período de trabajo
     if estado:
         by_mid = {mid: v for mid, v in by_mid.items()
-                  if v["pago_2026"] and v["pago_2026"].get("estado") == estado}
+                  if v["pago_actual"] and v["pago_actual"].get("estado") == estado}
 
-    # 4. Apply 2026 comprobante_emitido filter
+    # 4. Filtro de comprobante_emitido sobre el período de trabajo
     if comprobante_emitido == "emitido":
         by_mid = {mid: v for mid, v in by_mid.items()
-                  if v["pago_2026"] and v["pago_2026"].get("comprobante_emitido")}
+                  if v["pago_actual"] and v["pago_actual"].get("comprobante_emitido")}
     elif comprobante_emitido == "pendiente":
         by_mid = {mid: v for mid, v in by_mid.items()
-                  if v["pago_2026"] and not v["pago_2026"].get("comprobante_emitido")}
+                  if v["pago_actual"] and not v["pago_actual"].get("comprobante_emitido")}
 
     # 5. Fetch member info, applying search filter
     member_ids = list(by_mid.keys())
@@ -748,8 +735,8 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
             "email_principal": ep,
             "centro_trabajo":  mi.get("centro_trabajo", ""),
             "estado_socio":    mi.get("estado", "activo"),
-            "pago_2025": _enrich_pay(pays["pago_2025"], mi) if pays["pago_2025"] else None,
-            "pago_2026": _enrich_pay(pays["pago_2026"], mi) if pays["pago_2026"] else None,
+            "pago_anterior": _enrich_pay(pays["pago_anterior"], mi) if pays["pago_anterior"] else None,
+            "pago_actual":   _enrich_pay(pays["pago_actual"], mi) if pays["pago_actual"] else None,
         }
         rows.append(row)
 
@@ -759,6 +746,25 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
     total = len(rows)
     skip  = (page - 1) * per_page
     return rows[skip:skip + per_page], total
+
+
+def get_nombre_producto_de_pago(pago: dict) -> str:
+    """Nombre del producto vinculado al pago (FK producto_id)."""
+    producto_id = pago.get("producto_id")
+    if producto_id:
+        try:
+            prod = productos_col.find_one({"_id": ObjectId(producto_id)}, {"nombre": 1})
+        except Exception:
+            prod = None
+        if prod and prod.get("nombre"):
+            return prod["nombre"]
+    return f"Cuota {pago.get('periodo', '')}".strip()
+
+
+def get_nombre_producto_fraccionamiento() -> str:
+    """Nombre del producto usado para cuotas de fraccionamiento sin producto propio."""
+    prod = productos_col.find_one({"tipo": "fraccionamiento", "activo": True}, {"nombre": 1})
+    return (prod or {}).get("nombre") or "Cuota de fraccionamiento"
 
 
 def get_payment_with_member(payment_id: str) -> dict | None:
@@ -775,7 +781,8 @@ def get_payment_with_member(payment_id: str) -> dict | None:
     return _clean(p)
 
 
-def get_payments_export(periodo: str = "2026", estado: str = "", empresa: str = "", search: str = "") -> list:
+def get_payments_export(periodo: str | None = None, estado: str = "", empresa: str = "", search: str = "") -> list:
+    periodo = _periodo_o_actual(periodo)
     query: dict = {}
     if periodo:
         query["periodo"] = periodo
@@ -835,6 +842,8 @@ def update_payment(payment_id: str, estado: str, empresa: str = None,
                    comprobante_id: str = None):
     fields = {"estado": estado}
     if empresa is not None:
+        if empresa.strip().lower() == "none":
+            empresa = ""
         fields["empresa_pagadora"] = empresa or None
         if empresa:
             emp_doc = companies_col.find_one(
@@ -1174,8 +1183,9 @@ def _parse_fecha_cuota(s) -> "_date | None":
     return None
 
 
-def get_fraccionamientos(periodo: str = "2026", alerta: str = "",
+def get_fraccionamientos(periodo: str | None = None, alerta: str = "",
                           search: str = "", page: int = 1, per_page: int = 50):
+    periodo = _periodo_o_actual(periodo)
     query: dict = {"estado": "fraccionamiento"}
     if periodo:
         query["periodo"] = periodo
@@ -1468,19 +1478,6 @@ def get_faq_categories() -> list[str]:
 
 # ── Empresas ──────────────────────────────────────────────────────────────────
 
-_SEED_COMPANIES = [
-    {"nombre": "EY",           "razon_social": "Ernst & Young",          "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
-    {"nombre": "BDO",          "razon_social": "BDO Perú",               "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
-    {"nombre": "PwC",          "razon_social": "PricewaterhouseCoopers",  "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
-    {"nombre": "KPMG",         "razon_social": "KPMG Perú",              "ruc": "", "tipo": "auditora",    "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
-    {"nombre": "PPU",          "razon_social": "Payet, Rey, Cauvi, Pérez","ruc": "", "tipo": "firma_legal", "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
-    {"nombre": "SABHA S.A.C.", "razon_social": "SABHA S.A.C.",           "ruc": "", "tipo": "empresa",     "contacto_nombre": "", "contacto_email": "", "contacto_telefono": "", "activo": True},
-]
-
-def seed_companies():
-    if companies_col.count_documents({}) == 0:
-        companies_col.insert_many(_SEED_COMPANIES)
-
 def get_all_companies(search: str = "", tipo: str = "") -> list:
     """Lista completa de empresas para la página de gestión."""
     query: dict = {}
@@ -1502,38 +1499,19 @@ def get_companies(search: str = "") -> list:
     docs = list(companies_col.find(query, {"_id": 1, "nombre": 1, "ruc": 1, "tipo": 1, "razon_social": 1, "contacto_email": 1}).sort("nombre", 1).limit(15))
     return _clean(docs)
 
-def _resolve_empresa_nombres(search: str) -> list[str] | None:
-    """Dado un texto de búsqueda (nombre o RUC), devuelve los nombres de empresa
-    que coinciden en la colección companies. Devuelve None si no hay match."""
-    if not search.strip():
-        return None
-    rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+def _build_empresa_filter(empresa: str) -> dict:
+    """Filtro de payments por empresa: FK empresa_id primero; el texto solo cubre
+    los pagos históricos sin FK. Acepta nombre, razón social o RUC."""
+    texto = empresa.strip()
+    rx = {"$regex": _re.escape(texto), "$options": "i"}
+    conditions: list = [{"empresa_pagadora": rx}]
     matches = list(companies_col.find(
         {"$or": [{"nombre": rx}, {"ruc": rx}, {"razon_social": rx}]},
         {"nombre": 1},
     ))
-    return [m["nombre"] for m in matches] if matches else None
-
-
-def _build_empresa_filter(empresa: str) -> dict:
-    """Builds a MongoDB filter matching empresa_pagadora (text) OR empresa_id (FK).
-    Using $or ensures renamed empresas are still found via their FK."""
-    nombres = _resolve_empresa_nombres(empresa)
-    conditions: list = []
-    if nombres:
-        conditions.append({"empresa_pagadora": {"$in": nombres}})
-    else:
-        conditions.append({"empresa_pagadora": {"$regex": _re.escape(empresa.strip()), "$options": "i"}})
-    # Also match by empresa_id FK so renamed companies are found
-    emp_doc = companies_col.find_one(
-        {"$or": [{"nombre": {"$in": nombres}}, {"ruc": {"$regex": _re.escape(empresa.strip()), "$options": "i"}}]}
-        if nombres else {"ruc": {"$regex": _re.escape(empresa.strip()), "$options": "i"}},
-        {"_id": 1},
-    ) if empresa.strip() else None
-    if emp_doc:
-        conditions.append({"empresa_id": str(emp_doc["_id"])})
-    if len(conditions) == 1:
-        return conditions[0]
+    if matches:
+        conditions.append({"empresa_id": {"$in": [str(m["_id"]) for m in matches]}})
+        conditions.append({"empresa_pagadora": {"$in": [m["nombre"] for m in matches]}})
     return {"$or": conditions}
 
 def add_company(nombre: str, ruc: str = "", razon_social: str = "",
@@ -1592,10 +1570,13 @@ def get_socios_por_empresa(empresa_nombre: str, periodo: str) -> list:
     matching = [v for v in all_emp_vals if v and any(
         (v.lower() in var or var in v.lower()) for var in variants
     )]
-    if not matching:
+    condiciones: list = [{"empresa_pagadora": {"$in": matching}}]
+    if company:
+        condiciones.append({"empresa_id": str(company["_id"])})
+    if not matching and not company:
         return []
     pipeline = [
-        {"$match": {"empresa_pagadora": {"$in": matching}, "periodo": periodo}},
+        {"$match": {"periodo": periodo, "$or": condiciones}},
         {"$lookup": {
             "from": "members",
             "localField": "member_id",
@@ -1624,8 +1605,9 @@ def get_socios_por_empresa(empresa_nombre: str, periodo: str) -> list:
 
 # ── Facturación ───────────────────────────────────────────────────────────────
 
-def get_comprobantes_pendientes(periodo: str = "2026", search: str = "") -> list:
+def get_comprobantes_pendientes(periodo: str | None = None, search: str = "") -> list:
     """Devuelve todos los comprobantes pendientes de emitir para el período."""
+    periodo = _periodo_o_actual(periodo)
     q: dict = {"periodo": periodo}
     payments = list(payments_col.find(q))
 
@@ -1953,7 +1935,8 @@ def get_pendientes_socio(member_id: str, periodo: str) -> list:
 
 # ── Marketing ─────────────────────────────────────────────────────────────────
 
-def get_marketing_stats(periodo: str = "2026") -> dict:
+def get_marketing_stats(periodo: str | None = None) -> dict:
+    periodo = _periodo_o_actual(periodo)
     total_activos = members_col.count_documents({"estado": "activo"})
     con_email = members_col.count_documents({
         "estado": "activo",
@@ -1996,7 +1979,8 @@ def get_marketing_stats(periodo: str = "2026") -> dict:
 
 def get_marketing_emails(titulo: str = "", ubicacion: str = "",
                           estado_pago: str = "", empresa: str = "",
-                          periodo: str = "2026") -> list:
+                          periodo: str | None = None) -> list:
+    periodo = _periodo_o_actual(periodo)
     q: dict = {"estado": "activo", "emails": {"$elemMatch": {"estado": "habilitado"}}}
     if titulo:
         q["titulo"] = titulo
@@ -2013,7 +1997,7 @@ def get_marketing_emails(titulo: str = "", ubicacion: str = "",
         if estado_pago:
             pay_q["estado"] = estado_pago
         if empresa:
-            pay_q["empresa_pagadora"] = {"$regex": _re.escape(empresa.strip()), "$options": "i"}
+            pay_q.update(_build_empresa_filter(empresa))
         valid_ids = {p["member_id"] for p in payments_col.find(pay_q, {"member_id": 1})}
         members = [m for m in members if m["member_id"] in valid_ids]
 
@@ -2251,7 +2235,7 @@ def delete_plantilla(plantilla_id: str):
 
 
 def get_comunicacion_destinatarios(
-    periodo: str = "2026",
+    periodo: str | None = None,
     estados_pago: list[str] | None = None,
     empresa: str = "",
     ubicacion: str = "",
@@ -2267,6 +2251,7 @@ def get_comunicacion_destinatarios(
     excluir_ids: list[str] | None = None,
 ) -> list:
     """Socios activos con email habilitado que coincidan con los filtros."""
+    periodo = _periodo_o_actual(periodo)
     q: dict = {
         "estado": "activo",
         "emails": {"$elemMatch": {"estado": "habilitado"}},
@@ -2315,7 +2300,7 @@ def get_comunicacion_destinatarios(
         if estados_pago:
             pay_q["estado"] = {"$in": estados_pago}
         if empresa:
-            pay_q["empresa_pagadora"] = {"$regex": _re.escape(empresa.strip()), "$options": "i"}
+            pay_q.update(_build_empresa_filter(empresa))
         valid_ids = {p["member_id"] for p in payments_col.find(pay_q, {"member_id": 1})}
         members = [m for m in members if m["member_id"] in valid_ids]
 
@@ -2324,7 +2309,7 @@ def get_comunicacion_destinatarios(
         if excluir_estados_pago:
             ex_q["estado"] = {"$in": excluir_estados_pago}
         if excluir_empresa:
-            ex_q["empresa_pagadora"] = {"$regex": _re.escape(excluir_empresa.strip()), "$options": "i"}
+            ex_q.update(_build_empresa_filter(excluir_empresa))
         excluded_ids = {p["member_id"] for p in payments_col.find(ex_q, {"member_id": 1})}
         members = [m for m in members if m["member_id"] not in excluded_ids]
 
@@ -2984,7 +2969,8 @@ def create_evento(titulo: str, descripcion: str, fecha: str, hora: str,
 def update_evento(evento_id: str, titulo: str, descripcion: str, fecha: str,
                   hora: str, lugar: str, cupo_max: int | None, estado: str,
                   modalidad: str = "", link_registro: str = "",
-                  link_zoom: str = "", link_grabacion: str = ""):
+                  link_zoom: str = "", link_grabacion: str = "",
+                  precio: str = "", fecha_limite_inscripcion: str = ""):
     eventos_col.update_one(
         {"_id": ObjectId(evento_id)},
         {"$set": {
@@ -2999,6 +2985,8 @@ def update_evento(evento_id: str, titulo: str, descripcion: str, fecha: str,
             "link_registro":  link_registro.strip(),
             "link_zoom":      link_zoom.strip(),
             "link_grabacion": link_grabacion.strip(),
+            "precio":         precio.strip(),
+            "fecha_limite_inscripcion": fecha_limite_inscripcion.strip(),
         }},
     )
 
@@ -3075,29 +3063,6 @@ def get_eventos_proximos(limit: int = 5) -> list:
         .sort("fecha", 1).limit(limit)
     )
     return _clean(docs)
-
-
-CHECKLIST_PRE = [
-    {"id": "flyer",            "label": "Afiche / flyer diseñado"},
-    {"id": "inscripciones",    "label": "Página de inscripción activa"},
-    {"id": "zoom_config",      "label": "Sesión Zoom / plataforma configurada"},
-    {"id": "invit_socios",     "label": "Invitaciones enviadas a socios"},
-    {"id": "invit_publico",    "label": "Invitaciones enviadas a público general"},
-    {"id": "material",         "label": "Material de presentación recibido"},
-    {"id": "confirmaciones",   "label": "Confirmaciones de asistencia enviadas"},
-    {"id": "recordatorio",     "label": "Recordatorio enviado (24h antes)"},
-    {"id": "prueba_tecnica",   "label": "Prueba técnica realizada"},
-]
-
-CHECKLIST_POST = [
-    {"id": "asistencia",       "label": "Asistencia marcada en plataforma"},
-    {"id": "grabacion",        "label": "Grabación disponible"},
-    {"id": "link_grabacion",   "label": "Link de grabación compartido"},
-    {"id": "certificados",     "label": "Certificados de participación enviados"},
-    {"id": "agradecimiento",   "label": "Email de agradecimiento enviado"},
-    {"id": "rrss",             "label": "Post publicado en redes sociales"},
-    {"id": "memoria",          "label": "Memoria / resumen del evento redactado"},
-]
 
 
 def get_evento_stats(evento_id: str) -> dict:
@@ -3465,51 +3430,12 @@ def delete_ia_tarea(tarea_id: str) -> None:
 TIPOS_PRODUCTO = ["cuota_anual", "cuota_provincia", "evento", "fraccionamiento", "otro"]
 
 
-def _seed_productos():
-    """Inserta productos por defecto si la colección está vacía."""
-    if productos_col.count_documents({}) > 0:
-        return
-    defaults = [
-        {"nombre": "Cuota anual Lima 2026",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2026", "descripcion": "Membresía ordinaria Lima — período 2026",      "activo": True,  "wc_product_id": 8882},
-        {"nombre": "Cuota anual Lima 2025",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2025", "descripcion": "Membresía ordinaria Lima — período 2025",      "activo": True,  "wc_product_id": 8882},
-        {"nombre": "Cuota anual Lima 2024",       "tipo": "cuota_anual",    "precio": 780.0, "periodo": "2024", "descripcion": "Membresía ordinaria Lima — período 2024",      "activo": False, "wc_product_id": 8882},
-        {"nombre": "Cuota anual provincia 2026",  "tipo": "cuota_provincia","precio": 350.0, "periodo": "2026", "descripcion": "Membresía socios en provincia — período 2026", "activo": True,  "wc_product_id": 19105},
-        {"nombre": "Cuota anual provincia 2025",  "tipo": "cuota_provincia","precio": 350.0, "periodo": "2025", "descripcion": "Membresía socios en provincia — período 2025", "activo": True,  "wc_product_id": 19105},
-        {"nombre": "Cuota de fraccionamiento",    "tipo": "fraccionamiento", "precio": 260.0, "periodo": "",    "descripcion": "Cuota parcial de pago fraccionado (3 cuotas)", "activo": True,  "wc_product_id": 8880},
-        {"nombre": "Entrada a evento",            "tipo": "evento",          "precio": None,  "periodo": "",    "descripcion": "Acceso a evento o capacitación IPIDET",        "activo": True,  "wc_product_id": None},
-    ]
-    now = datetime.now(timezone.utc)
-    for d in defaults:
-        d["created_at"] = now
-    productos_col.insert_many(defaults)
-
-
-def _sync_wc_product_ids():
-    """Actualiza IDs de WooCommerce en la colección productos según los productos reales de WC."""
-    # Mapeo autoritativo: (tipo, periodo) → wc_product_id real
-    mappings = [
-        ("cuota_anual",    "2024", 8882),
-        ("cuota_anual",    "2025", 19364),   # Pago 2025
-        ("cuota_anual",    "2026", 19361),   # Pago 2026
-        ("cuota_anual",    "2027", 19363),   # Pago 2027
-        ("cuota_provincia","2025", 19359),   # Cuota Filial 2025
-        ("cuota_provincia","2026", 19360),   # Cuota Filial 2026
-        ("cuota_provincia","2027", 19362),   # Cuota Filial 2027
-        ("fraccionamiento","",     8880),
-    ]
-    for tipo, periodo, wc_id in mappings:
-        productos_col.update_many(
-            {"tipo": tipo, "periodo": periodo},
-            {"$set": {"wc_product_id": wc_id}},
-        )
-
-
 def _codigo_sunat_para_producto(tipo: str, periodo: str) -> str | None:
     """Deriva el código SUNAT canónico para un producto dado su tipo y período."""
     if tipo == "cuota_anual" and periodo:
         return f"CUOTA-{periodo}"
     if tipo == "cuota_provincia" and periodo:
-        return f"CUOTA-PROV-{periodo}"
+        return f"CUOTA-F-{periodo}"
     if tipo == "fraccionamiento":
         return "FRACC-CUOTA"
     return None
@@ -3527,8 +3453,6 @@ def _sync_productos_codigo_sunat():
             productos_col.update_one({"_id": prod["_id"]}, {"$set": {"codigo_sunat": codigo}})
 
 
-_seed_productos()
-_sync_wc_product_ids()
 _sync_productos_codigo_sunat()
 
 
@@ -3545,20 +3469,24 @@ def get_productos(tipo: str = "", solo_activos: bool = False) -> list:
 def create_producto(nombre: str, tipo: str, precio: float | None,
                     periodo: str, descripcion: str,
                     codigo_wc: str = "", codigo_sunat: str = "",
-                    cuota_numero: int | None = None) -> str:
+                    cuota_numero: int | None = None,
+                    wc_product_id: int | None = None) -> str:
     doc = {
         "nombre":        nombre.strip(),
         "tipo":          tipo,
         "precio":        precio,
         "periodo":       periodo.strip(),
         "descripcion":   descripcion.strip(),
+        "wc_product_id": wc_product_id,
         "codigo_wc":     codigo_wc.strip(),
         "codigo_sunat":  codigo_sunat.strip(),
         "cuota_numero":  cuota_numero,
         "activo":        True,
         "created_at":    datetime.now(timezone.utc),
     }
-    return str(productos_col.insert_one(doc).inserted_id)
+    producto_id = str(productos_col.insert_one(doc).inserted_id)
+    catalogos.invalidar()
+    return producto_id
 
 
 def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | None,
@@ -3581,34 +3509,12 @@ def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | No
             "cuota_numero":  cuota_numero,
         }},
     )
-
-
-def get_wc_portal_products() -> dict:
-    """
-    Lee los IDs de WooCommerce desde la colección productos.
-    Devuelve {ubicacion_key: {periodo: wc_product_id}} para el portal de socios.
-    """
-    lima     = {}
-    provincia = {}
-    docs = list(productos_col.find({
-        "activo": True,
-        "wc_product_id": {"$ne": None, "$exists": True},
-        "tipo": {"$in": ["cuota_anual", "cuota_provincia"]},
-    }))
-    for d in docs:
-        wc_id  = d.get("wc_product_id")
-        period = d.get("periodo", "")
-        if not wc_id or not period:
-            continue
-        if d.get("tipo") == "cuota_provincia":
-            provincia[period] = wc_id
-        else:
-            lima[period] = wc_id
-    return {"lima": lima, "provincia": provincia}
+    catalogos.invalidar()
 
 
 def delete_producto(producto_id: str) -> None:
     productos_col.delete_one({"_id": ObjectId(producto_id)})
+    catalogos.invalidar()
 
 
 # ── Comprobantes (boletas / facturas) ─────────────────────────────────────────
@@ -4478,11 +4384,7 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
     if periodo:
         pmt_q["periodo"] = periodo
     if empresa:
-        nombres = _resolve_empresa_nombres(empresa)
-        if nombres:
-            pmt_q["empresa_pagadora"] = {"$in": nombres}
-        else:
-            pmt_q["empresa_pagadora"] = empresa
+        pmt_q.update(_build_empresa_filter(empresa))
     for pmt in payments_col.find(pmt_q):
         mid      = pmt.get("member_id", "")
         per      = pmt.get("periodo", "")
@@ -5031,7 +4933,7 @@ def import_prospectos_bulk(rows: list) -> dict:
     return {"insertados": insertados, "actualizados": actualizados, "errores": errores}
 
 
-def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str = "2026") -> str:
+def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str | None = None) -> str:
     """Crea un socio desde el prospecto y lo marca como convertido. Devuelve el member_id."""
     p = publico_col.find_one({"_id": ObjectId(prospecto_id)})
     if not p:

@@ -72,9 +72,7 @@
         <div x-show="filtros.modo === 'periodo'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Período</label>
           <select x-model="filtros.periodo" class="input w-full text-sm">
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-            <option value="2024">2024</option>
+            {% for yr in periodos %}<option value="{{ yr }}">{{ yr }}</option>{% endfor %}
           </select>
         </div>
 
@@ -82,11 +80,7 @@
         <div x-show="filtros.modo === 'periodo'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-2">Estado de pago</label>
           <div class="space-y-1.5">
-            {% for val, lbl in [
-              ("debe","Debe"), ("pagado","Pagado"), ("fraccionamiento","Fraccionamiento"),
-              ("parcial","Parcial"), ("exonerado","Exonerado"), ("pendiente","Pendiente"),
-              ("en_revision","En revisión")
-            ] %}
+            {% for val in ["debe", "pagado", "fraccionamiento", "parcial", "exonerado", "pendiente", "en_revision"] %}{% set lbl = status_labels[val][0] %}
             <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
               <input type="checkbox" value="{{ val }}"
                 @change="toggleEstado($event.target.value, $event.target.checked)"
@@ -223,11 +217,7 @@
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-2">Excluir estado de pago</label>
               <div class="space-y-1.5">
-                {% for val, lbl in [
-                  ("debe","Debe"), ("pagado","Pagado"), ("fraccionamiento","Fraccionamiento"),
-                  ("parcial","Parcial"), ("exonerado","Exonerado"), ("pendiente","Pendiente"),
-                  ("en_revision","En revisión")
-                ] %}
+                {% for val in ["debe", "pagado", "fraccionamiento", "parcial", "exonerado", "pendiente", "en_revision"] %}{% set lbl = status_labels[val][0] %}
                 <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                   <input type="checkbox" value="{{ val }}"
                     @change="toggleExcluirEstado($event.target.value, $event.target.checked)"
@@ -1496,7 +1486,7 @@ function comunicaciones() {
   return {
     filtros: {
       modo:          'padron',
-      periodo:       '2026',
+      periodo:       '{{ periodo_actual }}',
       estados_pago:  [],
       empresa:       '',
       ubicacion:     '',

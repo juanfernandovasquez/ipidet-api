@@ -155,6 +155,9 @@
       <a href="/productos" class="sidebar-link {% if '/productos' in request.url.path %}active{% endif %}">
         <i class="fa-solid fa-tags"></i> Productos
       </a>
+      <a href="/configuracion" class="sidebar-link {% if '/configuracion' in request.url.path %}active{% endif %}">
+        <i class="fa-solid fa-sliders"></i> Configuración
+      </a>
       {% endif %}
       {% if is_admin or 'fraccionamientos' in p %}
       <a href="/fraccionamientos" class="sidebar-link {% if '/fraccionamientos' in request.url.path %}active{% endif %}">

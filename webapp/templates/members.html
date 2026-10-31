@@ -37,7 +37,7 @@
 {% set any_filter = search or estado or pago or ubicacion or tipo_socio or email_est or tiene_dni or tiene_celular or alt_email_est %}
 
 {% set estado_labels = {"activo":"Activo","retirar":"Retirar","en_revision":"En revisión"} %}
-{% set tipo_labels   = {"ordinario":"Ordinario","afiliado":"Afiliado","honorario":"Honorario","filial":"Filial","asociado":"Asociado"} %}
+{% set tipo_labels   = tipos_socio_labels %}
 {% set email_labels  = {"rebotado":"Con rebote","sin_email":"Sin email"} %}
 
 <form id="memberFilterForm" method="get" action="/members">
@@ -108,7 +108,7 @@
             </div>
             <div x-show="open" x-cloak
                  class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 min-w-[160px]">
-              {% for val, lbl in [("","Todos"),("ordinario","Ordinario"),("afiliado","Afiliado"),("honorario","Honorario"),("filial","Filial"),("asociado","Asociado")] %}
+              {% for val, lbl in [("","Todos")] + tipos_socio_items %}
               <button type="button" onclick="membersSetFilter('tipo_socio','{{ val }}')"
                 class="w-full text-left px-4 py-2 text-xs hover:bg-slate-50
                        {{ 'text-blue-600 font-semibold bg-blue-50/50' if tipo_socio == val else 'text-slate-700' }}">
@@ -522,7 +522,7 @@
         <input type="checkbox" x-model="cols.estado" class="rounded border-slate-300 text-blue-600">Estado
       </label>
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-        <input type="checkbox" x-model="cols.pago_2026" class="rounded border-slate-300 text-blue-600">Pago 2026
+        <input type="checkbox" x-model="cols.pago_actual" class="rounded border-slate-300 text-blue-600">Pago {{ periodo_actual }}
       </label>
     </div>
     <div class="flex gap-3">
@@ -546,7 +546,7 @@ function membersExport() {
   return {
     cols: { id:true, apellidos:true, nombres:true, email_principal:true, email_alt:true,
             dni:true, celular:true, centro_trabajo:true, ubicacion:true,
-            tipo_socio:true, estado:true, pago_2026:true },
+            tipo_socio:true, estado:true, pago_actual:true },
     exportar() {
       const selected = Object.keys(this.cols).filter(k => this.cols[k]);
       if (!selected.length) { alert('Selecciona al menos una columna.'); return; }

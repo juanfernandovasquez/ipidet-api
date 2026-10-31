@@ -10,9 +10,9 @@
     {% set cards = [
       ("fa-users",          "Total socios",     stats.total_miembros, "blue",  "/members"),
       ("fa-user-check",     "Activos",          stats.activos,        "green", "/members?estado=activo"),
-      ("fa-circle-check",   "Pagados 2026",     stats.pagados_2026,   "green", "/billing?estado=pagado"),
-      ("fa-circle-xmark",   "Deben 2026",       stats.deben_2026,     "red",   "/billing?estado=debe"),
-      ("fa-hourglass-half", "Fraccionamiento",  stats.fraccionamiento_2026, "amber", "/billing?estado=fraccionamiento"),
+      ("fa-circle-check",   "Pagados " ~ stats.periodo, stats.pagados, "green", "/billing?estado=pagado"),
+      ("fa-circle-xmark",   "Deben " ~ stats.periodo,   stats.deben,   "red",   "/billing?estado=debe"),
+      ("fa-hourglass-half", "Fraccionamiento",  stats.fraccionamiento, "amber", "/billing?estado=fraccionamiento"),
     ] %}
     {% for icon, label, value, color, link in cards %}
     <a href="{{ link }}" class="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-md transition-shadow flex items-center gap-4">
@@ -66,7 +66,7 @@
     <div class="bg-white rounded-xl border border-slate-200 p-6">
       <div class="flex items-center gap-3 mb-4">
         <i class="fa-solid fa-money-bill-wave text-green-600 text-lg"></i>
-        <h2 class="font-semibold text-slate-800">Cobranzas 2026</h2>
+        <h2 class="font-semibold text-slate-800">Cobranzas {{ stats.periodo }}</h2>
       </div>
       <p class="text-sm text-slate-500 mb-4">Seguimiento de pagos, morosos y fraccionamientos del período actual.</p>
       <div class="flex flex-col gap-2">

@@ -60,7 +60,7 @@ WC_STORE_URL  = os.getenv("WC_STORE_URL", "https://ipidet.org")
 # Scheduler de cobranzas
 SCHEDULER_ENABLED        = os.getenv("SCHEDULER_ENABLED", "false").lower() == "true"
 SCHEDULER_INTERVAL_HOURS = int(os.getenv("SCHEDULER_INTERVAL_HOURS", "24"))
-SCHEDULER_PERIODO        = os.getenv("SCHEDULER_PERIODO", "2026")
+SCHEDULER_PERIODO        = os.getenv("SCHEDULER_PERIODO", "")  # vacío = período de trabajo (config/catalogos.py)
 SCHEDULER_ESTADOS        = os.getenv("SCHEDULER_ESTADOS", "debe,fraccionamiento,parcial").split(",")
 
 # SUNAT / APISPERU — facturación electrónica

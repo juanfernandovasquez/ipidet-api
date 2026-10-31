@@ -27,7 +27,7 @@ _PATH_MAP = [
     ("/members",          "members"),
     ("/billing",          "billing"),
     ("/fraccionamientos", "fraccionamientos"),
-    ("/finanzas",         "finanzas"),
+    ("/configuracion",    "billing"),
     ("/faqs",             "faqs"),
     ("/marketing",        "marketing"),
     ("/comunicaciones",   "comunicaciones"),

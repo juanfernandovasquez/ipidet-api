@@ -12,7 +12,7 @@
     <input type="hidden" name="estado_pago" value="{{ estado_pago }}">
     <input type="hidden" name="empresa"     value="{{ empresa }}">
     <label class="text-sm font-medium text-slate-600">Período de análisis:</label>
-    {% for p in ["2024","2025","2026"] %}
+    {% for p in periodos %}
     <button type="submit" name="periodo" value="{{ p }}"
       class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors
         {% if periodo == p %}bg-blue-600 text-white{% else %}bg-white border border-slate-300 text-slate-600 hover:bg-slate-50{% endif %}">
@@ -116,8 +116,7 @@
         <label class="block text-xs font-medium text-slate-500 mb-1">Estado de pago {{ periodo }}</label>
         <select name="estado_pago" class="input w-full text-sm">
           <option value="">Todos</option>
-          {% for val, lbl in [("pagado","Pagado"),("debe","Debe"),("fraccionamiento","Fraccionamiento"),
-                               ("exonerado","Exonerado"),("pendiente","Pendiente"),("no_aplica","N/A")] %}
+          {% for val in ["pagado", "debe", "fraccionamiento", "exonerado", "pendiente", "no_aplica"] %}{% set lbl = status_labels[val][0] %}
           <option value="{{ val }}" {% if estado_pago == val %}selected{% endif %}>{{ lbl }}</option>
           {% endfor %}
         </select>
