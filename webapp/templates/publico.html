@@ -165,10 +165,10 @@
                 </div>
               </th>
 
-              <!-- Zoom — selector simplificado -->
-              <th class="px-4 py-2 text-left hidden xl:table-cell">
+              <!-- Asistió a (Zoom) — con filtro -->
+              <th class="px-4 py-2 text-left hidden xl:table-cell" style="min-width:130px">
                 <div class="flex flex-col gap-0.5">
-                  <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Zoom</span>
+                  <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Asistió a</span>
                   <select name="zoom_asistio" @change="$refs.filterForm.submit()"
                           class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if zoom_asistio else 'border-slate-200 bg-white text-slate-500' }}">
@@ -178,6 +178,11 @@
                     <option value="excluir"{% if zoom_asistio == 'excluir'%}selected{% endif %}>Sin webinars</option>
                   </select>
                 </div>
+              </th>
+
+              <!-- Inscrito sin asistir (Zoom) — solo display -->
+              <th class="px-4 py-2 text-left hidden xl:table-cell" style="min-width:130px">
+                <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Inscrito</span>
               </th>
 
               <!-- Estado — selector (más importante) -->
@@ -241,13 +246,40 @@
                 </span>
                 {% endif %}
               </td>
-              <td class="px-4 py-3 hidden xl:table-cell">
-                {% set ze = p.zoom_eventos or [] %}
-                {% if ze %}
-                <span class="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-full px-2 py-0.5"
-                      title="{% for e in ze %}{{ e.evento_titulo or 'Webinar' }}{% if not loop.last %} · {% endif %}{% endfor %}">
-                  <i class="fa-solid fa-video text-[10px]"></i> {{ ze|length }}
-                </span>
+              {# Columna: eventos Zoom a los que SÍ asistió #}
+              <td class="px-4 py-3 hidden xl:table-cell align-top">
+                {% set ze_si = (p.zoom_eventos or []) | selectattr('asistio', 'equalto', True) | list %}
+                {% if ze_si %}
+                <div class="flex flex-col gap-0.5">
+                  {% for e in ze_si[:3] %}
+                  <span class="inline-block text-[10px] font-medium text-cyan-700 bg-cyan-50 border border-cyan-100 rounded px-1.5 py-0.5 truncate max-w-[150px]"
+                        title="{{ e.evento_titulo or 'Webinar' }}">
+                    <i class="fa-solid fa-circle-check text-[9px] mr-0.5"></i>{{ e.evento_titulo or 'Webinar' }}
+                  </span>
+                  {% endfor %}
+                  {% if ze_si | length > 3 %}
+                  <span class="text-[10px] text-slate-400 pl-1">+{{ ze_si | length - 3 }} más</span>
+                  {% endif %}
+                </div>
+                {% else %}
+                <span class="text-slate-300 text-xs">—</span>
+                {% endif %}
+              </td>
+              {# Columna: eventos Zoom inscritos pero NO asistió (o sin registro) #}
+              <td class="px-4 py-3 hidden xl:table-cell align-top">
+                {% set ze_no = (p.zoom_eventos or []) | rejectattr('asistio', 'equalto', True) | list %}
+                {% if ze_no %}
+                <div class="flex flex-col gap-0.5">
+                  {% for e in ze_no[:3] %}
+                  <span class="inline-block text-[10px] font-medium text-orange-600 bg-orange-50 border border-orange-100 rounded px-1.5 py-0.5 truncate max-w-[150px]"
+                        title="{{ e.evento_titulo or 'Webinar' }}">
+                    <i class="fa-regular fa-circle text-[9px] mr-0.5"></i>{{ e.evento_titulo or 'Webinar' }}
+                  </span>
+                  {% endfor %}
+                  {% if ze_no | length > 3 %}
+                  <span class="text-[10px] text-slate-400 pl-1">+{{ ze_no | length - 3 }} más</span>
+                  {% endif %}
+                </div>
                 {% else %}
                 <span class="text-slate-300 text-xs">—</span>
                 {% endif %}
@@ -264,7 +296,7 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="9" class="px-4 py-12 text-center text-slate-400">
+              <td colspan="10" class="px-4 py-12 text-center text-slate-400">
                 <i class="fa-solid fa-user-magnifying-glass text-3xl mb-3 block opacity-25"></i>
                 No se encontraron prospectos.
                 <a href="#" @click.prevent="modalNuevo=true" class="text-blue-500 hover:underline ml-1">Agregar el primero</a>
