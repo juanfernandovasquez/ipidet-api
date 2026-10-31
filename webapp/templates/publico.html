@@ -165,10 +165,10 @@
                 </div>
               </th>
 
-              <!-- Total inscritos Zoom — con filtro -->
-              <th class="px-4 py-2 text-left w-28">
+              <!-- Inscritos Zoom — con filtro -->
+              <th class="px-4 py-2 text-left" style="min-width:160px">
                 <div class="flex flex-col gap-0.5">
-                  <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Webinars</span>
+                  <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Inscritos</span>
                   <select name="zoom_asistio" @change="$refs.filterForm.submit()"
                           class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if zoom_asistio else 'border-slate-200 bg-white text-slate-500' }}">
@@ -246,13 +246,17 @@
                 </span>
                 {% endif %}
               </td>
-              {# Columna: total de webinars inscritos #}
-              <td class="px-4 py-3 text-center">
+              {# Columna: todos los webinars inscritos (con o sin asistencia) #}
+              <td class="px-4 py-3 align-top">
                 {% set ze = p.zoom_eventos or [] %}
                 {% if ze %}
-                <span class="inline-flex items-center justify-center w-7 h-7 text-xs font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-full">
-                  {{ ze|length }}
-                </span>
+                <div class="flex flex-col gap-1">
+                  {% for e in ze %}
+                  <span class="inline-block text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 leading-snug">
+                    <i class="fa-solid fa-video text-[9px] mr-0.5 text-slate-400"></i>{{ e.evento_titulo or 'Webinar' }}
+                  </span>
+                  {% endfor %}
+                </div>
                 {% else %}
                 <span class="text-slate-300 text-xs">—</span>
                 {% endif %}
