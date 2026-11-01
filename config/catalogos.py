@@ -58,6 +58,35 @@ CATALOGOS: dict[str, dict] = {
                              "ayuda": "Tareas que se marcan en el detalle de cada evento."},
     "checklist_evento_post": {"titulo": "Checklist después del evento", "formato": "id_label",
                               "ayuda": "Tareas que se marcan en el detalle de cada evento."},
+    "tipos_institucion":    {"titulo": "Tipos de institución",     "formato": "valor_label",
+                             "ayuda": "Clasificación de las instituciones en Alianzas. La búsqueda semanal solo usa estos tipos."},
+}
+
+# Etapas del seguimiento de una alianza: es lógica del sistema, no un dato editable.
+ESTADOS_ALIANZA: dict[str, tuple[str, str]] = {
+    "nueva":          ("Por revisar",    "blue"),
+    "en_evaluacion":  ("En evaluación",  "amber"),
+    "contactada":     ("Contactada",     "purple"),
+    "en_negociacion": ("En negociación", "orange"),
+    "aliada":         ("Aliada",         "green"),
+    "descartada":     ("Descartada",     "gray"),
+}
+AMBITOS_ALIANZA = {"nacional": "Nacional", "regional": "América Latina", "internacional": "Internacional"}
+
+# Valores si la colección aún no los tiene; se editan en /alianzas.
+_ALIANZAS_DEFECTO = {
+    "activa": True,
+    "frecuencia_dias": 7,
+    "propuestas_por_corrida": 5,
+    "max_busquedas": 12,
+    "modelo": "claude-opus-5-5",
+    "perfil": "",
+    "criterios": "",
+    # USD por millón de tokens y por búsqueda; solo para estimar el costo mostrado.
+    "precio_entrada": 4.0,
+    "precio_salida": 20.0,
+    "precio_cache": 0.2,
+    "precio_busqueda": 0.01,
 }
 
 CAMPOS_ORGANIZACION = {
@@ -150,6 +179,23 @@ def set_organizacion(campos: dict) -> None:
     limpio = {c: str(campos.get(c) or "").strip() for c in CAMPOS_ORGANIZACION}
     _config.replace_one({"_id": "organizacion"}, {"_id": "organizacion", **limpio}, upsert=True)
     invalidar()
+
+
+# ── Alianzas ───────────────────────────────────────────────────────────────────
+
+def get_alianzas_config() -> dict:
+    def _load():
+        return {**_ALIANZAS_DEFECTO, **(_config.find_one({"_id": "alianzas_config"}) or {})}
+    return _cached("alianzas_config", _load)
+
+
+def set_alianzas_config(campos: dict) -> None:
+    _config.update_one({"_id": "alianzas_config"}, {"$set": campos}, upsert=True)
+    invalidar()
+
+
+def get_alianzas_por_revisar() -> int:
+    return _cached("alianzas_por_revisar", lambda: db.alianzas.count_documents({"estado": "nueva"}))
 
 
 # ── Períodos ───────────────────────────────────────────────────────────────────

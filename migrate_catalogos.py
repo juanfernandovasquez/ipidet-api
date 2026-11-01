@@ -61,6 +61,34 @@ CATALOGOS = {
         {"id": "rrss",           "label": "Post publicado en redes sociales"},
         {"id": "memoria",        "label": "Memoria / resumen del evento redactado"},
     ],
+    "tipos_institucion": [
+        {"valor": "universidad",    "label": "Universidad"},
+        {"valor": "investigacion",  "label": "Centro de investigación"},
+        {"valor": "organismo",      "label": "Organismo internacional"},
+        {"valor": "instituto_fiscal", "label": "Instituto o asociación fiscal"},
+        {"valor": "colegio_profesional", "label": "Colegio profesional"},
+        {"valor": "gremio",         "label": "Gremio empresarial"},
+        {"valor": "publica",        "label": "Entidad pública"},
+        {"valor": "firma",          "label": "Firma profesional"},
+        {"valor": "otra",           "label": "Otra"},
+    ],
+}
+
+# Punto de partida de la búsqueda de alianzas. Se edita en /alianzas.
+ALIANZAS_CONFIG = {
+    "perfil": (
+        "Instituto Peruano de Investigación y Desarrollo Tributario (IPIDET): asociación peruana que reúne a "
+        "profesionales del ámbito tributario, como contadores, abogados y economistas, en Lima y provincias. "
+        "Promueve la investigación, el análisis y la difusión del derecho tributario peruano e internacional, "
+        "organiza eventos académicos y capacitaciones, y mantiene una membresía anual de socios."
+    ),
+    "criterios": (
+        "Priorizar instituciones que ayuden a IPIDET a: producir investigación tributaria de mayor alcance, "
+        "organizar eventos conjuntos con expositores de nivel, ofrecer beneficios concretos a los socios, "
+        "atraer nuevos socios en Lima y provincias, y proyectarse en la red tributaria latinoamericana e "
+        "internacional. Cuidar la independencia técnica de IPIDET: señalar cualquier posible conflicto de "
+        "interés, en especial con entidades que fiscalizan o con firmas que compiten por los mismos socios."
+    ),
 }
 
 ORGANIZACION = {
@@ -102,6 +130,15 @@ def migrar_config() -> None:
         _log(f"config.{key}: se crea con {len(valores)} valores")
         if not DRY:
             db.config.insert_one({"_id": key, "valores": valores})
+    if db.config.find_one({"_id": "alianzas_config"}):
+        _log("config.alianzas_config: ya existe, no se toca")
+    else:
+        _log("config.alianzas_config: se crea")
+        if not DRY:
+            db.config.insert_one({"_id": "alianzas_config", **ALIANZAS_CONFIG})
+    _log("alianzas: índice único por nombre normalizado")
+    if not DRY:
+        db.alianzas.create_index("clave", unique=True)
     if db.config.find_one({"_id": "organizacion"}):
         _log("config.organizacion: ya existe, no se toca")
     else:

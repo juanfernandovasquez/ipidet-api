@@ -30,6 +30,7 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 22. [Plantillas de email guardadas](#plantillas)
 23. [Constancias de membresía](#constancias)
 24. [IA Tareas](#ia-tareas)
+25. [Alianzas](#alianzas)
 
 ---
 
@@ -417,6 +418,8 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `pendientes_col` | `pendientes` | `webapp/db.py` | Tareas internas del equipo admin |
 | `config_col` | `config` | `config/catalogos.py` | Catálogos editables, organización y período de trabajo (ver R10) |
 | `publico_col` | `publico` | `webapp/db.py` | CRM de prospectos/público general |
+| `alianzas_col` | `alianzas` | `webapp/db.py` | Instituciones para posibles alianzas (ver sección 25) |
+| `alianzas_corridas_col` | `alianzas_corridas` | `webapp/db.py` | Historial de búsquedas: resultado, uso y costo estimado |
 | `redes_cuentas_col` | `redes_cuentas` | `webapp/db.py` | Cuentas de redes sociales registradas |
 | `redes_metricas_col` | `redes_metricas` | `webapp/db.py` | Métricas históricas de RRSS (seguidores, etc.) |
 | `redes_posts_col` | `redes_posts` | `webapp/db.py` | Posts publicados en RRSS |
@@ -498,6 +501,7 @@ comentarios      [{
                    texto: string,
                    fecha: "YYYY-MM-DD HH:MM"
                  }]
+linkedin         string    opcional; URL normalizada por db.normalizar_linkedin
 created_at       datetime
 ```
 
@@ -833,6 +837,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `redes_posts.html` | `/redes/posts` | Posts publicados con filtros |
 | `redes_cronograma.html` | `/redes/cronograma` | Calendario de publicaciones planificadas |
 | `inbox.html` | `/inbox` | Bandeja unificada: aprobaciones del agente + comprobantes de pago recibidos por email |
+| `alianzas.html` | `/alianzas` | Buscador de instituciones, sustento y seguimiento de alianzas |
 | `login.html` | `/login` | Login de la plataforma |
 | `users.html` | `/admin/users` | Gestión de usuarios (solo admin) |
 
@@ -844,7 +849,8 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 |--------|------|-------------|
 | `GET` | `/` | Dashboard con stats |
 | `GET` | `/members` | Padrón paginado; filtros: search, estado, pago, ubicacion |
-| `POST` | `/members/nuevo` | Crear socio nuevo |
+| `POST` | `/members/nuevo` | Crear socio nuevo (LinkedIn opcional) |
+| `POST` | `/members/{id}/update` | Editar la ficha; 400 si el LinkedIn no es un enlace de perfil |
 | `GET` | `/members/{id}` | Detalle de socio |
 | `POST` | `/members/{id}/emails/toggle` | Habilitar/inhabilitar email |
 | `POST` | `/members/{id}/emails/set-principal` | Marcar email como principal |
@@ -991,6 +997,17 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 |--------|------|-------------|
 | `GET` | `/marketing` | Stats: activos, deben, por título/ubicación |
 | `GET` | `/marketing/export` | Export Excel |
+
+#### Alianzas
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| `GET` | `/alianzas` | Buscador; filtros: search, tipo, ambito, estado, orden |
+| `GET` | `/alianzas/estado` | JSON: si hay una búsqueda en curso |
+| `POST` | `/alianzas/buscar` | Lanza una búsqueda en segundo plano; consume créditos de la API |
+| `POST` | `/alianzas/nueva` | Agrega una institución a mano |
+| `POST` | `/alianzas/configuracion` | Perfil, criterios, frecuencia y activación |
+| `POST` | `/alianzas/{id}/seguimiento` | Etapa, responsable, fecha y notas |
 
 #### Auth
 
@@ -1352,7 +1369,7 @@ No tocar el transporte hasta haber descartado los tres puntos anteriores.
 
 Toda la plataforma requiere login (excepto `/login`, `/webhook/*`). Las sesiones se almacenan en cookies firmadas con `SESSION_SECRET`. El rol `admin` tiene acceso a `/admin/users`; los usuarios con rol `viewer` solo acceden a las secciones en su lista `permisos`.
 
-**Secciones con control de acceso:** `dashboard`, `members`, `billing`, `fraccionamientos`, `finanzas`, `faqs`, `marketing`, `comunicaciones`, `eventos`, `pendientes`.
+**Secciones con control de acceso:** `dashboard`, `members`, `billing`, `fraccionamientos`, `finanzas`, `faqs`, `marketing`, `comunicaciones`, `eventos`, `pendientes`, `redes`, `alianzas`.
 
 Las rutas `/`, `/api/*`, `/webhook/*` y `/comprobantes` son accesibles a cualquier usuario autenticado.
 
@@ -1639,3 +1656,18 @@ delete_ia_tarea(tarea_id)
 ```
 
 Rutas: `GET /api/ia-tareas`, `POST /ia-tareas/add`, `POST /ia-tareas/{id}/estado`, `POST /ia-tareas/{id}/update`, `POST /ia-tareas/{id}/stand-by`, `POST /ia-tareas/{id}/delete`.
+
+---
+
+## 25. Alianzas {#alianzas}
+
+`/alianzas` propone instituciones para posibles alianzas y sustenta cada una: por qué es importante y por qué sería estratégica. `webapp/alianzas_ia.py` usa Claude con búsqueda web; no envía nada ni toca socios.
+
+- **Frecuencia:** `scheduler.run_alianzas_scheduler` revisa cada hora si ya toca. La fecha vive en `config.alianzas_estado`, así que un reinicio no repite ni reprograma la búsqueda. Tras un fallo espera 24 horas para no gastar en reintentos.
+- **Una a la vez:** `pdb.reservar_corrida_alianzas` reserva de forma atómica; una reserva de más de 45 minutos caduca porque un reinicio la pudo dejar abierta.
+- **Datos, no código (R10):** perfil, criterios, frecuencia, modelo y precios viven en `config.alianzas_config`; los tipos en el catálogo `tipos_institucion`. Las etapas son lógica y están en `catalogos.ESTADOS_ALIANZA`.
+- **Fuentes verificadas:** `_preparar` descarta una propuesta si ninguna de sus fuentes apareció en los resultados de esa búsqueda. No relajar esta regla: es lo que evita instituciones o enlaces inventados.
+- **El equipo manda:** `guardar_propuesta_alianza` nunca pisa etapa, responsable ni notas, y no vuelve a proponer una institución descartada. El análisis solo se reescribe mientras sigue «Por revisar».
+- **Socios vinculados:** se calculan al mostrar la lista cruzando el nombre o las siglas con `members.centro_trabajo`. A Claude no se le envían datos de socios.
+
+Colección `alianzas`: `nombre`, `clave` (única), `siglas`, `tipo`, `ambito`, `pais`, `web`, `dominio`, `que_hace`, `por_que_importante`, `por_que_estrategica`, `como_colaborar[]`, `primer_paso`, `riesgos`, `afinidad`, `impacto`, `viabilidad`, `puntaje`, `fuentes[{titulo, url}]`, `novedades[{fecha, texto, corrida_id}]`, `origen`, `estado`, `responsable`, `fecha_seguimiento`, `notas`, `created_at`, `updated_at`.

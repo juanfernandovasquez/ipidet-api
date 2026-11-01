@@ -19,6 +19,7 @@ SECCIONES = [
     ("eventos",          "Eventos",          "fa-calendar-week"),
     ("pendientes",       "Pendientes",       "fa-clipboard-list"),
     ("redes",            "Redes Sociales",   "fa-share-nodes"),
+    ("alianzas",         "Alianzas",         "fa-handshake"),
 ]
 ALL_SECTIONS = [s[0] for s in SECCIONES]
 
@@ -34,6 +35,7 @@ _PATH_MAP = [
     ("/eventos",          "eventos"),
     ("/pendientes",       "pendientes"),
     ("/redes",            "redes"),
+    ("/alianzas",         "alianzas"),
     ("/admin",            "__admin__"),
 ]
 

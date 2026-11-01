@@ -1,7 +1,9 @@
 import re as _re
-from urllib.parse import quote as _quote
+import unicodedata as _unicodedata
+from urllib.parse import quote as _quote, urlsplit as _urlsplit
 from datetime import datetime, timezone, date as _date, timedelta as _timedelta
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 from config import catalogos
 from config.settings import DB_NAME
 
@@ -142,6 +144,10 @@ def buscar_global(q: str, limite: int = 5) -> list:
         salida.append({"grupo": "Público", "titulo": f"{p.get('nombre', '')} {p.get('apellido', '')}".strip(),
                        "detalle": p.get("email") or "", "url": f"/publico/{p['_id']}",
                        "icono": "fa-solid fa-address-book"})
+    for a in alianzas_col.find({"$or": [{"nombre": rx}, {"siglas": rx}]},
+                               {"nombre": 1, "pais": 1}).limit(limite):
+        salida.append({"grupo": "Alianza", "titulo": a.get("nombre", ""), "detalle": a.get("pais") or "",
+                       "url": f"/alianzas?search={_quote(a.get('nombre', ''))}", "icono": "fa-solid fa-handshake"})
     return salida
 
 
@@ -299,8 +305,10 @@ def create_member(
     fecha_ingreso: str = "",
     notas: str = "",
     periodo_actual: str | None = None,
+    linkedin: str = "",
 ) -> str:
     """Crea un socio nuevo y su registro de pago del período actual. Devuelve el member_id."""
+    linkedin = normalizar_linkedin(linkedin)
     periodo_actual = periodo_actual or catalogos.get_periodo_actual()
     member_id = _next_member_id()
     # Guard against race condition where two requests call _next_member_id() simultaneously
@@ -330,6 +338,7 @@ def create_member(
         "estado":          "activo",
         "emails":          emails,
         "notas":           notas.strip(),
+        "linkedin":        linkedin,
         "comentarios":     [],
         "created_at":      datetime.now(timezone.utc),
     })
@@ -523,7 +532,24 @@ def update_member_wp_user_id(member_id: str, wp_user_id: int | None):
         members_col.update_one({"member_id": member_id}, {"$unset": {"wp_user_id": ""}})
 
 
+def normalizar_linkedin(valor: str | None) -> str:
+    """Devuelve la URL limpia del perfil, "" si viene vacío. ValueError si no es de LinkedIn."""
+    texto = (valor or "").strip()
+    if not texto:
+        return ""
+    if not _re.match(r"^https?://", texto, _re.I):
+        texto = "https://" + texto
+    partes = _urlsplit(texto)
+    host = (partes.hostname or "").lower()
+    ruta = partes.path.rstrip("/")
+    if not (host == "linkedin.com" or host.endswith(".linkedin.com")) or not ruta:
+        raise ValueError("El LinkedIn debe ser un enlace de perfil, por ejemplo https://www.linkedin.com/in/nombre")
+    return f"https://{host}{ruta}"
+
+
 def update_member(member_id: str, fields: dict) -> None:
+    if "linkedin" in fields:
+        fields = {**fields, "linkedin": normalizar_linkedin(fields["linkedin"])}
     ALLOWED = {"apellidos", "nombres", "titulo", "centro_trabajo", "celular",
                "ubicacion", "tipo_socio", "estado", "dni",
                "fecha_ingreso", "fecha_nacimiento", "wp_user_id", "linkedin"}
@@ -5269,3 +5295,187 @@ try:
     _ensure_indexes()
 except Exception as _idx_err:
     print(f"[db] Warning: no se pudieron crear índices: {_idx_err}")
+
+
+# ── Alianzas ──────────────────────────────────────────────────────────────────
+
+alianzas_col = _db.alianzas
+alianzas_corridas_col = _db.alianzas_corridas
+_CORRIDA_CADUCA = _timedelta(minutes=45)
+
+
+def _sin_acentos(texto: str) -> str:
+    return "".join(c for c in _unicodedata.normalize("NFD", texto or "") if _unicodedata.category(c) != "Mn")
+
+
+def _clave_alianza(nombre: str) -> str:
+    return _re.sub(r"[^a-z0-9]+", " ", _sin_acentos(nombre).lower()).strip()
+
+
+def _utc(valor):
+    """Atlas devuelve fechas sin zona; todas se guardan en UTC."""
+    return valor.replace(tzinfo=timezone.utc) if isinstance(valor, datetime) and valor.tzinfo is None else valor
+
+
+def get_alianzas_estado() -> dict:
+    doc = _db.config.find_one({"_id": "alianzas_estado"}) or {}
+    return {k: _utc(v) for k, v in doc.items()}
+
+
+def reservar_corrida_alianzas(origen: str) -> str | None:
+    """Evita dos búsquedas a la vez. Una reserva vieja caduca: un reinicio la pudo dejar abierta."""
+    ahora = datetime.now(timezone.utc)
+    try:
+        previo = _db.config.find_one_and_update(
+            {"_id": "alianzas_estado",
+             "$or": [{"en_curso": {"$ne": True}}, {"ultimo_intento": {"$lt": ahora - _CORRIDA_CADUCA}}]},
+            {"$set": {"en_curso": True, "ultimo_intento": ahora}},
+            upsert=True,
+        )
+    except DuplicateKeyError:
+        return None
+    if previo and previo.get("en_curso"):
+        alianzas_corridas_col.update_many({"estado": "en_curso"}, {"$set": {
+            "estado": "fallida", "fin": ahora, "resultado": {"error": "Se interrumpió por un reinicio del servidor."}}})
+    return str(alianzas_corridas_col.insert_one({"estado": "en_curso", "origen": origen, "inicio": ahora}).inserted_id)
+
+
+def cerrar_corrida_alianzas(corrida_id: str, estado: str, resultado: dict, uso: dict, costo: float) -> None:
+    ahora = datetime.now(timezone.utc)
+    alianzas_corridas_col.update_one({"_id": ObjectId(corrida_id)}, {"$set": {
+        "estado": estado, "fin": ahora, "resultado": resultado, "uso": uso, "costo_estimado_usd": costo}})
+    cambios = {"en_curso": False}
+    if estado == "completada":
+        cambios["ultima_exitosa"] = ahora
+    _db.config.update_one({"_id": "alianzas_estado"}, {"$set": cambios})
+    catalogos.invalidar()
+
+
+def get_corridas_alianzas(limite: int = 8) -> list:
+    docs = list(alianzas_corridas_col.find().sort("inicio", -1).limit(limite))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return docs
+
+
+def get_alianzas_nombres() -> list:
+    return list(alianzas_col.find({}, {"_id": 0, "nombre": 1, "estado": 1}).sort("nombre", 1))
+
+
+def _buscar_alianza_existente(clave: str, siglas: str, dominio: str) -> dict | None:
+    condiciones: list = [{"clave": clave}]
+    if len(siglas) >= 3:
+        condiciones.append({"siglas": {"$regex": f"^{_re.escape(siglas)}$", "$options": "i"}})
+    if dominio:
+        condiciones.append({"dominio": dominio})
+    return alianzas_col.find_one({"$or": condiciones})
+
+
+def guardar_propuesta_alianza(doc: dict, corrida_id: str) -> str:
+    """Devuelve "nueva", "actualizada" o "ignorada". Nunca pisa el estado ni las notas del equipo."""
+    ahora = datetime.now(timezone.utc)
+    clave = _clave_alianza(doc["nombre"])
+    novedad = doc.pop("novedad", "")
+    previa = _buscar_alianza_existente(clave, doc.get("siglas", ""), doc.get("dominio", ""))
+    if not previa:
+        try:
+            alianzas_col.insert_one({**doc, "clave": clave, "origen": "busqueda", "estado": "nueva",
+                                     "puntaje": doc["afinidad"] + doc["impacto"] + doc["viabilidad"],
+                                     "responsable": "", "notas": "", "fecha_seguimiento": "", "novedades": [],
+                                     "corrida_id": corrida_id, "created_at": ahora, "updated_at": ahora})
+        except DuplicateKeyError:
+            return "ignorada"
+        return "nueva"
+    if previa.get("estado") == "descartada" or not novedad:
+        return "ignorada"
+    fuentes = {f["url"]: f for f in previa.get("fuentes", []) + doc.get("fuentes", [])}
+    cambios = {"fuentes": list(fuentes.values())[:15], "updated_at": ahora}
+    if previa.get("estado") == "nueva":
+        for campo in ("que_hace", "por_que_importante", "por_que_estrategica", "como_colaborar", "primer_paso",
+                      "riesgos", "afinidad", "impacto", "viabilidad"):
+            cambios[campo] = doc[campo]
+        cambios["puntaje"] = doc["afinidad"] + doc["impacto"] + doc["viabilidad"]
+    alianzas_col.update_one({"_id": previa["_id"]}, {
+        "$set": cambios,
+        "$push": {"novedades": {"$each": [{"fecha": ahora, "texto": novedad, "corrida_id": corrida_id}], "$position": 0}},
+    })
+    return "actualizada"
+
+
+def get_alianzas(search: str = "", tipo: str = "", ambito: str = "", estado: str = "", orden: str = "puntaje") -> list:
+    query: dict = {}
+    if search.strip():
+        rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+        query["$or"] = [{"nombre": rx}, {"siglas": rx}, {"pais": rx}, {"que_hace": rx},
+                        {"por_que_importante": rx}, {"por_que_estrategica": rx}]
+    if tipo:
+        query["tipo"] = tipo
+    if ambito:
+        query["ambito"] = ambito
+    query["estado"] = estado if estado else {"$ne": "descartada"}
+    campo = "created_at" if orden == "recientes" else "puntaje"
+    docs = list(alianzas_col.find(query).sort([(campo, -1), ("nombre", 1)]))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    _agregar_socios_vinculados(docs)
+    return docs
+
+
+def _agregar_socios_vinculados(alianzas: list) -> None:
+    """Socios cuyo centro de trabajo coincide: son el contacto natural para acercarse a la institución."""
+    if not alianzas:
+        return
+    socios = []
+    for m in members_col.find({"estado": {"$ne": "retirar"}, "centro_trabajo": {"$nin": [None, ""]}},
+                              {"member_id": 1, "apellidos": 1, "nombres": 1, "centro_trabajo": 1, "linkedin": 1}):
+        m["_centro"] = f" {_clave_alianza(m['centro_trabajo'])} "
+        socios.append(m)
+    for a in alianzas:
+        terminos = [f" {a['clave']} "]
+        siglas = _clave_alianza(a.get("siglas", ""))
+        if len(siglas) >= 3:
+            terminos.append(f" {siglas} ")
+        a["socios_vinculados"] = [
+            {"member_id": m["member_id"], "nombre": f"{m.get('nombres', '')} {m.get('apellidos', '')}".strip(),
+             "linkedin": m.get("linkedin") or ""}
+            for m in socios if any(t in m["_centro"] for t in terminos)
+        ]
+
+
+def contar_alianzas_por_estado() -> dict:
+    return {d["_id"]: d["n"] for d in alianzas_col.aggregate([{"$group": {"_id": "$estado", "n": {"$sum": 1}}}])}
+
+
+def crear_alianza_manual(nombre: str, tipo: str, ambito: str, pais: str, web: str,
+                         por_que_importante: str, por_que_estrategica: str) -> str:
+    """Devuelve "" si se creó, o un mensaje si la institución ya está registrada."""
+    nombre = nombre.strip()
+    clave = _clave_alianza(nombre)
+    if not clave:
+        return "El nombre es obligatorio."
+    web = web.strip()
+    if web and not _re.match(r"^https?://", web, _re.I):
+        web = "https://" + web
+    host = (_urlsplit(web).hostname or "").lower().removeprefix("www.") if web else ""
+    if _buscar_alianza_existente(clave, "", host):
+        return f"{nombre} ya está registrada."
+    ahora = datetime.now(timezone.utc)
+    alianzas_col.insert_one({
+        "nombre": nombre, "clave": clave, "siglas": "", "tipo": tipo, "ambito": ambito, "pais": pais.strip(),
+        "web": web if host else "", "dominio": host, "que_hace": "", "por_que_importante": por_que_importante.strip(),
+        "por_que_estrategica": por_que_estrategica.strip(), "como_colaborar": [], "primer_paso": "", "riesgos": "",
+        "fuentes": [], "origen": "manual", "estado": "en_evaluacion", "puntaje": 0, "responsable": "", "notas": "",
+        "fecha_seguimiento": "", "novedades": [], "created_at": ahora, "updated_at": ahora,
+    })
+    catalogos.invalidar()
+    return ""
+
+
+def actualizar_seguimiento_alianza(alianza_id: str, estado: str, responsable: str,
+                                   fecha_seguimiento: str, notas: str) -> None:
+    if estado not in catalogos.ESTADOS_ALIANZA:
+        raise ValueError("Estado no válido")
+    alianzas_col.update_one({"_id": ObjectId(alianza_id)}, {"$set": {
+        "estado": estado, "responsable": responsable.strip(), "fecha_seguimiento": fecha_seguimiento.strip(),
+        "notas": notas.strip(), "updated_at": datetime.now(timezone.utc)}})
+    catalogos.invalidar()

@@ -143,7 +143,7 @@
             <i class="fa-brands fa-linkedin"></i> LinkedIn
           </div>
           {% if member.linkedin %}
-          <a href="{{ member.linkedin }}" target="_blank"
+          <a href="{{ member.linkedin }}" target="_blank" rel="noopener noreferrer"
              class="text-sm font-medium text-blue-600 hover:underline truncate block">
             {{ member.linkedin }}
           </a>
@@ -513,8 +513,8 @@
             <label class="block text-xs font-medium text-slate-600 mb-1">
               <i class="fa-brands fa-linkedin text-blue-500 mr-1"></i> LinkedIn <span class="text-slate-400 font-normal">(opcional)</span>
             </label>
-            <input type="url" x-model="form.linkedin"
-                   class="input w-full text-sm" placeholder="https://linkedin.com/in/nombre">
+            <input type="text" inputmode="url" x-model="form.linkedin"
+                   class="input w-full text-sm" placeholder="https://www.linkedin.com/in/nombre">
           </div>
         </div>
       </div>

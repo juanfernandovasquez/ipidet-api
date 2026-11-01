@@ -138,6 +138,9 @@
       {% endif %}
 
       <div class="sidebar-section">Gestión</div>
+      {% if is_admin or 'alianzas' in p %}
+      {{ nav('/alianzas', 'fa-solid fa-handshake', 'Alianzas', ruta.startswith('/alianzas'), alianzas_por_revisar | default(0)) }}
+      {% endif %}
       {% if is_admin or 'pendientes' in p %}
       {{ nav('/pendientes', 'fa-solid fa-clipboard-list', 'Pendientes', ruta.startswith('/pendientes')) }}
       {% endif %}

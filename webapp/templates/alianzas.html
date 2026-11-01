@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Alianzas — IPIDET{% endblock %}
+{% block heading %}Alianzas{% endblock %}
+{% block header_actions %}
+<button type="button" class="btn-ghost" onclick="document.getElementById('modal-alianza').classList.remove('hidden')">
+  <i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar
+</button>
+<form method="post" action="/alianzas/buscar" data-confirm="¿Buscar instituciones ahora? Cada búsqueda consume créditos de la API de Claude.">
+  <button type="submit" class="btn-primary" {% if estado_busqueda.en_curso or not clave_configurada %}disabled{% endif %}>
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Buscar ahora
+  </button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% set ultima = corridas[0] if corridas else None %}
+<div x-data="{ enCurso: {{ 'true' if estado_busqueda.en_curso or request.query_params.get('msg') == 'iniciada' else 'false' }} }"
+     x-init="if (enCurso) { const t = setInterval(async () => {
+       const r = await fetch('/alianzas/estado'); const d = await r.json();
+       if (!d.en_curso) { clearInterval(t); location.href = '/alianzas?orden=recientes'; }
+     }, 15000) }">
+
+  {% if not clave_configurada %}
+  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    La búsqueda no puede correr: falta configurar <code class="font-mono">ANTHROPIC_API_KEY</code> en el servidor.
+  </div>
+  {% endif %}
+  {% if request.query_params.get('error') %}
+  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ request.query_params.get('error') }}</div>
+  {% endif %}
+  {% if ultima and ultima.estado == 'fallida' %}
+  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    <strong>La última búsqueda falló.</strong> {{ ultima.resultado.error if ultima.resultado else '' }}
+  </div>
+  {% endif %}
+  <div x-show="enCurso" x-cloak class="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+    <i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i>
+    Buscando instituciones. Puede tardar varios minutos; esta página se actualizará sola.
+  </div>
+
+  {# ─ Resumen #}
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Por revisar</div>
+      <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('nueva', 0) }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">En curso</div>
+      <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('en_evaluacion', 0) + conteos.get('contactada', 0) + conteos.get('en_negociacion', 0) }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Aliadas</div>
+      <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('aliada', 0) }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Búsqueda automática</div>
+      <div class="text-sm font-medium text-slate-800 mt-1">
+        {% if not cfg.activa %}Pausada
+        {% elif proxima %}Próxima: {{ proxima | format_fecha }}
+        {% else %}Sin búsquedas completadas{% endif %}
+      </div>
+      <div class="text-xs text-slate-500">
+        {% if estado_busqueda.ultima_exitosa %}Última: {{ estado_busqueda.ultima_exitosa | format_fecha }}{% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# ─ Buscador #}
+  <form method="get" x-ref="filtros" class="bg-white rounded-xl border border-slate-200 p-3 mb-5 flex flex-wrap gap-2 items-center">
+    <input name="search" value="{{ search }}" placeholder="Buscar por nombre, país o argumento…" class="input flex-1 min-w-[14rem]"
+           @input="clearTimeout(t); t = setTimeout(() => $refs.filtros.submit(), 450)" x-data="{ t: null }"
+           x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    <select name="tipo" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Tipo">
+      <option value="">Todos los tipos</option>
+      {% for t in tipos_institucion %}<option value="{{ t.valor }}" {% if tipo == t.valor %}selected{% endif %}>{{ t.label }}</option>{% endfor %}
+    </select>
+    <select name="ambito" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Ámbito">
+      <option value="">Todo ámbito</option>
+      {% for k, v in ambitos.items() %}<option value="{{ k }}" {% if ambito == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+    <select name="estado" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Etapa">
+      <option value="">Todas sin descartar</option>
+      {% for k, v in estados.items() %}<option value="{{ k }}" {% if estado == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+    </select>
+    <select name="orden" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Orden">
+      <option value="puntaje" {% if orden != 'recientes' %}selected{% endif %}>Mejor evaluadas</option>
+      <option value="recientes" {% if orden == 'recientes' %}selected{% endif %}>Más recientes</option>
+    </select>
+    {% if search or tipo or ambito or estado %}<a href="/alianzas" class="text-sm text-slate-500 hover:text-slate-700 px-2">Limpiar</a>{% endif %}
+  </form>
+
+  {# ─ Instituciones #}
+  <div class="space-y-3">
+    {% for a in alianzas %}
+    <article class="bg-white rounded-xl border border-slate-200" x-data="{ abierta: false }">
+      <div class="p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h2 class="text-base font-semibold text-slate-800">
+              {{ a.nombre }}{% if a.siglas %} <span class="font-normal text-slate-500">({{ a.siglas }})</span>{% endif %}
+            </h2>
+            <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+              <span>{{ etiquetas_tipo.get(a.tipo, a.tipo) }}</span>
+              <span aria-hidden="true">·</span>
+              <span>{{ ambitos.get(a.ambito, a.ambito) }}{% if a.pais %} ({{ a.pais }}){% endif %}</span>
+              {% if a.web %}<span aria-hidden="true">·</span>
+              <a href="{{ a.web }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Sitio web</a>{% endif %}
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            {% if a.puntaje %}<span class="text-xs text-slate-500" title="Afinidad {{ a.afinidad }}, impacto {{ a.impacto }} y viabilidad {{ a.viabilidad }}, sobre 5. Es una estimación de la IA.">Evaluación IA {{ a.puntaje }}/15</span>{% endif %}
+            <span class="badge badge-{{ estados[a.estado][1] }}">{{ estados[a.estado][0] }}</span>
+          </div>
+        </div>
+
+        <div class="mt-4 grid md:grid-cols-2 gap-4 text-sm leading-relaxed">
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 mb-1">Por qué es importante</h3>
+            <p class="text-slate-700 whitespace-pre-line">{{ a.por_que_importante or '—' }}</p>
+          </div>
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 mb-1">Por qué sería estratégica</h3>
+            <p class="text-slate-700 whitespace-pre-line">{{ a.por_que_estrategica or '—' }}</p>
+          </div>
+        </div>
+
+        {% if a.socios_vinculados %}
+        <p class="mt-3 text-sm text-slate-700">
+          <i class="fa-solid fa-user-group text-slate-400 mr-1" aria-hidden="true"></i>
+          Posible contacto interno:
+          {% for s in a.socios_vinculados[:5] %}<a href="/members/{{ s.member_id }}" class="text-blue-600 hover:underline">{{ s.nombre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if a.socios_vinculados | length > 5 %} y {{ a.socios_vinculados | length - 5 }} más{% endif %}
+        </p>
+        {% endif %}
+
+        <button type="button" class="mt-3 text-sm text-blue-600 hover:underline" @click="abierta = !abierta" :aria-expanded="abierta">
+          <span x-text="abierta ? 'Ocultar detalle' : 'Ver detalle y seguimiento'"></span>
+        </button>
+      </div>
+
+      <div x-show="abierta" x-cloak class="border-t border-slate-100 p-5 grid lg:grid-cols-2 gap-6 text-sm">
+        <div class="space-y-4">
+          {% if a.que_hace %}<div><h3 class="text-xs font-semibold text-slate-500 mb-1">Qué hace</h3><p class="text-slate-700">{{ a.que_hace }}</p></div>{% endif %}
+          {% if a.como_colaborar %}
+          <div><h3 class="text-xs font-semibold text-slate-500 mb-1">Cómo podríamos colaborar</h3>
+            <ul class="list-disc pl-5 text-slate-700 space-y-0.5">{% for c in a.como_colaborar %}<li>{{ c }}</li>{% endfor %}</ul></div>
+          {% endif %}
+          {% if a.primer_paso %}<div><h3 class="text-xs font-semibold text-slate-500 mb-1">Primer paso</h3><p class="text-slate-700">{{ a.primer_paso }}</p></div>{% endif %}
+          {% if a.riesgos %}<div><h3 class="text-xs font-semibold text-slate-500 mb-1">Riesgos a considerar</h3><p class="text-slate-700">{{ a.riesgos }}</p></div>{% endif %}
+          {% for n in a.novedades[:3] %}
+          <div><h3 class="text-xs font-semibold text-slate-500 mb-1">Novedad del {{ n.fecha | format_fecha }}</h3><p class="text-slate-700">{{ n.texto }}</p></div>
+          {% endfor %}
+          {% if a.fuentes %}
+          <div><h3 class="text-xs font-semibold text-slate-500 mb-1">Fuentes</h3>
+            <ul class="space-y-1">{% for f in a.fuentes %}<li><a href="{{ f.url }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline break-words">{{ f.titulo }}</a></li>{% endfor %}</ul></div>
+          {% elif a.origen == 'manual' %}<p class="text-xs text-slate-500">Agregada a mano por el equipo.</p>{% endif %}
+        </div>
+
+        <form method="post" action="/alianzas/{{ a._id }}/seguimiento" class="space-y-3 lg:border-l lg:border-slate-100 lg:pl-6">
+          <h3 class="text-sm font-semibold text-slate-700">Seguimiento</h3>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <label class="block text-xs font-medium text-slate-600">Etapa
+              <select name="estado" class="input w-full mt-1">
+                {% for k, v in estados.items() %}<option value="{{ k }}" {% if a.estado == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="block text-xs font-medium text-slate-600">Próximo seguimiento
+              <input type="date" name="fecha_seguimiento" value="{{ a.fecha_seguimiento or '' }}" class="input w-full mt-1">
+            </label>
+          </div>
+          <label class="block text-xs font-medium text-slate-600">Responsable
+            <input name="responsable" value="{{ a.responsable or '' }}" class="input w-full mt-1">
+          </label>
+          <label class="block text-xs font-medium text-slate-600">Notas
+            <textarea name="notas" rows="4" class="input w-full mt-1">{{ a.notas or '' }}</textarea>
+          </label>
+          <button type="submit" class="btn-primary">Guardar seguimiento</button>
+        </form>
+      </div>
+    </article>
+    {% else %}
+    <div class="bg-white rounded-xl border border-slate-200 p-10 text-center text-sm text-slate-500">
+      {% if search or tipo or ambito or estado %}Ninguna institución coincide con estos filtros.
+      {% else %}Todavía no hay instituciones. Usa «Buscar ahora» para la primera búsqueda.{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ─ Configuración e historial #}
+  <details class="mt-6 bg-white rounded-xl border border-slate-200">
+    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Qué busca la IA y con qué frecuencia</summary>
+    <form method="post" action="/alianzas/configuracion" class="px-5 pb-5 space-y-3">
+      <label class="block text-xs font-medium text-slate-600">Perfil de IPIDET
+        <textarea name="perfil" rows="4" class="input w-full mt-1">{{ cfg.perfil }}</textarea>
+      </label>
+      <label class="block text-xs font-medium text-slate-600">Criterios de búsqueda
+        <textarea name="criterios" rows="4" class="input w-full mt-1">{{ cfg.criterios }}</textarea>
+      </label>
+      <div class="flex flex-wrap items-end gap-4">
+        <label class="block text-xs font-medium text-slate-600">Cada cuántos días
+          <input type="number" min="1" name="frecuencia_dias" value="{{ cfg.frecuencia_dias }}" class="input w-24 mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Máximo de instituciones por búsqueda
+          <input type="number" min="1" max="15" name="propuestas_por_corrida" value="{{ cfg.propuestas_por_corrida }}" class="input w-24 mt-1">
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700 pb-2">
+          <input type="checkbox" name="activa" value="1" {% if cfg.activa %}checked{% endif %}> Búsqueda automática activa
+        </label>
+      </div>
+      <button type="submit" class="btn-primary">Guardar</button>
+    </form>
+  </details>
+
+  <details class="mt-3 bg-white rounded-xl border border-slate-200">
+    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Historial de búsquedas</summary>
+    <div class="overflow-x-auto px-5 pb-5">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-100">
+          <th class="py-2 pr-4 font-medium">Fecha</th><th class="py-2 pr-4 font-medium">Origen</th><th class="py-2 pr-4 font-medium">Resultado</th>
+          <th class="py-2 pr-4 font-medium text-right">Nuevas</th><th class="py-2 pr-4 font-medium text-right">Actualizadas</th>
+          <th class="py-2 pr-4 font-medium text-right">Descartadas</th><th class="py-2 font-medium text-right">Costo estimado</th>
+        </tr></thead>
+        <tbody>
+        {% for c in corridas %}
+          {% set r = c.resultado or {} %}
+          <tr class="border-b border-slate-50 last:border-0">
+            <td class="py-2 pr-4 whitespace-nowrap">{{ c.inicio | format_fecha }}</td>
+            <td class="py-2 pr-4">{{ 'Automática' if c.origen == 'programada' else 'Manual' }}</td>
+            <td class="py-2 pr-4">
+              {% if c.estado == 'completada' %}<span class="badge badge-green">Completada</span>
+              {% elif c.estado == 'en_curso' %}<span class="badge badge-blue">En curso</span>
+              {% else %}<span class="badge badge-red" title="{{ r.error or '' }}">Fallida</span>{% endif %}
+            </td>
+            <td class="py-2 pr-4 text-right">{{ r.nuevas or 0 }}</td>
+            <td class="py-2 pr-4 text-right">{{ r.actualizadas or 0 }}</td>
+            <td class="py-2 pr-4 text-right" title="{{ (r.descartadas or []) | join(' · ') }}">{{ (r.descartadas or []) | length }}</td>
+            <td class="py-2 text-right font-mono">{% if c.costo_estimado_usd is defined %}US$ {{ '%.2f' | format(c.costo_estimado_usd) }}{% else %}—{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="py-4 text-center text-slate-500">Aún no hay búsquedas.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+{# ─ Agregar a mano #}
+<div id="modal-alianza" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-alianza').classList.add('hidden')"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+    <h2 class="text-base font-semibold text-slate-800 mb-4">Agregar institución</h2>
+    <form method="post" action="/alianzas/nueva" class="space-y-3">
+      <label class="block text-xs font-medium text-slate-600">Nombre *
+        <input name="nombre" required class="input w-full mt-1">
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block text-xs font-medium text-slate-600">Tipo
+          <select name="tipo" class="input w-full mt-1">{% for t in tipos_institucion %}<option value="{{ t.valor }}">{{ t.label }}</option>{% endfor %}</select>
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Ámbito
+          <select name="ambito" class="input w-full mt-1">{% for k, v in ambitos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+        </label>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block text-xs font-medium text-slate-600">País
+          <input name="pais" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Sitio web
+          <input name="web" inputmode="url" class="input w-full mt-1">
+        </label>
+      </div>
+      <label class="block text-xs font-medium text-slate-600">Por qué es importante
+        <textarea name="por_que_importante" rows="2" class="input w-full mt-1"></textarea>
+      </label>
+      <label class="block text-xs font-medium text-slate-600">Por qué sería estratégica
+        <textarea name="por_que_estrategica" rows="2" class="input w-full mt-1"></textarea>
+      </label>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Agregar</button>
+        <button type="button" class="btn-ghost" onclick="document.getElementById('modal-alianza').classList.add('hidden')">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

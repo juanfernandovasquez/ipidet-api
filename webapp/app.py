@@ -18,7 +18,10 @@ import webapp.auth as auth
 import webapp.mailer as mailer
 import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
+from datetime import timedelta as _timedelta
+from urllib.parse import quote as _quote
 from config import catalogos
+from config.settings import ANTHROPIC_API_KEY
 from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE, WC_STORE_URL
 from knowledge_base import db as kb_db
 from billing import db as billing_db
@@ -137,7 +140,7 @@ class _AuthMiddleware:
                     and message["status"] == 303):
                 destino = dict(message.get("headers", [])).get(b"location", b"")
                 if not re.search(rb"[?&](ok|msg|error)=", destino):
-                    session["_flash"] = "Cambios guardados"
+                    session.setdefault("_flash", "Cambios guardados")
             await send(message)
 
         await self.app(scope, receive, enviar)
@@ -220,6 +223,7 @@ def _ctx(request: Request, **kwargs):
         "current_user_permisos":request.session.get("user_permisos", []),
         "secciones": auth.SECCIONES,
         "inbox_count": inbox_count,
+        "alianzas_por_revisar": catalogos.get_alianzas_por_revisar(),
         **kwargs,
     }
 
@@ -230,6 +234,7 @@ async def _startup():
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
+    asyncio.create_task(scheduler.run_alianzas_scheduler())
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_resync_comprobantes_with_payment_id)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_payments_fecha_pago)
@@ -315,6 +320,7 @@ MEMBERS_COLS = [
     ("dni",            "DNI"),
     ("celular",        "Celular"),
     ("centro_trabajo", "Centro de trabajo"),
+    ("linkedin",       "LinkedIn"),
     ("ubicacion",      "Ubicación"),
     ("tipo_socio",     "Tipo de socio"),
     ("estado",         "Estado"),
@@ -376,6 +382,7 @@ async def members_export(
             "dni":            d.get("dni") or "",
             "celular":        d.get("celular") or "",
             "centro_trabajo": d.get("centro_trabajo") or "",
+            "linkedin":       d.get("linkedin") or "",
             "ubicacion":      d.get("ubicacion") or "",
             "tipo_socio":     d.get("tipo_socio") or "",
             "estado":         d.get("estado") or "",
@@ -401,6 +408,7 @@ async def members_export(
 
 @app.post("/members/nuevo")
 async def member_nuevo(
+    request:         Request,
     apellidos:       str = Form(...),
     nombres:         str = Form(...),
     titulo:          str = Form(""),
@@ -410,11 +418,18 @@ async def member_nuevo(
     ubicacion:       str = Form(""),
     fecha_ingreso:   str = Form(""),
     notas:           str = Form(""),
+    linkedin:        str = Form(""),
 ):
+    try:
+        linkedin = pdb.normalizar_linkedin(linkedin)
+    except ValueError:
+        # El enlace es opcional: un dato mal escrito no debe impedir crear el socio.
+        linkedin = ""
+        request.session["_flash"] = "Socio creado. El LinkedIn no era un enlace válido y no se guardó."
     member_id = pdb.create_member(
         apellidos=apellidos, nombres=nombres, titulo=titulo,
         email=email, celular=celular, centro_trabajo=centro_trabajo,
-        ubicacion=ubicacion, fecha_ingreso=fecha_ingreso, notas=notas,
+        ubicacion=ubicacion, fecha_ingreso=fecha_ingreso, notas=notas, linkedin=linkedin,
     )
     return RedirectResponse(f"/members/{member_id}", status_code=303)
 
@@ -510,7 +525,10 @@ async def update_member_wp_user_id(member_id: str, wp_user_id: str = Form(...)):
 @app.post("/members/{member_id}/update")
 async def member_update(member_id: str, request: Request):
     data = await request.json()
-    pdb.update_member(member_id, data)
+    try:
+        pdb.update_member(member_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return {"ok": True}
 
 
@@ -5261,3 +5279,72 @@ async def redes_cronograma_update(
 async def redes_cronograma_delete(item_id: str):
     pdb.delete_cronograma_item(item_id)
     return RedirectResponse("/redes/cronograma", status_code=303)
+
+
+# ── Alianzas ──────────────────────────────────────────────────────────────────
+
+@app.get("/alianzas", response_class=HTMLResponse)
+async def alianzas_lista(request: Request, search: str = "", tipo: str = "", ambito: str = "",
+                         estado: str = "", orden: str = "puntaje"):
+    cfg = catalogos.get_alianzas_config()
+    est = pdb.get_alianzas_estado()
+    proxima = None
+    if cfg["activa"] and est.get("ultima_exitosa"):
+        proxima = est["ultima_exitosa"] + _timedelta(days=int(cfg["frecuencia_dias"]))
+    tipos = catalogos.get_catalogo("tipos_institucion")
+    return templates.TemplateResponse(request, "alianzas.html", _ctx(
+        request,
+        alianzas=pdb.get_alianzas(search, tipo, ambito, estado, orden),
+        conteos=pdb.contar_alianzas_por_estado(),
+        corridas=pdb.get_corridas_alianzas(),
+        cfg=cfg, estado_busqueda=est, proxima=proxima,
+        clave_configurada=bool(ANTHROPIC_API_KEY),
+        estados=catalogos.ESTADOS_ALIANZA, ambitos=catalogos.AMBITOS_ALIANZA,
+        tipos_institucion=tipos, etiquetas_tipo={t["valor"]: t["label"] for t in tipos},
+        search=search, tipo=tipo, ambito=ambito, estado=estado, orden=orden,
+    ))
+
+
+@app.get("/alianzas/estado")
+async def alianzas_estado():
+    return {"en_curso": bool(pdb.get_alianzas_estado().get("en_curso"))}
+
+
+@app.post("/alianzas/buscar")
+async def alianzas_buscar():
+    import asyncio
+    from webapp import alianzas_ia
+    if pdb.get_alianzas_estado().get("en_curso"):
+        return RedirectResponse("/alianzas?msg=en_curso", status_code=303)
+    asyncio.get_running_loop().run_in_executor(None, alianzas_ia.ejecutar, "manual")
+    return RedirectResponse("/alianzas?msg=iniciada", status_code=303)
+
+
+@app.post("/alianzas/nueva")
+async def alianzas_nueva(nombre: str = Form(...), tipo: str = Form("otra"), ambito: str = Form("nacional"),
+                         pais: str = Form(""), web: str = Form(""), por_que_importante: str = Form(""),
+                         por_que_estrategica: str = Form("")):
+    error = pdb.crear_alianza_manual(nombre, tipo, ambito, pais, web, por_que_importante, por_que_estrategica)
+    if error:
+        return RedirectResponse(f"/alianzas?error={_quote(error)}", status_code=303)
+    return RedirectResponse("/alianzas?estado=en_evaluacion", status_code=303)
+
+
+@app.post("/alianzas/configuracion")
+async def alianzas_configuracion(perfil: str = Form(""), criterios: str = Form(""), activa: str = Form(""),
+                                 frecuencia_dias: int = Form(7), propuestas_por_corrida: int = Form(5)):
+    catalogos.set_alianzas_config({
+        "perfil": perfil.strip(), "criterios": criterios.strip(), "activa": activa == "1",
+        "frecuencia_dias": max(1, frecuencia_dias), "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
+    })
+    return RedirectResponse("/alianzas", status_code=303)
+
+
+@app.post("/alianzas/{alianza_id}/seguimiento")
+async def alianzas_seguimiento(alianza_id: str, estado: str = Form(...), responsable: str = Form(""),
+                               fecha_seguimiento: str = Form(""), notas: str = Form("")):
+    try:
+        pdb.actualizar_seguimiento_alianza(alianza_id, estado, responsable, fecha_seguimiento, notas)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return RedirectResponse("/alianzas", status_code=303)
