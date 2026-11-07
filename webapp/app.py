@@ -22,8 +22,6 @@ from datetime import timedelta as _timedelta
 from urllib.parse import quote as _quote
 from config import catalogos
 from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE, WC_STORE_URL
-from knowledge_base import db as kb_db
-from billing import db as billing_db
 import threading as _threading
 import time as _time
 import uuid as _uuid
@@ -199,7 +197,7 @@ def _periodo(periodo: str | None) -> str:
 
 def _ctx(request: Request, **kwargs):
     try:
-        inbox_count = kb_db.count_inbox_items() + billing_db.count_pending_proofs()
+        inbox_count = catalogos.get_correos_por_atender()
     except Exception:
         inbox_count = 0
     tipos_socio = catalogos.get_catalogo("tipos_socio")
@@ -234,6 +232,7 @@ async def _startup():
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
+    asyncio.create_task(scheduler.run_agente_correo_scheduler())
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_resync_comprobantes_with_payment_id)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_payments_fecha_pago)
@@ -3458,7 +3457,7 @@ async def comunicaciones_enviar(request: Request):
     usuario  = request.session.get("user_email", "")
     campania = (data.get("campania") or "").strip()
     pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario,
-                               fallidos_detalle, campania=campania)
+                               fallidos_detalle, campania=campania, cuerpo=cuerpo)
 
     return {"ok": True, "enviados": enviados, "fallidos": fallidos,
             "errores": errores if errores else [],
@@ -4630,78 +4629,283 @@ async def admin_delete_user(request: Request, user_id: str):
     return RedirectResponse("/admin/users", status_code=303)
 
 
-# ── Cola de emails (inbox del agente) ────────────────────────────────────────
+# ── Cola de emails (agente de correos) ────────────────────────────────────────
+# La lógica vive en webapp/agente_correo.py; estas rutas solo la exponen. IMAP, SMTP y
+# Claude bloquean, así que corren en un hilo aparte para no frenar el servidor.
+
+import asyncio
+from functools import partial as _partial
+from urllib.parse import urlencode
+from webapp import agente_correo, agente_db
+from webapp.agente_contexto import fecha_lima as _fecha_lima
+
+templates.env.filters["fecha_hora_lima"] = lambda v: _fecha_lima(v, "%d/%m/%Y %H:%M") if v else "—"
+
+
+async def _en_hilo(fn, *args, **kwargs):
+    return await asyncio.get_running_loop().run_in_executor(None, _partial(fn, *args, **kwargs))
+
+
+def _usuario(request: Request) -> str:
+    return request.session.get("user_email", "") or "equipo"
+
+
+def _volver(request: Request, correo_id: str = "", **params) -> RedirectResponse:
+    from urllib.parse import urlencode, urlparse, parse_qsl
+    previo = request.headers.get("referer") or "/inbox"
+    url = urlparse(previo)
+    query = {k: v for k, v in parse_qsl(url.query) if k not in ("ok", "msg", "error")}
+    query.update({k: v for k, v in params.items() if v})
+    destino = (url.path if url.path.startswith("/inbox") else "/inbox") + ("?" + urlencode(query) if query else "")
+    return RedirectResponse(destino + (f"#c-{correo_id}" if correo_id else ""), status_code=303)
+
 
 @app.get("/inbox", response_class=HTMLResponse)
-async def inbox_page(request: Request, page: int = 1):
-    approvals, total_a = kb_db.get_inbox_items(page)
-    proofs, total_p = billing_db.get_pending_proofs(page)
-    # Enriquecer constancias con nombre del socio identificado
-    for proof in proofs:
-        if proof.get("id_socio"):
-            m = pdb.get_member(proof["id_socio"])
-            if m:
-                proof["_member_nombre"] = f"{m.get('apellidos', '')} {m.get('nombres', '')}".strip()
+async def inbox_page(request: Request, vista: str = "atender", categoria: str = "",
+                     search: str = "", page: int = 1, ver: str = ""):
+    if vista not in ("atender", "respondidos", "sin_respuesta", "todos"):
+        vista = "atender"
+    doc = agente_db.get_correo(ver) if ver else None
+    if doc:
+        correos, total = [doc], 1
+    else:
+        correos, total = agente_db.listar(vista, categoria, search, page)
+    ids_socios = {c.get("member_id") or c.get("posible_member_id") for c in correos} - {None, ""}
+    socios = {m["member_id"]: f"{m.get('apellidos', '')}, {m.get('nombres', '')}".strip(", ")
+              for m in pdb.members_col.find({"member_id": {"$in": list(ids_socios)}},
+                                            {"member_id": 1, "apellidos": 1, "nombres": 1})} if ids_socios else {}
+    ids_eventos = [pdb.ObjectId(c["evento_id"]) for c in correos if c.get("evento_id")]
+    eventos = {str(e["_id"]): e.get("titulo", "") for e in pdb.eventos_col.find(
+        {"_id": {"$in": ids_eventos}}, {"titulo": 1})} if ids_eventos else {}
     return templates.TemplateResponse(request, "inbox.html", _ctx(request,
-        approvals=approvals,
-        proofs=proofs,
-        total_approvals=total_a,
-        total_proofs=total_p,
-        page=page,
+        correos=correos, total=total, page=page, per_page=25, vista=vista, categoria=categoria,
+        search=search, ver=ver if doc else "", conteos=agente_db.contar_por_vista(), socios=socios,
+        eventos_map=eventos, categorias=catalogos.CATEGORIAS_CORREO, estados_correo=catalogos.ESTADOS_CORREO,
+        agente_cfg=catalogos.get_agente_config(), agente_estado=agente_db.get_estado(),
+        admin_forward=agente_correo.ADMIN_FORWARD_EMAIL,
     ))
 
 
-@app.post("/inbox/{approval_id}/send")
-async def inbox_send(
-    approval_id: str,
-    response_text: str = Form(...),
-):
-    from gmail.client import GmailClient
-    item = kb_db.pending_approvals.find_one({"approval_id": approval_id, "status": "pending"})
-    if not item:
-        return RedirectResponse("/inbox?error=not_found", status_code=303)
-    if GMAIL_ADDRESS and GMAIL_APP_PASSWORD:
-        gmail = GmailClient(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-        e = item["email_data"]
-        gmail.send_reply(
-            thread_id=e["thread_id"],
-            to=e["from"],
-            subject=e["subject"],
-            body=response_text,
-        )
-    kb_db.update_approval_status(approval_id, "sent_web")
-    return RedirectResponse("/inbox?ok=sent", status_code=303)
+@app.get("/inbox/configuracion", response_class=HTMLResponse)
+async def inbox_configuracion(request: Request):
+    estado_tg = await _en_hilo(agente_correo.estado_webhook)
+    return templates.TemplateResponse(request, "inbox_configuracion.html", _ctx(request,
+        cfg=catalogos.get_agente_config(), estado=agente_db.get_estado(), uso=agente_db.resumen_uso(),
+        categorias=catalogos.CATEGORIAS_CORREO, modos=catalogos.MODOS_AGENTE, esfuerzos=catalogos.ESFUERZOS_AGENTE,
+        cuenta=GMAIL_ADDRESS, telegram=estado_tg, url_publica=agente_correo.url_plataforma(),
+        bloqueados=agente_db.patrones_bloqueados(),
+    ))
 
 
-@app.post("/inbox/{approval_id}/dismiss")
-async def inbox_dismiss(approval_id: str):
-    kb_db.update_approval_status(approval_id, "rejected")
-    return RedirectResponse("/inbox", status_code=303)
+def _lista_lineas(texto: str) -> list[str]:
+    return [l.strip().lower() for l in re.split(r"[\n,;]+", texto or "") if l.strip()]
 
 
-@app.post("/inbox/proof/{proof_id}/vincular")
-async def inbox_proof_vincular(
-    proof_id: str,
-    member_id: str = Form(...),
-    periodo: str = Form(...),
-    fecha_pago: str = Form(""),
-    medio_pago: str = Form(""),
-):
-    from datetime import date as _date
-    proof = billing_db.billing_pending_proofs.find_one({"approval_id": proof_id, "status": "pending"})
-    if not proof or not member_id.strip() or not periodo.strip():
-        return RedirectResponse("/inbox", status_code=303)
-    payment_id = pdb.get_or_create_payment(member_id.strip(), periodo.strip())
-    fecha = fecha_pago.strip() or _date.today().isoformat()
-    pdb.update_payment(payment_id, estado="pagado", fecha_pago=fecha, medio=medio_pago or None)
-    billing_db.update_proof_status(proof_id, "resolved")
-    return RedirectResponse("/inbox?ok=linked", status_code=303)
+# Categorías que nunca se envían solas: dinero, quejas, conversaciones internas y avisos automáticos.
+_NUNCA_AUTO = ("critico", "interno", "automatico", "pago", "proveedor")
 
 
-@app.post("/inbox/proof/{proof_id}/dismiss")
-async def inbox_proof_dismiss(proof_id: str):
-    billing_db.update_proof_status(proof_id, "dismissed")
-    return RedirectResponse("/inbox", status_code=303)
+@app.post("/inbox/configuracion")
+async def inbox_configuracion_guardar(request: Request):
+    form = await request.form()
+    actual = catalogos.get_agente_config()
+
+    def numero(clave, minimo, maximo, tipo=float):
+        try:
+            return max(minimo, min(maximo, tipo(form.get(clave))))
+        except (TypeError, ValueError):
+            return actual[clave]
+
+    campos = {
+        "activo": form.get("activo") == "1",
+        "modo": form.get("modo") if form.get("modo") in catalogos.MODOS_AGENTE else "borrador",
+        "esfuerzo": form.get("esfuerzo") if form.get("esfuerzo") in catalogos.ESFUERZOS_AGENTE else "medium",
+        "modelo": (form.get("modelo") or actual["modelo"]).strip(),
+        "intervalo_min": numero("intervalo_min", 1, 60, int),
+        "max_por_ciclo": numero("max_por_ciclo", 1, 50, int),
+        "umbral_auto": numero("umbral_auto", 0.5, 1.0),
+        "max_auto_por_remitente_dia": numero("max_auto_por_remitente_dia", 1, 10, int),
+        "categorias_auto": [c for c in form.getlist("categorias_auto")
+                            if c in catalogos.CATEGORIAS_CORREO and c not in _NUNCA_AUTO],
+        "firma": (form.get("firma") or "").strip(),
+        "estilo": (form.get("estilo") or "").strip(),
+        "informacion_adicional": (form.get("informacion_adicional") or "").strip(),
+        "remitentes_internos": _lista_lineas(form.get("remitentes_internos")),
+        "remitentes_ignorar": _lista_lineas(form.get("remitentes_ignorar")),
+        "remitentes_permitidos": _lista_lineas(form.get("remitentes_permitidos")),
+        "telegram_avisos": form.get("telegram_avisos") == "1",
+        "precio_entrada": numero("precio_entrada", 0, 100),
+        "precio_salida": numero("precio_salida", 0, 500),
+        "precio_cache_lectura": numero("precio_cache_lectura", 0, 100),
+        "precio_cache_escritura": numero("precio_cache_escritura", 0, 100),
+    }
+    catalogos.set_agente_config(campos)
+    return RedirectResponse("/inbox/configuracion?ok=Configuración guardada", status_code=303)
+
+
+@app.post("/inbox/revisar-ahora")
+async def inbox_revisar_ahora(request: Request, recientes: int = Form(0)):
+    if recientes > 0:
+        def _retroceder():
+            max_uid, validez = agente_correo._gmail().max_uid()
+            agente_db.set_estado(ultimo_uid=max(0, max_uid - min(recientes, 50)), uidvalidity=validez)
+        try:
+            await _en_hilo(_retroceder)
+        except Exception as e:
+            return _volver(request, error=f"No se pudo conectar con Gmail: {e}")
+    resumen = await _en_hilo(agente_correo.ciclo, True)
+    if resumen.get("omitido"):
+        return _volver(request, msg=resumen["omitido"])
+    if resumen.get("error"):
+        return _volver(request, error=f"La revisión falló: {resumen['error']}")
+    return _volver(request, ok=(f"Revisión lista: {resumen.get('nuevos', 0)} correos nuevos, "
+                                f"{resumen.get('analizados', 0)} por atender, "
+                                f"{resumen.get('enviados_solos', 0)} respondidos por el agente."))
+
+
+@app.post("/inbox/telegram/conectar")
+async def inbox_telegram_conectar(request: Request):
+    ok, detalle = await _en_hilo(agente_correo.configurar_webhook)
+    destino = "/inbox/configuracion?" + (urlencode({"ok": "Telegram conectado"}) if ok else urlencode({"error": detalle}))
+    return RedirectResponse(destino, status_code=303)
+
+
+@app.post("/inbox/{correo_id}/enviar")
+async def inbox_enviar(request: Request, correo_id: str, respuesta: str = Form("")):
+    ok, detalle = await _en_hilo(agente_correo.enviar_respuesta, correo_id, respuesta, _usuario(request))
+    if not ok:
+        agente_db.actualizar(correo_id, {"respuesta_borrador": respuesta.strip()})
+    return _volver(request, "" if ok else correo_id, **({"ok": detalle} if ok else {"error": detalle}))
+
+
+@app.post("/inbox/{correo_id}/reescribir")
+async def inbox_reescribir(request: Request, correo_id: str):
+    datos = await request.json()
+    instruccion = (datos.get("instruccion") or "").strip()
+    if not instruccion:
+        return JSONResponse({"ok": False, "error": "Escribe qué cambiar."}, status_code=400)
+    borrador = (datos.get("borrador") or "").strip()
+    if borrador:
+        agente_db.actualizar(correo_id, {"respuesta_borrador": borrador})
+    ok, resultado = await _en_hilo(agente_correo.reescribir, correo_id, instruccion, _usuario(request))
+    if not ok:
+        return JSONResponse({"ok": False, "error": resultado}, status_code=502)
+    doc = agente_db.get_correo(correo_id) or {}
+    return {"ok": True, "respuesta": resultado, "datos_faltantes": doc.get("datos_faltantes") or []}
+
+
+@app.post("/inbox/{correo_id}/reenviar")
+async def inbox_reenviar(request: Request, correo_id: str, destino: str = Form(""), nota: str = Form("")):
+    ok, detalle = await _en_hilo(agente_correo.reenviar, correo_id, destino, nota.strip(), _usuario(request))
+    return _volver(request, "" if ok else correo_id, **({"ok": detalle} if ok else {"error": detalle}))
+
+
+@app.post("/inbox/{correo_id}/descartar")
+async def inbox_descartar(request: Request, correo_id: str, bloquear: str = Form("")):
+    await _en_hilo(agente_correo.descartar, correo_id, _usuario(request), bloquear == "1")
+    return _volver(request, ok="Remitente bloqueado" if bloquear == "1" else "Correo descartado")
+
+
+@app.post("/inbox/{correo_id}/reabrir")
+async def inbox_reabrir(request: Request, correo_id: str):
+    agente_db.actualizar(correo_id, {"estado": "pendiente"}, accion="reabierto", usuario=_usuario(request))
+    return _volver(request, correo_id, ok="El correo volvió a la cola")
+
+
+@app.post("/inbox/{correo_id}/reprocesar")
+async def inbox_reprocesar(request: Request, correo_id: str):
+    resultado = await _en_hilo(agente_correo.reprocesar, correo_id)
+    if resultado == "errores":
+        doc = agente_db.get_correo(correo_id) or {}
+        return _volver(request, correo_id, error=doc.get("error") or "No se pudo analizar")
+    return _volver(request, correo_id, ok="Correo analizado de nuevo")
+
+
+@app.post("/inbox/{correo_id}/vincular-socio")
+async def inbox_vincular_socio(request: Request, correo_id: str, member_id: str = Form("")):
+    member_id = member_id.strip().upper()
+    if member_id and not pdb.members_col.find_one({"member_id": member_id}, {"_id": 1}):
+        return _volver(request, correo_id, error=f"No existe el socio {member_id}")
+    agente_db.actualizar(correo_id, {"member_id": member_id or None, "posible_member_id": None},
+                         accion="socio vinculado", usuario=_usuario(request), detalle=member_id)
+    return _volver(request, correo_id, ok="Socio vinculado al correo")
+
+
+@app.post("/inbox/{correo_id}/registrar-pago")
+async def inbox_registrar_pago(request: Request, correo_id: str, member_id: str = Form(...),
+                               periodo: str = Form(...), fecha_pago: str = Form(""),
+                               medio_pago: str = Form("")):
+    member_id, periodo = member_id.strip().upper(), periodo.strip()
+    if not pdb.members_col.find_one({"member_id": member_id}, {"_id": 1}):
+        return _volver(request, correo_id, error=f"No existe el socio {member_id}")
+    if periodo not in catalogos.get_periodos():
+        return _volver(request, correo_id, error="Elige un período válido")
+    payment_id = pdb.get_or_create_payment(member_id, periodo)
+    remitente = (agente_db.get_correo(correo_id) or {}).get("de_email", "")
+    pdb.update_payment(payment_id, estado="pagado", fecha_pago=fecha_pago.strip() or pdb._hoy_lima(),
+                       medio=medio_pago or None, pagado_por=f"Constancia por correo ({remitente})")
+    agente_db.actualizar(correo_id, {"member_id": member_id, "pago_registrado": {"payment_id": payment_id, "periodo": periodo}},
+                         accion="pago registrado", usuario=_usuario(request), detalle=f"{member_id} {periodo}")
+    return _volver(request, correo_id, ok=f"Cuota {periodo} de {member_id} marcada como pagada. Falta enviar la respuesta.")
+
+
+@app.post("/inbox/{correo_id}/faq")
+async def inbox_guardar_faq(request: Request, correo_id: str, pregunta: str = Form(""), respuesta: str = Form("")):
+    if not pregunta.strip() or not respuesta.strip():
+        return _volver(request, correo_id, error="La pregunta y la respuesta son obligatorias")
+    pdb.save_faq(pregunta.strip(), respuesta.strip(), "Correos")
+    agente_db.actualizar(correo_id, {"faq_creada": True}, accion="guardado como FAQ", usuario=_usuario(request))
+    return _volver(request, correo_id, ok="Guardado en FAQs: el agente lo usará en las próximas respuestas")
+
+
+@app.get("/inbox/{correo_id}/adjunto/{n}")
+async def inbox_adjunto(correo_id: str, n: int):
+    from fastapi.responses import Response
+    from urllib.parse import quote
+    doc = agente_db.get_correo(correo_id)
+    if not doc or not doc.get("gm_msgid"):
+        raise HTTPException(404)
+
+    def _leer():
+        import email as _email
+        raw = agente_correo._gmail().original(doc["gm_msgid"])
+        if not raw:
+            return None
+        partes = [p for p in _email.message_from_bytes(raw).walk() if not p.is_multipart()]
+        from gmail.client import parsear
+        adjuntos = parsear(raw)["adjuntos"]
+        if not (0 <= n < len(adjuntos)):
+            return None
+        adjunto = adjuntos[n]
+        if adjunto.get("datos") is None:
+            # Archivo grande o de otro tipo: se extrae completo de la parte con el mismo nombre.
+            for p in partes:
+                datos = p.get_payload(decode=True) or b""
+                if len(datos) == adjunto["tamano"]:
+                    adjunto["datos"] = datos
+                    break
+        return adjunto
+
+    adjunto = await _en_hilo(_leer)
+    if not adjunto or adjunto.get("datos") is None:
+        raise HTTPException(404, "El adjunto ya no está disponible en Gmail")
+    seguro = adjunto["tipo"] in ("application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp")
+    return Response(adjunto["datos"], media_type=adjunto["tipo"] if seguro else "application/octet-stream", headers={
+        "Content-Disposition": f"{'inline' if seguro else 'attachment'}; filename*=UTF-8''{quote(adjunto['nombre'])}",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
+@app.post("/webhook/telegram")
+async def telegram_webhook(request: Request):
+    import hmac
+    recibido = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if not agente_correo.TELEGRAM_BOT_TOKEN or not hmac.compare_digest(recibido, agente_correo.secreto_webhook()):
+        raise HTTPException(403)
+    update = await request.json()
+    # Telegram reintenta si no recibe 200 enseguida: se responde y se procesa en otro hilo.
+    asyncio.get_running_loop().run_in_executor(None, agente_correo.procesar_update_telegram, update)
+    return {"ok": True}
 
 
 # ── Público (Prospectos) ───────────────────────────────────────────────────────
@@ -5079,7 +5283,7 @@ async def api_publico_enviar(request: Request):
                 pdb.log_comunicacion_prospecto(d["_id"], asunto, plantilla_nombre=plantilla)
             except Exception:
                 pass
-    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario, fallidos_detalle)
+    pdb.save_comunicacion_log(asunto, plantilla, filtros, destinatarios, usuario, fallidos_detalle, cuerpo=cuerpo)
 
     return {"ok": True, "enviados": enviados, "fallidos": fallidos,
             "errores": errores if errores else [],

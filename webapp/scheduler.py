@@ -181,6 +181,7 @@ async def _ejecutar_programados():
                     destinatarios=destinatarios,
                     usuario="scheduler_programado",
                     fallidos_detalle=fallidos_detalle,
+                    cuerpo=cuerpo,
                 )
             except Exception as exc:
                 logger.error("Programados: error guardando log — %s", exc)
@@ -199,3 +200,33 @@ async def _ejecutar_programados():
                                                     resultado={"error": str(exc)})
             except Exception:
                 pass
+
+
+# ── Agente de correos ──────────────────────────────────────────────────────────
+
+AGENTE_TICK = 60  # segundos; la frecuencia real (intervalo_min) se edita en /inbox/configuracion
+
+
+async def run_agente_correo_scheduler():
+    """Revisa el correo cada `intervalo_min` minutos mientras el agente esté activo.
+
+    El último UID leído y el candado viven en MongoDB: un reinicio no pierde ni repite correos.
+    """
+    from webapp import agente_correo, agente_db
+    loop = asyncio.get_running_loop()
+    await asyncio.sleep(20)  # deja terminar el arranque
+    while True:
+        try:
+            cfg = catalogos.get_agente_config()
+            if cfg.get("activo"):
+                ultima = agente_db.get_estado().get("ultima_revision")
+                intervalo = max(1, int(cfg.get("intervalo_min") or 3)) * 60
+                if ultima and ultima.tzinfo is None:
+                    ultima = ultima.replace(tzinfo=timezone.utc)
+                if not ultima or (datetime.now(timezone.utc) - ultima).total_seconds() >= intervalo - 5:
+                    resumen = await loop.run_in_executor(None, agente_correo.ciclo)
+                    if resumen.get("nuevos") or resumen.get("error"):
+                        logger.info("Agente de correos: %s", resumen)
+        except Exception as exc:
+            logger.error("Agente de correos: error en el scheduler — %s", exc)
+        await asyncio.sleep(AGENTE_TICK)

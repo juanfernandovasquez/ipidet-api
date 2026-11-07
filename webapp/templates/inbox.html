@@ -1,264 +1,348 @@
 {% extends "base.html" %}
 {% block title %}Cola de emails — IPIDET{% endblock %}
 {% block heading %}Cola de emails{% endblock %}
+{% block header_actions %}
+<form method="post" action="/inbox/revisar-ahora" x-data="{ enviando: false }" @submit="enviando = true">
+  <button type="submit" class="btn-ghost" :disabled="enviando">
+    <i class="fa-solid" :class="enviando ? 'fa-circle-notch fa-spin' : 'fa-rotate'" aria-hidden="true"></i>
+    <span x-text="enviando ? 'Revisando…' : 'Revisar ahora'">Revisar ahora</span>
+  </button>
+</form>
+<a href="/inbox/configuracion" class="btn-ghost"><i class="fa-solid fa-sliders" aria-hidden="true"></i> Configuración</a>
+{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto">
+{% set abiertos = ('pendiente', 'error', 'procesando', 'enviando') %}
+<div class="max-w-5xl">
 
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-5">
-    <div>
-      {% set total = total_approvals + total_proofs %}
-      <p class="text-slate-600 text-sm">
-        {% if total == 0 %}Sin pendientes{% else %}{{ total }} elemento{{ 's' if total != 1 else '' }} pendiente{{ 's' if total != 1 else '' }}{% endif %}
-      </p>
+  {# ─ Estado del agente #}
+  {% if not agente_cfg.activo %}
+  <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    <i class="fa-solid fa-circle-pause mr-1" aria-hidden="true"></i>
+    El agente está apagado: no revisa el correo solo. Puedes usar «Revisar ahora» o
+    <a href="/inbox/configuracion" class="font-medium underline">activarlo en Configuración</a>.
+  </div>
+  {% elif agente_estado.ultimo_error %}
+  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    <strong>La última revisión falló.</strong> {{ agente_estado.ultimo_error }}
+  </div>
+  {% endif %}
+  <p class="mb-4 text-xs text-slate-500">
+    {% if agente_cfg.activo %}<span class="badge badge-green mr-1">Activo</span>Revisa cada {{ agente_cfg.intervalo_min }} min ·
+    {% if agente_cfg.modo == 'automatico' %}envía solo lo que cumple las condiciones{% else %}solo prepara borradores{% endif %} · {% endif %}
+    Última revisión: {{ agente_estado.ultima_revision | fecha_hora_lima }}
+  </p>
+
+  {# ─ Pestañas y filtros #}
+  <form method="get" x-ref="filtros" class="mb-4">
+    <input type="hidden" name="vista" value="{{ vista }}">
+    <div class="flex flex-wrap items-center gap-1 border-b border-slate-200 mb-3" role="tablist">
+      {% for clave, nombre in [('atender', 'Por atender'), ('respondidos', 'Respondidos'), ('sin_respuesta', 'Sin respuesta'), ('todos', 'Todos')] %}
+      <a href="/inbox?vista={{ clave }}" role="tab" aria-selected="{{ 'true' if vista == clave and not ver else 'false' }}"
+         class="px-3 py-2 text-sm -mb-px border-b-2 {{ 'border-brand-700 text-slate-900 font-semibold' if vista == clave and not ver else 'border-transparent text-slate-500 hover:text-slate-800' }}">
+        {{ nombre }} <span class="text-xs text-slate-400">{{ conteos[clave] }}</span>
+      </a>
+      {% endfor %}
     </div>
-  </div>
+    <div class="flex flex-wrap gap-2">
+      <input name="search" value="{{ search }}" placeholder="Buscar por remitente, asunto o texto…" class="input flex-1 min-w-[14rem]"
+             x-data="{ t: null }" @input="clearTimeout(t); t = setTimeout(() => $refs.filtros.submit(), 450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+      <select name="categoria" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Categoría">
+        <option value="">Todas las categorías</option>
+        {% for k, v in categorias.items() %}<option value="{{ k }}" {% if categoria == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+      </select>
+      {% if search or categoria or ver %}<a href="/inbox?vista={{ vista }}" class="text-sm text-slate-500 hover:text-slate-700 px-2 self-center">Limpiar</a>{% endif %}
+    </div>
+  </form>
 
-  <!-- Flash messages -->
-  {% if request.query_params.get('ok') == 'sent' %}
-  <div class="mb-5 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
-    <i class="fa-solid fa-circle-check"></i> Respuesta enviada correctamente.
-  </div>
-  {% elif request.query_params.get('ok') == 'linked' %}
-  <div class="mb-5 px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
-    <i class="fa-solid fa-circle-check"></i> Pago vinculado correctamente.
-  </div>
-  {% elif request.query_params.get('error') %}
-  <div class="mb-5 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
-    <i class="fa-solid fa-triangle-exclamation"></i> No se encontró el elemento solicitado.
+  {% if not correos %}
+  <div class="bg-white rounded-xl border border-slate-200 p-12 text-center">
+    <i class="fa-solid fa-inbox text-3xl text-slate-300 mb-3 block" aria-hidden="true"></i>
+    <p class="text-slate-700 font-semibold">{% if vista == 'atender' %}Todo al día{% else %}No hay correos aquí{% endif %}</p>
+    <p class="text-slate-500 text-sm mt-1">{% if vista == 'atender' %}No hay correos esperando respuesta.{% else %}Prueba con otra pestaña o filtro.{% endif %}</p>
   </div>
   {% endif %}
 
-  <!-- Estado vacío -->
-  {% if total_approvals == 0 and total_proofs == 0 %}
-  <div class="bg-white rounded-xl border border-slate-200 p-14 text-center">
-    <i class="fa-solid fa-inbox text-4xl text-slate-300 mb-3 block"></i>
-    <p class="text-slate-600 font-semibold">Todo al día</p>
-    <p class="text-slate-400 text-sm mt-1">El agente no tiene emails pendientes de atención.</p>
-  </div>
-  {% endif %}
+  <div class="space-y-3">
+  {% for c in correos %}
+  {% set cid = c._id | string %}
+  {% set cat = categorias.get(c.categoria) %}
+  {% set est = estados_correo.get(c.estado, (c.estado, 'gray')) %}
+  <article id="c-{{ cid }}" class="bg-white rounded-xl border {{ 'border-red-200' if c.prioridad == 'alta' and c.estado in abiertos else 'border-slate-200' }} scroll-mt-4"
+           x-data="correoCard('{{ cid }}')" data-borrador="{{ c.respuesta_borrador or '' }}"
+           x-init="borrador = $el.dataset.borrador; abierto = {{ 'true' if ver or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
 
-  <!-- ── Respuestas del agente ──────────────────────────────────────────── -->
-  {% if approvals %}
-  <section class="mb-8">
-    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-      Respuestas del agente
-      <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">{{ total_approvals }}</span>
-    </h2>
+    {# Cabecera #}
+    <div class="p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+            {% if cat %}<span class="badge badge-{{ cat[1] }}">{{ cat[0] }}</span>{% endif %}
+            <span class="badge badge-{{ est[1] }}">{{ est[0] }}</span>
+            {% if c.prioridad == 'alta' and c.estado in abiertos %}<span class="badge badge-red">Prioridad alta</span>{% endif %}
+            {% if c.adjuntos %}<span class="text-xs text-slate-500"><i class="fa-solid fa-paperclip" aria-hidden="true"></i> {{ c.adjuntos | length }}</span>{% endif %}
+          </div>
+          <h2 class="text-base font-semibold text-slate-900 break-words">{{ c.asunto }}</h2>
+          <p class="text-sm text-slate-600 mt-0.5 break-words">
+            {{ c.de_nombre or c.de_email }}{% if c.de_nombre and c.de_nombre != c.de_email %} <span class="text-slate-400">&lt;{{ c.de_email }}&gt;</span>{% endif %}
+            <span class="text-slate-400">· {{ c.fecha | fecha_hora_lima }}</span>
+          </p>
+        </div>
+        <button type="button" class="text-sm text-blue-600 hover:underline shrink-0" @click="abierto = !abierto" :aria-expanded="abierto">
+          <span x-text="abierto ? 'Ocultar' : 'Abrir'">Abrir</span>
+        </button>
+      </div>
 
-    <div class="space-y-3">
-      {% for item in approvals %}
-      {% set e = item.email_data %}
-      {% if item.get('kind') == 'admin_forward' %}
-        {% set kind = 'admin' %}
-      {% elif item.get('faq_id') %}
-        {% set kind = 'faq' %}
-      {% elif item.get('event_id') %}
-        {% set kind = 'evento' %}
-      {% elif item.get('is_clarification') %}
-        {% set kind = 'aclaracion' %}
-      {% else %}
-        {% set kind = 'otro' %}
+      {% if c.resumen %}<p class="mt-3 text-sm text-slate-700"><i class="fa-solid fa-robot text-slate-400 mr-1" aria-hidden="true"></i>{{ c.resumen }}</p>{% endif %}
+
+      {# Vínculos con la plataforma #}
+      <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        {% if c.member_id %}
+        <a href="/members/{{ c.member_id }}" class="text-blue-600 hover:underline"><i class="fa-solid fa-user-check mr-1" aria-hidden="true"></i>{{ socios.get(c.member_id, c.member_id) }} ({{ c.member_id }})</a>
+        {% elif c.posible_member_id %}
+        <form method="post" action="/inbox/{{ cid }}/vincular-socio" class="inline-flex items-center gap-1 text-amber-800">
+          <input type="hidden" name="member_id" value="{{ c.posible_member_id }}">
+          <i class="fa-solid fa-user-clock" aria-hidden="true"></i>
+          ¿Es <a href="/members/{{ c.posible_member_id }}" class="underline">{{ socios.get(c.posible_member_id, c.posible_member_id) }}</a>? Escribe desde un correo no registrado.
+          <button type="submit" class="text-blue-600 hover:underline ml-1">Vincular</button>
+        </form>
+        {% endif %}
+        {% if c.prospecto_id %}<a href="/publico/{{ c.prospecto_id }}" class="text-blue-600 hover:underline"><i class="fa-solid fa-address-book mr-1" aria-hidden="true"></i>Ficha en Público</a>{% endif %}
+        {% if c.evento_id %}<a href="/eventos/{{ c.evento_id }}" class="text-blue-600 hover:underline"><i class="fa-solid fa-calendar-week mr-1" aria-hidden="true"></i>{{ eventos_map.get(c.evento_id, 'Evento') }}</a>{% endif %}
+      </div>
+    </div>
+
+    <div x-show="abierto" x-cloak class="border-t border-slate-100">
+
+      {# Correo recibido #}
+      <div class="px-5 py-4 bg-slate-50/60">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs font-semibold text-slate-500">Correo recibido</h3>
+          {% if c.hilo_previo %}<button type="button" class="text-xs text-blue-600 hover:underline" @click="hilo = !hilo"
+            x-text="hilo ? 'Ocultar conversación anterior' : 'Ver conversación anterior ({{ c.hilo_previo | length }})'"></button>{% endif %}
+        </div>
+        {% if c.hilo_previo %}
+        <div x-show="hilo" x-cloak class="mb-3 space-y-2">
+          {% for m in c.hilo_previo %}
+          <div class="rounded-lg border border-slate-200 bg-white p-3">
+            <p class="text-xs text-slate-500 mb-1">{{ m.de }} · {{ m.fecha | fecha_hora_lima }}</p>
+            <div class="text-sm text-slate-700 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{{ m.texto }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="text-sm text-slate-800 whitespace-pre-wrap break-words max-h-80 overflow-y-auto leading-relaxed">{{ c.cuerpo or '(sin texto)' }}</div>
+        {% if c.adjuntos %}
+        <ul class="mt-3 flex flex-wrap gap-2">
+          {% for a in c.adjuntos %}
+          <li><a href="/inbox/{{ cid }}/adjunto/{{ a.n }}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:border-slate-300">
+            <i class="fa-solid {{ 'fa-file-pdf' if a.tipo == 'application/pdf' else ('fa-file-image' if a.tipo.startswith('image/') else 'fa-file') }} text-slate-400" aria-hidden="true"></i>
+            {{ a.nombre }} <span class="text-slate-400">{{ (a.tamano / 1024) | round | int }} KB</span></a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+
+      {# ─ Por atender: borrador y acciones #}
+      {% if c.estado in ('pendiente', 'error') %}
+      <div class="px-5 py-4 space-y-4">
+        {% if c.error %}
+        <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 flex flex-wrap items-center justify-between gap-2">
+          <span>{{ c.error }}</span>
+          {% if c.estado == 'error' %}
+          <form method="post" action="/inbox/{{ cid }}/reprocesar"><button type="submit" class="btn-ghost text-xs"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Analizar de nuevo</button></form>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if c.datos_faltantes %}
+        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p class="font-medium mb-1">Antes de enviar, completa:</p>
+          <ul class="list-disc pl-5 space-y-0.5">{% for d in c.datos_faltantes %}<li>{{ d }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% if c.motivo and c.estado == 'pendiente' %}<p class="text-xs text-slate-500"><strong class="font-medium">Nota del agente:</strong> {{ c.motivo }}</p>{% endif %}
+
+        <form method="post" action="/inbox/{{ cid }}/enviar" @submit="enviando = true">
+          <label class="block text-xs font-semibold text-slate-500 mb-1" for="r-{{ cid }}">
+            Respuesta {% if c.respuesta_borrador %}<span class="font-normal">(borrador del agente, edítalo si hace falta)</span>{% endif %}
+          </label>
+          <textarea id="r-{{ cid }}" name="respuesta" rows="10" x-model="borrador" class="input w-full leading-relaxed"
+                    placeholder="Escribe la respuesta…"></textarea>
+          <p x-show="tieneMarcadores" x-cloak class="mt-1 text-xs text-amber-800">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Reemplaza los textos [COMPLETAR …] antes de enviar.
+          </p>
+          <p class="mt-1 text-xs text-slate-500">Se responde en el mismo hilo, con el correo original citado debajo.</p>
+
+          {# Pedir cambios al agente #}
+          <div x-show="pidiendo" x-cloak class="mt-3 flex flex-wrap gap-2">
+            <input x-model="instruccion" x-ref="instruccion" @keydown.enter.prevent="reescribir()" class="input flex-1 min-w-[14rem]"
+                   placeholder="Ej.: más breve, agrega el link de inscripción, tutéalo…" aria-label="Qué cambiar del borrador">
+            <button type="button" class="btn-ghost" @click="reescribir()" :disabled="cargando || !instruccion.trim()">
+              <i class="fa-solid" :class="cargando ? 'fa-circle-notch fa-spin' : 'fa-wand-magic-sparkles'" aria-hidden="true"></i>
+              <span x-text="cargando ? 'Reescribiendo…' : 'Reescribir'"></span>
+            </button>
+          </div>
+
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="btn-ghost" @click="pidiendo = !pidiendo; $nextTick(() => $refs.instruccion?.focus())">
+                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pedir cambios
+              </button>
+              <button type="button" class="btn-ghost" @click="reenviando = !reenviando"><i class="fa-solid fa-share" aria-hidden="true"></i> Reenviar</button>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="submit" form="descartar-{{ cid }}" class="btn-ghost">Descartar</button>
+              <button type="submit" class="btn-primary" :disabled="enviando || !borrador.trim() || tieneMarcadores">
+                <i class="fa-solid" :class="enviando ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'" aria-hidden="true"></i>
+                <span x-text="enviando ? 'Enviando…' : 'Enviar respuesta'">Enviar respuesta</span>
+              </button>
+            </div>
+          </div>
+        </form>
+        <form id="descartar-{{ cid }}" method="post" action="/inbox/{{ cid }}/descartar" data-confirm="¿Descartar este correo sin responder?"></form>
+
+        <form x-show="reenviando" x-cloak method="post" action="/inbox/{{ cid }}/reenviar" class="rounded-lg border border-slate-200 p-3 space-y-2">
+          <p class="text-sm font-medium text-slate-700">Reenviar el correo original (con adjuntos)</p>
+          <div class="grid sm:grid-cols-2 gap-2">
+            <input type="email" name="destino" value="{{ admin_forward }}" class="input" aria-label="Reenviar a" required>
+            <input name="nota" class="input" placeholder="Nota opcional para quien lo recibe" aria-label="Nota">
+          </div>
+          <button type="submit" class="btn-ghost"><i class="fa-solid fa-share" aria-hidden="true"></i> Reenviar</button>
+        </form>
+
+        {% if c.categoria == 'pago' or c.accion == 'registrar_pago' %}
+        <form method="post" action="/inbox/{{ cid }}/registrar-pago" class="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
+          <p class="text-sm font-medium text-slate-700">Registrar el pago en cobranzas
+            {% if c.pago_registrado %}<span class="badge badge-green ml-1">Registrado: {{ c.pago_registrado.periodo }}</span>{% endif %}</p>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <input name="member_id" value="{{ c.member_id or c.posible_member_id or '' }}" placeholder="IPIDET-0000" class="input" aria-label="Código de socio" required>
+            <select name="periodo" class="input" aria-label="Período">
+              {% for p in periodos_cobro or periodos %}<option value="{{ p }}" {% if p == periodo_actual %}selected{% endif %}>{{ p }}</option>{% endfor %}
+            </select>
+            <input type="date" name="fecha_pago" class="input" aria-label="Fecha de pago">
+            <select name="medio_pago" class="input" aria-label="Medio de pago">
+              <option value="">Medio de pago</option>
+              {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+            </select>
+          </div>
+          <p class="text-xs text-slate-500">Revisa el comprobante adjunto antes. Marca la cuota como pagada; la respuesta al socio se envía aparte.</p>
+          <button type="submit" class="btn-ghost"><i class="fa-solid fa-check" aria-hidden="true"></i> Marcar como pagado</button>
+        </form>
+        {% endif %}
+
+        {% if c.envio_auto_bloqueado_por and agente_cfg.modo == 'automatico' %}
+        <p class="text-xs text-slate-500"><strong class="font-medium">No se envió solo porque:</strong> {{ c.envio_auto_bloqueado_por | join(' · ') }}</p>
+        {% endif %}
+        <form method="post" action="/inbox/{{ cid }}/descartar" data-confirm="¿Descartar y bloquear a {{ c.de_email }}? Sus próximos correos se ignorarán.">
+          <input type="hidden" name="bloquear" value="1">
+          <button type="submit" class="text-xs text-slate-500 hover:text-red-700">Descartar y bloquear a este remitente</button>
+        </form>
+      </div>
+
+      {# ─ Respondidos #}
+      {% elif c.estado in ('enviado', 'enviado_auto', 'reenviado', 'respondido_gmail') %}
+      <div class="px-5 py-4 space-y-3">
+        <p class="text-xs text-slate-500">
+          {% if c.estado == 'reenviado' %}Reenviado a {{ c.reenviado_a }}{% elif c.estado == 'respondido_gmail' %}El equipo respondió directamente desde Gmail{% else %}Enviado por {{ c.enviado_por }}{% endif %}
+          {% if c.enviado_at %}· {{ c.enviado_at | fecha_hora_lima }}{% endif %}
+          {% if c.canal_envio == 'brevo' %}· vía Brevo (Gmail no disponible){% endif %}
+          {% if c.editado_por_equipo %}· el equipo editó el borrador{% endif %}
+        </p>
+        {% if c.respuesta_enviada %}
+        <div class="rounded-lg border border-green-200 bg-green-50/50 p-3 text-sm text-slate-800 whitespace-pre-wrap break-words">{{ c.respuesta_enviada }}</div>
+        {% if not c.faq_creada %}
+        <div x-data="{ faq: false }">
+          <button type="button" class="text-sm text-blue-600 hover:underline" @click="faq = !faq">Guardar como pregunta frecuente</button>
+          <form x-show="faq" x-cloak method="post" action="/inbox/{{ cid }}/faq" class="mt-2 space-y-2">
+            <input name="pregunta" value="{{ c.resumen or c.asunto }}" class="input w-full" aria-label="Pregunta" required>
+            <textarea name="respuesta" rows="5" class="input w-full" aria-label="Respuesta" required>{{ c.respuesta_enviada }}</textarea>
+            <p class="text-xs text-slate-500">Quita saludos y datos personales: el agente usará este texto para responder consultas parecidas.</p>
+            <button type="submit" class="btn-ghost">Guardar en FAQs</button>
+          </form>
+        </div>
+        {% else %}<p class="text-xs text-slate-500"><i class="fa-solid fa-check" aria-hidden="true"></i> Guardado en FAQs</p>{% endif %}
+        {% endif %}
+      </div>
+
+      {# ─ Sin respuesta #}
+      {% elif c.estado in ('ignorado', 'descartado') %}
+      <div class="px-5 py-4 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm text-slate-600">{{ c.motivo or 'Descartado por el equipo.' }}</p>
+        <div class="flex gap-2">
+          {% if c.filtrado_sin_ia %}
+          <form method="post" action="/inbox/{{ cid }}/reprocesar"><button type="submit" class="btn-ghost text-xs"><i class="fa-solid fa-robot" aria-hidden="true"></i> Analizar con el agente</button></form>
+          {% endif %}
+          <form method="post" action="/inbox/{{ cid }}/reabrir"><button type="submit" class="btn-ghost text-xs">Volver a la cola</button></form>
+        </div>
+      </div>
       {% endif %}
 
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-           x-data="{ open: false }">
-
-        <!-- Header (clickeable) -->
-        <div class="px-5 py-4 flex items-start gap-3 cursor-pointer select-none hover:bg-slate-50 transition-colors"
-             @click="open = !open">
-          <div class="flex-shrink-0 pt-0.5">
-            {% if kind == 'faq' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
-              <i class="fa-solid fa-circle-question text-[9px]"></i> FAQ
-            </span>
-            {% elif kind == 'admin' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-              <i class="fa-solid fa-user-tie text-[9px]"></i> Admin
-            </span>
-            {% elif kind == 'evento' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-              <i class="fa-solid fa-calendar text-[9px]"></i> Evento
-            </span>
-            {% elif kind == 'aclaracion' %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">
-              <i class="fa-solid fa-question text-[9px]"></i> Aclaración
-            </span>
-            {% else %}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
-              <i class="fa-solid fa-envelope text-[9px]"></i> Otro
-            </span>
-            {% endif %}
-          </div>
-
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-sm font-semibold text-slate-800 truncate max-w-xs">{{ e.get('from', '') }}</span>
-              {% if item.get('created_at') %}
-              <span class="text-xs text-slate-400">{{ item.created_at.strftime('%d/%m/%Y %H:%M') }}</span>
-              {% endif %}
-            </div>
-            <div class="text-sm text-slate-600 mt-0.5 truncate">{{ e.get('subject', '(sin asunto)') }}</div>
-          </div>
-
-          <i class="fa-solid fa-chevron-down text-slate-400 flex-shrink-0 mt-1 transition-transform duration-200"
-             :class="open ? 'rotate-180' : ''"></i>
-        </div>
-
-        <!-- Cuerpo del email -->
-        <div x-show="open" x-transition.opacity class="px-5 py-3 border-t border-slate-100 bg-slate-50">
-          <pre class="text-xs text-slate-600 whitespace-pre-wrap font-sans max-h-52 overflow-y-auto leading-relaxed">{{ e.get('body', '(sin contenido)') }}</pre>
-        </div>
-
-        <!-- Zona de acción: send form + dismiss form (al mismo nivel, no anidados) -->
-        <div class="px-5 py-4 border-t border-slate-200">
-          <form method="post" action="/inbox/{{ item.approval_id }}/send"
-                id="send-{{ item.approval_id }}">
-            {% if item.response_text %}
-            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Respuesta del agente</label>
-            <textarea name="response_text" rows="6"
-              class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y bg-white">{{ item.response_text }}</textarea>
-            {% else %}
-            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Respuesta manual</label>
-            <textarea name="response_text" rows="5" placeholder="Escribe la respuesta..."
-              class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y bg-white"></textarea>
-            {% endif %}
-          </form>
-          <!-- Dismiss form separado (sin anidar) -->
-          <form method="post" action="/inbox/{{ item.approval_id }}/dismiss"
-                id="dismiss-{{ item.approval_id }}"
-                data-confirm="¿Descartar este email sin responder?"></form>
-          <!-- Botones -->
-          <div class="flex items-center justify-end gap-2 mt-3">
-            <button type="submit" form="dismiss-{{ item.approval_id }}"
-              class="text-sm text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
-              Descartar
-            </button>
-            <button type="submit" form="send-{{ item.approval_id }}"
-              class="bg-brand-700 hover:bg-brand-800 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5">
-              <i class="fa-solid fa-paper-plane text-xs"></i> Enviar respuesta
-            </button>
-          </div>
-        </div>
-
-      </div>
-      {% endfor %}
+      {% if c.uso %}
+      <p class="px-5 pb-3 text-[11px] text-slate-400">
+        Confianza {{ ((c.confianza or 0) * 100) | round | int }} % · costo estimado US$ {{ '%.3f' | format(c.uso.costo_usd or 0) }}
+      </p>
+      {% endif %}
     </div>
-  </section>
-  {% endif %}
+  </article>
+  {% endfor %}
+  </div>
 
-  <!-- ── Constancias de pago ─────────────────────────────────────────────── -->
-  {% if proofs %}
-  <section>
-    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-      Constancias de pago
-      <span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">{{ total_proofs }}</span>
-    </h2>
-
-    <div class="space-y-3">
-      {% for proof in proofs %}
-      {% set e = proof.email_data %}
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-           x-data="{ open: false }">
-
-        <!-- Header -->
-        <div class="px-5 py-4 flex items-start gap-3 cursor-pointer select-none hover:bg-slate-50 transition-colors"
-             @click="open = !open">
-          <div class="flex-shrink-0 pt-0.5">
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-              <i class="fa-solid fa-money-check-dollar text-[9px]"></i> Pago
-            </span>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-sm font-semibold text-slate-800 truncate max-w-xs">{{ e.get('from', '') }}</span>
-              {% if proof.get('created_at') %}
-              <span class="text-xs text-slate-400">{{ proof.created_at.strftime('%d/%m/%Y %H:%M') }}</span>
-              {% endif %}
-            </div>
-            <div class="text-sm text-slate-600 mt-0.5 truncate">{{ e.get('subject', '(sin asunto)') }}</div>
-            {% if proof.get('_member_nombre') %}
-            <div class="text-xs text-emerald-700 mt-0.5 flex items-center gap-1">
-              <i class="fa-solid fa-user-check"></i>
-              {{ proof.id_socio }} — {{ proof._member_nombre }}
-            </div>
-            {% else %}
-            <div class="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
-              <i class="fa-solid fa-circle-question"></i> Socio no identificado automáticamente
-            </div>
-            {% endif %}
-          </div>
-          <i class="fa-solid fa-chevron-down text-slate-400 flex-shrink-0 mt-1 transition-transform duration-200"
-             :class="open ? 'rotate-180' : ''"></i>
-        </div>
-
-        <!-- Cuerpo del email -->
-        <div x-show="open" x-transition.opacity class="px-5 py-3 border-t border-slate-100 bg-slate-50">
-          <pre class="text-xs text-slate-600 whitespace-pre-wrap font-sans max-h-52 overflow-y-auto leading-relaxed">{{ e.get('body', '(sin contenido)') }}</pre>
-        </div>
-
-        <!-- Zona de acción: vincular + dismiss (sin anidar) -->
-        <div class="px-5 py-4 border-t border-slate-200">
-          <form method="post" action="/inbox/proof/{{ proof.approval_id }}/vincular"
-                id="vincular-{{ proof.approval_id }}">
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div>
-                <label class="block text-xs text-slate-500 mb-1 font-medium">ID Socio <span class="text-red-500">*</span></label>
-                <input type="text" name="member_id" required
-                  value="{{ proof.get('id_socio') or '' }}" placeholder="IPIDET-0xxx"
-                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1 font-medium">Período <span class="text-red-500">*</span></label>
-                <input type="text" name="periodo" required value="{{ periodo_actual }}" placeholder="{{ periodo_actual }}"
-                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1 font-medium">Fecha de pago</label>
-                <input type="date" name="fecha_pago"
-                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400">
-              </div>
-              <div>
-                <label class="block text-xs text-slate-500 mb-1 font-medium">Medio</label>
-                <select name="medio_pago"
-                  class="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
-                  <option value="">— Medio —</option>
-                  {% for m in medios_pago %}
-                  <option value="{{ m }}">{{ m }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-            </div>
-          </form>
-          <!-- Dismiss form separado -->
-          <form method="post" action="/inbox/proof/{{ proof.approval_id }}/dismiss"
-                id="dismiss-proof-{{ proof.approval_id }}"
-                data-confirm="¿Descartar esta constancia?"></form>
-          <!-- Botones + nota -->
-          <div class="flex items-center justify-between mt-3 flex-wrap gap-2">
-            <p class="text-xs text-slate-400">
-              <i class="fa-solid fa-circle-info mr-1"></i>
-              Busca el ID en <a href="/members" target="_blank" class="text-blue-600 hover:underline">Socios</a> si no lo recuerdas.
-            </p>
-            <div class="flex items-center gap-2">
-              <button type="submit" form="dismiss-proof-{{ proof.approval_id }}"
-                class="text-sm text-slate-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">
-                Descartar
-              </button>
-              <button type="submit" form="vincular-{{ proof.approval_id }}"
-                class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5">
-                <i class="fa-solid fa-link text-xs"></i> Vincular pago
-              </button>
-            </div>
-          </div>
-        </div>
-
-      </div>
-      {% endfor %}
+  {% set paginas = ((total + per_page - 1) // per_page) %}
+  {% if paginas > 1 and not ver %}
+  <nav class="mt-5 flex items-center justify-between text-sm" aria-label="Paginación">
+    <span class="text-slate-500">{{ total }} correos · página {{ page }} de {{ paginas }}</span>
+    <div class="flex gap-2">
+      {% if page > 1 %}<a class="btn-ghost" href="?vista={{ vista }}&categoria={{ categoria }}&search={{ search | urlencode }}&page={{ page - 1 }}">Anterior</a>{% endif %}
+      {% if page < paginas %}<a class="btn-ghost" href="?vista={{ vista }}&categoria={{ categoria }}&search={{ search | urlencode }}&page={{ page + 1 }}">Siguiente</a>{% endif %}
     </div>
-  </section>
+  </nav>
   {% endif %}
-
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Avisos de ?ok= / ?msg= / ?error= y URL limpia para no repetirlos al recargar.
+  document.addEventListener('alpine:initialized', () => {
+    const url = new URL(location.href);
+    const ok = url.searchParams.get('ok') || url.searchParams.get('msg');
+    const error = url.searchParams.get('error');
+    if (ok) avisar(ok);
+    if (error) avisar(error, 'error');
+    if (ok || error) {
+      ['ok', 'msg', 'error'].forEach(k => url.searchParams.delete(k));
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+  });
+
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('correoCard', (id) => ({
+      abierto: false, hilo: false, borrador: '', instruccion: '',
+      pidiendo: false, reenviando: false, cargando: false, enviando: false,
+      get tieneMarcadores() { return /\[\s*COMPLETAR/i.test(this.borrador); },
+      async reescribir() {
+        if (!this.instruccion.trim() || this.cargando) return;
+        this.cargando = true;
+        try {
+          const r = await fetch(`/inbox/${id}/reescribir`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instruccion: this.instruccion, borrador: this.borrador }),
+          });
+          const datos = await r.json();
+          if (!r.ok || !datos.ok) throw new Error(datos.error || 'No se pudo reescribir');
+          this.borrador = datos.respuesta;
+          this.instruccion = '';
+          this.pidiendo = false;
+          avisar('Borrador reescrito. Revísalo antes de enviar.');
+        } catch (e) {
+          avisar(e.message, 'error');
+        } finally {
+          this.cargando = false;
+        }
+      },
+    }));
+  });
+</script>
 {% endblock %}

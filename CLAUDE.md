@@ -16,7 +16,7 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 8. [Variables de entorno](#env)
 9. [Web admin — templates y rutas](#webapp)
 10. [webapp/db.py — funciones clave](#dbpy)
-11. [Flujo del agente de email](#agente)
+11. [Agente de correos](#agente)
 12. [Portal de socios (WooCommerce)](#portal)
 13. [Comunicaciones masivas (Brevo)](#brevo)
 14. [Autenticación web](#auth)
@@ -41,7 +41,8 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 # Web admin (FastAPI en http://localhost:8000)
 python platform_main.py
 
-# Agente de email (loop continuo, revisa Gmail cada 60s)
+# Agente de email: en producción corre DENTRO de la web (scheduler). Esto es solo para probar en local;
+# comparte el candado de MongoDB con la web, así que no procesa dos veces. Ver sección 11.
 python main.py
 
 # Importar padrón desde Excel a MongoDB  ⚠️ DESTRUCTIVO — ver sección 15
@@ -222,6 +223,15 @@ Los estilos viven en `webapp/static/ipidet.css` y la configuración de Tailwind 
 - Un POST que redirige (303) muestra «Cambios guardados» automáticamente; una ruta que quiera su propio mensaje redirige con `?ok=`, `?msg=` o `?error=`.
 - Los contadores deben mostrar el total real, no solo los registros de la página visible.
 
+### R12 — Agente de correos: un solo camino para responder
+
+Todo envío desde la cola (web, Telegram o automático) pasa por `agente_correo.enviar_respuesta()`: reclama el correo de forma atómica (`agente_db.reclamar_para_envio`), encadena la respuesta al hilo y registra el historial. No envíes respuestas con `GmailClient` directo ni cambies `correos.estado` a mano fuera de `agente_db`.
+
+- **Lo que el agente sabe sale de la base** (R10): eventos, comunicaciones, campañas, cronograma, productos, FAQs y `config.agente_correo_config`. Si una respuesta sale mal por falta de un dato, el arreglo es cargar el dato en la plataforma, no escribirlo en el prompt.
+- **Nunca inventa:** si falta un dato deja `[COMPLETAR: …]`; la web y el servidor no dejan enviar mientras quede uno.
+- **El envío automático lo decide el código**, no el modelo: `_motivos_para_no_enviar_solo()` exige modo automático, categoría habilitada, confianza ≥ umbral, sin datos faltantes, sin adjuntos y tope diario por remitente. Pagos, proveedores, críticos e internos nunca salen solos.
+- **El correo recibido es dato, no instrucción:** el prompt lo marca así. No pasar texto del correo a otro lugar como instrucción.
+
 ---
 
 ## 3. Archivos más frecuentemente modificados {#frecuentes}
@@ -274,26 +284,20 @@ config/
   catalogos.py       — Períodos, catálogos editables y datos de la organización (ver R10)
 
 gmail/
-  client.py          — IMAP/SMTP con Gmail (polling por UID)
+  client.py          — IMAP/SMTP de la cuenta del agente: lectura por UID, hilo por X-GM-THRID,
+                       parseo (HTML→texto, adjuntos), detección de correos automáticos, respuestas encadenadas
   auth.py            — Configuración de autenticación
 
-classifier/
-  engine.py          — Clasifica intención de emails con Claude
-
 workflows/
-  incoming.py        — Procesa emails entrantes, decide acción
-  approvals.py       — Cola de aprobaciones manuales vía Telegram
-  event_manager.py   — Gestión de eventos del agente
-  learning.py        — Aprende respuestas aprobadas → guarda como FAQ
+  event_manager.py   — Comandos de Telegram para crear/listar/cancelar eventos
 
 billing/
   db.py              — Consultas MongoDB de cobranzas (uso del agente)
   reminders.py       — Scheduler: recordatorios y alertas de morosos
 
 knowledge_base/
-  db.py              — CRUD de FAQs en MongoDB + colecciones del agente
-  faq_loader.py      — Carga FAQs desde YAML → MongoDB
-  faqs/              — Archivos YAML: inscripciones, eventos, membresías
+  db.py              — FAQs, eventos y offset del bot (lo usan Telegram y los scripts de admin)
+  faqs/              — YAML antiguos; ya no se cargan (las FAQs se editan en /faqs)
 
 telegram_bot/
   notifications.py   — Envío de alertas al admin vía Telegram
@@ -303,6 +307,10 @@ webapp/
   db.py              — Consultas MongoDB para la web admin (~5000 líneas)
   auth.py            — Autenticación con bcrypt + sessions; colección users
   mailer.py          — Envío de emails via Brevo API + historial de envíos
+  agente_correo.py   — Agente de correos: ciclo, envío, reenvío, reescritura y Telegram (sección 11)
+  agente_ia.py       — Llamada a Claude con salida estructurada (análisis + borrador)
+  agente_contexto.py — Lo que sabe el agente: eventos, comunicaciones, cronograma, socio, hilo
+  agente_db.py       — Colección `correos`, estado del agente y candado del ciclo
   portal_db.py       — Consultas para el portal de socios + lógica WooCommerce
   portal_router.py   — Handlers del portal: build_member_status, handle_wc_webhook
   scheduler.py       — Tareas periódicas (reminders, alertas, envíos programados)
@@ -431,11 +439,9 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `redes_posts_col` | `redes_posts` | `webapp/db.py` | Posts publicados en RRSS |
 | `redes_cronograma_col` | `redes_cronograma` | `webapp/db.py` | Calendario de publicaciones planificadas |
 | `users_col` | `users` | `webapp/auth.py` | Usuarios de la plataforma web |
-| `pending_approvals` | `pending_approvals` | `knowledge_base/db.py` | Cola de aprobaciones del agente vía Telegram |
-| `pending_clarifications` | `pending_clarifications` | `knowledge_base/db.py` | Hilos esperando respuesta de usuario |
-| `processed_emails` | `processed_emails` | `knowledge_base/db.py` | Emails ya procesados (deduplicación) |
-| `bot_state` | `bot_state` | `knowledge_base/db.py` | Estado del bot de Telegram |
-| `billing_pending_proofs` | `billing_pending_proofs` | `billing/db.py` | Comprobantes de pago recibidos por email |
+| `correos_col` | `correos` | `webapp/agente_db.py` | Cola del agente de correos: un documento por correo recibido (ver 7.13) |
+| `_blocked` | `blocked_senders` | `webapp/agente_db.py` | Remitentes bloqueados desde la cola o con /bloquear en Telegram |
+| `bot_state` | `bot_state` | `knowledge_base/db.py` | Offset del bot de Telegram (solo polling local) |
 
 ### 7.2 Máquina de estados: `payments.estado`
 
@@ -721,21 +727,32 @@ times_used  int
 created_at  datetime
 ```
 
-### 7.13 Colección `pending_approvals` (agente de email)
+### 7.13 Colección `correos` (agente de correos)
+
+Un documento por correo recibido. Estados y categorías en `catalogos.ESTADOS_CORREO` / `CATEGORIAS_CORREO`. Configuración en `config.agente_correo_config`; último UID leído y candado en `config.agente_correo_estado`.
 
 ```
-approval_id       string    UUID corto (8 chars)
-email_data        dict      email original completo
-response_text     string    respuesta propuesta por el agente
-faq_id            string | null   FAQ usada como base
-telegram_msg_id   int | null      ID del mensaje en Telegram
-status            string    "pending" | "sending" | "sent" | "rejected"
-                            | "regenerating" | "awaiting_edit"
-kind              string | null   "admin_forward" si es derivación al admin
-event_id          string | null   si es respuesta a consulta de evento
-is_clarification  bool | null     si es email de repregunta
-created_at        datetime
-resolved_at       datetime | null
+clave              string    X-GM-MSGID (único: evita procesar dos veces)
+gm_msgid, gm_thrid string    IDs estables de Gmail del mensaje y del hilo
+uid                int       UID IMAP en el INBOX al llegar
+message_id, references       cabeceras para encadenar la respuesta
+de, de_nombre, de_email, reply_to, para[], cc[], asunto, fecha
+cuerpo             string    texto (HTML convertido), máx. 20 000 caracteres
+adjuntos           [{n, nombre, tipo, tamano}]   el archivo se relee de Gmail al abrirlo
+estado             string    procesando | pendiente | enviando | enviado | enviado_auto |
+                             respondido_gmail | reenviado | descartado | ignorado | error
+categoria, prioridad, prioridad_orden, accion, requiere_respuesta,
+puede_enviarse_sin_revision, confianza, resumen, motivo, datos_faltantes[]
+respuesta_borrador string    borrador vigente (editable)
+borrador_original  string    lo que propuso el agente (para medir cuánto edita el equipo)
+respuesta_enviada  string    lo que salió; editado_por_equipo bool
+envio_auto_bloqueado_por [string]  motivos por los que no salió solo
+member_id | posible_member_id | prospecto_id | evento_id   vínculos con la plataforma
+hilo_previo        [{de, fecha, texto}]
+uso                {entrada, salida, cache_lectura, cache_escritura, costo_usd, modelo}
+canal_envio        "gmail" | "brevo";  enviado_por, enviado_at, reenviado_a
+filtrado_sin_ia    bool      descartado por reglas, sin llamar a la API
+intentos, error, telegram_msg_id, historial [{fecha, accion, usuario, detalle}]
 ```
 
 ---
@@ -842,7 +859,8 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `redes_dashboard.html` | `/redes` | Dashboard de redes sociales: métricas por cuenta |
 | `redes_posts.html` | `/redes/posts` | Posts publicados con filtros |
 | `redes_cronograma.html` | `/redes/cronograma` | Calendario de publicaciones planificadas |
-| `inbox.html` | `/inbox` | Bandeja unificada: aprobaciones del agente + comprobantes de pago recibidos por email |
+| `inbox.html` | `/inbox` | Cola de emails: borradores del agente, envío, reescritura, reenvío, registro de pagos |
+| `inbox_configuracion.html` | `/inbox/configuracion` | Agente de correos: activación, modo, conocimiento extra, remitentes, Telegram, costo |
 | `alianzas.html` | `/alianzas` | Buscador de instituciones, sustento y seguimiento de alianzas |
 | `ponentes.html` | `/ponentes` | Directorio y búsqueda de ponentes; seguimiento y vínculo con eventos |
 | `login.html` | `/login` | Login de la plataforma |
@@ -1048,6 +1066,24 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `POST` | `/sync-usuarios/vincular` | Vincular WP user a socio |
 | `POST` | `/api/portal/update-alternative-email` | Actualizar email alternativo desde WP |
 | `POST` | `/api/portal/update-dni` | Actualizar DNI desde WP |
+
+#### Cola de emails (agente de correos) — permiso `comunicaciones`
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| `GET` | `/inbox` | Cola; `vista` = atender, respondidos, sin_respuesta o todos; `categoria`, `search`, `ver=<id>` |
+| `GET` | `/inbox/configuracion` | Configuración del agente, estado, costo y conexión con Telegram |
+| `POST` | `/inbox/configuracion` | Guarda la configuración (`config.agente_correo_config`) |
+| `POST` | `/inbox/revisar-ahora` | Ejecuta un ciclo ya; `recientes=N` reanaliza los últimos N del INBOX |
+| `POST` | `/inbox/telegram/conectar` | Registra el webhook de Telegram (requiere URL https) |
+| `POST` | `/inbox/{id}/enviar` | Envía la respuesta (bloquea si queda `[COMPLETAR`) |
+| `POST` | `/inbox/{id}/reescribir` | JSON `{instruccion, borrador}` → nuevo borrador de Claude |
+| `POST` | `/inbox/{id}/reenviar` | Reenvía el original con adjuntos; `destino`, `nota` |
+| `POST` | `/inbox/{id}/descartar` | Descarta; `bloquear=1` también bloquea al remitente |
+| `POST` | `/inbox/{id}/reabrir` · `/reprocesar` | Vuelve a la cola · analiza de nuevo |
+| `POST` | `/inbox/{id}/vincular-socio` · `/registrar-pago` · `/faq` | Vincula socio · marca la cuota como pagada · guarda la respuesta como FAQ |
+| `GET` | `/inbox/{id}/adjunto/{n}` | Descarga un adjunto (se relee de Gmail) |
+| `POST` | `/webhook/telegram` | Botones y mensajes del bot; verifica `X-Telegram-Bot-Api-Secret-Token` |
 
 #### API JSON
 
@@ -1319,17 +1355,27 @@ get_member_ubicaciones() → list[str]
 
 ---
 
-## 11. Flujo del agente de email {#agente}
+## 11. Agente de correos {#agente}
 
-1. `gmail/client.py` — polling IMAP cada 60s, obtiene emails nuevos por UID
-2. `classifier/engine.py` — Claude clasifica intención del email (confianza 0–1)
-3. `workflows/incoming.py` — decide: auto-responder (> `CONFIDENCE_THRESHOLD`), escalar a admin, o ignorar
-4. `workflows/approvals.py` — si confianza baja, Telegram pide aprobación al admin; la respuesta aprobada se envía vía SMTP
-5. Respuesta aprobada → `workflows/learning.py` → guarda como FAQ si es recurrente
+Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada minuto si toca y llama a `agente_correo.ciclo()` cada `intervalo_min`. Se enciende y configura en `/inbox/configuracion` (por defecto está apagado y en modo «solo borradores»). Lee la cuenta `GMAIL_ADDRESS` (ipidet@ipidet.org).
 
-Colecciones propias del agente (en `knowledge_base/db.py`): `pending_approvals`, `pending_clarifications`, `processed_emails`, `bot_state`.
+**Ciclo:**
+1. `agente_db.reservar_ciclo()` — candado atómico en `config.agente_correo_estado`; caduca a los 20 min.
+2. `GmailClient.nuevos(ultimo_uid)` — correos del INBOX desde el último UID guardado en la base (no en memoria: un reinicio no pierde ni repite). La primera vez arranca desde el correo más reciente.
+3. `_filtro_previo` — sin costo de API: bloqueados, «ignorar siempre», automáticos (`detectar_automatico`: Auto-Submitted, List-Unsubscribe, no-reply, respuestas automáticas) e internos (`remitentes_internos`) → estado `ignorado`.
+4. `_analizar` — lee el hilo completo de Gmail (incluye lo que el equipo respondió a mano), arma el contexto del remitente (`agente_contexto.remitente`: socio verificado por email, cuotas, inscripciones, ficha en Público, correos previos) y llama a `agente_ia.analizar` **una sola vez**: clasificación + borrador con salida estructurada. PDF e imágenes adjuntas van a Claude.
+5. Si requiere respuesta → `pendiente` (aviso por Telegram si está activo). En modo automático sale solo si `_motivos_para_no_enviar_solo` devuelve lista vacía.
+6. Reintenta los análisis en `error` (máx. 3; la falta de saldo o de red no gasta intentos) y marca `respondido_gmail` los pendientes que el equipo contestó desde Gmail.
 
-Colecciones compartidas con la web: `faqs` y `eventos_ipidet`. `knowledge_base/db.py::_evento_para_agente()` traduce cada evento a los campos que usa el agente; precio, cierre de inscripción y link de registro se editan en `/eventos/{id}`.
+**Prompt:** sistema = reglas (tono y firma de la config) + conocimiento de IPIDET (`agente_contexto.conocimiento()`: organización, `informacion_adicional`, productos, eventos próximos con invitación y expositores, eventos de los últimos 60 días, comunicaciones/campañas/programadas de 45 días, cronograma de redes de 30 días, FAQs) con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo y esfuerzo se configuran; usa `fallbacks="default"` (beta `server-side-fallback-2026-07-01`).
+
+**Envío:** SMTP de Gmail (queda en Enviados y en el hilo). Si falla (Render bloquea el 587 en planes gratuitos) usa la API de Brevo con `In-Reply-To`/`References` y guarda copia en Enviados por IMAP. La respuesta cita el original.
+
+**Telegram:** en producción por webhook (`/webhook/telegram`, se conecta desde la configuración). Botones Enviar/Descartar, y responder al mensaje del bot pide cambios al borrador. `/bloquear`, `/desbloquear`, `/lista_bloqueados` y los comandos de eventos (`workflows/event_manager.py`) siguen funcionando. `telegram_main.py` hace polling solo si no hay webhook.
+
+**Comunicaciones:** `save_comunicacion_log(..., cuerpo=)` guarda el texto de cada envío masivo para que el agente sepa qué se comunicó.
+
+Pendiente fuera de la web: los recordatorios de cuotas de fraccionamiento de `billing/reminders.py` solo corren con `python main.py`.
 
 ---
 
@@ -1386,7 +1432,7 @@ Toda la plataforma requiere login (excepto `/login`, `/webhook/*`). Las sesiones
 
 **Secciones con control de acceso:** `dashboard`, `members`, `billing`, `fraccionamientos`, `finanzas`, `faqs`, `marketing`, `comunicaciones`, `eventos`, `pendientes`, `redes`, `alianzas`.
 
-Las rutas `/`, `/api/*`, `/webhook/*` y `/comprobantes` son accesibles a cualquier usuario autenticado.
+Las rutas `/`, `/api/*`, `/webhook/*` y `/comprobantes` son accesibles a cualquier usuario autenticado. `/inbox` requiere el permiso `comunicaciones`.
 
 El admin inicial se crea automáticamente al startup si `users_col` está vacía y están definidos `ADMIN_EMAIL` y `ADMIN_PASSWORD` en el entorno.
 

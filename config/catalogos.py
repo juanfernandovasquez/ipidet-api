@@ -89,6 +89,71 @@ ORIGENES_PONENTE = {"busqueda": "Búsqueda con IA", "evento": "Expositor de un e
 _ALIANZAS_DEFECTO = {"propuestas_por_corrida": 5, "perfil": "", "criterios": ""}
 _PONENTES_DEFECTO = {"propuestas_por_corrida": 5, "publico": "", "temas": ""}
 
+# ── Agente de correos (/inbox) ─────────────────────────────────────────────────
+# Categorías y estados son lógica del agente: el prompt, los filtros y la regla de
+# envío automático dependen de ellos. Lo editable (tono, firma, información de pago,
+# remitentes internos, modo) vive en config.agente_correo_config.
+CATEGORIAS_CORREO: dict[str, tuple[str, str, str]] = {
+    # clave: (etiqueta, color de badge, cuándo aplica — se le explica así a Claude)
+    "consulta_socio":  ("Socio",          "blue",   "Un socio pregunta por su cuota, estado de cuenta, constancia, comprobante o datos"),
+    "pago":            ("Pago",           "amber",  "Envía o menciona un comprobante, voucher o constancia de pago/transferencia"),
+    "evento":          ("Evento",         "green",  "Consulta o inscripción a un evento, conversatorio, foro, grabación o certificado de asistencia"),
+    "admision":        ("Admisión",       "purple", "Quiere asociarse: requisitos, postulación, costos de ingreso"),
+    "consulta_general": ("Consulta",      "slate",  "Otra consulta del público que IPIDET puede responder"),
+    "institucional":   ("Institucional",  "orange", "Otra institución, universidad o prensa: invitaciones, convenios, propuestas"),
+    "proveedor":       ("Proveedor",      "gray",   "Facturas, cobros o avisos de proveedores y plataformas que usa IPIDET"),
+    "interno":         ("Interno",        "gray",   "Conversación entre directivos o el equipo de IPIDET"),
+    "critico":         ("Crítico",        "red",    "Queja grave, tema legal, reclamo formal o urgencia"),
+    "automatico":      ("Automático",     "gray",   "Notificación, boletín, publicidad o código de acceso: no espera respuesta"),
+}
+# Ciclo de vida de un correo en la cola.
+ESTADOS_CORREO: dict[str, tuple[str, str]] = {
+    "procesando":   ("Analizando",            "blue"),
+    "pendiente":    ("Por atender",           "amber"),
+    "enviando":     ("Enviando",              "blue"),
+    "enviado":      ("Respondido",            "green"),
+    "enviado_auto": ("Respondido por el agente", "green"),
+    "respondido_gmail": ("Respondido en Gmail", "green"),
+    "reenviado":    ("Reenviado",             "purple"),
+    "descartado":   ("Descartado",            "gray"),
+    "ignorado":     ("Sin respuesta necesaria", "gray"),
+    "error":        ("Error",                 "red"),
+}
+ESTADOS_CORREO_ABIERTOS = ("procesando", "pendiente", "enviando", "error")
+MODOS_AGENTE = {
+    "borrador":   "Solo borradores: el equipo revisa y envía cada respuesta",
+    "automatico": "Automático: envía solo lo que cumple todas las condiciones; el resto queda en borrador",
+}
+ESFUERZOS_AGENTE = {"low": "Bajo (más rápido y barato)", "medium": "Medio (recomendado)", "high": "Alto (más cuidadoso)"}
+
+_AGENTE_DEFECTO = {
+    "activo": False,
+    "modo": "borrador",
+    "intervalo_min": 3,
+    "max_por_ciclo": 15,
+    "modelo": "claude-opus-5-5",
+    "esfuerzo": "medium",
+    "umbral_auto": 0.9,
+    "categorias_auto": ["evento", "consulta_general"],
+    "max_auto_por_remitente_dia": 2,
+    "firma": "Saludos cordiales,\nEquipo IPIDET",
+    "estilo": (
+        "Profesional y cercano. Escribe en primera persona del plural (nosotros). "
+        "Saluda por el nombre cuando lo conozcas. Responde todas las preguntas del correo. "
+        "Evita clichés como «a la brevedad posible» y no prometas nada que no esté confirmado."
+    ),
+    "informacion_adicional": "",
+    "remitentes_internos": [],
+    "remitentes_ignorar": [],
+    "remitentes_permitidos": [],
+    "telegram_avisos": True,
+    # USD por millón de tokens; solo para estimar el costo que se muestra.
+    "precio_entrada": 4.0,
+    "precio_salida": 20.0,
+    "precio_cache_lectura": 0.4,
+    "precio_cache_escritura": 5.0,
+}
+
 CAMPOS_ORGANIZACION = {
     "email":           "Email de contacto",
     "web":             "Sitio web",
@@ -211,6 +276,24 @@ def set_ponentes_config(campos: dict) -> None:
 
 def get_ponentes_por_revisar() -> int:
     return _cached("ponentes_por_revisar", lambda: db.ponentes.count_documents({"estado": "nuevo"}))
+
+
+# ── Agente de correos ──────────────────────────────────────────────────────────
+
+def get_agente_config() -> dict:
+    def _load():
+        return {**_AGENTE_DEFECTO, **(_config.find_one({"_id": "agente_correo_config"}) or {})}
+    return _cached("agente_correo_config", _load)
+
+
+def set_agente_config(campos: dict) -> None:
+    _config.update_one({"_id": "agente_correo_config"}, {"$set": campos}, upsert=True)
+    invalidar()
+
+
+def get_correos_por_atender() -> int:
+    return _cached("correos_por_atender", lambda: db.correos.count_documents(
+        {"estado": {"$in": ["pendiente", "error"]}}))
 
 
 # ── Períodos ───────────────────────────────────────────────────────────────────

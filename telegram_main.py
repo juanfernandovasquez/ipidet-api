@@ -1,70 +1,56 @@
+"""
+Bot de Telegram en la computadora (solo para desarrollo).
+
+En producción Telegram envía cada mensaje y botón a la web (POST /webhook/telegram), que se
+conecta desde /inbox/configuracion. Mientras ese webhook esté activo, Telegram no entrega
+mensajes por polling, así que este script se detiene con un aviso.
+"""
 import io
 import os
 import sys
-import time
 import threading
-from datetime import datetime, timezone, timedelta
+import time
 
 
 def _stdin_watchdog():
-    """Muere cuando el launcher cierra el pipe de stdin (ventana cerrada)."""
     try:
         sys.stdin.read()
     except Exception:
         pass
     os._exit(0)
 
-threading.Thread(target=_stdin_watchdog, daemon=True).start()
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
-from gmail.client import GmailClient
-from workflows.approvals import check_pending_approvals
-from config.settings import GMAIL_ADDRESS, GMAIL_APP_PASSWORD
-
-POLL_INTERVAL = 3      # segundos en condiciones normales
-POLL_MAX_BACKOFF = 60  # máximo backoff ante errores de red
+POLL_INTERVAL = 3
+POLL_MAX_BACKOFF = 60
 
 
 def run():
-    print("=" * 50)
-    print("  IPIDET Telegram Bot")
-    print("=" * 50)
+    from telegram_bot import notifications
+    from webapp import agente_correo
 
-    from knowledge_base.db import pending_approvals
-    gmail = GmailClient(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+    info = agente_correo.estado_webhook()
+    if info.get("url"):
+        print(f"El bot ya está conectado a la web ({info['url']}). No hace falta este proceso.")
+        while True:  # el launcher reinicia procesos que terminan; se queda en espera
+            time.sleep(3600)
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=2)
-    stuck = pending_approvals.update_many(
-        {"status": "sending", "sending_started_at": {"$lt": cutoff}},
-        {"$set": {"status": "pending"}},
-    )
-    stuck2 = pending_approvals.update_many(
-        {"status": "regenerating", "sending_started_at": {"$lt": cutoff}},
-        {"$set": {"status": "pending"}},
-    )
-    total = stuck.modified_count + stuck2.modified_count
-    if total:
-        print(f"  Reseteo {total} approval(s) bloqueadas (> 2 min).")
-
-    print(f"Bot activo. Polling cada {POLL_INTERVAL}s.\n")
-
+    print("Bot de Telegram activo en local (polling).")
     backoff = POLL_INTERVAL
     while True:
         try:
-            check_pending_approvals(gmail)
-            backoff = POLL_INTERVAL  # éxito → resetear backoff
+            for update in notifications.get_updates():
+                agente_correo.procesar_update_telegram(update)
+            backoff = POLL_INTERVAL
         except Exception as e:
-            error_str = str(e)
-            if "timeout" in error_str.lower() or "connection" in error_str.lower():
-                backoff = min(backoff * 2, POLL_MAX_BACKOFF)
-                print(f"  [TG] Sin conexión, reintentando en {backoff}s...")
-            else:
-                backoff = POLL_INTERVAL
-                print(f"  [TG] ERROR: {e}")
+            backoff = min(backoff * 2, POLL_MAX_BACKOFF)
+            print(f"  [TG] Error: {e}; reintento en {backoff}s")
         time.sleep(backoff)
 
 
 if __name__ == "__main__":
+    if not sys.stdin.isatty():
+        threading.Thread(target=_stdin_watchdog, daemon=True).start()
     run()

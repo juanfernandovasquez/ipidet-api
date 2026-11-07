@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Agente de correos — IPIDET{% endblock %}
+{% block heading %}Agente de correos{% endblock %}
+{% block header_actions %}
+<a href="/inbox" class="btn-ghost"><i class="fa-solid fa-inbox" aria-hidden="true"></i> Volver a la cola</a>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl space-y-5">
+
+  {# ─ Estado #}
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Estado</div>
+      <div class="mt-1">{% if cfg.activo %}<span class="badge badge-green">Activo</span>{% else %}<span class="badge badge-gray">Apagado</span>{% endif %}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Última revisión</div>
+      <div class="text-sm font-medium text-slate-800 mt-1">{{ estado.ultima_revision | fecha_hora_lima }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Analizados (30 días)</div>
+      <div class="text-2xl font-semibold text-slate-800">{{ uso.analizados }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Costo estimado de la API (30 días)</div>
+      <div class="text-2xl font-semibold text-slate-800">US$ {{ '%.2f' | format(uso.costo_usd) }}</div>
+    </div>
+  </section>
+  {% if estado.ultimo_error %}
+  <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><strong>Último error:</strong> {{ estado.ultimo_error }}</div>
+  {% endif %}
+
+  <form method="post" action="/inbox/configuracion" class="space-y-5">
+
+    {# 1. Funcionamiento #}
+    <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <h2 class="text-sm font-semibold text-slate-800">Funcionamiento</h2>
+      <p class="text-sm text-slate-600">Lee la cuenta <strong>{{ cuenta or 'sin configurar' }}</strong>. Al activarlo por primera vez empieza desde el correo más reciente: no procesa el historial.</p>
+      <label class="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="activo" value="1" {% if cfg.activo %}checked{% endif %} class="mt-0.5">
+        <span><strong>Revisar el correo automáticamente</strong><br><span class="text-slate-500">Usa la API de Claude: cada correo analizado tiene un costo.</span></span>
+      </label>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <label class="block text-xs font-medium text-slate-600">Revisar cada (minutos)
+          <input type="number" name="intervalo_min" min="1" max="60" value="{{ cfg.intervalo_min }}" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Máximo de correos por revisión
+          <input type="number" name="max_por_ciclo" min="1" max="50" value="{{ cfg.max_por_ciclo }}" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Cuidado al analizar
+          <select name="esfuerzo" class="input w-full mt-1">
+            {% for k, v in esfuerzos.items() %}<option value="{{ k }}" {% if cfg.esfuerzo == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+          </select>
+        </label>
+      </div>
+      <fieldset class="space-y-2">
+        <legend class="text-xs font-medium text-slate-600 mb-1">Modo de envío</legend>
+        {% for k, v in modos.items() %}
+        <label class="flex items-start gap-2 text-sm text-slate-700">
+          <input type="radio" name="modo" value="{{ k }}" {% if cfg.modo == k %}checked{% endif %} class="mt-0.5"> {{ v }}
+        </label>
+        {% endfor %}
+      </fieldset>
+      <div class="rounded-lg border border-slate-200 p-3 space-y-3">
+        <p class="text-xs text-slate-600">En modo automático, un correo sale sin revisión solo si es de una categoría marcada aquí, el agente lo considera completo, la confianza supera el mínimo, no trae adjuntos, no le faltan datos y el remitente no recibió ya respuestas automáticas hoy. Pagos, proveedores, críticos e internos nunca salen solos.</p>
+        <div class="flex flex-wrap gap-x-4 gap-y-2">
+          {% for k, v in categorias.items() if k not in ('critico', 'interno', 'automatico', 'pago', 'proveedor') %}
+          <label class="inline-flex items-center gap-1.5 text-sm text-slate-700">
+            <input type="checkbox" name="categorias_auto" value="{{ k }}" {% if k in cfg.categorias_auto %}checked{% endif %}> {{ v[0] }}
+          </label>
+          {% endfor %}
+        </div>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <label class="block text-xs font-medium text-slate-600">Confianza mínima (0,5 a 1)
+            <input type="number" step="0.01" min="0.5" max="1" name="umbral_auto" value="{{ cfg.umbral_auto }}" class="input w-full mt-1">
+          </label>
+          <label class="block text-xs font-medium text-slate-600">Respuestas automáticas por remitente al día
+            <input type="number" min="1" max="10" name="max_auto_por_remitente_dia" value="{{ cfg.max_auto_por_remitente_dia }}" class="input w-full mt-1">
+          </label>
+        </div>
+      </div>
+    </section>
+
+    {# 2. Lo que el agente sabe #}
+    <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <h2 class="text-sm font-semibold text-slate-800">Lo que el agente sabe</h2>
+      <p class="text-sm text-slate-600">
+        Ya lee lo que está en la plataforma: los <a href="/eventos" class="text-blue-600 hover:underline">eventos</a> (fechas, precios, links, expositores e invitación),
+        las <a href="/comunicaciones" class="text-blue-600 hover:underline">comunicaciones</a> y campañas de los últimos 45 días, el
+        <a href="/redes/cronograma" class="text-blue-600 hover:underline">cronograma de redes</a>, los <a href="/productos" class="text-blue-600 hover:underline">productos y cuotas</a>,
+        las <a href="/faqs" class="text-blue-600 hover:underline">FAQs</a>, los datos de la <a href="/configuracion" class="text-blue-600 hover:underline">organización</a>
+        y, de quien escribe, su ficha de socio, cuotas e inscripciones. Para que responda bien, mantén esos datos al día.
+      </p>
+      <label class="block text-xs font-medium text-slate-600">Información adicional para responder
+        <textarea name="informacion_adicional" rows="8" class="input w-full mt-1 leading-relaxed"
+                  placeholder="Cuentas bancarias para pagar la cuota, horario de atención, requisitos de admisión, cómo se piden constancias, qué no responder…">{{ cfg.informacion_adicional }}</textarea>
+        <span class="block mt-1 font-normal text-slate-500">Lo que no esté en la plataforma ni aquí, el agente no lo inventa: deja un [COMPLETAR …] para que lo llenes.</span>
+      </label>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <label class="block text-xs font-medium text-slate-600">Tono y estilo
+          <textarea name="estilo" rows="5" class="input w-full mt-1">{{ cfg.estilo }}</textarea>
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Firma de las respuestas
+          <textarea name="firma" rows="5" class="input w-full mt-1">{{ cfg.firma }}</textarea>
+        </label>
+      </div>
+    </section>
+
+    {# 3. Remitentes #}
+    <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <h2 class="text-sm font-semibold text-slate-800">Remitentes</h2>
+      <p class="text-sm text-slate-600">Un correo o un dominio por línea (ejemplo: <code class="font-mono text-xs">directivo@gmail.com</code> o <code class="font-mono text-xs">@kpmg.com</code>). Estas reglas se aplican antes de llamar a la API, así que no tienen costo.</p>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <label class="block text-xs font-medium text-slate-600">Equipo y directivos
+          <textarea name="remitentes_internos" rows="6" class="input w-full mt-1 font-mono text-xs">{{ cfg.remitentes_internos | join('\n') }}</textarea>
+          <span class="block mt-1 font-normal text-slate-500">Sus correos quedan registrados pero el agente nunca les responde.</span>
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Ignorar siempre
+          <textarea name="remitentes_ignorar" rows="6" class="input w-full mt-1 font-mono text-xs">{{ cfg.remitentes_ignorar | join('\n') }}</textarea>
+          <span class="block mt-1 font-normal text-slate-500">Publicidad o avisos que no necesitan análisis.</span>
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Analizar aunque parezcan automáticos
+          <textarea name="remitentes_permitidos" rows="6" class="input w-full mt-1 font-mono text-xs">{{ cfg.remitentes_permitidos | join('\n') }}</textarea>
+          <span class="block mt-1 font-normal text-slate-500">Ejemplo: avisos de transferencias del banco o de la tienda web.</span>
+        </label>
+      </div>
+      {% if bloqueados %}
+      <p class="text-xs text-slate-500">Bloqueados desde la cola o Telegram: {{ bloqueados | join(', ') }}</p>
+      {% endif %}
+    </section>
+
+    {# 4. Avisos y costos #}
+    <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <h2 class="text-sm font-semibold text-slate-800">Avisos y costos</h2>
+      <label class="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="telegram_avisos" value="1" {% if cfg.telegram_avisos %}checked{% endif %} class="mt-0.5">
+        <span>Avisar por Telegram cada correo por atender, con botones para enviar o descartar y la opción de pedir cambios respondiendo al mensaje.</span>
+      </label>
+      <div class="grid sm:grid-cols-5 gap-3">
+        <label class="block text-xs font-medium text-slate-600 sm:col-span-1">Modelo
+          <input name="modelo" value="{{ cfg.modelo }}" class="input w-full mt-1 font-mono text-xs">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">US$/M entrada
+          <input type="number" step="0.01" name="precio_entrada" value="{{ cfg.precio_entrada }}" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">US$/M salida
+          <input type="number" step="0.01" name="precio_salida" value="{{ cfg.precio_salida }}" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">US$/M caché (lectura)
+          <input type="number" step="0.01" name="precio_cache_lectura" value="{{ cfg.precio_cache_lectura }}" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">US$/M caché (escritura)
+          <input type="number" step="0.01" name="precio_cache_escritura" value="{{ cfg.precio_cache_escritura }}" class="input w-full mt-1">
+        </label>
+      </div>
+      <p class="text-xs text-slate-500">Los precios solo sirven para estimar el costo que se muestra; el cobro real está en la consola de Anthropic.</p>
+    </section>
+
+    <div class="flex justify-end">
+      <button type="submit" class="btn-primary"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Guardar configuración</button>
+    </div>
+  </form>
+
+  {# ─ Telegram #}
+  <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+    <h2 class="text-sm font-semibold text-slate-800">Conexión con Telegram</h2>
+    {% if telegram.configurado %}
+    <p class="text-sm text-slate-700"><span class="badge badge-green mr-1">Conectado</span> Los botones y respuestas del bot llegan a esta plataforma.</p>
+    {% if telegram.ultimo_error %}<p class="text-sm text-red-700">Último error de Telegram: {{ telegram.ultimo_error }}</p>{% endif %}
+    {% else %}
+    <p class="text-sm text-slate-600">Sin conectar{% if telegram.url %} (apunta a {{ telegram.url }}){% endif %}. Al conectar, el bot deja de responderle al programa de la computadora (telegram_main.py) y pasa a esta plataforma.</p>
+    {% endif %}
+    <form method="post" action="/inbox/telegram/conectar">
+      <button type="submit" class="btn-ghost" {% if not url_publica.startswith('https://') %}disabled title="Solo funciona en el servidor público (https)"{% endif %}>
+        <i class="fa-brands fa-telegram" aria-hidden="true"></i> {{ 'Volver a conectar' if telegram.configurado else 'Conectar Telegram' }}
+      </button>
+    </form>
+  </section>
+
+  {# ─ Prueba #}
+  <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+    <h2 class="text-sm font-semibold text-slate-800">Probar con correos recientes</h2>
+    <p class="text-sm text-slate-600">Analiza los últimos correos del INBOX aunque el agente esté apagado. Los que ya están en la cola no se repiten. Nada se envía si el modo es «solo borradores».</p>
+    <form method="post" action="/inbox/revisar-ahora" class="flex flex-wrap items-end gap-2" x-data="{ enviando: false }" @submit="enviando = true">
+      <label class="block text-xs font-medium text-slate-600">Cantidad
+        <input type="number" name="recientes" min="1" max="50" value="10" class="input w-24 mt-1">
+      </label>
+      <button type="submit" class="btn-ghost" :disabled="enviando">
+        <i class="fa-solid" :class="enviando ? 'fa-circle-notch fa-spin' : 'fa-flask'" aria-hidden="true"></i>
+        <span x-text="enviando ? 'Analizando… puede tardar un minuto' : 'Analizar'">Analizar</span>
+      </button>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('alpine:initialized', () => {
+    const url = new URL(location.href);
+    const ok = url.searchParams.get('ok') || url.searchParams.get('msg');
+    const error = url.searchParams.get('error');
+    if (ok) avisar(ok);
+    if (error) avisar(error, 'error');
+    if (ok || error) history.replaceState(null, '', url.pathname);
+  });
+</script>
+{% endblock %}

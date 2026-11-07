@@ -2452,7 +2452,7 @@ def get_comunicacion_destinatarios(
 def save_comunicacion_log(asunto: str, plantilla: str, filtros: dict,
                            destinatarios: list, usuario: str = "",
                            fallidos_detalle: list | None = None,
-                           campania: str = "") -> str:
+                           campania: str = "", cuerpo: str = "") -> str:
     from datetime import datetime, timezone
     fd = fallidos_detalle or []
     member_ids_enviados = [
@@ -2473,6 +2473,9 @@ def save_comunicacion_log(asunto: str, plantilla: str, filtros: dict,
     }
     if campania:
         doc["campania"] = campania
+    if cuerpo:
+        # Texto del mensaje (sin personalizar): el agente de correos lo usa para responder consultas sobre él.
+        doc["cuerpo"] = cuerpo[:20000]
     return str(comunicaciones_col.insert_one(doc).inserted_id)
 
 
