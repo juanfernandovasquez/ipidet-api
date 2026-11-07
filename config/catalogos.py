@@ -73,6 +73,18 @@ ESTADOS_ALIANZA: dict[str, tuple[str, str]] = {
 }
 AMBITOS_ALIANZA = {"nacional": "Nacional", "regional": "América Latina", "internacional": "Internacional"}
 
+# Etapas de un posible ponente.
+ESTADOS_PONENTE: dict[str, tuple[str, str]] = {
+    "nuevo":         ("Por revisar",   "blue"),
+    "en_evaluacion": ("En evaluación", "amber"),
+    "invitado":      ("Invitado",      "purple"),
+    "confirmado":    ("Confirmado",    "green"),
+    "expuso":        ("Ya expuso",     "slate"),
+    "no_disponible": ("No disponible", "orange"),
+    "descartado":    ("Descartado",    "gray"),
+}
+ORIGENES_PONENTE = {"busqueda": "Búsqueda con IA", "evento": "Expositor de un evento", "manual": "Agregado a mano"}
+
 # Valores si la colección aún no los tiene; se editan en /alianzas.
 _ALIANZAS_DEFECTO = {
     "activa": True,
@@ -88,6 +100,8 @@ _ALIANZAS_DEFECTO = {
     "precio_cache": 0.2,
     "precio_busqueda": 0.01,
 }
+_PONENTES_DEFECTO = {**_ALIANZAS_DEFECTO, "publico": "", "temas": ""}
+del _PONENTES_DEFECTO["perfil"], _PONENTES_DEFECTO["criterios"]
 
 CAMPOS_ORGANIZACION = {
     "email":           "Email de contacto",
@@ -196,6 +210,21 @@ def set_alianzas_config(campos: dict) -> None:
 
 def get_alianzas_por_revisar() -> int:
     return _cached("alianzas_por_revisar", lambda: db.alianzas.count_documents({"estado": "nueva"}))
+
+
+def get_ponentes_config() -> dict:
+    def _load():
+        return {**_PONENTES_DEFECTO, **(_config.find_one({"_id": "ponentes_config"}) or {})}
+    return _cached("ponentes_config", _load)
+
+
+def set_ponentes_config(campos: dict) -> None:
+    _config.update_one({"_id": "ponentes_config"}, {"$set": campos}, upsert=True)
+    invalidar()
+
+
+def get_ponentes_por_revisar() -> int:
+    return _cached("ponentes_por_revisar", lambda: db.ponentes.count_documents({"estado": "nuevo"}))
 
 
 # ── Períodos ───────────────────────────────────────────────────────────────────

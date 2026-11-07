@@ -33,6 +33,7 @@ _PATH_MAP = [
     ("/marketing",        "marketing"),
     ("/comunicaciones",   "comunicaciones"),
     ("/eventos",          "eventos"),
+    ("/ponentes",         "eventos"),
     ("/pendientes",       "pendientes"),
     ("/redes",            "redes"),
     ("/alianzas",         "alianzas"),

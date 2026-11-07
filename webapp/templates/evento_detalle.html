@@ -254,10 +254,21 @@
     <h2 class="text-sm font-semibold text-slate-700">
       <i class="fa-solid fa-person-chalkboard mr-1.5 text-slate-500"></i> Expositores
     </h2>
-    <button type="button" x-data @click="$dispatch('open-add-expositor')"
-            class="btn-ghost text-xs">
-      <i class="fa-solid fa-plus mr-1"></i> Agregar
-    </button>
+    <div class="flex flex-wrap items-center gap-2">
+      {% if ponentes_sugeridos %}
+      <a href="/ponentes?evento={{ evento._id }}" class="text-xs text-blue-600 hover:underline">{{ ponentes_sugeridos }} sugerido{{ 's' if ponentes_sugeridos != 1 }} por la IA</a>
+      {% endif %}
+      <form method="post" action="/ponentes/buscar" data-confirm="¿Buscar posibles ponentes de otras instituciones para este evento? Cada búsqueda consume créditos de la API de Claude.">
+        <input type="hidden" name="evento_id" value="{{ evento._id }}">
+        <button type="submit" class="btn-ghost text-xs" {% if busqueda_ponentes.en_curso or not clave_configurada %}disabled title="{{ 'Ya hay una búsqueda en curso' if busqueda_ponentes.en_curso else 'Falta configurar la clave de la API' }}"{% endif %}>
+          <i class="fa-solid fa-magnifying-glass mr-1"></i> Buscar ponentes con IA
+        </button>
+      </form>
+      <button type="button" x-data @click="$dispatch('open-add-expositor')"
+              class="btn-ghost text-xs">
+        <i class="fa-solid fa-plus mr-1"></i> Agregar
+      </button>
+    </div>
   </div>
 
   {% set expositores = evento.expositores or [] %}
@@ -283,11 +294,16 @@
             {% if exp.titulo or exp.empresa %}
             <p class="text-xs text-slate-500 mt-0.5">{{ exp.titulo }}{% if exp.titulo and exp.empresa %} · {% endif %}{{ exp.empresa }}</p>
             {% endif %}
+            <div class="flex flex-wrap gap-3 mt-1">
             {% if exp.linkedin %}
-            <a href="{{ exp.linkedin }}" target="_blank" class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1">
+            <a href="{{ exp.linkedin }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
               <i class="fa-brands fa-linkedin text-[11px]"></i> LinkedIn
             </a>
             {% endif %}
+            {% if exp.ponente_id %}
+            <a href="/ponentes?search={{ exp.nombre | urlencode }}" class="text-xs text-blue-600 hover:underline">Ficha de ponente</a>
+            {% endif %}
+            </div>
             {% if exp.bio %}
             <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">{{ exp.bio }}</p>
             {% endif %}
@@ -332,13 +348,14 @@
           <div class="flex gap-2 pt-1">
             <button type="submit" class="btn-primary text-xs py-1">Guardar</button>
             <button type="button" @click="editExp = false" class="btn-ghost text-xs py-1">Cancelar</button>
-            <form method="post" action="/eventos/{{ evento._id }}/expositores/{{ exp.numero }}/delete" class="ml-auto"
-                  data-confirm="¿Eliminar expositor?">
-              <button type="submit" class="text-xs text-red-400 hover:text-red-600 px-2 py-1">
-                <i class="fa-solid fa-trash-can"></i>
-              </button>
-            </form>
           </div>
+        </form>
+        {# Formulario aparte: un form dentro de otro se ignora y el botón enviaba «Guardar». #}
+        <form method="post" action="/eventos/{{ evento._id }}/expositores/{{ exp.numero }}/delete" class="flex justify-end -mt-7"
+              data-confirm="¿Eliminar expositor?">
+          <button type="submit" class="text-xs text-red-400 hover:text-red-600 px-2 py-1" aria-label="Eliminar expositor">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
         </form>
       </div>
     </div>

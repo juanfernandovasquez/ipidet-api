@@ -94,21 +94,22 @@ async def _ejecutar_ciclo():
     logger.info("Scheduler: ciclo completado — %d enviados, %d fallidos", enviados, fallidos)
 
 
-# ── Búsqueda de alianzas ───────────────────────────────────────────────────────
+# ── Búsquedas con IA: alianzas y ponentes ──────────────────────────────────────
 
-ALIANZAS_INTERVAL = 3600  # revisa cada hora si ya toca; la fecha vive en la base
+INVESTIGACION_INTERVAL = 3600  # revisa cada hora si ya toca; la fecha vive en la base
 
 
-async def run_alianzas_scheduler():
+async def run_investigacion_scheduler():
     """La última corrida se guarda en MongoDB, así que un reinicio no reprograma ni repite la búsqueda."""
-    from webapp import alianzas_ia
+    from webapp import alianzas_ia, ponentes_ia
     loop = asyncio.get_running_loop()
     while True:
-        await asyncio.sleep(ALIANZAS_INTERVAL)
-        try:
-            await loop.run_in_executor(None, alianzas_ia.ejecutar_si_toca)
-        except Exception as exc:
-            logger.error("Alianzas: error en la búsqueda programada — %s", exc)
+        await asyncio.sleep(INVESTIGACION_INTERVAL)
+        for nombre, modulo in (("Alianzas", alianzas_ia), ("Ponentes", ponentes_ia)):
+            try:
+                await loop.run_in_executor(None, modulo.ejecutar_si_toca)
+            except Exception as exc:
+                logger.error("%s: error en la búsqueda programada — %s", nombre, exc)
 
 
 # ── Envíos programados ─────────────────────────────────────────────────────────

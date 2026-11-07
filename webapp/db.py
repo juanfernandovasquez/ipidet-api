@@ -148,6 +148,10 @@ def buscar_global(q: str, limite: int = 5) -> list:
                                {"nombre": 1, "pais": 1}).limit(limite):
         salida.append({"grupo": "Alianza", "titulo": a.get("nombre", ""), "detalle": a.get("pais") or "",
                        "url": f"/alianzas?search={_quote(a.get('nombre', ''))}", "icono": "fa-solid fa-handshake"})
+    for p in ponentes_col.find({"$or": [{"nombre": rx}, {"institucion": rx}]},
+                               {"nombre": 1, "institucion": 1}).limit(limite):
+        salida.append({"grupo": "Ponente", "titulo": p.get("nombre", ""), "detalle": p.get("institucion") or "",
+                       "url": f"/ponentes?search={_quote(p.get('nombre', ''))}", "icono": "fa-solid fa-person-chalkboard"})
     return salida
 
 
@@ -3201,7 +3205,7 @@ def toggle_checklist_item(evento_id: str, item_id: str, done: bool):
 
 
 def add_expositor(evento_id: str, nombre: str, titulo: str = "",
-                  empresa: str = "", linkedin: str = "", bio: str = "") -> int:
+                  empresa: str = "", linkedin: str = "", bio: str = "", ponente_id: str = "") -> int:
     doc = eventos_col.find_one({"_id": ObjectId(evento_id)}, {"expositores": 1})
     existentes = doc.get("expositores", []) if doc else []
     numero = (max((e["numero"] for e in existentes), default=0) + 1)
@@ -3213,6 +3217,7 @@ def add_expositor(evento_id: str, nombre: str, titulo: str = "",
         "linkedin":   linkedin.strip(),
         "bio":        bio.strip(),
         "confirmado": False,
+        "ponente_id": ponente_id,
     }
     eventos_col.update_one({"_id": ObjectId(evento_id)}, {"$push": {"expositores": entrada}})
     return numero
@@ -5317,38 +5322,56 @@ def _utc(valor):
     return valor.replace(tzinfo=timezone.utc) if isinstance(valor, datetime) and valor.tzinfo is None else valor
 
 
-def get_alianzas_estado() -> dict:
-    doc = _db.config.find_one({"_id": "alianzas_estado"}) or {}
+def _get_estado_investigacion(estado_id: str) -> dict:
+    doc = _db.config.find_one({"_id": estado_id}) or {}
     return {k: _utc(v) for k, v in doc.items()}
 
 
-def reservar_corrida_alianzas(origen: str) -> str | None:
+def _reservar_corrida(estado_id: str, corridas_col, origen: str, extra: dict | None = None,
+                      semanal: bool = True) -> str | None:
     """Evita dos búsquedas a la vez. Una reserva vieja caduca: un reinicio la pudo dejar abierta."""
     ahora = datetime.now(timezone.utc)
+    cambios = {"en_curso": True, "ultimo_intento": ahora}
+    if semanal:
+        cambios["ultimo_intento_semanal"] = ahora
     try:
         previo = _db.config.find_one_and_update(
-            {"_id": "alianzas_estado",
+            {"_id": estado_id,
              "$or": [{"en_curso": {"$ne": True}}, {"ultimo_intento": {"$lt": ahora - _CORRIDA_CADUCA}}]},
-            {"$set": {"en_curso": True, "ultimo_intento": ahora}},
+            {"$set": cambios},
             upsert=True,
         )
     except DuplicateKeyError:
         return None
     if previo and previo.get("en_curso"):
-        alianzas_corridas_col.update_many({"estado": "en_curso"}, {"$set": {
+        corridas_col.update_many({"estado": "en_curso"}, {"$set": {
             "estado": "fallida", "fin": ahora, "resultado": {"error": "Se interrumpió por un reinicio del servidor."}}})
-    return str(alianzas_corridas_col.insert_one({"estado": "en_curso", "origen": origen, "inicio": ahora}).inserted_id)
+    doc = {"estado": "en_curso", "origen": origen, "inicio": ahora, **(extra or {})}
+    return str(corridas_col.insert_one(doc).inserted_id)
+
+
+def _cerrar_corrida(estado_id: str, corridas_col, corrida_id: str, estado: str, resultado: dict,
+                    uso: dict, costo: float, semanal: bool = True) -> None:
+    ahora = datetime.now(timezone.utc)
+    corridas_col.update_one({"_id": ObjectId(corrida_id)}, {"$set": {
+        "estado": estado, "fin": ahora, "resultado": resultado, "uso": uso, "costo_estimado_usd": costo}})
+    cambios = {"en_curso": False}
+    if estado == "completada" and semanal:
+        cambios["ultima_exitosa"] = ahora
+    _db.config.update_one({"_id": estado_id}, {"$set": cambios})
+    catalogos.invalidar()
+
+
+def get_alianzas_estado() -> dict:
+    return _get_estado_investigacion("alianzas_estado")
+
+
+def reservar_corrida_alianzas(origen: str) -> str | None:
+    return _reservar_corrida("alianzas_estado", alianzas_corridas_col, origen)
 
 
 def cerrar_corrida_alianzas(corrida_id: str, estado: str, resultado: dict, uso: dict, costo: float) -> None:
-    ahora = datetime.now(timezone.utc)
-    alianzas_corridas_col.update_one({"_id": ObjectId(corrida_id)}, {"$set": {
-        "estado": estado, "fin": ahora, "resultado": resultado, "uso": uso, "costo_estimado_usd": costo}})
-    cambios = {"en_curso": False}
-    if estado == "completada":
-        cambios["ultima_exitosa"] = ahora
-    _db.config.update_one({"_id": "alianzas_estado"}, {"$set": cambios})
-    catalogos.invalidar()
+    _cerrar_corrida("alianzas_estado", alianzas_corridas_col, corrida_id, estado, resultado, uso, costo)
 
 
 def get_corridas_alianzas(limite: int = 8) -> list:
@@ -5479,3 +5502,267 @@ def actualizar_seguimiento_alianza(alianza_id: str, estado: str, responsable: st
         "estado": estado, "responsable": responsable.strip(), "fecha_seguimiento": fecha_seguimiento.strip(),
         "notas": notas.strip(), "updated_at": datetime.now(timezone.utc)}})
     catalogos.invalidar()
+
+
+# ── Ponentes ──────────────────────────────────────────────────────────────────
+
+ponentes_col = _db.ponentes
+ponentes_corridas_col = _db.ponentes_corridas
+_ESTADOS_PONENTE_CERRADOS = ("descartado", "no_disponible")
+_CENTROS_GENERICOS = {"independiente", "particular", "ninguno", "ninguna", "otro", "otros"}
+_CAMPOS_ANALISIS_PONENTE = ("cargo", "institucion", "pais", "ambito", "temas", "por_que_relevante", "trayectoria",
+                            "charlas_posibles", "canal_contacto", "linkedin", "perfil_url",
+                            "es_funcionario_publico", "consideraciones", "relevancia", "prestigio", "viabilidad")
+
+
+def get_ponentes_estado() -> dict:
+    return _get_estado_investigacion("ponentes_estado")
+
+
+def reservar_corrida_ponentes(origen: str, evento_id: str = "", evento_titulo: str = "") -> str | None:
+    return _reservar_corrida("ponentes_estado", ponentes_corridas_col, origen,
+                             {"evento_id": evento_id, "evento_titulo": evento_titulo}, semanal=not evento_id)
+
+
+def cerrar_corrida_ponentes(corrida_id: str, estado: str, resultado: dict, uso: dict, costo: float) -> None:
+    corrida = ponentes_corridas_col.find_one({"_id": ObjectId(corrida_id)}, {"evento_id": 1}) or {}
+    _cerrar_corrida("ponentes_estado", ponentes_corridas_col, corrida_id, estado, resultado, uso, costo,
+                    semanal=not corrida.get("evento_id"))
+
+
+def get_corridas_ponentes(limite: int = 8) -> list:
+    docs = list(ponentes_corridas_col.find().sort("inicio", -1).limit(limite))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    return docs
+
+
+def _hoy_lima() -> str:
+    return (datetime.now(timezone.utc) - _timedelta(hours=5)).strftime("%Y-%m-%d")
+
+
+def get_eventos_proximos_lista(limite: int = 12) -> list:
+    docs = eventos_col.find({"fecha": {"$gte": _hoy_lima()}, "estado": {"$ne": "cancelado"}},
+                            {"titulo": 1, "fecha": 1}).sort("fecha", 1).limit(limite)
+    return [{"_id": str(d["_id"]), "titulo": d.get("titulo", ""), "fecha": d.get("fecha", "")} for d in docs]
+
+
+def _asistencia_eventos(match: dict) -> list:
+    registrantes = {"$ifNull": ["$zoom_registrants", []]}
+    return list(eventos_col.aggregate([
+        {"$match": match},
+        {"$project": {"titulo": 1, "fecha": 1, "expositores.ponente_id": 1,
+                      "inscritos": {"$size": registrantes},
+                      "asistentes": {"$size": {"$filter": {"input": registrantes,
+                                                            "cond": {"$eq": ["$$this.asistio", True]}}}}}},
+    ]))
+
+
+def get_contexto_ponentes() -> dict:
+    """Lo que Claude necesita saber para buscar. No incluye datos de socios."""
+    asistencia = [e for e in _asistencia_eventos({"zoom_registrants.0": {"$exists": True}}) if e["inscritos"]]
+    asistencia.sort(key=lambda e: e["asistentes"] / e["inscritos"], reverse=True)
+    buscados = list(ponentes_col.find({"origen": "busqueda"}, {"nombre": 1, "estado": 1}))
+    return {
+        "proximos": get_eventos_proximos_lista(8),
+        "asistencia": asistencia[:10],
+        "instituciones": [a["nombre"] for a in alianzas_col.find({"estado": {"$ne": "descartada"}}, {"nombre": 1})],
+        "registrados": [p["nombre"] for p in buscados if p.get("estado") not in _ESTADOS_PONENTE_CERRADOS],
+        "descartados": [p["nombre"] for p in buscados if p.get("estado") in _ESTADOS_PONENTE_CERRADOS],
+    }
+
+
+def guardar_propuesta_ponente(doc: dict, corrida_id: str, evento: dict | None = None) -> str:
+    """Devuelve "nuevo", "actualizado" o "ignorado". Nunca pisa etapa, responsable ni notas."""
+    ahora = datetime.now(timezone.utc)
+    clave = _clave_alianza(doc["nombre"])
+    novedad = doc.pop("novedad", "")
+    relacion = doc.pop("relacion_evento", "")
+    sugerencia = ({"evento_id": evento["_id"], "evento_titulo": evento.get("titulo", ""), "motivo": relacion,
+                   "fecha": ahora} if evento else None)
+    puntaje = doc["relevancia"] + doc["prestigio"] + doc["viabilidad"]
+    previa = ponentes_col.find_one({"clave": clave})
+    if not previa:
+        try:
+            ponentes_col.insert_one({**doc, "clave": clave, "origen": "busqueda", "estado": "nuevo",
+                                     "puntaje": puntaje, "responsable": "", "notas": "", "fecha_seguimiento": "",
+                                     "novedades": [], "sugerencias": [sugerencia] if sugerencia else [],
+                                     "corrida_id": corrida_id, "created_at": ahora, "updated_at": ahora})
+        except DuplicateKeyError:
+            return "ignorado"
+        return "nuevo"
+    if previa.get("estado") in _ESTADOS_PONENTE_CERRADOS:
+        return "ignorado"
+
+    cambios: dict = {}
+    if previa.get("estado") == "nuevo":
+        cambios = {c: doc[c] for c in _CAMPOS_ANALISIS_PONENTE}
+        cambios["puntaje"] = puntaje
+    else:
+        # Una ficha que vino de un evento o se cargó a mano: solo se completa lo que falta.
+        cambios = {c: doc[c] for c in _CAMPOS_ANALISIS_PONENTE if doc.get(c) and not previa.get(c)}
+        if cambios and not previa.get("puntaje"):
+            cambios["puntaje"] = puntaje
+    push: dict = {}
+    if sugerencia and not any(s.get("evento_id") == sugerencia["evento_id"] for s in previa.get("sugerencias", [])):
+        push["sugerencias"] = sugerencia
+    if novedad:
+        push["novedades"] = {"$each": [{"fecha": ahora, "texto": novedad, "corrida_id": corrida_id}], "$position": 0}
+    if not cambios and not push:
+        return "ignorado"
+    fuentes = {f["url"]: f for f in previa.get("fuentes", []) + doc.get("fuentes", [])}
+    ops: dict = {"$set": {**cambios, "fuentes": list(fuentes.values())[:15], "updated_at": ahora}}
+    if push:
+        ops["$push"] = push
+    ponentes_col.update_one({"_id": previa["_id"]}, ops)
+    return "actualizado"
+
+
+def _tokens(texto: str) -> set:
+    return {t for t in _clave_alianza(texto).split() if len(t) > 2}
+
+
+def _enriquecer_ponentes(ponentes: list) -> None:
+    """Eventos en los que expuso, socios con el mismo nombre y socios de su misma institución."""
+    if not ponentes:
+        return
+    ids = [p["_id"] for p in ponentes]
+    expuso: dict = {}
+    for e in _asistencia_eventos({"expositores.ponente_id": {"$in": ids}}):
+        for x in e.get("expositores", []):
+            if x.get("ponente_id") in ids:
+                expuso.setdefault(x["ponente_id"], []).append(
+                    {"evento_id": str(e["_id"]), "titulo": e.get("titulo", ""), "fecha": e.get("fecha", ""),
+                     "inscritos": e["inscritos"], "asistentes": e["asistentes"]})
+    socios = []
+    for m in members_col.find({"estado": {"$ne": "retirar"}},
+                              {"member_id": 1, "apellidos": 1, "nombres": 1, "centro_trabajo": 1}):
+        centro = _clave_alianza(m.get("centro_trabajo") or "")
+        socios.append({"member_id": m["member_id"],
+                       "nombre": f"{m.get('nombres', '')} {m.get('apellidos', '')}".strip(),
+                       "tokens": _tokens(f"{m.get('nombres', '')} {m.get('apellidos', '')}"),
+                       "centro": f" {centro} " if centro and centro not in _CENTROS_GENERICOS and len(centro) >= 3 else ""})
+    for p in ponentes:
+        p["eventos"] = sorted(expuso.get(p["_id"], []), key=lambda e: e["fecha"], reverse=True)
+        nombre = _tokens(p.get("nombre", ""))
+        p["posible_socio"] = next(({"member_id": s["member_id"], "nombre": s["nombre"]} for s in socios
+                                   if len(nombre) >= 2 and (nombre <= s["tokens"] or len(nombre & s["tokens"]) >= 3)), None)
+        inst = f" {_clave_alianza(p.get('institucion', ''))} "
+        p["colegas"] = [{"member_id": s["member_id"], "nombre": s["nombre"]} for s in socios
+                        if inst.strip() and s["centro"] and (s["centro"] in inst or inst in s["centro"])
+                        and (not p["posible_socio"] or s["member_id"] != p["posible_socio"]["member_id"])][:6]
+
+
+def get_ponentes(search: str = "", estado: str = "", ambito: str = "", evento: str = "", origen: str = "",
+                 orden: str = "puntaje") -> list:
+    query: dict = {}
+    if search.strip():
+        rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+        query["$or"] = [{"nombre": rx}, {"cargo": rx}, {"institucion": rx}, {"pais": rx}, {"temas": rx},
+                        {"por_que_relevante": rx}, {"trayectoria": rx}]
+    if ambito:
+        query["ambito"] = ambito
+    if evento:
+        query["sugerencias.evento_id"] = evento
+    if origen:
+        query["origen"] = origen
+    query["estado"] = estado if estado else {"$ne": "descartado"}
+    campo = "created_at" if orden == "recientes" else "puntaje"
+    docs = list(ponentes_col.find(query).sort([(campo, -1), ("nombre", 1)]))
+    for d in docs:
+        d["_id"] = str(d["_id"])
+    _enriquecer_ponentes(docs)
+    return docs
+
+
+def contar_ponentes_por_estado() -> dict:
+    return {d["_id"]: d["n"] for d in ponentes_col.aggregate([{"$group": {"_id": "$estado", "n": {"$sum": 1}}}])}
+
+
+def contar_sugeridos_evento(evento_id: str) -> int:
+    return ponentes_col.count_documents({"sugerencias.evento_id": evento_id, "estado": {"$ne": "descartado"}})
+
+
+def registrar_ponente_desde_evento(nombre: str, cargo: str = "", institucion: str = "", linkedin: str = "",
+                                   bio: str = "") -> str:
+    """El expositor de un evento entra al directorio; si ya estaba, se reutiliza su ficha."""
+    clave = _clave_alianza(nombre)
+    if not clave:
+        return ""
+    previa = ponentes_col.find_one({"clave": clave}, {"_id": 1})
+    if previa:
+        return str(previa["_id"])
+    try:
+        linkedin = normalizar_linkedin(linkedin)
+    except ValueError:
+        linkedin = ""
+    ahora = datetime.now(timezone.utc)
+    try:
+        return str(ponentes_col.insert_one({
+            "nombre": nombre.strip(), "clave": clave, "cargo": cargo.strip(), "institucion": institucion.strip(),
+            "pais": "", "ambito": "nacional", "temas": [], "por_que_relevante": "", "trayectoria": bio.strip(),
+            "charlas_posibles": [], "canal_contacto": "", "linkedin": linkedin, "perfil_url": "",
+            "es_funcionario_publico": False, "consideraciones": "", "relevancia": 0, "prestigio": 0, "viabilidad": 0,
+            "puntaje": 0, "fuentes": [], "origen": "evento", "estado": "invitado", "responsable": "", "notas": "",
+            "fecha_seguimiento": "", "novedades": [], "sugerencias": [], "created_at": ahora, "updated_at": ahora,
+        }).inserted_id)
+    except DuplicateKeyError:
+        return str(ponentes_col.find_one({"clave": clave}, {"_id": 1})["_id"])
+
+
+def crear_ponente_manual(nombre: str, cargo: str, institucion: str, pais: str, ambito: str, linkedin: str,
+                         temas: str, por_que_relevante: str) -> str:
+    """Devuelve "" si se creó, o el mensaje de error."""
+    clave = _clave_alianza(nombre)
+    if not clave:
+        return "El nombre es obligatorio."
+    if ponentes_col.find_one({"clave": clave}, {"_id": 1}):
+        return f"{nombre.strip()} ya está en el directorio."
+    try:
+        linkedin = normalizar_linkedin(linkedin)
+    except ValueError as exc:
+        return str(exc)
+    ahora = datetime.now(timezone.utc)
+    ponentes_col.insert_one({
+        "nombre": nombre.strip(), "clave": clave, "cargo": cargo.strip(), "institucion": institucion.strip(),
+        "pais": pais.strip(), "ambito": ambito if ambito in catalogos.AMBITOS_ALIANZA else "nacional",
+        "temas": [t.strip() for t in temas.split(",") if t.strip()][:8], "por_que_relevante": por_que_relevante.strip(),
+        "trayectoria": "", "charlas_posibles": [], "canal_contacto": "", "linkedin": linkedin, "perfil_url": "",
+        "es_funcionario_publico": False, "consideraciones": "", "relevancia": 0, "prestigio": 0, "viabilidad": 0,
+        "puntaje": 0, "fuentes": [], "origen": "manual", "estado": "en_evaluacion", "responsable": "", "notas": "",
+        "fecha_seguimiento": "", "novedades": [], "sugerencias": [], "created_at": ahora, "updated_at": ahora,
+    })
+    catalogos.invalidar()
+    return ""
+
+
+def actualizar_seguimiento_ponente(ponente_id: str, estado: str, responsable: str,
+                                   fecha_seguimiento: str, notas: str) -> None:
+    if estado not in catalogos.ESTADOS_PONENTE:
+        raise ValueError("Estado no válido")
+    ponentes_col.update_one({"_id": ObjectId(ponente_id)}, {"$set": {
+        "estado": estado, "responsable": responsable.strip(), "fecha_seguimiento": fecha_seguimiento.strip(),
+        "notas": notas.strip(), "updated_at": datetime.now(timezone.utc)}})
+    catalogos.invalidar()
+
+
+def agregar_ponente_a_evento(ponente_id: str, evento_id: str) -> str:
+    """Lo suma como expositor por confirmar. Devuelve "" o el motivo por el que no se agregó."""
+    p = ponentes_col.find_one({"_id": ObjectId(ponente_id)})
+    evento = eventos_col.find_one({"_id": ObjectId(evento_id)}, {"expositores": 1, "titulo": 1})
+    if not p or not evento:
+        return "No se encontró el ponente o el evento."
+    if any(x.get("ponente_id") == ponente_id for x in evento.get("expositores", [])):
+        return f"{p['nombre']} ya está en «{evento.get('titulo', '')}»."
+    add_expositor(evento_id, p["nombre"], p.get("cargo", ""), p.get("institucion", ""), p.get("linkedin", ""),
+                  "", ponente_id=ponente_id)
+    return ""
+
+def confirmar_ponente_de_expositor(evento_id: str, numero: int) -> None:
+    """Confirmar al expositor en el evento confirma también su ficha, salvo que ya haya expuesto."""
+    evento = eventos_col.find_one({"_id": ObjectId(evento_id)}, {"expositores": 1}) or {}
+    ponente_id = next((x.get("ponente_id") for x in evento.get("expositores", []) if x.get("numero") == numero), "")
+    if ponente_id:
+        ponentes_col.update_one({"_id": ObjectId(ponente_id), "estado": {"$in": ["nuevo", "en_evaluacion", "invitado"]}},
+                                {"$set": {"estado": "confirmado", "updated_at": datetime.now(timezone.utc)}})
+        catalogos.invalidar()

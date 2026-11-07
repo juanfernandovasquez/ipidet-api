@@ -122,6 +122,7 @@
       {% endif %}
       {% if is_admin or 'eventos' in p %}
       {{ nav('/eventos', 'fa-solid fa-calendar-week', 'Eventos', ruta.startswith('/eventos')) }}
+      {{ nav('/ponentes', 'fa-solid fa-person-chalkboard', 'Ponentes', ruta.startswith('/ponentes'), ponentes_por_revisar | default(0)) }}
       {% endif %}
       {% if is_admin or 'marketing' in p %}
       {{ nav('/marketing', 'fa-solid fa-bullhorn', 'Marketing', ruta.startswith('/marketing')) }}

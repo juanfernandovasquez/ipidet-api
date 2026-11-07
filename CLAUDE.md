@@ -31,6 +31,7 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 23. [Constancias de membresía](#constancias)
 24. [IA Tareas](#ia-tareas)
 25. [Alianzas](#alianzas)
+26. [Ponentes](#ponentes)
 
 ---
 
@@ -420,6 +421,8 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `publico_col` | `publico` | `webapp/db.py` | CRM de prospectos/público general |
 | `alianzas_col` | `alianzas` | `webapp/db.py` | Instituciones para posibles alianzas (ver sección 25) |
 | `alianzas_corridas_col` | `alianzas_corridas` | `webapp/db.py` | Historial de búsquedas: resultado, uso y costo estimado |
+| `ponentes_col` | `ponentes` | `webapp/db.py` | Directorio de ponentes, internos y de otras instituciones (ver sección 26) |
+| `ponentes_corridas_col` | `ponentes_corridas` | `webapp/db.py` | Historial de búsquedas de ponentes |
 | `redes_cuentas_col` | `redes_cuentas` | `webapp/db.py` | Cuentas de redes sociales registradas |
 | `redes_metricas_col` | `redes_metricas` | `webapp/db.py` | Métricas históricas de RRSS (seguidores, etc.) |
 | `redes_posts_col` | `redes_posts` | `webapp/db.py` | Posts publicados en RRSS |
@@ -838,6 +841,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `redes_cronograma.html` | `/redes/cronograma` | Calendario de publicaciones planificadas |
 | `inbox.html` | `/inbox` | Bandeja unificada: aprobaciones del agente + comprobantes de pago recibidos por email |
 | `alianzas.html` | `/alianzas` | Buscador de instituciones, sustento y seguimiento de alianzas |
+| `ponentes.html` | `/ponentes` | Directorio y búsqueda de ponentes; seguimiento y vínculo con eventos |
 | `login.html` | `/login` | Login de la plataforma |
 | `users.html` | `/admin/users` | Gestión de usuarios (solo admin) |
 
@@ -1008,6 +1012,18 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `POST` | `/alianzas/nueva` | Agrega una institución a mano |
 | `POST` | `/alianzas/configuracion` | Perfil, criterios, frecuencia y activación |
 | `POST` | `/alianzas/{id}/seguimiento` | Etapa, responsable, fecha y notas |
+
+#### Ponentes
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| `GET` | `/ponentes` | Directorio; filtros: search, estado, ambito, evento, origen, orden |
+| `GET` | `/ponentes/estado` | JSON: si hay una búsqueda en curso |
+| `POST` | `/ponentes/buscar` | Búsqueda en segundo plano; con `evento_id` busca para ese evento |
+| `POST` | `/ponentes/nuevo` | Agrega un ponente a mano |
+| `POST` | `/ponentes/configuracion` | Público, temas, frecuencia y activación |
+| `POST` | `/ponentes/{id}/seguimiento` | Etapa, responsable, fecha y notas |
+| `POST` | `/ponentes/{id}/agregar-evento` | Lo suma como expositor por confirmar |
 
 #### Auth
 
@@ -1661,9 +1677,9 @@ Rutas: `GET /api/ia-tareas`, `POST /ia-tareas/add`, `POST /ia-tareas/{id}/estado
 
 ## 25. Alianzas {#alianzas}
 
-`/alianzas` propone instituciones para posibles alianzas y sustenta cada una: por qué es importante y por qué sería estratégica. `webapp/alianzas_ia.py` usa Claude con búsqueda web; no envía nada ni toca socios.
+`/alianzas` propone instituciones para posibles alianzas y sustenta cada una: por qué es importante y por qué sería estratégica. `webapp/alianzas_ia.py` usa Claude con búsqueda web; no envía nada ni toca socios. El motor de búsqueda, la verificación de fuentes y el cálculo de costo son comunes con Ponentes y viven en `webapp/investigacion_ia.py`.
 
-- **Frecuencia:** `scheduler.run_alianzas_scheduler` revisa cada hora si ya toca. La fecha vive en `config.alianzas_estado`, así que un reinicio no repite ni reprograma la búsqueda. Tras un fallo espera 24 horas para no gastar en reintentos.
+- **Frecuencia:** `scheduler.run_investigacion_scheduler` revisa cada hora si ya toca. La fecha vive en `config.alianzas_estado`, así que un reinicio no repite ni reprograma la búsqueda. Tras un fallo espera 24 horas para no gastar en reintentos.
 - **Una a la vez:** `pdb.reservar_corrida_alianzas` reserva de forma atómica; una reserva de más de 45 minutos caduca porque un reinicio la pudo dejar abierta.
 - **Datos, no código (R10):** perfil, criterios, frecuencia, modelo y precios viven en `config.alianzas_config`; los tipos en el catálogo `tipos_institucion`. Las etapas son lógica y están en `catalogos.ESTADOS_ALIANZA`.
 - **Fuentes verificadas:** `_preparar` descarta una propuesta si ninguna de sus fuentes apareció en los resultados de esa búsqueda. No relajar esta regla: es lo que evita instituciones o enlaces inventados.
@@ -1671,3 +1687,17 @@ Rutas: `GET /api/ia-tareas`, `POST /ia-tareas/add`, `POST /ia-tareas/{id}/estado
 - **Socios vinculados:** se calculan al mostrar la lista cruzando el nombre o las siglas con `members.centro_trabajo`. A Claude no se le envían datos de socios.
 
 Colección `alianzas`: `nombre`, `clave` (única), `siglas`, `tipo`, `ambito`, `pais`, `web`, `dominio`, `que_hace`, `por_que_importante`, `por_que_estrategica`, `como_colaborar[]`, `primer_paso`, `riesgos`, `afinidad`, `impacto`, `viabilidad`, `puntaje`, `fuentes[{titulo, url}]`, `novedades[{fecha, texto, corrida_id}]`, `origen`, `estado`, `responsable`, `fecha_seguimiento`, `notas`, `created_at`, `updated_at`.
+
+---
+
+## 26. Ponentes {#ponentes}
+
+`/ponentes` es el directorio de posibles ponentes. La búsqueda (`webapp/ponentes_ia.py`) prioriza a profesionales de **otras instituciones**; los socios se detectan aparte, sin enviar sus datos a Claude.
+
+- **Dos búsquedas:** una semanal, con los temas prioritarios, los eventos próximos y la asistencia de los anteriores, y otra por evento, con el botón «Buscar ponentes con IA» en `/eventos/{id}`. Solo la semanal cuenta para la frecuencia (`semanal=False` en la reserva).
+- **Personas, reglas más estrictas:** solo información profesional pública. `_preparar` borra correos y teléfonos aunque Claude los devuelva, y descarta LinkedIn o perfiles que no aparecieron en la búsqueda. No relajar estas reglas.
+- **Eventos:** cada expositor guarda `ponente_id`. Al agregar un expositor en un evento se crea o reutiliza su ficha (`registrar_ponente_desde_evento`), y al confirmarlo la ficha pasa a «Confirmado». La ficha muestra en qué eventos expuso y cuánta gente asistió, con datos de `zoom_registrants`.
+- **Cruces con socios:** se calculan al mostrar la lista: «Posible socio» si el nombre coincide, y socios que trabajan en su institución. Son coincidencias de texto: hay que confirmarlas.
+- **Datos, no código (R10):** público, temas, frecuencia, modelo y precios están en `config.ponentes_config`; las etapas, en `catalogos.ESTADOS_PONENTE`.
+
+Colección `ponentes`: `nombre`, `clave` (única), `cargo`, `institucion`, `pais`, `ambito`, `temas[]`, `por_que_relevante`, `trayectoria`, `charlas_posibles[]`, `canal_contacto`, `linkedin`, `perfil_url`, `es_funcionario_publico`, `consideraciones`, `relevancia`, `prestigio`, `viabilidad`, `puntaje`, `fuentes[]`, `sugerencias[{evento_id, evento_titulo, motivo, fecha}]`, `novedades[]`, `origen` (`busqueda`, `evento`, `manual`), `estado`, `responsable`, `fecha_seguimiento`, `notas`.

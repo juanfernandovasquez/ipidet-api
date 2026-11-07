@@ -91,6 +91,21 @@ ALIANZAS_CONFIG = {
     ),
 }
 
+# Punto de partida de la búsqueda de ponentes. Se edita en /ponentes.
+PONENTES_CONFIG = {
+    "publico": (
+        "Profesionales del ámbito tributario en el Perú, en su mayoría contadores, además de abogados "
+        "tributaristas y economistas. Muchos trabajan en firmas de auditoría y consultoría, en áreas "
+        "tributarias de empresas y en la administración tributaria. También asiste público general a los "
+        "webinars de actualización. Buscan exposiciones técnicas y aplicadas, con casos y novedades normativas."
+    ),
+    "temas": (
+        "Precios de transferencia, NIIF y su efecto tributario, impuesto mínimo global (Pilar 2), tributación "
+        "internacional y convenios para evitar la doble imposición, fiscalización y litigio ante la "
+        "administración tributaria y el Tribunal Fiscal, responsabilidad penal tributaria."
+    ),
+}
+
 ORGANIZACION = {
     "email": "administracion@ipidet.org",
     "web": "www.ipidet.org",
@@ -139,6 +154,15 @@ def migrar_config() -> None:
     _log("alianzas: índice único por nombre normalizado")
     if not DRY:
         db.alianzas.create_index("clave", unique=True)
+    if db.config.find_one({"_id": "ponentes_config"}):
+        _log("config.ponentes_config: ya existe, no se toca")
+    else:
+        _log("config.ponentes_config: se crea")
+        if not DRY:
+            db.config.insert_one({"_id": "ponentes_config", **PONENTES_CONFIG})
+    _log("ponentes: índice único por nombre normalizado")
+    if not DRY:
+        db.ponentes.create_index("clave", unique=True)
     if db.config.find_one({"_id": "organizacion"}):
         _log("config.organizacion: ya existe, no se toca")
     else:

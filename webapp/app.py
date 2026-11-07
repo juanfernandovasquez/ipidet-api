@@ -224,6 +224,7 @@ def _ctx(request: Request, **kwargs):
         "secciones": auth.SECCIONES,
         "inbox_count": inbox_count,
         "alianzas_por_revisar": catalogos.get_alianzas_por_revisar(),
+        "ponentes_por_revisar": catalogos.get_ponentes_por_revisar(),
         **kwargs,
     }
 
@@ -234,7 +235,7 @@ async def _startup():
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
-    asyncio.create_task(scheduler.run_alianzas_scheduler())
+    asyncio.create_task(scheduler.run_investigacion_scheduler())
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_resync_comprobantes_with_payment_id)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_payments_fecha_pago)
@@ -3717,6 +3718,9 @@ async def evento_detalle(request: Request, evento_id: str):
     stats = pdb.get_evento_stats(evento_id)
     return templates.TemplateResponse(request, "evento_detalle.html", _ctx(request,
         evento=evento, stats=stats,
+        ponentes_sugeridos=pdb.contar_sugeridos_evento(evento_id),
+        busqueda_ponentes=pdb.get_ponentes_estado(),
+        clave_configurada=bool(ANTHROPIC_API_KEY),
         checklist_pre=catalogos.get_catalogo("checklist_evento_pre"),
         checklist_post=catalogos.get_catalogo("checklist_evento_post"),
     ))
@@ -3764,7 +3768,8 @@ async def evento_expositor_add(
     linkedin: str = Form(""),
     bio:      str = Form(""),
 ):
-    pdb.add_expositor(evento_id, nombre, titulo, empresa, linkedin, bio)
+    ponente_id = pdb.registrar_ponente_desde_evento(nombre, titulo, empresa, linkedin, bio)
+    pdb.add_expositor(evento_id, nombre, titulo, empresa, linkedin, bio, ponente_id=ponente_id)
     return RedirectResponse(f"/eventos/{evento_id}#expositores", status_code=303)
 
 
@@ -3781,6 +3786,8 @@ async def evento_expositor_update(
 ):
     pdb.update_expositor(evento_id, numero, nombre, titulo, empresa, linkedin, bio,
                          confirmado=bool(confirmado))
+    if confirmado:
+        pdb.confirmar_ponente_de_expositor(evento_id, numero)
     return RedirectResponse(f"/eventos/{evento_id}#expositores", status_code=303)
 
 
@@ -5348,3 +5355,83 @@ async def alianzas_seguimiento(alianza_id: str, estado: str = Form(...), respons
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return RedirectResponse("/alianzas", status_code=303)
+
+
+# ── Ponentes ──────────────────────────────────────────────────────────────────
+
+@app.get("/ponentes", response_class=HTMLResponse)
+async def ponentes_lista(request: Request, search: str = "", estado: str = "", ambito: str = "", evento: str = "",
+                         origen: str = "", orden: str = "puntaje"):
+    cfg = catalogos.get_ponentes_config()
+    est = pdb.get_ponentes_estado()
+    proxima = None
+    if cfg["activa"] and est.get("ultima_exitosa"):
+        proxima = est["ultima_exitosa"] + _timedelta(days=int(cfg["frecuencia_dias"]))
+    proximos = pdb.get_eventos_proximos_lista()
+    evento_filtro = pdb.get_evento(evento) if evento else None
+    return templates.TemplateResponse(request, "ponentes.html", _ctx(
+        request,
+        ponentes=pdb.get_ponentes(search, estado, ambito, evento, origen, orden),
+        conteos=pdb.contar_ponentes_por_estado(),
+        corridas=pdb.get_corridas_ponentes(),
+        cfg=cfg, estado_busqueda=est, proxima=proxima, clave_configurada=bool(ANTHROPIC_API_KEY),
+        estados=catalogos.ESTADOS_PONENTE, ambitos=catalogos.AMBITOS_ALIANZA, origenes=catalogos.ORIGENES_PONENTE,
+        eventos_proximos=proximos, evento_filtro=evento_filtro,
+        search=search, estado=estado, ambito=ambito, evento=evento, origen=origen, orden=orden,
+    ))
+
+
+@app.get("/ponentes/estado")
+async def ponentes_estado():
+    return {"en_curso": bool(pdb.get_ponentes_estado().get("en_curso"))}
+
+
+@app.post("/ponentes/buscar")
+async def ponentes_buscar(evento_id: str = Form("")):
+    import asyncio
+    from webapp import ponentes_ia
+    destino = f"/ponentes?evento={_quote(evento_id)}&" if evento_id else "/ponentes?"
+    if pdb.get_ponentes_estado().get("en_curso"):
+        return RedirectResponse(destino + "msg=en_curso", status_code=303)
+    if evento_id and not pdb.get_evento(evento_id):
+        return RedirectResponse(f"/ponentes?error={_quote('No se encontró el evento.')}", status_code=303)
+    asyncio.get_running_loop().run_in_executor(None, ponentes_ia.ejecutar, "evento" if evento_id else "manual", evento_id)
+    return RedirectResponse(destino + "msg=iniciada", status_code=303)
+
+
+@app.post("/ponentes/nuevo")
+async def ponentes_nuevo(nombre: str = Form(...), cargo: str = Form(""), institucion: str = Form(""),
+                         pais: str = Form(""), ambito: str = Form("nacional"), linkedin: str = Form(""),
+                         temas: str = Form(""), por_que_relevante: str = Form("")):
+    error = pdb.crear_ponente_manual(nombre, cargo, institucion, pais, ambito, linkedin, temas, por_que_relevante)
+    if error:
+        return RedirectResponse(f"/ponentes?error={_quote(error)}", status_code=303)
+    return RedirectResponse(f"/ponentes?search={_quote(nombre.strip())}", status_code=303)
+
+
+@app.post("/ponentes/configuracion")
+async def ponentes_configuracion(publico: str = Form(""), temas: str = Form(""), activa: str = Form(""),
+                                 frecuencia_dias: int = Form(7), propuestas_por_corrida: int = Form(5)):
+    catalogos.set_ponentes_config({
+        "publico": publico.strip(), "temas": temas.strip(), "activa": activa == "1",
+        "frecuencia_dias": max(1, frecuencia_dias), "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
+    })
+    return RedirectResponse("/ponentes", status_code=303)
+
+
+@app.post("/ponentes/{ponente_id}/seguimiento")
+async def ponentes_seguimiento(ponente_id: str, estado: str = Form(...), responsable: str = Form(""),
+                               fecha_seguimiento: str = Form(""), notas: str = Form(""), volver: str = Form("")):
+    try:
+        pdb.actualizar_seguimiento_ponente(ponente_id, estado, responsable, fecha_seguimiento, notas)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return RedirectResponse(volver if volver.startswith("/ponentes") else "/ponentes", status_code=303)
+
+
+@app.post("/ponentes/{ponente_id}/agregar-evento")
+async def ponentes_agregar_evento(ponente_id: str, evento_id: str = Form(...)):
+    error = pdb.agregar_ponente_a_evento(ponente_id, evento_id)
+    if error:
+        return RedirectResponse(f"/ponentes?error={_quote(error)}", status_code=303)
+    return RedirectResponse(f"/eventos/{evento_id}#expositores", status_code=303)

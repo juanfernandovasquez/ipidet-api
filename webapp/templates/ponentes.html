@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block title %}Ponentes — IPIDET{% endblock %}
+{% block heading %}Ponentes{% endblock %}
+{% block header_actions %}
+<button type="button" class="btn-ghost" onclick="document.getElementById('modal-ponente').classList.remove('hidden')">
+  <i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar
+</button>
+<form method="post" action="/ponentes/buscar" data-confirm="¿Buscar ponentes para los temas prioritarios? Cada búsqueda consume créditos de la API de Claude.">
+  <button type="submit" class="btn-primary" {% if estado_busqueda.en_curso or not clave_configurada %}disabled{% endif %}>
+    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Buscar ahora
+  </button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% set ultima = corridas[0] if corridas else None %}
+{% set volver = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
+<div x-data="{ enCurso: {{ 'true' if estado_busqueda.en_curso or request.query_params.get('msg') == 'iniciada' else 'false' }} }"
+     x-init="if (enCurso) { const t = setInterval(async () => {
+       const r = await fetch('/ponentes/estado'); const d = await r.json();
+       if (!d.en_curso) { clearInterval(t); const u = new URL(location.href); u.searchParams.delete('msg'); u.searchParams.set('orden', 'recientes'); location.href = u; }
+     }, 15000) }">
+
+  {% if not clave_configurada %}
+  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    La búsqueda no puede correr: falta configurar <code class="font-mono">ANTHROPIC_API_KEY</code> en el servidor.
+  </div>
+  {% endif %}
+  {% if request.query_params.get('error') %}
+  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ request.query_params.get('error') }}</div>
+  {% endif %}
+  {% if ultima and ultima.estado == 'fallida' %}
+  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+    <strong>La última búsqueda falló.</strong> {{ ultima.resultado.error if ultima.resultado else '' }}
+  </div>
+  {% endif %}
+  <div x-show="enCurso" x-cloak class="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+    <i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i>
+    Buscando ponentes{% if evento_filtro %} para «{{ evento_filtro.titulo }}»{% endif %}. Puede tardar varios minutos; esta página se actualizará sola.
+  </div>
+  {% if evento_filtro %}
+  <div class="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 flex flex-wrap items-center gap-2 justify-between">
+    <span>Sugeridos para <a href="/eventos/{{ evento_filtro._id }}" class="text-blue-600 hover:underline">{{ evento_filtro.titulo }}</a> ({{ evento_filtro.fecha | format_fecha }})</span>
+    <a href="/ponentes" class="text-slate-500 hover:text-slate-700">Ver todos</a>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Por revisar</div>
+      <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('nuevo', 0) }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">En evaluación o invitados</div>
+      <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('en_evaluacion', 0) + conteos.get('invitado', 0) }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Confirmados o ya expusieron</div>
+      <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('confirmado', 0) + conteos.get('expuso', 0) }}</div>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <div class="text-xs text-slate-500">Búsqueda automática</div>
+      <div class="text-sm font-medium text-slate-800 mt-1">
+        {% if not cfg.activa %}Pausada{% elif proxima %}Próxima: {{ proxima | format_fecha }}{% else %}Sin búsquedas semanales{% endif %}
+      </div>
+      <div class="text-xs text-slate-500">Cada evento tiene además su propia búsqueda.</div>
+    </div>
+  </div>
+
+  <form method="get" x-ref="filtros" class="bg-white rounded-xl border border-slate-200 p-3 mb-5 flex flex-wrap gap-2 items-center">
+    <input name="search" value="{{ search }}" placeholder="Buscar por nombre, institución, tema o país…" class="input flex-1 min-w-[14rem]"
+           @input="clearTimeout(t); t = setTimeout(() => $refs.filtros.submit(), 450)" x-data="{ t: null }"
+           x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    <select name="evento" class="input w-auto max-w-[16rem]" @change="$refs.filtros.submit()" aria-label="Evento">
+      <option value="">Todos los eventos</option>
+      {% for e in eventos_proximos %}<option value="{{ e._id }}" {% if evento == e._id %}selected{% endif %}>{{ e.fecha | format_fecha }} · {{ e.titulo }}</option>{% endfor %}
+      {% if evento_filtro and evento_filtro._id not in (eventos_proximos | map(attribute='_id') | list) %}<option value="{{ evento_filtro._id }}" selected>{{ evento_filtro.titulo }}</option>{% endif %}
+    </select>
+    <select name="ambito" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Ámbito">
+      <option value="">Todo ámbito</option>
+      {% for k, v in ambitos.items() %}<option value="{{ k }}" {% if ambito == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+    <select name="estado" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Etapa">
+      <option value="">Todas sin descartar</option>
+      {% for k, v in estados.items() %}<option value="{{ k }}" {% if estado == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+    </select>
+    <select name="origen" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Origen">
+      <option value="">Todo origen</option>
+      {% for k, v in origenes.items() %}<option value="{{ k }}" {% if origen == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+    <select name="orden" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Orden">
+      <option value="puntaje" {% if orden != 'recientes' %}selected{% endif %}>Mejor evaluados</option>
+      <option value="recientes" {% if orden == 'recientes' %}selected{% endif %}>Más recientes</option>
+    </select>
+    {% if search or estado or ambito or evento or origen %}<a href="/ponentes" class="text-sm text-slate-500 hover:text-slate-700 px-2">Limpiar</a>{% endif %}
+  </form>
+
+  <div class="space-y-3">
+    {% for p in ponentes %}
+    <article class="bg-white rounded-xl border border-slate-200" x-data="{ abierta: false }">
+      <div class="p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h2 class="text-base font-semibold text-slate-800">{{ p.nombre }}</h2>
+            <div class="mt-1 text-sm text-slate-600">{{ p.cargo }}{% if p.cargo and p.institucion %} · {% endif %}{{ p.institucion }}</div>
+            <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+              <span>{{ ambitos.get(p.ambito, p.ambito) }}{% if p.pais %} ({{ p.pais }}){% endif %}</span>
+              {% if p.linkedin %}<span aria-hidden="true">·</span><a href="{{ p.linkedin }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline"><i class="fa-brands fa-linkedin" aria-hidden="true"></i> LinkedIn</a>{% endif %}
+              {% if p.perfil_url %}<span aria-hidden="true">·</span><a href="{{ p.perfil_url }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Perfil institucional</a>{% endif %}
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            {% if p.posible_socio %}<a href="/members/{{ p.posible_socio.member_id }}" class="badge badge-blue" title="El nombre coincide con un socio. Confírmalo.">Posible socio</a>{% else %}<span class="badge badge-gray">Externo</span>{% endif %}
+            {% if p.es_funcionario_publico %}<span class="badge badge-amber" title="Puede tener restricciones para participar o cobrar honorarios.">Funcionario público</span>{% endif %}
+            {% if p.puntaje %}<span class="text-xs text-slate-500" title="Relevancia {{ p.relevancia }}, prestigio {{ p.prestigio }} y viabilidad {{ p.viabilidad }}, sobre 5. Es una estimación de la IA.">Evaluación IA {{ p.puntaje }}/15</span>{% endif %}
+            <span class="badge badge-{{ estados[p.estado][1] }}">{{ estados[p.estado][0] }}</span>
+          </div>
+        </div>
+
+        {% if p.temas %}
+        <div class="mt-3 flex flex-wrap gap-1.5">{% for t in p.temas %}<span class="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">{{ t }}</span>{% endfor %}</div>
+        {% endif %}
+
+        <div class="mt-4 grid md:grid-cols-2 gap-4 text-sm leading-relaxed">
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 mb-1">Por qué interesa a nuestro público</h3>
+            <p class="text-slate-700 whitespace-pre-line">{{ p.por_que_relevante or '—' }}</p>
+          </div>
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 mb-1">Trayectoria como expositor</h3>
+            <p class="text-slate-700 whitespace-pre-line">{{ p.trayectoria or '—' }}</p>
+          </div>
+        </div>
+
+        {% for s in p.sugerencias if not evento or s.evento_id == evento %}
+        <p class="mt-3 text-sm text-slate-700"><span class="font-medium">Para «{{ s.evento_titulo }}»:</span> {{ s.motivo }}</p>
+        {% endfor %}
+        {% if p.eventos %}
+        <p class="mt-3 text-sm text-slate-700">
+          <i class="fa-solid fa-person-chalkboard text-slate-400 mr-1" aria-hidden="true"></i>
+          En eventos de IPIDET:
+          {% for e in p.eventos %}<a href="/eventos/{{ e.evento_id }}" class="text-blue-600 hover:underline">{{ e.titulo }}</a>{% if e.inscritos %} ({{ e.asistentes }} de {{ e.inscritos }} asistieron){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+        {% if p.colegas %}
+        <p class="mt-2 text-sm text-slate-700">
+          <i class="fa-solid fa-user-group text-slate-400 mr-1" aria-hidden="true"></i>
+          Socios en su institución:
+          {% for s in p.colegas %}<a href="/members/{{ s.member_id }}" class="text-blue-600 hover:underline">{{ s.nombre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+
+        <button type="button" class="mt-3 text-sm text-blue-600 hover:underline" @click="abierta = !abierta" :aria-expanded="abierta">
+          <span x-text="abierta ? 'Ocultar detalle' : 'Ver detalle y seguimiento'"></span>
+        </button>
+      </div>
+
+      <div x-show="abierta" x-cloak class="border-t border-slate-100 p-5 grid lg:grid-cols-2 gap-6 text-sm">
+        <div class="space-y-4">
+          {% if p.charlas_posibles %}
+          <div><h3 class="text-xs font-semibold text-slate-500 mb-1">Posibles exposiciones</h3>
+            <ul class="list-disc pl-5 text-slate-700 space-y-0.5">{% for c in p.charlas_posibles %}<li>{{ c }}</li>{% endfor %}</ul></div>
+          {% endif %}
+          {% if p.canal_contacto %}<div><h3 class="text-xs font-semibold text-slate-500 mb-1">Cómo contactarlo</h3><p class="text-slate-700">{{ p.canal_contacto }}</p></div>{% endif %}
+          {% if p.consideraciones %}<div><h3 class="text-xs font-semibold text-slate-500 mb-1">A tener en cuenta</h3><p class="text-slate-700">{{ p.consideraciones }}</p></div>{% endif %}
+          {% for n in p.novedades[:3] %}
+          <div><h3 class="text-xs font-semibold text-slate-500 mb-1">Novedad del {{ n.fecha | format_fecha }}</h3><p class="text-slate-700">{{ n.texto }}</p></div>
+          {% endfor %}
+          {% if p.fuentes %}
+          <div><h3 class="text-xs font-semibold text-slate-500 mb-1">Fuentes</h3>
+            <ul class="space-y-1">{% for f in p.fuentes %}<li><a href="{{ f.url }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline break-words">{{ f.titulo }}</a></li>{% endfor %}</ul></div>
+          {% else %}<p class="text-xs text-slate-500">{{ origenes.get(p.origen, '') }}.</p>{% endif %}
+          {% if eventos_proximos %}
+          <form method="post" action="/ponentes/{{ p._id }}/agregar-evento" class="flex flex-wrap gap-2 items-end">
+            <label class="block text-xs font-medium text-slate-600 flex-1 min-w-[12rem]">Agregar como expositor por confirmar
+              <select name="evento_id" class="input w-full mt-1">
+                {% for e in eventos_proximos %}<option value="{{ e._id }}" {% if evento == e._id %}selected{% endif %}>{{ e.fecha | format_fecha }} · {{ e.titulo }}</option>{% endfor %}
+              </select>
+            </label>
+            <button type="submit" class="btn-ghost">Agregar al evento</button>
+          </form>
+          {% endif %}
+        </div>
+
+        <form method="post" action="/ponentes/{{ p._id }}/seguimiento" class="space-y-3 lg:border-l lg:border-slate-100 lg:pl-6">
+          <input type="hidden" name="volver" value="{{ volver }}">
+          <h3 class="text-sm font-semibold text-slate-700">Seguimiento</h3>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <label class="block text-xs font-medium text-slate-600">Etapa
+              <select name="estado" class="input w-full mt-1">
+                {% for k, v in estados.items() %}<option value="{{ k }}" {% if p.estado == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="block text-xs font-medium text-slate-600">Próximo seguimiento
+              <input type="date" name="fecha_seguimiento" value="{{ p.fecha_seguimiento or '' }}" class="input w-full mt-1">
+            </label>
+          </div>
+          <label class="block text-xs font-medium text-slate-600">Responsable
+            <input name="responsable" value="{{ p.responsable or '' }}" class="input w-full mt-1">
+          </label>
+          <label class="block text-xs font-medium text-slate-600">Notas
+            <textarea name="notas" rows="4" class="input w-full mt-1">{{ p.notas or '' }}</textarea>
+          </label>
+          <button type="submit" class="btn-primary">Guardar seguimiento</button>
+        </form>
+      </div>
+    </article>
+    {% else %}
+    <div class="bg-white rounded-xl border border-slate-200 p-10 text-center text-sm text-slate-500">
+      {% if search or estado or ambito or evento or origen %}Ningún ponente coincide con estos filtros.
+      {% else %}Todavía no hay ponentes. Usa «Buscar ahora» o el botón de búsqueda dentro de cada evento.{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <details class="mt-6 bg-white rounded-xl border border-slate-200">
+    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Qué busca la IA y con qué frecuencia</summary>
+    <form method="post" action="/ponentes/configuracion" class="px-5 pb-5 space-y-3">
+      <label class="block text-xs font-medium text-slate-600">Nuestro público
+        <textarea name="publico" rows="4" class="input w-full mt-1">{{ cfg.publico }}</textarea>
+      </label>
+      <label class="block text-xs font-medium text-slate-600">Temas prioritarios
+        <textarea name="temas" rows="3" class="input w-full mt-1">{{ cfg.temas }}</textarea>
+      </label>
+      <p class="text-xs text-slate-500">La IA también recibe los eventos próximos, la asistencia de los anteriores y las instituciones de Alianzas. Nunca recibe datos de socios.</p>
+      <div class="flex flex-wrap items-end gap-4">
+        <label class="block text-xs font-medium text-slate-600">Cada cuántos días
+          <input type="number" min="1" name="frecuencia_dias" value="{{ cfg.frecuencia_dias }}" class="input w-24 mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Máximo de ponentes por búsqueda
+          <input type="number" min="1" max="15" name="propuestas_por_corrida" value="{{ cfg.propuestas_por_corrida }}" class="input w-24 mt-1">
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700 pb-2">
+          <input type="checkbox" name="activa" value="1" {% if cfg.activa %}checked{% endif %}> Búsqueda semanal activa
+        </label>
+      </div>
+      <button type="submit" class="btn-primary">Guardar</button>
+    </form>
+  </details>
+
+  <details class="mt-3 bg-white rounded-xl border border-slate-200">
+    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Historial de búsquedas</summary>
+    <div class="overflow-x-auto px-5 pb-5">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-100">
+          <th class="py-2 pr-4 font-medium">Fecha</th><th class="py-2 pr-4 font-medium">Para</th><th class="py-2 pr-4 font-medium">Resultado</th>
+          <th class="py-2 pr-4 font-medium text-right">Nuevos</th><th class="py-2 pr-4 font-medium text-right">Actualizados</th>
+          <th class="py-2 pr-4 font-medium text-right">Descartados</th><th class="py-2 font-medium text-right">Costo estimado</th>
+        </tr></thead>
+        <tbody>
+        {% for c in corridas %}
+          {% set r = c.resultado or {} %}
+          <tr class="border-b border-slate-50 last:border-0">
+            <td class="py-2 pr-4 whitespace-nowrap">{{ c.inicio | format_fecha }}</td>
+            <td class="py-2 pr-4">{% if c.evento_titulo %}{{ c.evento_titulo }}{% elif c.origen == 'programada' %}Búsqueda semanal{% else %}Temas prioritarios{% endif %}</td>
+            <td class="py-2 pr-4">
+              {% if c.estado == 'completada' %}<span class="badge badge-green">Completada</span>
+              {% elif c.estado == 'en_curso' %}<span class="badge badge-blue">En curso</span>
+              {% else %}<span class="badge badge-red" title="{{ r.error or '' }}">Fallida</span>{% endif %}
+            </td>
+            <td class="py-2 pr-4 text-right">{{ r.nuevos or 0 }}</td>
+            <td class="py-2 pr-4 text-right">{{ r.actualizados or 0 }}</td>
+            <td class="py-2 pr-4 text-right" title="{{ (r.descartados or []) | join(' · ') }}">{{ (r.descartados or []) | length }}</td>
+            <td class="py-2 text-right font-mono">{% if c.costo_estimado_usd is defined %}US$ {{ '%.2f' | format(c.costo_estimado_usd) }}{% else %}—{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="py-4 text-center text-slate-500">Aún no hay búsquedas.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<div id="modal-ponente" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('modal-ponente').classList.add('hidden')"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+    <h2 class="text-base font-semibold text-slate-800 mb-4">Agregar ponente</h2>
+    <form method="post" action="/ponentes/nuevo" class="space-y-3">
+      <label class="block text-xs font-medium text-slate-600">Nombre *
+        <input name="nombre" required class="input w-full mt-1">
+      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block text-xs font-medium text-slate-600">Cargo
+          <input name="cargo" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Institución
+          <input name="institucion" class="input w-full mt-1">
+        </label>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="block text-xs font-medium text-slate-600">País
+          <input name="pais" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Ámbito
+          <select name="ambito" class="input w-full mt-1">{% for k, v in ambitos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+        </label>
+      </div>
+      <label class="block text-xs font-medium text-slate-600">LinkedIn
+        <input name="linkedin" inputmode="url" placeholder="https://www.linkedin.com/in/nombre" class="input w-full mt-1">
+      </label>
+      <label class="block text-xs font-medium text-slate-600">Temas, separados por comas
+        <input name="temas" class="input w-full mt-1">
+      </label>
+      <label class="block text-xs font-medium text-slate-600">Por qué interesa a nuestro público
+        <textarea name="por_que_relevante" rows="2" class="input w-full mt-1"></textarea>
+      </label>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="btn-primary flex-1">Agregar</button>
+        <button type="button" class="btn-ghost" onclick="document.getElementById('modal-ponente').classList.add('hidden')">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
