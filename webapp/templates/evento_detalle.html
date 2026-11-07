@@ -258,12 +258,12 @@
       {% if ponentes_sugeridos %}
       <a href="/ponentes?evento={{ evento._id }}" class="text-xs text-blue-600 hover:underline">{{ ponentes_sugeridos }} sugerido{{ 's' if ponentes_sugeridos != 1 }} por la IA</a>
       {% endif %}
-      <form method="post" action="/ponentes/buscar" data-confirm="¿Buscar posibles ponentes de otras instituciones para este evento? Cada búsqueda consume créditos de la API de Claude.">
-        <input type="hidden" name="evento_id" value="{{ evento._id }}">
-        <button type="submit" class="btn-ghost text-xs" {% if busqueda_ponentes.en_curso or not clave_configurada %}disabled title="{{ 'Ya hay una búsqueda en curso' if busqueda_ponentes.en_curso else 'Falta configurar la clave de la API' }}"{% endif %}>
-          <i class="fa-solid fa-magnifying-glass mr-1"></i> Buscar ponentes con IA
-        </button>
-      </form>
+      <button type="button" class="btn-ghost text-xs" data-comando="/buscar-ponentes {{ evento._id }}"
+              x-data="{ copiado: false }"
+              @click="navigator.clipboard.writeText($el.dataset.comando); copiado = true; avisar('Comando copiado. Pégalo en Claude Code, en la carpeta IPIDET.'); setTimeout(() => copiado = false, 2000)"
+              title="Copia el comando para buscar ponentes de otras instituciones desde Claude Code, con tu suscripción">
+        <i class="fa-solid fa-magnifying-glass mr-1"></i> <span x-text="copiado ? 'Comando copiado' : 'Buscar ponentes con IA'"></span>
+      </button>
       <button type="button" x-data @click="$dispatch('open-add-expositor')"
               class="btn-ghost text-xs">
         <i class="fa-solid fa-plus mr-1"></i> Agregar

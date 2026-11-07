@@ -5306,7 +5306,6 @@ except Exception as _idx_err:
 
 alianzas_col = _db.alianzas
 alianzas_corridas_col = _db.alianzas_corridas
-_CORRIDA_CADUCA = _timedelta(minutes=45)
 
 
 def _sin_acentos(texto: str) -> str:
@@ -5322,56 +5321,20 @@ def _utc(valor):
     return valor.replace(tzinfo=timezone.utc) if isinstance(valor, datetime) and valor.tzinfo is None else valor
 
 
-def _get_estado_investigacion(estado_id: str) -> dict:
-    doc = _db.config.find_one({"_id": estado_id}) or {}
-    return {k: _utc(v) for k, v in doc.items()}
+_CORRIDAS = {"alianzas": "alianzas_corridas", "ponentes": "ponentes_corridas"}
 
 
-def _reservar_corrida(estado_id: str, corridas_col, origen: str, extra: dict | None = None,
-                      semanal: bool = True) -> str | None:
-    """Evita dos búsquedas a la vez. Una reserva vieja caduca: un reinicio la pudo dejar abierta."""
-    ahora = datetime.now(timezone.utc)
-    cambios = {"en_curso": True, "ultimo_intento": ahora}
-    if semanal:
-        cambios["ultimo_intento_semanal"] = ahora
-    try:
-        previo = _db.config.find_one_and_update(
-            {"_id": estado_id,
-             "$or": [{"en_curso": {"$ne": True}}, {"ultimo_intento": {"$lt": ahora - _CORRIDA_CADUCA}}]},
-            {"$set": cambios},
-            upsert=True,
-        )
-    except DuplicateKeyError:
-        return None
-    if previo and previo.get("en_curso"):
-        corridas_col.update_many({"estado": "en_curso"}, {"$set": {
-            "estado": "fallida", "fin": ahora, "resultado": {"error": "Se interrumpió por un reinicio del servidor."}}})
-    doc = {"estado": "en_curso", "origen": origen, "inicio": ahora, **(extra or {})}
-    return str(corridas_col.insert_one(doc).inserted_id)
+def registrar_corrida(tipo: str, extra: dict | None = None) -> str:
+    """Historial de importaciones hechas desde Claude Code (investigacion.py)."""
+    doc = {"estado": "en_curso", "origen": "claude_code", "inicio": datetime.now(timezone.utc), **(extra or {})}
+    return str(_db[_CORRIDAS[tipo]].insert_one(doc).inserted_id)
 
 
-def _cerrar_corrida(estado_id: str, corridas_col, corrida_id: str, estado: str, resultado: dict,
-                    uso: dict, costo: float, semanal: bool = True) -> None:
-    ahora = datetime.now(timezone.utc)
-    corridas_col.update_one({"_id": ObjectId(corrida_id)}, {"$set": {
-        "estado": estado, "fin": ahora, "resultado": resultado, "uso": uso, "costo_estimado_usd": costo}})
-    cambios = {"en_curso": False}
-    if estado == "completada" and semanal:
-        cambios["ultima_exitosa"] = ahora
-    _db.config.update_one({"_id": estado_id}, {"$set": cambios})
+def cerrar_corrida(tipo: str, corrida_id: str, resultado: dict) -> None:
+    _db[_CORRIDAS[tipo]].update_one({"_id": ObjectId(corrida_id)}, {"$set": {
+        "estado": "completada", "fin": datetime.now(timezone.utc),
+        "resultado": {k: v for k, v in resultado.items() if k not in ("aceptadas", "aceptados")}}})
     catalogos.invalidar()
-
-
-def get_alianzas_estado() -> dict:
-    return _get_estado_investigacion("alianzas_estado")
-
-
-def reservar_corrida_alianzas(origen: str) -> str | None:
-    return _reservar_corrida("alianzas_estado", alianzas_corridas_col, origen)
-
-
-def cerrar_corrida_alianzas(corrida_id: str, estado: str, resultado: dict, uso: dict, costo: float) -> None:
-    _cerrar_corrida("alianzas_estado", alianzas_corridas_col, corrida_id, estado, resultado, uso, costo)
 
 
 def get_corridas_alianzas(limite: int = 8) -> list:
@@ -5513,21 +5476,6 @@ _CENTROS_GENERICOS = {"independiente", "particular", "ninguno", "ninguna", "otro
 _CAMPOS_ANALISIS_PONENTE = ("cargo", "institucion", "pais", "ambito", "temas", "por_que_relevante", "trayectoria",
                             "charlas_posibles", "canal_contacto", "linkedin", "perfil_url",
                             "es_funcionario_publico", "consideraciones", "relevancia", "prestigio", "viabilidad")
-
-
-def get_ponentes_estado() -> dict:
-    return _get_estado_investigacion("ponentes_estado")
-
-
-def reservar_corrida_ponentes(origen: str, evento_id: str = "", evento_titulo: str = "") -> str | None:
-    return _reservar_corrida("ponentes_estado", ponentes_corridas_col, origen,
-                             {"evento_id": evento_id, "evento_titulo": evento_titulo}, semanal=not evento_id)
-
-
-def cerrar_corrida_ponentes(corrida_id: str, estado: str, resultado: dict, uso: dict, costo: float) -> None:
-    corrida = ponentes_corridas_col.find_one({"_id": ObjectId(corrida_id)}, {"evento_id": 1}) or {}
-    _cerrar_corrida("ponentes_estado", ponentes_corridas_col, corrida_id, estado, resultado, uso, costo,
-                    semanal=not corrida.get("evento_id"))
 
 
 def get_corridas_ponentes(limite: int = 8) -> list:

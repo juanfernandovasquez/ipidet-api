@@ -35,3 +35,6 @@ flyers/
 *.bat
 Takeout*/
 IPIDET_backup*/
+
+# Resultados de búsquedas hechas con Claude Code (investigacion.py)
+investigaciones/

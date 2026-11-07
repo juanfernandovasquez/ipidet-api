@@ -85,23 +85,9 @@ ESTADOS_PONENTE: dict[str, tuple[str, str]] = {
 }
 ORIGENES_PONENTE = {"busqueda": "Búsqueda con IA", "evento": "Expositor de un evento", "manual": "Agregado a mano"}
 
-# Valores si la colección aún no los tiene; se editan en /alianzas.
-_ALIANZAS_DEFECTO = {
-    "activa": True,
-    "frecuencia_dias": 7,
-    "propuestas_por_corrida": 5,
-    "max_busquedas": 12,
-    "modelo": "claude-opus-5-5",
-    "perfil": "",
-    "criterios": "",
-    # USD por millón de tokens y por búsqueda; solo para estimar el costo mostrado.
-    "precio_entrada": 4.0,
-    "precio_salida": 20.0,
-    "precio_cache": 0.2,
-    "precio_busqueda": 0.01,
-}
-_PONENTES_DEFECTO = {**_ALIANZAS_DEFECTO, "publico": "", "temas": ""}
-del _PONENTES_DEFECTO["perfil"], _PONENTES_DEFECTO["criterios"]
+# Valores si la colección aún no los tiene; se editan en /alianzas y /ponentes.
+_ALIANZAS_DEFECTO = {"propuestas_por_corrida": 5, "perfil": "", "criterios": ""}
+_PONENTES_DEFECTO = {"propuestas_por_corrida": 5, "publico": "", "temas": ""}
 
 CAMPOS_ORGANIZACION = {
     "email":           "Email de contacto",

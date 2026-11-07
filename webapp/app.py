@@ -21,7 +21,6 @@ import webapp.zoom_client as zoom_client
 from datetime import timedelta as _timedelta
 from urllib.parse import quote as _quote
 from config import catalogos
-from config.settings import ANTHROPIC_API_KEY
 from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE, WC_STORE_URL
 from knowledge_base import db as kb_db
 from billing import db as billing_db
@@ -235,7 +234,6 @@ async def _startup():
     import asyncio
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
-    asyncio.create_task(scheduler.run_investigacion_scheduler())
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_resync_comprobantes_with_payment_id)
     asyncio.get_running_loop().run_in_executor(None, pdb.backfill_payments_fecha_pago)
@@ -3719,8 +3717,6 @@ async def evento_detalle(request: Request, evento_id: str):
     return templates.TemplateResponse(request, "evento_detalle.html", _ctx(request,
         evento=evento, stats=stats,
         ponentes_sugeridos=pdb.contar_sugeridos_evento(evento_id),
-        busqueda_ponentes=pdb.get_ponentes_estado(),
-        clave_configurada=bool(ANTHROPIC_API_KEY),
         checklist_pre=catalogos.get_catalogo("checklist_evento_pre"),
         checklist_post=catalogos.get_catalogo("checklist_evento_post"),
     ))
@@ -5289,42 +5285,22 @@ async def redes_cronograma_delete(item_id: str):
 
 
 # ── Alianzas ──────────────────────────────────────────────────────────────────
+# La búsqueda se hace desde Claude Code (/buscar-alianzas); aquí solo se consulta y se da seguimiento.
 
 @app.get("/alianzas", response_class=HTMLResponse)
 async def alianzas_lista(request: Request, search: str = "", tipo: str = "", ambito: str = "",
                          estado: str = "", orden: str = "puntaje"):
-    cfg = catalogos.get_alianzas_config()
-    est = pdb.get_alianzas_estado()
-    proxima = None
-    if cfg["activa"] and est.get("ultima_exitosa"):
-        proxima = est["ultima_exitosa"] + _timedelta(days=int(cfg["frecuencia_dias"]))
     tipos = catalogos.get_catalogo("tipos_institucion")
     return templates.TemplateResponse(request, "alianzas.html", _ctx(
         request,
         alianzas=pdb.get_alianzas(search, tipo, ambito, estado, orden),
         conteos=pdb.contar_alianzas_por_estado(),
         corridas=pdb.get_corridas_alianzas(),
-        cfg=cfg, estado_busqueda=est, proxima=proxima,
-        clave_configurada=bool(ANTHROPIC_API_KEY),
+        cfg=catalogos.get_alianzas_config(),
         estados=catalogos.ESTADOS_ALIANZA, ambitos=catalogos.AMBITOS_ALIANZA,
         tipos_institucion=tipos, etiquetas_tipo={t["valor"]: t["label"] for t in tipos},
         search=search, tipo=tipo, ambito=ambito, estado=estado, orden=orden,
     ))
-
-
-@app.get("/alianzas/estado")
-async def alianzas_estado():
-    return {"en_curso": bool(pdb.get_alianzas_estado().get("en_curso"))}
-
-
-@app.post("/alianzas/buscar")
-async def alianzas_buscar():
-    import asyncio
-    from webapp import alianzas_ia
-    if pdb.get_alianzas_estado().get("en_curso"):
-        return RedirectResponse("/alianzas?msg=en_curso", status_code=303)
-    asyncio.get_running_loop().run_in_executor(None, alianzas_ia.ejecutar, "manual")
-    return RedirectResponse("/alianzas?msg=iniciada", status_code=303)
 
 
 @app.post("/alianzas/nueva")
@@ -5338,11 +5314,11 @@ async def alianzas_nueva(nombre: str = Form(...), tipo: str = Form("otra"), ambi
 
 
 @app.post("/alianzas/configuracion")
-async def alianzas_configuracion(perfil: str = Form(""), criterios: str = Form(""), activa: str = Form(""),
-                                 frecuencia_dias: int = Form(7), propuestas_por_corrida: int = Form(5)):
+async def alianzas_configuracion(perfil: str = Form(""), criterios: str = Form(""),
+                                 propuestas_por_corrida: int = Form(5)):
     catalogos.set_alianzas_config({
-        "perfil": perfil.strip(), "criterios": criterios.strip(), "activa": activa == "1",
-        "frecuencia_dias": max(1, frecuencia_dias), "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
+        "perfil": perfil.strip(), "criterios": criterios.strip(),
+        "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
     })
     return RedirectResponse("/alianzas", status_code=303)
 
@@ -5358,45 +5334,21 @@ async def alianzas_seguimiento(alianza_id: str, estado: str = Form(...), respons
 
 
 # ── Ponentes ──────────────────────────────────────────────────────────────────
+# La búsqueda se hace desde Claude Code (/buscar-ponentes); aquí solo se consulta y se da seguimiento.
 
 @app.get("/ponentes", response_class=HTMLResponse)
 async def ponentes_lista(request: Request, search: str = "", estado: str = "", ambito: str = "", evento: str = "",
                          origen: str = "", orden: str = "puntaje"):
-    cfg = catalogos.get_ponentes_config()
-    est = pdb.get_ponentes_estado()
-    proxima = None
-    if cfg["activa"] and est.get("ultima_exitosa"):
-        proxima = est["ultima_exitosa"] + _timedelta(days=int(cfg["frecuencia_dias"]))
-    proximos = pdb.get_eventos_proximos_lista()
-    evento_filtro = pdb.get_evento(evento) if evento else None
     return templates.TemplateResponse(request, "ponentes.html", _ctx(
         request,
         ponentes=pdb.get_ponentes(search, estado, ambito, evento, origen, orden),
         conteos=pdb.contar_ponentes_por_estado(),
         corridas=pdb.get_corridas_ponentes(),
-        cfg=cfg, estado_busqueda=est, proxima=proxima, clave_configurada=bool(ANTHROPIC_API_KEY),
+        cfg=catalogos.get_ponentes_config(),
         estados=catalogos.ESTADOS_PONENTE, ambitos=catalogos.AMBITOS_ALIANZA, origenes=catalogos.ORIGENES_PONENTE,
-        eventos_proximos=proximos, evento_filtro=evento_filtro,
+        eventos_proximos=pdb.get_eventos_proximos_lista(), evento_filtro=pdb.get_evento(evento) if evento else None,
         search=search, estado=estado, ambito=ambito, evento=evento, origen=origen, orden=orden,
     ))
-
-
-@app.get("/ponentes/estado")
-async def ponentes_estado():
-    return {"en_curso": bool(pdb.get_ponentes_estado().get("en_curso"))}
-
-
-@app.post("/ponentes/buscar")
-async def ponentes_buscar(evento_id: str = Form("")):
-    import asyncio
-    from webapp import ponentes_ia
-    destino = f"/ponentes?evento={_quote(evento_id)}&" if evento_id else "/ponentes?"
-    if pdb.get_ponentes_estado().get("en_curso"):
-        return RedirectResponse(destino + "msg=en_curso", status_code=303)
-    if evento_id and not pdb.get_evento(evento_id):
-        return RedirectResponse(f"/ponentes?error={_quote('No se encontró el evento.')}", status_code=303)
-    asyncio.get_running_loop().run_in_executor(None, ponentes_ia.ejecutar, "evento" if evento_id else "manual", evento_id)
-    return RedirectResponse(destino + "msg=iniciada", status_code=303)
 
 
 @app.post("/ponentes/nuevo")
@@ -5410,11 +5362,10 @@ async def ponentes_nuevo(nombre: str = Form(...), cargo: str = Form(""), institu
 
 
 @app.post("/ponentes/configuracion")
-async def ponentes_configuracion(publico: str = Form(""), temas: str = Form(""), activa: str = Form(""),
-                                 frecuencia_dias: int = Form(7), propuestas_por_corrida: int = Form(5)):
+async def ponentes_configuracion(publico: str = Form(""), temas: str = Form(""), propuestas_por_corrida: int = Form(5)):
     catalogos.set_ponentes_config({
-        "publico": publico.strip(), "temas": temas.strip(), "activa": activa == "1",
-        "frecuencia_dias": max(1, frecuencia_dias), "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
+        "publico": publico.strip(), "temas": temas.strip(),
+        "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
     })
     return RedirectResponse("/ponentes", status_code=303)
 

@@ -5,26 +5,12 @@
 <button type="button" class="btn-ghost" onclick="document.getElementById('modal-alianza').classList.remove('hidden')">
   <i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar
 </button>
-<form method="post" action="/alianzas/buscar" data-confirm="¿Buscar instituciones ahora? Cada búsqueda consume créditos de la API de Claude.">
-  <button type="submit" class="btn-primary" {% if estado_busqueda.en_curso or not clave_configurada %}disabled{% endif %}>
-    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Buscar ahora
-  </button>
-</form>
 {% endblock %}
 
 {% block content %}
 {% set ultima = corridas[0] if corridas else None %}
-<div x-data="{ enCurso: {{ 'true' if estado_busqueda.en_curso or request.query_params.get('msg') == 'iniciada' else 'false' }} }"
-     x-init="if (enCurso) { const t = setInterval(async () => {
-       const r = await fetch('/alianzas/estado'); const d = await r.json();
-       if (!d.en_curso) { clearInterval(t); location.href = '/alianzas?orden=recientes'; }
-     }, 15000) }">
+<div>
 
-  {% if not clave_configurada %}
-  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-    La búsqueda no puede correr: falta configurar <code class="font-mono">ANTHROPIC_API_KEY</code> en el servidor.
-  </div>
-  {% endif %}
   {% if request.query_params.get('error') %}
   <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ request.query_params.get('error') }}</div>
   {% endif %}
@@ -33,9 +19,12 @@
     <strong>La última búsqueda falló.</strong> {{ ultima.resultado.error if ultima.resultado else '' }}
   </div>
   {% endif %}
-  <div x-show="enCurso" x-cloak class="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-    <i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i>
-    Buscando instituciones. Puede tardar varios minutos; esta página se actualizará sola.
+  <div class="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" x-data="{ copiado: false }">
+    <i class="fa-solid fa-terminal text-slate-400 mr-1" aria-hidden="true"></i>
+    Para buscar, abre Claude Code en la carpeta IPIDET de tu computadora y escribe
+    <code class="font-mono bg-slate-100 rounded px-1.5 py-0.5">/buscar-alianzas</code>
+    <button type="button" class="text-blue-600 hover:underline ml-1" @click="navigator.clipboard.writeText('/buscar-alianzas'); copiado = true; setTimeout(() => copiado = false, 1500)" x-text="copiado ? 'Copiado' : 'Copiar'"></button>.
+    Usa tu suscripción de Claude: no tiene costo adicional. Los resultados aparecen aquí al terminar.
   </div>
 
   {# ─ Resumen #}
@@ -53,15 +42,8 @@
       <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('aliada', 0) }}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <div class="text-xs text-slate-500">Búsqueda automática</div>
-      <div class="text-sm font-medium text-slate-800 mt-1">
-        {% if not cfg.activa %}Pausada
-        {% elif proxima %}Próxima: {{ proxima | format_fecha }}
-        {% else %}Sin búsquedas completadas{% endif %}
-      </div>
-      <div class="text-xs text-slate-500">
-        {% if estado_busqueda.ultima_exitosa %}Última: {{ estado_busqueda.ultima_exitosa | format_fecha }}{% endif %}
-      </div>
+      <div class="text-xs text-slate-500">Última búsqueda</div>
+      <div class="text-sm font-medium text-slate-800 mt-1">{% if ultima %}{{ ultima.inicio | format_fecha }}{% else %}Todavía ninguna{% endif %}</div>
     </div>
   </div>
 
@@ -187,7 +169,7 @@
 
   {# ─ Configuración e historial #}
   <details class="mt-6 bg-white rounded-xl border border-slate-200">
-    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Qué busca la IA y con qué frecuencia</summary>
+    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Qué busca la IA</summary>
     <form method="post" action="/alianzas/configuracion" class="px-5 pb-5 space-y-3">
       <label class="block text-xs font-medium text-slate-600">Perfil de IPIDET
         <textarea name="perfil" rows="4" class="input w-full mt-1">{{ cfg.perfil }}</textarea>
@@ -196,14 +178,8 @@
         <textarea name="criterios" rows="4" class="input w-full mt-1">{{ cfg.criterios }}</textarea>
       </label>
       <div class="flex flex-wrap items-end gap-4">
-        <label class="block text-xs font-medium text-slate-600">Cada cuántos días
-          <input type="number" min="1" name="frecuencia_dias" value="{{ cfg.frecuencia_dias }}" class="input w-24 mt-1">
-        </label>
         <label class="block text-xs font-medium text-slate-600">Máximo de instituciones por búsqueda
           <input type="number" min="1" max="15" name="propuestas_por_corrida" value="{{ cfg.propuestas_por_corrida }}" class="input w-24 mt-1">
-        </label>
-        <label class="flex items-center gap-2 text-sm text-slate-700 pb-2">
-          <input type="checkbox" name="activa" value="1" {% if cfg.activa %}checked{% endif %}> Búsqueda automática activa
         </label>
       </div>
       <button type="submit" class="btn-primary">Guardar</button>
@@ -217,14 +193,14 @@
         <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-100">
           <th class="py-2 pr-4 font-medium">Fecha</th><th class="py-2 pr-4 font-medium">Origen</th><th class="py-2 pr-4 font-medium">Resultado</th>
           <th class="py-2 pr-4 font-medium text-right">Nuevas</th><th class="py-2 pr-4 font-medium text-right">Actualizadas</th>
-          <th class="py-2 pr-4 font-medium text-right">Descartadas</th><th class="py-2 font-medium text-right">Costo estimado</th>
+          <th class="py-2 font-medium text-right">Descartadas</th>
         </tr></thead>
         <tbody>
         {% for c in corridas %}
           {% set r = c.resultado or {} %}
           <tr class="border-b border-slate-50 last:border-0">
             <td class="py-2 pr-4 whitespace-nowrap">{{ c.inicio | format_fecha }}</td>
-            <td class="py-2 pr-4">{{ 'Automática' if c.origen == 'programada' else 'Manual' }}</td>
+            <td class="py-2 pr-4">{{ 'Claude Code' if c.origen == 'claude_code' else 'API (antes)' }}</td>
             <td class="py-2 pr-4">
               {% if c.estado == 'completada' %}<span class="badge badge-green">Completada</span>
               {% elif c.estado == 'en_curso' %}<span class="badge badge-blue">En curso</span>
@@ -233,10 +209,9 @@
             <td class="py-2 pr-4 text-right">{{ r.nuevas or 0 }}</td>
             <td class="py-2 pr-4 text-right">{{ r.actualizadas or 0 }}</td>
             <td class="py-2 pr-4 text-right" title="{{ (r.descartadas or []) | join(' · ') }}">{{ (r.descartadas or []) | length }}</td>
-            <td class="py-2 text-right font-mono">{% if c.costo_estimado_usd is defined %}US$ {{ '%.2f' | format(c.costo_estimado_usd) }}{% else %}—{% endif %}</td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="py-4 text-center text-slate-500">Aún no hay búsquedas.</td></tr>
+          <tr><td colspan="6" class="py-4 text-center text-slate-500">Aún no hay búsquedas.</td></tr>
         {% endfor %}
         </tbody>
       </table>

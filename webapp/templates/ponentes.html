@@ -5,27 +5,13 @@
 <button type="button" class="btn-ghost" onclick="document.getElementById('modal-ponente').classList.remove('hidden')">
   <i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar
 </button>
-<form method="post" action="/ponentes/buscar" data-confirm="¿Buscar ponentes para los temas prioritarios? Cada búsqueda consume créditos de la API de Claude.">
-  <button type="submit" class="btn-primary" {% if estado_busqueda.en_curso or not clave_configurada %}disabled{% endif %}>
-    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Buscar ahora
-  </button>
-</form>
 {% endblock %}
 
 {% block content %}
 {% set ultima = corridas[0] if corridas else None %}
 {% set volver = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
-<div x-data="{ enCurso: {{ 'true' if estado_busqueda.en_curso or request.query_params.get('msg') == 'iniciada' else 'false' }} }"
-     x-init="if (enCurso) { const t = setInterval(async () => {
-       const r = await fetch('/ponentes/estado'); const d = await r.json();
-       if (!d.en_curso) { clearInterval(t); const u = new URL(location.href); u.searchParams.delete('msg'); u.searchParams.set('orden', 'recientes'); location.href = u; }
-     }, 15000) }">
+<div>
 
-  {% if not clave_configurada %}
-  <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-    La búsqueda no puede correr: falta configurar <code class="font-mono">ANTHROPIC_API_KEY</code> en el servidor.
-  </div>
-  {% endif %}
   {% if request.query_params.get('error') %}
   <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{{ request.query_params.get('error') }}</div>
   {% endif %}
@@ -34,9 +20,12 @@
     <strong>La última búsqueda falló.</strong> {{ ultima.resultado.error if ultima.resultado else '' }}
   </div>
   {% endif %}
-  <div x-show="enCurso" x-cloak class="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-    <i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i>
-    Buscando ponentes{% if evento_filtro %} para «{{ evento_filtro.titulo }}»{% endif %}. Puede tardar varios minutos; esta página se actualizará sola.
+  <div class="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700" x-data="{ copiado: false }">
+    <i class="fa-solid fa-terminal text-slate-400 mr-1" aria-hidden="true"></i>
+    Para buscar, abre Claude Code en la carpeta IPIDET de tu computadora y escribe
+    <code class="font-mono bg-slate-100 rounded px-1.5 py-0.5">/buscar-ponentes Pilar 2 en LATAM</code>
+    <button type="button" class="text-blue-600 hover:underline ml-1" @click="navigator.clipboard.writeText('/buscar-ponentes Pilar 2 en LATAM'); copiado = true; setTimeout(() => copiado = false, 1500)" x-text="copiado ? 'Copiado' : 'Copiar'"></button>.
+    Usa tu suscripción de Claude: no tiene costo adicional. Los resultados aparecen aquí al terminar.
   </div>
   {% if evento_filtro %}
   <div class="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 flex flex-wrap items-center gap-2 justify-between">
@@ -59,11 +48,8 @@
       <div class="text-2xl font-semibold text-slate-800">{{ conteos.get('confirmado', 0) + conteos.get('expuso', 0) }}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <div class="text-xs text-slate-500">Búsqueda automática</div>
-      <div class="text-sm font-medium text-slate-800 mt-1">
-        {% if not cfg.activa %}Pausada{% elif proxima %}Próxima: {{ proxima | format_fecha }}{% else %}Sin búsquedas semanales{% endif %}
-      </div>
-      <div class="text-xs text-slate-500">Cada evento tiene además su propia búsqueda.</div>
+      <div class="text-xs text-slate-500">Última búsqueda</div>
+      <div class="text-sm font-medium text-slate-800 mt-1">{% if ultima %}{{ ultima.inicio | format_fecha }}{% else %}Todavía ninguna{% endif %}</div>
     </div>
   </div>
 
@@ -214,7 +200,7 @@
   </div>
 
   <details class="mt-6 bg-white rounded-xl border border-slate-200">
-    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Qué busca la IA y con qué frecuencia</summary>
+    <summary class="px-5 py-3 text-sm font-medium text-slate-700 cursor-pointer">Qué busca la IA</summary>
     <form method="post" action="/ponentes/configuracion" class="px-5 pb-5 space-y-3">
       <label class="block text-xs font-medium text-slate-600">Nuestro público
         <textarea name="publico" rows="4" class="input w-full mt-1">{{ cfg.publico }}</textarea>
@@ -224,14 +210,8 @@
       </label>
       <p class="text-xs text-slate-500">La IA también recibe los eventos próximos, la asistencia de los anteriores y las instituciones de Alianzas. Nunca recibe datos de socios.</p>
       <div class="flex flex-wrap items-end gap-4">
-        <label class="block text-xs font-medium text-slate-600">Cada cuántos días
-          <input type="number" min="1" name="frecuencia_dias" value="{{ cfg.frecuencia_dias }}" class="input w-24 mt-1">
-        </label>
         <label class="block text-xs font-medium text-slate-600">Máximo de ponentes por búsqueda
           <input type="number" min="1" max="15" name="propuestas_por_corrida" value="{{ cfg.propuestas_por_corrida }}" class="input w-24 mt-1">
-        </label>
-        <label class="flex items-center gap-2 text-sm text-slate-700 pb-2">
-          <input type="checkbox" name="activa" value="1" {% if cfg.activa %}checked{% endif %}> Búsqueda semanal activa
         </label>
       </div>
       <button type="submit" class="btn-primary">Guardar</button>
@@ -245,14 +225,14 @@
         <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-100">
           <th class="py-2 pr-4 font-medium">Fecha</th><th class="py-2 pr-4 font-medium">Para</th><th class="py-2 pr-4 font-medium">Resultado</th>
           <th class="py-2 pr-4 font-medium text-right">Nuevos</th><th class="py-2 pr-4 font-medium text-right">Actualizados</th>
-          <th class="py-2 pr-4 font-medium text-right">Descartados</th><th class="py-2 font-medium text-right">Costo estimado</th>
+          <th class="py-2 font-medium text-right">Descartados</th>
         </tr></thead>
         <tbody>
         {% for c in corridas %}
           {% set r = c.resultado or {} %}
           <tr class="border-b border-slate-50 last:border-0">
             <td class="py-2 pr-4 whitespace-nowrap">{{ c.inicio | format_fecha }}</td>
-            <td class="py-2 pr-4">{% if c.evento_titulo %}{{ c.evento_titulo }}{% elif c.origen == 'programada' %}Búsqueda semanal{% else %}Temas prioritarios{% endif %}</td>
+            <td class="py-2 pr-4">{% if c.evento_titulo %}{{ c.evento_titulo }}{% else %}Temas prioritarios{% endif %}</td>
             <td class="py-2 pr-4">
               {% if c.estado == 'completada' %}<span class="badge badge-green">Completada</span>
               {% elif c.estado == 'en_curso' %}<span class="badge badge-blue">En curso</span>
@@ -261,10 +241,9 @@
             <td class="py-2 pr-4 text-right">{{ r.nuevos or 0 }}</td>
             <td class="py-2 pr-4 text-right">{{ r.actualizados or 0 }}</td>
             <td class="py-2 pr-4 text-right" title="{{ (r.descartados or []) | join(' · ') }}">{{ (r.descartados or []) | length }}</td>
-            <td class="py-2 text-right font-mono">{% if c.costo_estimado_usd is defined %}US$ {{ '%.2f' | format(c.costo_estimado_usd) }}{% else %}—{% endif %}</td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="py-4 text-center text-slate-500">Aún no hay búsquedas.</td></tr>
+          <tr><td colspan="6" class="py-4 text-center text-slate-500">Aún no hay búsquedas.</td></tr>
         {% endfor %}
         </tbody>
       </table>
