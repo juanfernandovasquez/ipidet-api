@@ -5566,9 +5566,10 @@ async def ponentes_nuevo(nombre: str = Form(...), cargo: str = Form(""), institu
 
 
 @app.post("/ponentes/configuracion")
-async def ponentes_configuracion(publico: str = Form(""), temas: str = Form(""), propuestas_por_corrida: int = Form(5)):
+async def ponentes_configuracion(publico: str = Form(""), temas: str = Form(""), politica: str = Form(""),
+                                 propuestas_por_corrida: int = Form(5)):
     catalogos.set_ponentes_config({
-        "publico": publico.strip(), "temas": temas.strip(),
+        "publico": publico.strip(), "temas": temas.strip(), "politica": politica.strip(),
         "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
     })
     return RedirectResponse("/ponentes", status_code=303)

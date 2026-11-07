@@ -104,6 +104,13 @@ PONENTES_CONFIG = {
         "internacional y convenios para evitar la doble imposición, fiscalización y litigio ante la "
         "administración tributaria y el Tribunal Fiscal, responsabilidad penal tributaria."
     ),
+    # Definido por el usuario el 2026-11-06.
+    "politica": (
+        "IPIDET no paga honorarios a los ponentes. La mayoría de los eventos son virtuales; algunos son "
+        "presenciales, según cómo se configure cada evento. Se puede proponer a funcionarios públicos y a "
+        "profesionales de grandes firmas: el equipo de IPIDET decide a quién contactar. La búsqueda se hace "
+        "aunque falte poco para el evento. El contacto lo hace siempre una persona de IPIDET, nunca la IA."
+    ),
 }
 
 ORGANIZACION = {
@@ -154,8 +161,12 @@ def migrar_config() -> None:
     _log("alianzas: índice único por nombre normalizado")
     if not DRY:
         db.alianzas.create_index("clave", unique=True)
-    if db.config.find_one({"_id": "ponentes_config"}):
-        _log("config.ponentes_config: ya existe, no se toca")
+    actual = db.config.find_one({"_id": "ponentes_config"})
+    if actual:
+        faltan = {k: v for k, v in PONENTES_CONFIG.items() if k not in actual}
+        _log(f"config.ponentes_config: ya existe; se agregan campos nuevos: {', '.join(faltan) or 'ninguno'}")
+        if faltan and not DRY:
+            db.config.update_one({"_id": "ponentes_config"}, {"$set": faltan})
     else:
         _log("config.ponentes_config: se crea")
         if not DRY:

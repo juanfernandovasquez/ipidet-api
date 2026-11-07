@@ -5410,24 +5410,76 @@ def get_alianzas(search: str = "", tipo: str = "", ambito: str = "", estado: str
     return docs
 
 
+# ── Coincidencia de instituciones con el centro de trabajo de los socios ──────
+# El centro de trabajo se escribe a mano («PRICEWATERHOUSECOOPERS S.Civil…», «PWC»), así que
+# se compara el núcleo del nombre, sin forma legal, y se suman las variantes de /empresas
+# (nombre comercial y razón social). Para que «PwC» y «PricewaterhouseCoopers» coincidan,
+# la empresa debe tener su razón social cargada en /empresas.
+
+_FORMAS_LEGALES = {"de", "del", "la", "las", "los", "el", "y", "e", "and", "en", "sa", "sac", "saa", "srl", "sas",
+                   "ltda", "eirl", "scrl", "cscrl", "escrl", "inc", "llc", "civil", "sociedad", "comercial",
+                   "responsabilidad", "limitada", "anonima", "cerrada", "abierta", "asesores", "consultores",
+                   "empresariales", "tributarios", "legales", "peru"}
+_GENERICOS_INSTITUCION = {"universidad", "estudio", "estudios", "grupo", "banco", "instituto", "ministerio",
+                          "colegio", "asociacion", "firma", "abogados", "abogado", "consultora", "consultoria",
+                          "auditores", "auditoria", "contadores", "contador", "empresa", "asesoria", "practica",
+                          "privada", "publica", "independiente", "particular", "ninguno", "ninguna", "otro", "otros"}
+
+
+def _nucleos(texto: str) -> list:
+    """Núcleo de cada parte del nombre: «Tribunal Fiscal - MEF» da {tribunal, fiscal} y {mef}."""
+    salida = []
+    for parte in _re.split(r"[()/,;|]| - ", texto or ""):
+        n = frozenset(t for t in _clave_alianza(parte).split() if len(t) > 1 and t not in _FORMAS_LEGALES)
+        if n and not n <= _GENERICOS_INSTITUCION and n not in salida:
+            salida.append(n)
+    return salida
+
+
+def _coinciden(a: frozenset, b: frozenset) -> bool:
+    menor, mayor = (a, b) if len(a) <= len(b) else (b, a)
+    return menor <= mayor and len(menor) * 2 >= len(mayor)
+
+
+def _variantes_empresas() -> list:
+    salida = []
+    for c in companies_col.find({}, {"nombre": 1, "razon_social": 1}):
+        variantes = set(_nucleos(c.get("nombre") or "")) | set(_nucleos(c.get("razon_social") or ""))
+        if variantes:
+            salida.append(variantes)
+    return salida
+
+
+def _socios_con_centro() -> list:
+    socios = []
+    for m in members_col.find({"estado": {"$ne": "retirar"}, "centro_trabajo": {"$nin": [None, ""]}},
+                              {"member_id": 1, "apellidos": 1, "nombres": 1, "centro_trabajo": 1, "linkedin": 1}):
+        socios.append({"member_id": m["member_id"], "linkedin": m.get("linkedin") or "",
+                       "nombre": f"{m.get('nombres', '')} {m.get('apellidos', '')}".strip(),
+                       "nucleos": _nucleos(m["centro_trabajo"])})
+    return socios
+
+
+def _socios_de_institucion(textos: list, socios: list, empresas: list) -> list:
+    buscados = set()
+    for texto_ in textos:
+        for n in _nucleos(texto_):
+            buscados.add(n)
+            for variantes in empresas:
+                if any(_coinciden(n, v) for v in variantes):
+                    buscados |= variantes
+    return [s for s in socios if any(_coinciden(a, b) for a in s["nucleos"] for b in buscados)]
+
+
 def _agregar_socios_vinculados(alianzas: list) -> None:
     """Socios cuyo centro de trabajo coincide: son el contacto natural para acercarse a la institución."""
     if not alianzas:
         return
-    socios = []
-    for m in members_col.find({"estado": {"$ne": "retirar"}, "centro_trabajo": {"$nin": [None, ""]}},
-                              {"member_id": 1, "apellidos": 1, "nombres": 1, "centro_trabajo": 1, "linkedin": 1}):
-        m["_centro"] = f" {_clave_alianza(m['centro_trabajo'])} "
-        socios.append(m)
+    socios, empresas = _socios_con_centro(), _variantes_empresas()
     for a in alianzas:
-        terminos = [f" {a['clave']} "]
-        siglas = _clave_alianza(a.get("siglas", ""))
-        if len(siglas) >= 3:
-            terminos.append(f" {siglas} ")
         a["socios_vinculados"] = [
-            {"member_id": m["member_id"], "nombre": f"{m.get('nombres', '')} {m.get('apellidos', '')}".strip(),
-             "linkedin": m.get("linkedin") or ""}
-            for m in socios if any(t in m["_centro"] for t in terminos)
+            {"member_id": s["member_id"], "nombre": s["nombre"], "linkedin": s["linkedin"]}
+            for s in _socios_de_institucion([a.get("nombre", ""), a.get("siglas", "")], socios, empresas)
         ]
 
 
@@ -5475,7 +5527,6 @@ def actualizar_seguimiento_alianza(alianza_id: str, estado: str, responsable: st
 ponentes_col = _db.ponentes
 ponentes_corridas_col = _db.ponentes_corridas
 _ESTADOS_PONENTE_CERRADOS = ("descartado", "no_disponible")
-_CENTROS_GENERICOS = {"independiente", "particular", "ninguno", "ninguna", "otro", "otros"}
 _CAMPOS_ANALISIS_PONENTE = ("cargo", "institucion", "pais", "ambito", "temas", "por_que_relevante", "trayectoria",
                             "charlas_posibles", "canal_contacto", "linkedin", "perfil_url",
                             "es_funcionario_publico", "consideraciones", "relevancia", "prestigio", "viabilidad")
@@ -5585,23 +5636,19 @@ def _enriquecer_ponentes(ponentes: list) -> None:
                 expuso.setdefault(x["ponente_id"], []).append(
                     {"evento_id": str(e["_id"]), "titulo": e.get("titulo", ""), "fecha": e.get("fecha", ""),
                      "inscritos": e["inscritos"], "asistentes": e["asistentes"]})
-    socios = []
-    for m in members_col.find({"estado": {"$ne": "retirar"}},
-                              {"member_id": 1, "apellidos": 1, "nombres": 1, "centro_trabajo": 1}):
-        centro = _clave_alianza(m.get("centro_trabajo") or "")
-        socios.append({"member_id": m["member_id"],
-                       "nombre": f"{m.get('nombres', '')} {m.get('apellidos', '')}".strip(),
-                       "tokens": _tokens(f"{m.get('nombres', '')} {m.get('apellidos', '')}"),
-                       "centro": f" {centro} " if centro and centro not in _CENTROS_GENERICOS and len(centro) >= 3 else ""})
+    socios = [{"member_id": m["member_id"], "nombre": f"{m.get('nombres', '')} {m.get('apellidos', '')}".strip(),
+               "tokens": _tokens(f"{m.get('nombres', '')} {m.get('apellidos', '')}")}
+              for m in members_col.find({"estado": {"$ne": "retirar"}}, {"member_id": 1, "apellidos": 1, "nombres": 1})]
+    con_centro, empresas = _socios_con_centro(), _variantes_empresas()
     for p in ponentes:
         p["eventos"] = sorted(expuso.get(p["_id"], []), key=lambda e: e["fecha"], reverse=True)
         nombre = _tokens(p.get("nombre", ""))
         p["posible_socio"] = next(({"member_id": s["member_id"], "nombre": s["nombre"]} for s in socios
                                    if len(nombre) >= 2 and (nombre <= s["tokens"] or len(nombre & s["tokens"]) >= 3)), None)
-        inst = f" {_clave_alianza(p.get('institucion', ''))} "
-        p["colegas"] = [{"member_id": s["member_id"], "nombre": s["nombre"]} for s in socios
-                        if inst.strip() and s["centro"] and (s["centro"] in inst or inst in s["centro"])
-                        and (not p["posible_socio"] or s["member_id"] != p["posible_socio"]["member_id"])][:6]
+        mismo = p["posible_socio"]["member_id"] if p["posible_socio"] else ""
+        p["colegas"] = [{"member_id": s["member_id"], "nombre": s["nombre"]}
+                        for s in _socios_de_institucion([p.get("institucion", "")], con_centro, empresas)
+                        if s["member_id"] != mismo][:6]
 
 
 def get_ponentes(search: str = "", estado: str = "", ambito: str = "", evento: str = "", origen: str = "",

@@ -45,6 +45,7 @@ def contexto(evento: dict | None = None) -> dict:
         "asociacion": catalogos.get_alianzas_config().get("perfil", ""),
         "publico": cfg.get("publico", ""),
         "temas_prioritarios": cfg.get("temas", ""),
+        "politica_de_ponentes": cfg.get("politica", ""),
         "maximo_ponentes": cfg.get("propuestas_por_corrida", 5),
         "ambitos": list(catalogos.AMBITOS_ALIANZA),
         "eventos_proximos": [f"{e['fecha']}: {e['titulo']}" for e in datos["proximos"]],
@@ -56,8 +57,24 @@ def contexto(evento: dict | None = None) -> dict:
     }
     if evento:
         salida["evento"] = {"id": evento["_id"], "titulo": evento["titulo"], "fecha": evento.get("fecha", ""),
+                            "modalidad": evento.get("modalidad") or "sin especificar (lo habitual es virtual)",
+                            "lugar": evento.get("lugar") or "",
                             "descripcion": ia.texto(evento.get("descripcion"), 1500)}
     return salida
+
+
+def _posible_duplicado(nombre: str) -> dict | None:
+    """Otra ficha que parece la misma persona escrita distinto («F. Alfredo García Prats» y «Alfredo García Prats»)."""
+    if pdb.ponentes_col.find_one({"clave": pdb._clave_alianza(nombre)}, {"_id": 1}):
+        return None  # mismo nombre: se actualiza esa ficha
+    nuevo = {t for t in ia.normalizar(nombre).split() if len(t) > 2}
+    if len(nuevo) < 2:
+        return None
+    for p in pdb.ponentes_col.find({}, {"nombre": 1, "institucion": 1}):
+        otro = {t for t in ia.normalizar(p.get("nombre", "")).split() if len(t) > 2}
+        if len(otro) >= 2 and (nuevo <= otro or otro <= nuevo or len(nuevo & otro) >= 3):
+            return p
+    return None
 
 
 def preparar(item: dict, lector: ia.Lector) -> tuple[dict | None, str]:
@@ -131,6 +148,12 @@ def importar(items: list, evento: dict | None = None, guardar: bool = True) -> d
             doc, motivo = preparar(item, lector)
             if not doc:
                 resultado["descartados"].append(motivo)
+                continue
+            parecido = None if item.get("es_otra_persona") else _posible_duplicado(doc["nombre"])
+            if parecido:
+                resultado["descartados"].append(
+                    f"{doc['nombre']}: posible duplicado de «{parecido['nombre']}» ({parecido.get('institucion') or 'sin institución'}). "
+                    "Si es la misma persona, usa ese nombre exacto; si es otra, marca \"es_otra_persona\": true.")
                 continue
             resultado["aceptados"].append(doc["nombre"])
             if not guardar:

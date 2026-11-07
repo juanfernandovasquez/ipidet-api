@@ -65,7 +65,7 @@
       {% for k, v in estados.items() %}<option value="{{ k }}" {% if estado == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
     </select>
     <select name="orden" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Orden">
-      <option value="puntaje" {% if orden != 'recientes' %}selected{% endif %}>Mejor evaluadas</option>
+      <option value="puntaje" {% if orden != 'recientes' %}selected{% endif %}>Prioridad de la IA</option>
       <option value="recientes" {% if orden == 'recientes' %}selected{% endif %}>Más recientes</option>
     </select>
     {% if search or tipo or ambito or estado %}<a href="/alianzas" class="text-sm text-slate-500 hover:text-slate-700 px-2">Limpiar</a>{% endif %}
@@ -90,7 +90,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            {% if a.puntaje %}<span class="text-xs text-slate-500" title="Afinidad {{ a.afinidad }}, impacto {{ a.impacto }} y viabilidad {{ a.viabilidad }}, sobre 5. Es una estimación de la IA.">Evaluación IA {{ a.puntaje }}/15</span>{% endif %}
+            {% if a.puntaje %}<span class="text-xs text-slate-500" title="Orientación de la IA según afinidad, impacto y viabilidad. No sirve para comparar búsquedas distintas.">Prioridad IA: {{ 'alta' if a.puntaje >= 12 else ('media' if a.puntaje >= 8 else 'baja') }}</span>{% endif %}
             <span class="badge badge-{{ estados[a.estado][1] }}">{{ estados[a.estado][0] }}</span>
           </div>
         </div>
