@@ -13,6 +13,7 @@
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
       <div class="text-xs text-slate-500">Estado</div>
       <div class="mt-1">{% if cfg.activo %}<span class="badge badge-green">Activo</span>{% else %}<span class="badge badge-gray">Apagado</span>{% endif %}</div>
+      <div class="text-xs text-slate-500 mt-1">{% if cfg.activo %}Revisa cada {{ cfg.intervalo_min }} min{% else %}Solo revisa con «Revisar ahora»{% endif %}</div>
     </div>
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
       <div class="text-xs text-slate-500">Última revisión</div>
@@ -65,13 +66,22 @@
         </div>
       </div>
       {% endif %}
+      <div x-data="{ activo: {{ 'true' if cfg.activo else 'false' }} }" class="space-y-3">
       <label class="flex items-start gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="activo" value="1" {% if cfg.activo %}checked{% endif %} class="mt-0.5">
-        <span><strong>Revisar el correo automáticamente</strong><br><span class="text-slate-500">Usa la API de Claude: cada correo analizado tiene un costo.</span></span>
+        <input type="checkbox" name="activo" value="1" x-model="activo" {% if cfg.activo %}checked{% endif %} class="mt-0.5">
+        <span><strong>Revisar el correo automáticamente</strong><br>
+          <span class="text-slate-500">Mirar el buzón no cuesta nada. Solo se paga cada correo nuevo de una persona que el agente analiza (≈ US$ 0,001); los automáticos se descartan gratis.</span></span>
       </label>
+      <p x-show="!activo" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        Apagado: el agente no revisa solo y la frecuencia de abajo no se usa. Solo analiza cuando alguien pulsa «Revisar ahora».
+      </p>
+      <p x-show="activo" x-cloak class="text-xs text-slate-500">
+        Con el modo «solo borradores» nada se envía sin que alguien lo apruebe: el agente solo prepara la respuesta y avisa por Telegram.
+      </p>
       <div class="grid sm:grid-cols-3 gap-3">
         <label class="block text-xs font-medium text-slate-600">Revisar cada (minutos)
-          <input type="number" name="intervalo_min" min="1" max="60" value="{{ cfg.intervalo_min }}" class="input w-full mt-1">
+          <input type="number" name="intervalo_min" min="1" max="60" value="{{ cfg.intervalo_min }}" class="input w-full mt-1" :class="activo ? '' : 'opacity-60'">
+          <span class="block mt-1 font-normal text-slate-500">Solo cuenta si está activo.</span>
         </label>
         <label class="block text-xs font-medium text-slate-600">Máximo de correos por revisión
           <input type="number" name="max_por_ciclo" min="1" max="50" value="{{ cfg.max_por_ciclo }}" class="input w-full mt-1">
@@ -81,6 +91,7 @@
             {% for k, v in esfuerzos.items() %}<option value="{{ k }}" {% if cfg.esfuerzo == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
           </select>
         </label>
+      </div>
       </div>
       <fieldset class="space-y-2">
         <legend class="text-xs font-medium text-slate-600 mb-1">Modo de envío</legend>
