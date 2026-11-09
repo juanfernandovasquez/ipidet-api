@@ -220,7 +220,7 @@ async def run_agente_correo_scheduler():
             cfg = catalogos.get_agente_config()
             if cfg.get("activo"):
                 ultima = agente_db.get_estado().get("ultima_revision")
-                intervalo = max(1, int(cfg.get("intervalo_min") or 3)) * 60
+                intervalo = max(1, int(cfg.get("intervalo_min") or 20)) * 60
                 if ultima and ultima.tzinfo is None:
                     ultima = ultima.replace(tzinfo=timezone.utc)
                 if not ultima or (datetime.now(timezone.utc) - ultima).total_seconds() >= intervalo - 5:

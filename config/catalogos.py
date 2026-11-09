@@ -133,7 +133,7 @@ CATEGORIAS_CORREO_AUTO = ("evento", "admision")
 _AGENTE_DEFECTO = {
     "activo": False,
     "modo": "borrador",
-    "intervalo_min": 3,
+    "intervalo_min": 20,
     "max_por_ciclo": 15,
     # Haiku: clasificar y responder con FAQs es una tarea simple; cuesta ~40 veces menos que Opus.
     "modelo": "claude-haiku-5-5",
