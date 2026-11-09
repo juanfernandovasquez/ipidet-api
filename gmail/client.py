@@ -29,6 +29,8 @@ _MAX_ADJUNTO_BYTES = 8 * 1024 * 1024
 _TIPOS_LEGIBLES = ("image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf")
 
 # Remitentes y cabeceras típicos de correos automáticos: no hay a quién responder.
+# «microsoft-noreply», «ventas.no-reply»…: nadie lee las respuestas a esas direcciones.
+_NOREPLY_EN_CUALQUIER_PARTE = re.compile(r"(^|[.\-_])(no-?reply|do-?not-?reply)([.\-_]|$)", re.I)
 _LOCAL_AUTOMATICO = re.compile(
     r"^(no-?reply|do-?not-?reply|notificaciones?|notifications?|notify|alerts?|alertas|"
     r"mailer-daemon|postmaster|bounces?|newsletter|news|info-noreply|updates|digest|"
@@ -347,6 +349,8 @@ def detectar_automatico(msg: dict) -> str:
     local = (msg.get("de_email") or "").split("@")[0]
     if _LOCAL_AUTOMATICO.match(local):
         return "Remitente automático (no-reply / notificaciones)"
+    if _NOREPLY_EN_CUALQUIER_PARTE.search(local):
+        return "Remitente automático (no-reply)"
     if _ASUNTO_AUTORESPUESTA.match(msg.get("asunto") or ""):
         return "Respuesta automática o aviso de entrega"
     return ""
