@@ -210,6 +210,19 @@ def auto_enviados_recientes(de_email: str, horas: int = 24) -> int:
     })
 
 
+def auto_enviados_hoy() -> int:
+    """Respuestas automáticas de las últimas 24 horas (tope diario de la configuración)."""
+    return correos_col.count_documents({"estado": "enviado_auto",
+                                        "enviado_at": {"$gte": _ahora() - timedelta(hours=24)}})
+
+
+def contar_uso_faqs(fuentes: list[str]) -> None:
+    ids = [_oid(f.split(":", 1)[1]) for f in fuentes if f.startswith("faq:")]
+    ids = [i for i in ids if i]
+    if ids:
+        db.faqs.update_many({"_id": {"$in": ids}}, {"$inc": {"times_used": 1}, "$set": {"last_used": _ahora()}})
+
+
 def listar(vista: str = "atender", categoria: str = "", search: str = "",
            page: int = 1, per_page: int = 25) -> tuple[list, int]:
     q: dict = {}

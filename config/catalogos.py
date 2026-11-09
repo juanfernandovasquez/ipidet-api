@@ -125,16 +125,20 @@ MODOS_AGENTE = {
     "automatico": "Automático: envía solo lo que cumple todas las condiciones; el resto queda en borrador",
 }
 ESFUERZOS_AGENTE = {"low": "Bajo (más rápido y barato)", "medium": "Medio (recomendado)", "high": "Alto (más cuidadoso)"}
+# Categorías en las que una respuesta puede salir sola (si además se apoya solo en FAQs
+# o eventos autorizados). El resto —pagos, socios, proveedores, quejas— siempre va a revisión.
+CATEGORIAS_CORREO_AUTO = ("evento", "admision", "consulta_general")
 
 _AGENTE_DEFECTO = {
     "activo": False,
     "modo": "borrador",
     "intervalo_min": 3,
     "max_por_ciclo": 15,
-    "modelo": "claude-opus-5-5",
+    # Haiku: clasificar y responder con FAQs es una tarea simple; cuesta ~40 veces menos que Opus.
+    "modelo": "claude-haiku-5-5",
     "esfuerzo": "medium",
     "umbral_auto": 0.9,
-    "categorias_auto": ["evento", "consulta_general"],
+    "max_auto_dia": 30,
     "max_auto_por_remitente_dia": 2,
     "firma": "Saludos cordiales,\nEquipo IPIDET",
     "estilo": (
@@ -147,11 +151,11 @@ _AGENTE_DEFECTO = {
     "remitentes_ignorar": [],
     "remitentes_permitidos": [],
     "telegram_avisos": True,
-    # USD por millón de tokens; solo para estimar el costo que se muestra.
-    "precio_entrada": 4.0,
-    "precio_salida": 20.0,
-    "precio_cache_lectura": 0.4,
-    "precio_cache_escritura": 5.0,
+    # USD por millón de tokens (tarifa de Haiku 5.5); solo para estimar el costo que se muestra.
+    "precio_entrada": 0.10,
+    "precio_salida": 0.50,
+    "precio_cache_lectura": 0.01,
+    "precio_cache_escritura": 0.125,
 }
 
 CAMPOS_ORGANIZACION = {

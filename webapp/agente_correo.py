@@ -144,7 +144,8 @@ def procesar_mensaje(gmail: GmailClient, msg: dict, cfg: dict, cache: dict) -> s
         return "errores"
 
 
-def _conocimiento(cache: dict) -> str:
+def _conocimiento(cache: dict) -> tuple[str, dict]:
+    """(texto del prompt, fuentes autorizadas). Se arma una vez por ciclo."""
     if "conocimiento" not in cache:
         cache["conocimiento"] = agente_contexto.conocimiento()
     return cache["conocimiento"]
@@ -162,8 +163,9 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
     correo_id = str(doc["_id"])
     hilo = _hilo(gmail, doc)
     contexto, vinculos = agente_contexto.remitente(doc, hilo)
+    texto_conocimiento, fuentes = _conocimiento(cache)
     try:
-        analisis, uso = agente_ia.analizar(doc, contexto, adjuntos, _conocimiento(cache), GMAIL_ADDRESS)
+        analisis, uso = agente_ia.analizar(doc, contexto, adjuntos, texto_conocimiento, GMAIL_ADDRESS)
     except agente_ia.AgenteIAError as e:
         agente_db.marcar_error(correo_id, str(e), contar_intento=not e.transitorio)
         if e.transitorio:
@@ -175,10 +177,13 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
     evento_id = analisis.get("evento_id")
     if evento_id and not re.fullmatch(r"[0-9a-f]{24}", evento_id):
         evento_id = None
+    propias = direcciones_propias()
     campos = {
         **{k: analisis.get(k) for k in ("categoria", "prioridad", "requiere_respuesta", "accion",
+                                         "fuentes_usadas", "solo_fuentes_autorizadas", "datos_sensibles",
                                          "puede_enviarse_sin_revision", "confianza", "resumen", "motivo",
                                          "datos_faltantes")},
+        "fuentes_titulos": {f: fuentes[f]["titulo"] for f in analisis.get("fuentes_usadas") or [] if f in fuentes},
         "prioridad_orden": _PRIORIDAD_ORDEN.get(analisis.get("prioridad"), 1),
         "respuesta_borrador": respuesta,
         "borrador_original": respuesta,
@@ -187,33 +192,55 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
         "posible_member_id": vinculos.get("posible_member_id"),
         "prospecto_id": vinculos.get("prospecto_id"),
         "hilo_previo": [{"de": m.get("de"), "fecha": m.get("fecha"), "texto": (m.get("cuerpo") or "")[:1500]} for m in hilo],
+        "hilo_con_equipo": any(email_de(m.get("de", "")) in propias for m in hilo),
         "uso": uso,
         "analizado_at": datetime.now(timezone.utc),
         "error": None,
     }
-    motivos = _motivos_para_no_enviar_solo(cfg, {**doc, **campos}) if estado == "pendiente" else []
+    motivos: list[str] = []
+    if estado == "pendiente":
+        motivos, verificacion, uso_verificacion = evaluar_envio_auto(cfg, {**doc, **campos}, fuentes)
+        campos["verificacion"] = verificacion
+        if uso_verificacion:
+            uso["costo_usd"] = round(uso["costo_usd"] + uso_verificacion["costo_usd"], 5)
     campos["envio_auto_bloqueado_por"] = motivos
     agente_db.guardar_analisis(correo_id, campos, estado, detalle=analisis.get("resumen") or "")
 
-    if estado == "pendiente" and cfg.get("modo") == "automatico" and not motivos:
+    if estado == "pendiente" and not motivos:
         ok, _ = enviar_respuesta(correo_id, respuesta, usuario="agente", automatico=True, gmail=gmail)
         if ok:
+            if cfg.get("telegram_avisos"):
+                avisar_telegram_enviado_solo(agente_db.get_correo(correo_id))
             return "enviados_solos"
     if estado == "pendiente" and cfg.get("telegram_avisos"):
         avisar_telegram(agente_db.get_correo(correo_id))
     return "analizados" if estado == "pendiente" else "sin_respuesta"
 
 
-def _motivos_para_no_enviar_solo(cfg: dict, doc: dict) -> list[str]:
-    """Condiciones del envío automático. Lista vacía = puede salir sin revisión."""
+def _motivos_para_no_enviar_solo(cfg: dict, doc: dict, fuentes: dict) -> list[str]:
+    """Condiciones del envío automático, sin costo. Lista vacía = pasa a la verificación final.
+
+    La regla de fondo: solo sale sola una respuesta que se apoya únicamente en FAQs autorizadas,
+    eventos habilitados o los datos de contacto. Todo lo demás queda en borrador.
+    """
     motivos = []
     if cfg.get("modo") != "automatico":
         motivos.append("El agente está en modo solo borradores")
-    if doc.get("categoria") not in (cfg.get("categorias_auto") or []):
+    if doc.get("categoria") not in catalogos.CATEGORIAS_CORREO_AUTO:
         etiqueta = catalogos.CATEGORIAS_CORREO.get(doc.get("categoria"), (doc.get("categoria"),))[0]
-        motivos.append(f"La categoría «{etiqueta}» no está habilitada para envío automático")
+        motivos.append(f"Los correos de tipo «{etiqueta}» siempre los revisa el equipo")
     if doc.get("accion") != "responder":
         motivos.append("El agente sugiere revisarlo antes")
+    usadas = doc.get("fuentes_usadas") or []
+    sin_autorizar = [f for f in usadas if f not in fuentes]
+    if not [f for f in usadas if f != "org"]:
+        motivos.append("No se apoya en ninguna FAQ ni evento autorizado")
+    if sin_autorizar:
+        motivos.append("Cita fuentes que no están autorizadas")
+    if not doc.get("solo_fuentes_autorizadas"):
+        motivos.append("Usa información que no está en FAQs ni eventos autorizados")
+    if doc.get("datos_sensibles"):
+        motivos.append("Toca datos personales, dinero o temas internos")
     if not doc.get("puede_enviarse_sin_revision"):
         motivos.append("El agente indicó que necesita revisión")
     if float(doc.get("confianza") or 0) < float(cfg.get("umbral_auto") or 0.9):
@@ -226,9 +253,59 @@ def _motivos_para_no_enviar_solo(cfg: dict, doc: dict) -> list[str]:
         motivos.append("El correo trae adjuntos")
     if doc.get("prioridad") == "alta":
         motivos.append("Prioridad alta")
+    if doc.get("hilo_con_equipo"):
+        motivos.append("El equipo ya conversa con esta persona en el hilo")
     if agente_db.auto_enviados_recientes(doc.get("de_email", "")) >= int(cfg.get("max_auto_por_remitente_dia") or 2):
         motivos.append("Ya se le respondió automáticamente varias veces hoy")
+    if agente_db.auto_enviados_hoy() >= int(cfg.get("max_auto_dia") or 30):
+        motivos.append("Se alcanzó el tope diario de respuestas automáticas")
     return motivos
+
+
+def evaluar_envio_auto(cfg: dict, doc: dict, fuentes: dict) -> tuple[list[str], dict | None, dict | None]:
+    """(motivos para no enviar solo, verificación, uso de la verificación).
+
+    Si pasan todas las reglas, una segunda llamada revisa la respuesta contra el texto de las
+    fuentes citadas y nada más. Si encuentra algo sin respaldo, queda en borrador.
+    """
+    motivos = _motivos_para_no_enviar_solo(cfg, doc, fuentes)
+    if motivos:
+        return motivos, None, None
+    citadas = {f: fuentes[f] for f in doc.get("fuentes_usadas") or [] if f in fuentes}
+    try:
+        verificacion, uso = agente_ia.verificar(doc.get("respuesta_borrador") or "", doc.get("cuerpo") or "", citadas)
+    except agente_ia.AgenteIAError as e:
+        return [f"No se pudo hacer la verificación final: {e}"], None, None
+    if not verificacion.get("respaldada"):
+        problemas = "; ".join((verificacion.get("problemas") or [])[:3]) or "sin detalle"
+        return [f"La verificación encontró datos sin respaldo: {problemas}"], verificacion, uso
+    return [], verificacion, uso
+
+
+def probar(texto: str, asunto: str = "", de_email: str = "") -> dict:
+    """Simula un correo y muestra qué haría el agente, sin guardar ni enviar nada (página de FAQs)."""
+    doc = {
+        "de": de_email or "prueba@ejemplo.com", "de_email": (de_email or "prueba@ejemplo.com").lower(),
+        "de_nombre": "", "asunto": asunto or "Consulta", "cuerpo": texto, "fecha": datetime.now(timezone.utc),
+        "para": [GMAIL_ADDRESS], "adjuntos": [],
+    }
+    contexto, _ = agente_contexto.remitente(doc, [])
+    texto_conocimiento, fuentes = agente_contexto.conocimiento()
+    analisis, uso = agente_ia.analizar(doc, contexto, [], texto_conocimiento, GMAIL_ADDRESS)
+    doc.update({k: analisis.get(k) for k in analisis}, respuesta_borrador=(analisis.get("respuesta") or "").strip())
+    cfg = {**catalogos.get_agente_config(), "modo": "automatico"}
+    motivos, verificacion, uso_v = evaluar_envio_auto(cfg, doc, fuentes) if analisis.get("requiere_respuesta") else (
+        ["El agente considera que este correo no necesita respuesta"], None, None)
+    return {
+        "categoria": catalogos.CATEGORIAS_CORREO.get(analisis.get("categoria"), ("",))[0],
+        "respuesta": doc["respuesta_borrador"],
+        "resumen": analisis.get("resumen"),
+        "fuentes": [fuentes[f]["titulo"] if f in fuentes else f"{f} (no autorizada)" for f in analisis.get("fuentes_usadas") or []],
+        "saldria_solo": not motivos,
+        "motivos": motivos,
+        "verificacion": verificacion,
+        "costo_usd": round(uso["costo_usd"] + (uso_v or {}).get("costo_usd", 0), 4),
+    }
 
 
 def reprocesar(correo_id: str, gmail: GmailClient | None = None, cache: dict | None = None) -> str:
@@ -361,6 +438,7 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
         "editado_por_equipo": texto != (doc.get("borrador_original") or "").strip(), "error": None,
     }, accion="enviado automáticamente" if automatico else "enviado", usuario=usuario, detalle=f"vía {canal}")
     gmail.marcar_leido(doc.get("gm_msgid", ""))
+    agente_db.contar_uso_faqs(doc.get("fuentes_usadas") or [])
     _cerrar_telegram(agente_db.get_correo(correo_id),
                      "🤖 Respondido por el agente" if automatico else f"✅ Enviado por {usuario}")
     return True, "Respuesta enviada."
@@ -410,7 +488,7 @@ def reescribir(correo_id: str, instruccion: str, usuario: str) -> tuple[bool, st
         if doc.get("hilo_previo"):
             contexto["mensajes_anteriores_del_hilo"] = [
                 {"de": m.get("de"), "texto": m.get("texto")} for m in doc["hilo_previo"]]
-        datos, uso = agente_ia.reescribir(doc, contexto, agente_contexto.conocimiento(), GMAIL_ADDRESS,
+        datos, uso = agente_ia.reescribir(doc, contexto, agente_contexto.conocimiento()[0], GMAIL_ADDRESS,
                                           doc.get("respuesta_borrador") or "", instruccion)
     except agente_ia.AgenteIAError as e:
         return False, str(e)
@@ -476,6 +554,19 @@ def avisar_telegram(doc: dict | None) -> None:
             disable_web_page_preview="true")
     if r.get("ok"):
         agente_db.actualizar(str(doc["_id"]), {"telegram_msg_id": r["result"]["message_id"]})
+
+
+def avisar_telegram_enviado_solo(doc: dict | None) -> None:
+    """Aviso de supervisión: qué respondió el agente sin revisión y con qué fuentes."""
+    if not doc:
+        return
+    fuentes = ", ".join((doc.get("fuentes_titulos") or {}).values()) or "—"
+    texto = (
+        f"🤖 Respondido por el agente\nDe: {doc.get('de')}\nAsunto: {doc.get('asunto')}\n"
+        f"Fuentes: {fuentes}\n\n{(doc.get('respuesta_enviada') or '')[:3000]}"
+    )
+    _tg("sendMessage", chat_id=TELEGRAM_CHAT_ID, text=texto[:4000], reply_markup=_teclado(doc, "🤖 Enviado solo"),
+        disable_web_page_preview="true")
 
 
 def _cerrar_telegram(doc: dict | None, linea: str) -> None:

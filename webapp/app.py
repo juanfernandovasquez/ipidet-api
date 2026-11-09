@@ -1667,12 +1667,18 @@ async def frac_emitir_comprobante(
 # ── FAQs ──────────────────────────────────────────────────────────────────────
 
 @app.get("/faqs", response_class=HTMLResponse)
-async def faqs_list(request: Request, search: str = "", category: str = ""):
+async def faqs_list(request: Request, search: str = "", category: str = "", autorizada: str = ""):
     docs = pdb.get_faqs(search, category)
-    categories = pdb.get_faq_categories()
+    total = len(docs)
+    autorizadas = sum(1 for d in docs if d.get("autorizada"))
+    if autorizada in ("si", "no"):
+        docs = [d for d in docs if bool(d.get("autorizada")) == (autorizada == "si")]
+    eventos_agente = list(pdb.eventos_col.find({"usar_en_agente": True, "estado": {"$ne": "cancelado"}},
+                                              {"titulo": 1, "fecha": 1}).sort("fecha", 1))
     return templates.TemplateResponse(request, "faqs.html", _ctx(request,
-        faqs=docs, categories=categories,
-        search=search, category=category,
+        faqs=docs, categories=pdb.get_faq_categories(), total=total, n_autorizadas=autorizadas,
+        search=search, category=category, autorizada=autorizada, eventos_agente=eventos_agente,
+        agente_cfg=catalogos.get_agente_config(),
     ))
 
 
@@ -1681,9 +1687,41 @@ async def add_faq(
     question: str = Form(...),
     answer: str = Form(...),
     category: str = Form(...),
+    autorizada: str = Form(""),
 ):
-    pdb.save_faq(question, answer, category)
-    return RedirectResponse("/faqs", status_code=303)
+    pdb.save_faq(question.strip(), answer.strip(), category.strip(), autorizada == "1")
+    return RedirectResponse("/faqs?ok=FAQ agregada", status_code=303)
+
+
+@app.post("/faqs/{faq_id}/update")
+async def update_faq(faq_id: str, question: str = Form(...), answer: str = Form(...),
+                     category: str = Form(...), autorizada: str = Form("")):
+    pdb.update_faq(faq_id, question.strip(), answer.strip(), category.strip(), autorizada == "1")
+    return RedirectResponse(f"/faqs?ok=FAQ guardada#faq-{faq_id}", status_code=303)
+
+
+@app.post("/faqs/{faq_id}/autorizar")
+async def autorizar_faq(faq_id: str, autorizada: str = Form("")):
+    pdb.set_faq_autorizada(faq_id, autorizada == "1")
+    mensaje = "La FAQ puede responderse sola" if autorizada == "1" else "La FAQ solo se usará en borradores"
+    return RedirectResponse(f"/faqs?ok={mensaje}#faq-{faq_id}", status_code=303)
+
+
+@app.post("/faqs/probar")
+async def probar_faq(request: Request):
+    """Simula un correo con el agente: no guarda ni envía nada. Cuesta lo mismo que analizar un correo."""
+    from webapp import agente_correo, agente_ia
+    datos = await request.json()
+    texto = (datos.get("texto") or "").strip()
+    if not texto:
+        return JSONResponse({"ok": False, "error": "Escribe el correo de prueba."}, status_code=400)
+    try:
+        resultado = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: agente_correo.probar(texto[:6000], (datos.get("asunto") or "").strip()[:200],
+                                               (datos.get("email") or "").strip()[:200]))
+    except agente_ia.AgenteIAError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=502)
+    return {"ok": True, **resultado}
 
 
 @app.post("/faqs/{faq_id}/delete")
@@ -3747,6 +3785,15 @@ async def evento_update(
     return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
 
 
+@app.post("/eventos/{evento_id}/agente")
+async def evento_agente(evento_id: str, request: Request):
+    """Qué puede decir el agente de correos de este evento (y si puede usarlo)."""
+    datos = await request.json()
+    faqs = datos.get("agente_faqs") if isinstance(datos.get("agente_faqs"), list) else []
+    pdb.update_evento_agente(evento_id, bool(datos.get("usar_en_agente")), faqs, str(datos.get("agente_info") or ""))
+    return {"ok": True}
+
+
 @app.post("/eventos/{evento_id}/checklist/{item_id}")
 async def evento_checklist_toggle(evento_id: str, item_id: str, request: Request):
     body = await request.json()
@@ -4701,10 +4748,6 @@ def _lista_lineas(texto: str) -> list[str]:
     return [l.strip().lower() for l in re.split(r"[\n,;]+", texto or "") if l.strip()]
 
 
-# Categorías que nunca se envían solas: dinero, quejas, conversaciones internas y avisos automáticos.
-_NUNCA_AUTO = ("critico", "interno", "automatico", "pago", "proveedor")
-
-
 @app.post("/inbox/configuracion")
 async def inbox_configuracion_guardar(request: Request):
     form = await request.form()
@@ -4725,8 +4768,7 @@ async def inbox_configuracion_guardar(request: Request):
         "max_por_ciclo": numero("max_por_ciclo", 1, 50, int),
         "umbral_auto": numero("umbral_auto", 0.5, 1.0),
         "max_auto_por_remitente_dia": numero("max_auto_por_remitente_dia", 1, 10, int),
-        "categorias_auto": [c for c in form.getlist("categorias_auto")
-                            if c in catalogos.CATEGORIAS_CORREO and c not in _NUNCA_AUTO],
+        "max_auto_dia": numero("max_auto_dia", 1, 500, int),
         "firma": (form.get("firma") or "").strip(),
         "estilo": (form.get("estilo") or "").strip(),
         "informacion_adicional": (form.get("informacion_adicional") or "").strip(),

@@ -70,7 +70,7 @@ def _evento_para_agente(doc: dict) -> dict:
         "registration_deadline": _fecha_evento(doc.get("fecha_limite_inscripcion", "")),
         "flyer_path": doc.get("flyer_path"),
         "flyer_url": doc.get("flyer_url"),
-        "auto_approve": bool(doc.get("auto_approve")),
+        "auto_approve": bool(doc.get("usar_en_agente")),
         "active": doc.get("estado") == "activo",
     }
     if cupo:
@@ -126,4 +126,5 @@ def deactivate_event(event_id: str):
 
 
 def set_event_auto_approve(event_id: str, value: bool):
-    eventos_col.update_one({"_id": ObjectId(event_id)}, {"$set": {"auto_approve": value}})
+    """Mismo interruptor que «Usar en las respuestas del agente» de /eventos/{id}."""
+    eventos_col.update_one({"_id": ObjectId(event_id)}, {"$set": {"usar_en_agente": value}})

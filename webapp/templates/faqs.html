@@ -1,132 +1,191 @@
 {% extends "base.html" %}
 {% block title %}FAQs — IPIDET{% endblock %}
-{% block heading %}Preguntas Frecuentes{% endblock %}
+{% block heading %}Preguntas frecuentes{% endblock %}
 
 {% block header_actions %}
-<span class="text-sm text-slate-500">{{ faqs | length }} FAQ{% if faqs | length != 1 %}s{% endif %}</span>
+<span class="text-sm text-slate-500">{{ total }} FAQ{{ 's' if total != 1 }} · {{ n_autorizadas }} responde{{ 'n' if n_autorizadas != 1 }} sola{{ 's' if n_autorizadas != 1 }}</span>
 {% endblock %}
 
 {% block content %}
-<div class="grid grid-cols-1 xl:grid-cols-3 gap-5" x-data="{ showForm: false }">
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
 
-  <!-- Left: FAQ list -->
   <div class="xl:col-span-2 space-y-4">
 
-    <!-- Filter bar -->
-    <div class="bg-white rounded-xl border border-slate-200 p-4">
-      <form method="get" action="/faqs" class="flex flex-wrap gap-3 items-end">
-        <div class="flex-1 min-w-48">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Buscar</label>
-          <input name="search" value="{{ search }}" placeholder="Pregunta o respuesta…" class="input w-full">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Categoría</label>
-          <select name="category" class="input">
-            <option value="">Todas</option>
-            {% for cat in categories %}
-            <option value="{{ cat }}" {% if category == cat %}selected{% endif %}>{{ cat }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <button type="submit" class="btn-primary">Filtrar</button>
-        {% if search or category %}
-        <a href="/faqs" class="btn-ghost">Limpiar</a>
-        {% endif %}
-        <button type="button" @click="showForm = !showForm" class="btn-ghost ml-auto">
-          <i class="fa-solid fa-plus mr-1"></i> Nueva FAQ
-        </button>
-      </form>
+    {# ─ Cómo las usa el agente #}
+    <div class="bg-white rounded-xl border border-slate-200 p-5 text-sm text-slate-700 space-y-2">
+      <p>El agente de correos responde con estas FAQs. Cada una tiene dos niveles:</p>
+      <ul class="list-disc pl-5 space-y-1">
+        <li><span class="badge badge-green">Responde sola</span> el agente puede enviar sin revisión una respuesta que se apoye <strong>solo</strong> en FAQs así y en eventos habilitados.</li>
+        <li><span class="badge badge-gray">Solo borradores</span> el agente la usa para preparar el borrador, pero alguien del equipo lo revisa y lo envía.</li>
+      </ul>
+      <p class="text-slate-500">Una FAQ nueva empieza en «Solo borradores». Autorízala cuando el texto esté listo para enviarse tal cual a cualquier persona.
+        {% if agente_cfg.modo != 'automatico' or not agente_cfg.activo %}Hoy el agente {{ 'está apagado' if not agente_cfg.activo else 'está en modo solo borradores' }}: nada se envía solo hasta cambiarlo en <a href="/inbox/configuracion" class="text-blue-600 hover:underline">la configuración</a>.{% endif %}</p>
+      <p class="text-slate-500">Eventos habilitados para el agente:
+        {% for e in eventos_agente %}<a href="/eventos/{{ e._id }}" class="text-blue-600 hover:underline">{{ e.titulo }}</a>{% if not loop.last %}, {% endif %}{% else %}ninguno todavía (se activan en la ficha de cada evento){% endfor %}.</p>
     </div>
 
-    <!-- FAQ list -->
-    {% if faqs %}
-    <div class="space-y-3">
-      {% for faq in faqs %}
-      <div class="bg-white rounded-xl border border-slate-200 p-5" x-data="{ open: false, editing: false }">
-        <div class="flex items-start justify-between gap-4">
-          <button @click="open = !open" class="text-left flex-1">
-            <div class="flex items-center gap-2 mb-1">
-              {% if faq.get('category') %}
-              <span class="badge badge-purple text-xs">{{ faq.category }}</span>
-              {% endif %}
-              <i class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform" :class="open ? 'rotate-180' : ''"></i>
+    {# ─ Probador #}
+    <div class="bg-white rounded-xl border border-slate-200 p-5" x-data="probador()">
+      <h2 class="text-sm font-semibold text-slate-800 mb-1"><i class="fa-solid fa-flask text-slate-400 mr-1" aria-hidden="true"></i> Probar una consulta</h2>
+      <p class="text-xs text-slate-500 mb-3">Escribe un correo como lo mandaría alguien. Verás qué respondería el agente y si saldría solo. No se envía ni se guarda nada; cuesta lo mismo que un correo real (menos de un centavo de dólar con Haiku).</p>
+      <div class="grid sm:grid-cols-2 gap-2 mb-2">
+        <input x-model="asunto" class="input" placeholder="Asunto (opcional)" aria-label="Asunto">
+        <input x-model="email" type="email" class="input" placeholder="Correo del remitente (opcional, para simular un socio)" aria-label="Correo del remitente">
+      </div>
+      <textarea x-model="texto" rows="4" class="input w-full" placeholder="Hola, quisiera saber cuáles son los requisitos para asociarme…" aria-label="Correo de prueba"></textarea>
+      <div class="mt-2 flex justify-end">
+        <button type="button" class="btn-primary" @click="probar()" :disabled="cargando || !texto.trim()">
+          <i class="fa-solid" :class="cargando ? 'fa-circle-notch fa-spin' : 'fa-play'" aria-hidden="true"></i>
+          <span x-text="cargando ? 'Analizando…' : 'Probar'">Probar</span>
+        </button>
+      </div>
+      <template x-if="r">
+        <div class="mt-4 border-t border-slate-100 pt-4 space-y-3 text-sm">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="badge badge-slate" x-text="r.categoria"></span>
+            <span class="badge" :class="r.saldria_solo ? 'badge-green' : 'badge-amber'"
+                  x-text="r.saldria_solo ? 'Saldría solo (en modo automático)' : 'Quedaría como borrador'"></span>
+            <span class="text-xs text-slate-400" x-text="'US$ ' + r.costo_usd"></span>
+          </div>
+          <template x-if="!r.saldria_solo && r.motivos.length">
+            <ul class="list-disc pl-5 text-amber-800 text-xs space-y-0.5"><template x-for="m in r.motivos"><li x-text="m"></li></template></ul>
+          </template>
+          <p class="text-xs text-slate-500" x-show="r.fuentes.length">Se apoyó en: <span x-text="r.fuentes.join(' · ')"></span></p>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 whitespace-pre-wrap text-slate-800" x-text="r.respuesta || '(no respondería)'"></div>
+        </div>
+      </template>
+    </div>
+
+    {# ─ Filtros #}
+    <form method="get" action="/faqs" x-ref="filtros" class="bg-white rounded-xl border border-slate-200 p-3 flex flex-wrap gap-2 items-center">
+      <input name="search" value="{{ search }}" placeholder="Buscar en preguntas y respuestas…" class="input flex-1 min-w-[12rem]"
+             x-data="{ t: null }" @input="clearTimeout(t); t = setTimeout(() => $refs.filtros.submit(), 450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+      <select name="category" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Categoría">
+        <option value="">Todas las categorías</option>
+        {% for cat in categories %}<option value="{{ cat }}" {% if category == cat %}selected{% endif %}>{{ cat }}</option>{% endfor %}
+      </select>
+      <select name="autorizada" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Autorización">
+        <option value="">Todas</option>
+        <option value="si" {% if autorizada == 'si' %}selected{% endif %}>Responden solas</option>
+        <option value="no" {% if autorizada == 'no' %}selected{% endif %}>Solo borradores</option>
+      </select>
+      {% if search or category or autorizada %}<a href="/faqs" class="text-sm text-slate-500 hover:text-slate-700 px-2">Limpiar</a>{% endif %}
+    </form>
+
+    {# ─ Lista #}
+    {% for faq in faqs %}
+    <article id="faq-{{ faq._id }}" class="bg-white rounded-xl border border-slate-200 p-5 scroll-mt-4" x-data="{ abierta: false, editando: false }">
+      <div x-show="!editando">
+        <div class="flex items-start justify-between gap-3">
+          <button type="button" @click="abierta = !abierta" class="text-left flex-1 min-w-0" :aria-expanded="abierta">
+            <div class="flex flex-wrap items-center gap-1.5 mb-1">
+              {% if faq.autorizada %}<span class="badge badge-green">Responde sola</span>{% else %}<span class="badge badge-gray">Solo borradores</span>{% endif %}
+              {% if faq.category %}<span class="badge badge-purple">{{ faq.category }}</span>{% endif %}
+              {% if faq.times_used %}<span class="text-xs text-slate-400">usada {{ faq.times_used }} {{ 'vez' if faq.times_used == 1 else 'veces' }}{% if faq.last_used %} · última {{ faq.last_used | format_fecha }}{% endif %}</span>{% endif %}
             </div>
             <div class="font-semibold text-slate-800 text-sm">{{ faq.question }}</div>
           </button>
-          <form method="post" action="/faqs/{{ faq._id }}/delete" data-confirm="¿Eliminar esta FAQ?">
-            <button type="submit" class="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0">
-              <i class="fa-solid fa-trash text-sm"></i>
-            </button>
-          </form>
+          <div class="flex items-center gap-1 shrink-0">
+            <form method="post" action="/faqs/{{ faq._id }}/autorizar">
+              <input type="hidden" name="autorizada" value="{{ '' if faq.autorizada else '1' }}">
+              <button type="submit" class="btn-ghost text-xs">{{ 'Pasar a solo borradores' if faq.autorizada else 'Autorizar' }}</button>
+            </form>
+            <button type="button" class="text-slate-400 hover:text-slate-700 p-2" title="Editar" @click="editando = true"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+            <form method="post" action="/faqs/{{ faq._id }}/delete" data-confirm="¿Eliminar esta FAQ? El agente dejará de usarla.">
+              <button type="submit" class="text-slate-400 hover:text-red-600 p-2" title="Eliminar"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+            </form>
+          </div>
         </div>
-
-        <div x-show="open" x-cloak class="mt-3 pt-3 border-t border-slate-100">
-          <p class="text-sm text-slate-600 whitespace-pre-wrap">{{ faq.answer }}</p>
-          {% if faq.get('updated_at') %}
-          <div class="text-xs text-slate-400 mt-3">Actualizado: {{ faq.updated_at.strftime('%d/%m/%Y %H:%M') if faq.updated_at else '—' }}</div>
-          {% endif %}
+        <div x-show="abierta" x-cloak class="mt-3 pt-3 border-t border-slate-100">
+          <p class="text-sm text-slate-700 whitespace-pre-wrap">{{ faq.answer }}</p>
+          {% if faq.updated_at %}<p class="text-xs text-slate-400 mt-2">Actualizada el {{ faq.updated_at | format_fecha }}</p>{% endif %}
         </div>
       </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="bg-white rounded-xl border border-slate-200 py-16 text-center">
-      <i class="fa-solid fa-circle-question text-4xl text-slate-200 mb-3 block"></i>
-      <p class="text-slate-400 text-sm">
-        {% if search or category %}
-          No hay FAQs con estos filtros.
-        {% else %}
-          Aún no hay FAQs. Agrega la primera con el botón "Nueva FAQ".
-        {% endif %}
-      </p>
-    </div>
-    {% endif %}
-  </div>
 
-  <!-- Right: Add FAQ form -->
-  <div>
-    <div class="bg-white rounded-xl border border-slate-200 p-6 sticky top-20">
-      <h2 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-        <i class="fa-solid fa-plus-circle text-slate-500"></i>
-        Nueva FAQ
-      </h2>
-      <form method="post" action="/faqs/add" class="space-y-4">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Pregunta <span class="text-red-400">*</span></label>
-          <input name="question" type="text" required placeholder="¿Cómo puedo pagar mi cuota?" class="input w-full">
+      <form x-show="editando" x-cloak method="post" action="/faqs/{{ faq._id }}/update" class="space-y-3">
+        <label class="block text-xs font-medium text-slate-600">Pregunta
+          <input name="question" value="{{ faq.question }}" required class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Respuesta
+          <textarea name="answer" rows="6" required class="input w-full mt-1">{{ faq.answer }}</textarea>
+        </label>
+        <div class="grid sm:grid-cols-2 gap-3 items-end">
+          <label class="block text-xs font-medium text-slate-600">Categoría
+            <input name="category" value="{{ faq.category or '' }}" required list="cat-list" class="input w-full mt-1">
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700 pb-2">
+            <input type="checkbox" name="autorizada" value="1" {% if faq.autorizada %}checked{% endif %}> Puede responderse sola
+          </label>
         </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Respuesta <span class="text-red-400">*</span></label>
-          <textarea name="answer" rows="5" required placeholder="Puedes realizar tu pago mediante transferencia bancaria a la cuenta…" class="input w-full resize-none"></textarea>
-          <p class="text-xs text-slate-400 mt-1">El agente usará este texto exacto en sus respuestas automáticas.</p>
+        <div class="flex gap-2">
+          <button type="submit" class="btn-primary">Guardar</button>
+          <button type="button" class="btn-ghost" @click="editando = false">Cancelar</button>
         </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">Categoría <span class="text-red-400">*</span></label>
-          <input name="category" type="text" required placeholder="Pagos, Membresía, Eventos…" class="input w-full"
-            list="cat-list">
-          <datalist id="cat-list">
-            {% for cat in categories %}
-            <option value="{{ cat }}">
-            {% endfor %}
-          </datalist>
-        </div>
-        <button type="submit" class="btn-primary w-full">
-          <i class="fa-solid fa-plus mr-2"></i> Agregar FAQ
-        </button>
       </form>
-
-      {% if categories %}
-      <div class="mt-6 pt-5 border-t border-slate-100">
-        <div class="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Categorías existentes</div>
-        <div class="flex flex-wrap gap-1.5">
-          {% for cat in categories %}
-          <a href="/faqs?category={{ cat }}" class="badge badge-purple hover:bg-purple-200 transition-colors cursor-pointer">{{ cat }}</a>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
+    </article>
+    {% else %}
+    <div class="bg-white rounded-xl border border-slate-200 py-14 text-center">
+      <i class="fa-solid fa-circle-question text-3xl text-slate-300 mb-3 block" aria-hidden="true"></i>
+      <p class="text-slate-500 text-sm">{% if search or category or autorizada %}No hay FAQs con estos filtros.{% else %}Aún no hay FAQs. Agrega la primera a la derecha.{% endif %}</p>
     </div>
+    {% endfor %}
   </div>
 
+  {# ─ Nueva FAQ #}
+  <div>
+    <div class="bg-white rounded-xl border border-slate-200 p-5 sticky top-20">
+      <h2 class="font-semibold text-slate-800 mb-4 text-sm"><i class="fa-solid fa-plus text-slate-400 mr-1" aria-hidden="true"></i> Nueva FAQ</h2>
+      <form method="post" action="/faqs/add" class="space-y-4">
+        <label class="block text-xs font-medium text-slate-600">Pregunta <span class="text-red-500">*</span>
+          <input name="question" type="text" required placeholder="¿Cuáles son los requisitos para asociarme?" class="input w-full mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Respuesta <span class="text-red-500">*</span>
+          <textarea name="answer" rows="6" required class="input w-full mt-1"
+                    placeholder="Escríbela completa y sin datos de una persona en particular: el agente la usa tal cual."></textarea>
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Categoría <span class="text-red-500">*</span>
+          <input name="category" type="text" required placeholder="Admisión, Eventos, Socios…" class="input w-full mt-1" list="cat-list">
+        </label>
+        <datalist id="cat-list">{% for cat in categories %}<option value="{{ cat }}">{% endfor %}</datalist>
+        <label class="flex items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="autorizada" value="1" class="mt-0.5">
+          <span>Puede responderse sola<br><span class="text-xs text-slate-500">Márcala solo si el texto está listo para enviarse a cualquiera sin revisión.</span></span>
+        </label>
+        <button type="submit" class="btn-primary w-full"><i class="fa-solid fa-plus" aria-hidden="true"></i> Agregar FAQ</button>
+      </form>
+      <div class="mt-5 pt-4 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+        <p><strong class="text-slate-600">Qué no va en una FAQ:</strong> datos de un socio, estados de pagos o postulaciones, números de cuenta que cambien, ni nada que dependa de quién pregunta. Eso lo responde el equipo.</p>
+        <p>Lo de un evento concreto (precio, certificados, grabación) va en la ficha del evento, sección «Respuestas del agente».</p>
+      </div>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('alpine:initialized', () => {
+    const url = new URL(location.href);
+    const ok = url.searchParams.get('ok');
+    if (ok) { avisar(ok); url.searchParams.delete('ok'); history.replaceState(null, '', url.pathname + url.search + url.hash); }
+  });
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('probador', () => ({
+      texto: '', asunto: '', email: '', cargando: false, r: null,
+      async probar() {
+        if (!this.texto.trim() || this.cargando) return;
+        this.cargando = true; this.r = null;
+        try {
+          const resp = await fetch('/faqs/probar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texto: this.texto, asunto: this.asunto, email: this.email }) });
+          const datos = await resp.json();
+          if (!resp.ok || !datos.ok) throw new Error(datos.error || 'No se pudo probar');
+          this.r = datos;
+        } catch (e) { avisar(e.message, 'error'); }
+        finally { this.cargando = false; }
+      },
+    }));
+  });
+</script>
 {% endblock %}

@@ -229,7 +229,8 @@ Todo envío desde la cola (web, Telegram o automático) pasa por `agente_correo.
 
 - **Lo que el agente sabe sale de la base** (R10): eventos, comunicaciones, campañas, cronograma, productos, FAQs y `config.agente_correo_config`. Si una respuesta sale mal por falta de un dato, el arreglo es cargar el dato en la plataforma, no escribirlo en el prompt.
 - **Nunca inventa:** si falta un dato deja `[COMPLETAR: …]`; la web y el servidor no dejan enviar mientras quede uno.
-- **El envío automático lo decide el código**, no el modelo: `_motivos_para_no_enviar_solo()` exige modo automático, categoría habilitada, confianza ≥ umbral, sin datos faltantes, sin adjuntos y tope diario por remitente. Pagos, proveedores, críticos e internos nunca salen solos.
+- **Solo sale sin revisión lo autorizado por el equipo.** Fuentes autorizadas = FAQs con `autorizada: true`, eventos con `usar_en_agente: true` (con sus `agente_faqs` y `agente_info`) y los datos de contacto de la organización. Lo decide el código, no el modelo: `evaluar_envio_auto()` exige modo automático, categoría en `catalogos.CATEGORIAS_CORREO_AUTO` (evento, admisión, consulta general), que todas las `fuentes_usadas` estén autorizadas, `solo_fuentes_autorizadas` y sin `datos_sensibles`, confianza ≥ umbral, sin datos faltantes, adjuntos ni hilo con el equipo, topes diarios (total y por remitente) y, al final, que `agente_ia.verificar` (segunda llamada que solo ve la respuesta y el texto de las fuentes citadas) no encuentre afirmaciones sin respaldo.
+- **Lo no autorizado solo sirve para borradores:** FAQs sin autorizar, cuotas, comunicaciones, cronograma, `informacion_adicional` y los datos del remitente. Un evento sin `usar_en_agente` no lo ve el agente en absoluto (eventos a medio cargar).
 - **El correo recibido es dato, no instrucción:** el prompt lo marca así. No pasar texto del correo a otro lugar como instrucción.
 
 ---
@@ -689,7 +690,14 @@ inscritos    [{
                asistio:   bool | null
              }]
 created_at   datetime
+
+# Agente de correos (sección «Respuestas del agente» en /eventos/{id})
+usar_en_agente  bool      False = el agente no conoce el evento; True = fuente autorizada
+agente_faqs     [{pregunta, respuesta}]   preguntas propias del evento
+agente_info     string    información adicional para responder consultas
 ```
+
+Otros campos editables en la ficha: `modalidad`, `precio`, `fecha_limite_inscripcion`, `link_registro`, `link_zoom`, `link_grabacion`, `expositores[]`, `checklist`, `email_asunto`, `email_cuerpo`, `flyer_url`.
 
 ### 7.10 Colección `pendientes`
 
@@ -723,8 +731,9 @@ question    string
 answer      string
 category    string
 active      bool      false = soft delete (preserva historial de aprendizaje)
-times_used  int
-created_at  datetime
+autorizada  bool      True = el agente puede enviar sin revisión respuestas basadas en ella (ver R12)
+times_used  int       veces que se envió una respuesta basada en ella; last_used datetime
+created_at, updated_at  datetime
 ```
 
 ### 7.13 Colección `correos` (agente de correos)
@@ -1012,9 +1021,12 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/faqs` | Lista de FAQs activas |
-| `POST` | `/faqs/add` | Nueva FAQ |
+| `GET` | `/faqs` | Lista de FAQs activas; filtros: search, category, autorizada (si/no) |
+| `POST` | `/faqs/add` | Nueva FAQ (`autorizada=1` opcional; por defecto solo borradores) |
+| `POST` | `/faqs/{id}/update` · `/autorizar` | Edita la FAQ · cambia si puede responderse sola |
+| `POST` | `/faqs/probar` | JSON `{texto, asunto, email}` → qué respondería el agente y si saldría solo (no guarda ni envía) |
 | `POST` | `/faqs/{id}/delete` | Soft delete (active = false) |
+| `POST` | `/eventos/{id}/agente` | JSON `{usar_en_agente, agente_faqs, agente_info}` |
 
 #### Marketing
 
@@ -1364,10 +1376,10 @@ Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada mi
 2. `GmailClient.nuevos(ultimo_uid)` — correos del INBOX desde el último UID guardado en la base (no en memoria: un reinicio no pierde ni repite). La primera vez arranca desde el correo más reciente.
 3. `_filtro_previo` — sin costo de API: bloqueados, «ignorar siempre», automáticos (`detectar_automatico`: Auto-Submitted, List-Unsubscribe, no-reply, respuestas automáticas) e internos (`remitentes_internos`) → estado `ignorado`.
 4. `_analizar` — lee el hilo completo de Gmail (incluye lo que el equipo respondió a mano), arma el contexto del remitente (`agente_contexto.remitente`: socio verificado por email, cuotas, inscripciones, ficha en Público, correos previos) y llama a `agente_ia.analizar` **una sola vez**: clasificación + borrador con salida estructurada. PDF e imágenes adjuntas van a Claude.
-5. Si requiere respuesta → `pendiente` (aviso por Telegram si está activo). En modo automático sale solo si `_motivos_para_no_enviar_solo` devuelve lista vacía.
+5. Si requiere respuesta → `pendiente` (aviso por Telegram si está activo). En modo automático sale solo si `evaluar_envio_auto` no devuelve motivos (ver R12); lo enviado solo se avisa por Telegram con sus fuentes.
 6. Reintenta los análisis en `error` (máx. 3; la falta de saldo o de red no gasta intentos) y marca `respondido_gmail` los pendientes que el equipo contestó desde Gmail.
 
-**Prompt:** sistema = reglas (tono y firma de la config) + conocimiento de IPIDET (`agente_contexto.conocimiento()`: organización, `informacion_adicional`, productos, eventos próximos con invitación y expositores, eventos de los últimos 60 días, comunicaciones/campañas/programadas de 45 días, cronograma de redes de 30 días, FAQs) con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo y esfuerzo se configuran; usa `fallbacks="default"` (beta `server-side-fallback-2026-07-01`).
+**Prompt:** sistema = reglas (tono y firma de la config) + conocimiento (`agente_contexto.conocimiento()` → texto y mapa de fuentes): FUENTES AUTORIZADAS con id (`faq:<id>`, `evento:<id>`, `org`) y CONTEXTO DE APOYO (FAQs sin autorizar, cuotas, medios de pago, comunicaciones/campañas/programadas de 45 días, cronograma de 30 días, `informacion_adicional`), con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo por defecto `claude-haiku-5-5` (≈ US$ 0,001 por correo); `fallbacks="default"` solo se envía a los modelos que lo admiten (Haiku no). `/faqs` tiene un probador que simula un correo sin guardar ni enviar.
 
 **Envío:** SMTP de Gmail (queda en Enviados y en el hilo). Si falla (Render bloquea el 587 en planes gratuitos) usa la API de Brevo con `In-Reply-To`/`References` y guarda copia en Enviados por IMAP. La respuesta cita el original.
 

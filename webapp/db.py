@@ -1554,12 +1554,26 @@ def get_faqs(search: str = "", category: str = "") -> list:
     return [_clean(d) for d in docs]
 
 
-def save_faq(question: str, answer: str, category: str) -> str:
+def save_faq(question: str, answer: str, category: str, autorizada: bool = False) -> str:
+    """`autorizada`: el agente de correos puede enviar sin revisión una respuesta basada en ella."""
+    now = datetime.now(timezone.utc)
     result = faqs_col.insert_one({
-        "question": question, "answer": answer, "category": category,
-        "active": True, "times_used": 0, "created_at": datetime.now(timezone.utc),
+        "question": question, "answer": answer, "category": category, "autorizada": autorizada,
+        "active": True, "times_used": 0, "created_at": now, "updated_at": now,
     })
     return str(result.inserted_id)
+
+
+def update_faq(faq_id: str, question: str, answer: str, category: str, autorizada: bool) -> None:
+    faqs_col.update_one({"_id": ObjectId(faq_id)}, {"$set": {
+        "question": question, "answer": answer, "category": category,
+        "autorizada": autorizada, "updated_at": datetime.now(timezone.utc),
+    }})
+
+
+def set_faq_autorizada(faq_id: str, autorizada: bool) -> None:
+    faqs_col.update_one({"_id": ObjectId(faq_id)},
+                        {"$set": {"autorizada": autorizada, "updated_at": datetime.now(timezone.utc)}})
 
 
 def delete_faq(faq_id: str):
@@ -3098,6 +3112,22 @@ def update_evento_comunicaciones(evento_id: str, flyer_url: str = "",
             "email_cuerpo": email_cuerpo,
         }},
     )
+
+
+def update_evento_agente(evento_id: str, usar_en_agente: bool, agente_faqs: list, agente_info: str) -> None:
+    """Lo que el agente de correos puede decir de este evento.
+
+    `usar_en_agente`: mientras sea False el agente no conoce el evento (sirve para eventos a medio
+    cargar); en True sus datos y preguntas cuentan como fuente autorizada, igual que una FAQ.
+    """
+    faqs = [{"pregunta": str(f.get("pregunta", "")).strip()[:500], "respuesta": str(f.get("respuesta", "")).strip()[:3000]}
+            for f in agente_faqs or [] if str(f.get("pregunta", "")).strip() and str(f.get("respuesta", "")).strip()]
+    eventos_col.update_one({"_id": ObjectId(evento_id)}, {"$set": {
+        "usar_en_agente": bool(usar_en_agente),
+        "agente_faqs": faqs[:40],
+        "agente_info": (agente_info or "").strip()[:5000],
+        "agente_actualizado_at": datetime.now(timezone.utc),
+    }})
 
 
 def delete_evento(evento_id: str):

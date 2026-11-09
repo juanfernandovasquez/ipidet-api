@@ -159,6 +159,65 @@
 <form id="ev-delete-form" method="post" action="/eventos/{{ evento._id }}/delete" class="hidden"></form>
 
 <!-- ═══════════════════════════════════════════════════════════
+     SECCIÓN — RESPUESTAS DEL AGENTE DE CORREOS
+     ═══════════════════════════════════════════════════════════ -->
+{% set _faltan = [] %}
+{% if not evento.descripcion %}{% set _ = _faltan.append('descripción') %}{% endif %}
+{% if not evento.hora %}{% set _ = _faltan.append('hora') %}{% endif %}
+{% if not evento.modalidad and not evento.lugar %}{% set _ = _faltan.append('modalidad o lugar') %}{% endif %}
+{% if not evento.precio %}{% set _ = _faltan.append('precio (o «Gratuito»)') %}{% endif %}
+{% if not evento.link_registro %}{% set _ = _faltan.append('link de inscripción') %}{% endif %}
+{% if not evento.fecha_limite_inscripcion %}{% set _ = _faltan.append('cierre de inscripciones') %}{% endif %}
+<div class="bg-white rounded-xl border border-slate-200 p-5 mb-5"
+     x-data="eventoAgente('{{ evento._id }}')"
+     data-agente='{{ {"usar": evento.usar_en_agente or False, "faqs": evento.agente_faqs or [], "info": evento.agente_info or ""} | tojson }}'
+     x-init="cargar(JSON.parse($el.dataset.agente))">
+  <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+    <div>
+      <h2 class="text-sm font-semibold text-slate-700"><i class="fa-solid fa-robot mr-1.5 text-slate-500" aria-hidden="true"></i> Respuestas del agente de correos</h2>
+      <p class="text-xs text-slate-500 mt-1 max-w-2xl">Mientras esté desactivado, el agente no conoce este evento. Al activarlo, sus datos y las preguntas de abajo valen como FAQs autorizadas: el agente podrá responder solo las consultas sobre este evento.</p>
+    </div>
+    <label class="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+      <input type="checkbox" x-model="usar" class="w-4 h-4"> Usar en las respuestas del agente
+    </label>
+  </div>
+
+  {% if _faltan %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 mb-3">
+    <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+    Falta completar en «Editar»: {{ _faltan | join(', ') }}. Si activas el evento así, el agente dirá que no tiene ese dato y la consulta irá a revisión.
+  </div>
+  {% else %}
+  <p class="text-xs text-green-700 mb-3"><i class="fa-solid fa-check mr-1" aria-hidden="true"></i> Los datos principales del evento están completos.</p>
+  {% endif %}
+
+  <div class="space-y-2">
+    <p class="text-xs font-semibold text-slate-500">Preguntas y respuestas de este evento</p>
+    <template x-for="(f, i) in faqs" :key="i">
+      <div class="grid md:grid-cols-[1fr_2fr_auto] gap-2 items-start">
+        <input x-model="f.pregunta" class="input" placeholder="¿Entregan certificado?" aria-label="Pregunta">
+        <textarea x-model="f.respuesta" rows="2" class="input" placeholder="Sí, a quienes asistan al menos al 80 %…" aria-label="Respuesta"></textarea>
+        <button type="button" class="text-slate-400 hover:text-red-600 p-2" title="Quitar" @click="faqs.splice(i, 1)"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+      </div>
+    </template>
+    <button type="button" class="text-sm text-blue-600 hover:underline" @click="faqs.push({ pregunta: '', respuesta: '' })">
+      <i class="fa-solid fa-plus mr-1" aria-hidden="true"></i> Agregar pregunta
+    </button>
+  </div>
+
+  <label class="block text-xs font-semibold text-slate-500 mt-4">Información adicional para responder consultas
+    <textarea x-model="info" rows="4" class="input w-full mt-1 font-normal"
+              placeholder="Público al que va dirigido, si hay certificado, descuento para socios, si se graba, material que se comparte…"></textarea>
+  </label>
+
+  <div class="flex justify-end mt-3">
+    <button type="button" class="btn-primary" @click="guardar()" :disabled="guardando">
+      <i class="fa-solid" :class="guardando ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'" aria-hidden="true"></i> Guardar
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
      SECCIÓN — ESTADÍSTICAS
      ═══════════════════════════════════════════════════════════ -->
 {% if stats.n_inscritos %}
@@ -1194,6 +1253,23 @@ window._eventoData = {
 
 <script>
 {% raw %}
+function eventoAgente(id) {
+  return {
+    usar: false, faqs: [], info: '', guardando: false,
+    cargar(d) { this.usar = !!d.usar; this.faqs = (d.faqs || []).map(f => ({ ...f })); this.info = d.info || ''; },
+    async guardar() {
+      this.guardando = true;
+      try {
+        const r = await fetch(`/eventos/${id}/agente`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usar_en_agente: this.usar, agente_faqs: this.faqs, agente_info: this.info }) });
+        if (!r.ok) throw new Error('No se pudo guardar');
+        avisar(this.usar ? 'Guardado. El agente ya puede usar este evento.' : 'Guardado. El agente no usará este evento.');
+      } catch (e) { avisar(e.message, 'error'); }
+      finally { this.guardando = false; }
+    },
+  };
+}
+
 function eventoComms() {
   const d = window._eventoData || {};
 

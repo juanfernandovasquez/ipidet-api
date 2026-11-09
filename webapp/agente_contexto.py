@@ -1,13 +1,16 @@
 """
 Contexto que lee el agente de correos para responder.
 
-Dos partes:
-- `conocimiento()`: lo que sabe IPIDET (organización, eventos, comunicaciones, campañas,
-  cronograma de redes, productos, FAQs). Es igual para todos los correos del día, así que
-  va en el prompt de sistema y se cachea.
-- `remitente(...)`: quién escribe (socio, prospecto, correos previos, hilo).
+El conocimiento se arma en dos niveles:
+- FUENTES AUTORIZADAS (`fuentes_autorizadas()`): FAQs marcadas «puede responderse sola», eventos
+  con «usar en el agente» y los datos de contacto de la organización. Cada una lleva un id
+  (faq:<id>, evento:<id>, org). Una respuesta solo puede salir sin revisión si se apoya
+  únicamente en estas fuentes (lo verifica agente_correo, no el modelo).
+- CONTEXTO DE APOYO: FAQs sin autorizar, cuotas, comunicaciones, campañas, cronograma e
+  información adicional. Sirve para que el borrador sea útil, pero nunca para enviar solo.
 
-Todo sale de la base de datos: lo que el equipo edita en la plataforma es lo que el agente sabe.
+Los eventos sin «usar en el agente» no se incluyen en ningún nivel: están a medio cargar.
+`remitente(...)` arma lo que se sabe de quien escribe (siempre es contexto de apoyo).
 """
 import json
 import re
@@ -47,69 +50,67 @@ def _sin_vacios(d: dict) -> dict:
     return {k: v for k, v in d.items() if v not in (None, "", [], {})}
 
 
-# ── Conocimiento institucional ─────────────────────────────────────────────────
+# ── Fuentes autorizadas ────────────────────────────────────────────────────────
 
-def _eventos() -> dict:
+def _evento_como_fuente(e: dict, hoy: str) -> dict:
+    cupo = e.get("cupo_max")
+    inscritos = len(e.get("inscritos") or []) + len(e.get("zoom_registrants") or [])
+    proximo = (e.get("fecha") or "") >= hoy
+    return _sin_vacios({
+        "titulo": e.get("titulo"),
+        "fecha": e.get("fecha"),
+        "hora": e.get("hora"),
+        "ya_se_realizo": not proximo,
+        "modalidad": e.get("modalidad"),
+        "lugar": e.get("lugar"),
+        "precio": e.get("precio"),
+        "inscripcion_hasta": e.get("fecha_limite_inscripcion"),
+        "link_inscripcion": e.get("link_registro") if proximo else None,
+        "link_grabacion": e.get("link_grabacion"),
+        "cupos_libres": max(0, int(cupo) - inscritos) if str(cupo or "").isdigit() and proximo else None,
+        "descripcion": _texto(e.get("descripcion"), 1500),
+        "expositores": [
+            _sin_vacios({"nombre": x.get("nombre"), "cargo": x.get("titulo"), "institucion": x.get("empresa")})
+            for x in e.get("expositores") or []
+        ],
+        "informacion_para_consultas": _texto(e.get("agente_info"), 3000),
+        "preguntas_y_respuestas": [{"pregunta": f["pregunta"], "respuesta": f["respuesta"]}
+                                   for f in e.get("agente_faqs") or []],
+        "invitacion_enviada": _texto(e.get("email_cuerpo"), 1500) if proximo else None,
+    })
+
+
+def fuentes_autorizadas() -> dict[str, dict]:
+    """{id: {"titulo", "datos"}} — lo único en que puede basarse una respuesta que sale sola."""
+    fuentes: dict[str, dict] = {}
+    org = catalogos.get_organizacion()
+    fuentes["org"] = {"titulo": "Datos de contacto de IPIDET",
+                      "datos": _sin_vacios({k: org.get(k) for k in ("email", "web", "telefono", "ciudad")})}
+    for f in db.faqs.find({"active": True, "autorizada": True}):
+        fuentes[f"faq:{f['_id']}"] = {"titulo": f.get("question", ""),
+                                     "datos": {"categoria": f.get("category"), "pregunta": f.get("question"),
+                                               "respuesta": _texto(f.get("answer"), 3000)}}
     hoy = hoy_lima().strftime("%Y-%m-%d")
-    hace_60 = (hoy_lima() - timedelta(days=60)).strftime("%Y-%m-%d")
-    proximos, recientes = [], []
-    for e in db.eventos_ipidet.find({"estado": {"$ne": "cancelado"}, "fecha": {"$gte": hace_60}}).sort("fecha", 1):
-        cupo = e.get("cupo_max")
-        inscritos = len(e.get("inscritos") or []) + len(e.get("zoom_registrants") or [])
-        base = {
-            "evento_id": str(e["_id"]),
-            "titulo": e.get("titulo"),
-            "fecha": e.get("fecha"),
-            "hora": e.get("hora"),
-        }
-        if (e.get("fecha") or "") >= hoy:
-            proximos.append(_sin_vacios({
-                **base,
-                "modalidad": e.get("modalidad"),
-                "lugar": e.get("lugar"),
-                "precio": e.get("precio"),
-                "inscripcion_hasta": e.get("fecha_limite_inscripcion"),
-                "link_inscripcion": e.get("link_registro"),
-                "link_zoom_solo_para_inscritos": e.get("link_zoom"),
-                "cupos_libres": max(0, int(cupo) - inscritos) if str(cupo or "").isdigit() else None,
-                "descripcion": _texto(e.get("descripcion"), 1200),
-                "expositores": [
-                    _sin_vacios({"nombre": x.get("nombre"), "cargo": x.get("titulo"), "institucion": x.get("empresa")})
-                    for x in e.get("expositores") or []
-                ],
-                "invitacion_enviada": _sin_vacios({
-                    "asunto": e.get("email_asunto"),
-                    "texto": _texto(e.get("email_cuerpo"), 1800),
-                }),
-                "flyer": e.get("flyer_url"),
-            }))
-        else:
-            recientes.append(_sin_vacios({**base, "link_grabacion": e.get("link_grabacion")}))
-    return {"proximos": proximos, "recientes_ultimos_60_dias": recientes}
+    hace_90 = (hoy_lima() - timedelta(days=90)).strftime("%Y-%m-%d")
+    for e in db.eventos_ipidet.find({"usar_en_agente": True, "estado": {"$ne": "cancelado"},
+                                     "fecha": {"$gte": hace_90}}).sort("fecha", 1):
+        fuentes[f"evento:{e['_id']}"] = {"titulo": e.get("titulo", ""), "datos": _evento_como_fuente(e, hoy)}
+    return fuentes
 
+
+# ── Contexto de apoyo (solo borradores) ────────────────────────────────────────
 
 def _comunicaciones() -> dict:
     desde = datetime.now(timezone.utc) - timedelta(days=45)
     enviadas = [
-        _sin_vacios({
-            "fecha": fecha_lima(d.get("fecha")),
-            "asunto": d.get("asunto"),
-            "campania": d.get("campania"),
-            "enviados": d.get("total_enviados"),
-            "texto": _texto(d.get("cuerpo"), 900),
-        })
-        for d in db.comunicaciones.find({"fecha": {"$gte": desde}},
-                                        {"fecha": 1, "asunto": 1, "campania": 1, "total_enviados": 1, "cuerpo": 1})
+        _sin_vacios({"fecha": fecha_lima(d.get("fecha")), "asunto": d.get("asunto"), "campania": d.get("campania"),
+                     "texto": _texto(d.get("cuerpo"), 900)})
+        for d in db.comunicaciones.find({"fecha": {"$gte": desde}}, {"fecha": 1, "asunto": 1, "campania": 1, "cuerpo": 1})
         .sort("fecha", -1).limit(10)
     ]
     campanas = [
-        _sin_vacios({
-            "fecha": fecha_lima(d.get("created_at")),
-            "asunto": d.get("asunto"),
-            "estado": d.get("estado"),
-            "texto": _texto(d.get("cuerpo"), 900),
-        })
-        for d in db.campanas.find({"created_at": {"$gte": desde}}, {"created_at": 1, "asunto": 1, "estado": 1, "cuerpo": 1})
+        _sin_vacios({"fecha": fecha_lima(d.get("created_at")), "asunto": d.get("asunto"), "texto": _texto(d.get("cuerpo"), 900)})
+        for d in db.campanas.find({"created_at": {"$gte": desde}}, {"created_at": 1, "asunto": 1, "cuerpo": 1})
         .sort("created_at", -1).limit(5)
     ]
     programadas = [
@@ -125,43 +126,41 @@ def _cronograma() -> list:
     en_30 = (hoy_lima() + timedelta(days=30)).strftime("%Y-%m-%d")
     return [
         _sin_vacios({"fecha": d.get("fecha_planificada"), "plataforma": d.get("plataforma"),
-                     "titulo": d.get("titulo"), "estado": d.get("estado"), "descripcion": _texto(d.get("descripcion"), 300)})
+                     "titulo": d.get("titulo"), "descripcion": _texto(d.get("descripcion"), 300)})
         for d in db.redes_cronograma.find({"fecha_planificada": {"$gte": hoy, "$lte": en_30},
                                            "estado": {"$nin": ["cancelado", "borrador"]}}).sort("fecha_planificada", 1).limit(15)
     ]
 
 
-def _productos() -> list:
-    return [
-        _sin_vacios({"producto": p.get("nombre"), "tipo": p.get("tipo"), "periodo": p.get("periodo"),
-                     "precio_soles": p.get("precio")})
-        for p in db.productos.find({"activo": True}, {"nombre": 1, "tipo": 1, "periodo": 1, "precio": 1}).sort("periodo", -1)
-    ]
-
-
-def _faqs() -> list:
-    return [{"pregunta": f.get("question"), "respuesta": _texto(f.get("answer"), 1200)}
-            for f in db.faqs.find({"active": True}, {"question": 1, "answer": 1}).limit(60)]
-
-
-def conocimiento() -> str:
-    """Bloque estable del prompt: cambia cuando el equipo cambia datos, no con cada correo."""
-    org = catalogos.get_organizacion()
+def _apoyo() -> dict:
     cfg = catalogos.get_agente_config()
-    perfil = catalogos.get_alianzas_config().get("perfil", "")
-    datos = {
-        "fecha_de_hoy": f"{hoy_lima():%Y-%m-%d} ({_DIAS[hoy_lima().weekday()]})",
+    return {
         "periodo_de_cobro_actual": catalogos.get_periodo_actual(),
-        "organizacion": _sin_vacios({**org, "descripcion": perfil}),
-        "informacion_del_equipo_para_responder": cfg.get("informacion_adicional") or "",
-        "medios_de_pago_aceptados": catalogos.get_catalogo("medios_pago"),
-        "cuotas_y_productos": _productos(),
-        "eventos": _eventos(),
+        "descripcion_de_ipidet": catalogos.get_alianzas_config().get("perfil", ""),
+        "informacion_del_equipo": cfg.get("informacion_adicional") or "",
+        "faqs_sin_autorizar": [{"pregunta": f.get("question"), "respuesta": _texto(f.get("answer"), 1200)}
+                               for f in db.faqs.find({"active": True, "autorizada": {"$ne": True}}).limit(60)],
+        "cuotas_y_productos": [
+            _sin_vacios({"producto": p.get("nombre"), "periodo": p.get("periodo"), "precio_soles": p.get("precio")})
+            for p in db.productos.find({"activo": True}, {"nombre": 1, "periodo": 1, "precio": 1}).sort("periodo", -1)
+        ],
+        "medios_de_pago": catalogos.get_catalogo("medios_pago"),
         "comunicaciones": _comunicaciones(),
-        "cronograma_de_redes_proximos_30_dias": _cronograma(),
-        "preguntas_frecuentes": _faqs(),
+        "cronograma_de_redes": _cronograma(),
     }
-    return json.dumps(datos, ensure_ascii=False, indent=1, default=str)
+
+
+def conocimiento() -> tuple[str, dict[str, dict]]:
+    """(texto para el prompt de sistema, fuentes autorizadas). Igual para todos los correos del día."""
+    fuentes = fuentes_autorizadas()
+    texto = (
+        f"Fecha de hoy: {hoy_lima():%Y-%m-%d} ({_DIAS[hoy_lima().weekday()]}).\n\n"
+        "FUENTES AUTORIZADAS (cada una con su id; cítalas en fuentes_usadas):\n"
+        + json.dumps({k: v["datos"] for k, v in fuentes.items()}, ensure_ascii=False, indent=1, default=str)
+        + "\n\nCONTEXTO DE APOYO (no autorizado: si lo usas, la respuesta irá a revisión del equipo):\n"
+        + json.dumps(_apoyo(), ensure_ascii=False, indent=1, default=str)
+    )
+    return texto, fuentes
 
 
 # ── Remitente ──────────────────────────────────────────────────────────────────
@@ -193,16 +192,14 @@ def remitente(correo: dict, hilo: list[dict]) -> tuple[dict, dict]:
     previos = agente_db.historial_remitente(email, excluir_id=correo.get("_id"))
     if previos:
         contexto["correos_previos_a_la_cola"] = [
-            _sin_vacios({"fecha": fecha_lima(p.get("fecha")),
-                         "asunto": p.get("asunto"), "resumen": p.get("resumen"), "estado": p.get("estado"),
-                         "respuesta_enviada": _texto(p.get("respuesta_enviada"), 500)})
+            _sin_vacios({"fecha": fecha_lima(p.get("fecha")), "asunto": p.get("asunto"), "resumen": p.get("resumen"),
+                         "estado": p.get("estado"), "respuesta_enviada": _texto(p.get("respuesta_enviada"), 500)})
             for p in previos
         ]
 
     if hilo:
         contexto["mensajes_anteriores_del_hilo"] = [
-            {"fecha": fecha_lima(m.get("fecha"), "%Y-%m-%d %H:%M"),
-             "de": m.get("de"),
+            {"fecha": fecha_lima(m.get("fecha"), "%Y-%m-%d %H:%M"), "de": m.get("de"),
              "texto": _texto(sin_citas(m.get("cuerpo") or ""), 1500)}
             for m in hilo
         ]
