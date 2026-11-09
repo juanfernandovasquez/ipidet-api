@@ -95,6 +95,8 @@ x-init="editData = JSON.parse($el.dataset.edit)"
 
 Alpine.js 3 no comparte estado entre elementos hermanos. Para compartir estado entre dos `<tr>` consecutivos (datos + edición), hay que envolverlos en un `<tbody x-data='...'>` común. Múltiples `<tbody>` por tabla es HTML5 válido.
 
+**En `:disabled`, `:checked` y otros atributos booleanos, la expresión debe dar `true`/`false`.** Alpine solo quita el atributo con `false`, `null` o `undefined`: un `0` (por ejemplo `lista.length`) lo deja puesto. Usar `lista.length > 0`.
+
 **Nunca usar** `this.$el.submit()` — Alpine.js envuelve `$el` en un Proxy que no expone `.submit()`. Usar en cambio `$refs.filterForm.submit()` con `x-ref="filterForm"` en el `<form>`.
 
 ### R3 — Estado de payments: NO actualizar manualmente
