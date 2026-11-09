@@ -98,7 +98,7 @@ def _reglas(cfg: dict, cuenta: str) -> str:
 
 Fuentes:
 - FUENTES AUTORIZADAS: FAQs y eventos que el equipo aprobó para responder. Cada una tiene un id (faq:..., evento:..., org).
-- CONTEXTO DE APOYO y CONTEXTO DEL REMITENTE: sirven para un mejor borrador, pero lo que saques de ahí obliga a revisión.
+- CONTEXTO DE APOYO y CONTEXTO DEL REMITENTE: sirven para un mejor borrador, pero lo que saques de ahí obliga a revisión. Si un dato está en el contexto de apoyo (por ejemplo, en una FAQ sin autorizar), úsalo en el borrador tal como está escrito y marca solo_fuentes_autorizadas = false: no pongas [COMPLETAR] por un dato que sí tienes.
 - Si la pregunta puede responderse por completo con fuentes autorizadas, usa SOLO esas y no agregues nada del contexto de apoyo ni del remitente (ni frases sobre el estado de nada).
 - fuentes_usadas: los ids de las fuentes autorizadas en que te basaste (puede ir vacía). solo_fuentes_autorizadas: true solo si TODO lo que afirma la respuesta, salvo saludo y cortesía, sale de esas fuentes.
 
