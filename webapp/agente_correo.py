@@ -450,13 +450,31 @@ def _texto_respuesta(texto: str, doc: dict) -> str:
     return f"{texto.rstrip()}\n\nEl {fecha}, {doc.get('de', '')} escribió:\n{cita}\n"
 
 
-def _enviar_por_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None = None) -> None:
-    """Respaldo si el SMTP de Gmail no está disponible (Render bloquea el puerto 587 en planes gratuitos)."""
+def _enviar_por_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None = None) -> str:
+    """Respaldo si el SMTP de Gmail no está disponible (Render bloquea el puerto 587 en planes gratuitos).
+
+    Envía como la cuenta del mensaje (el dominio está autenticado en Brevo). Si Brevo no acepta ese
+    remitente, reintenta como BREVO_FROM_EMAIL con «responder a» la cuenta original. Devuelve el
+    remitente con el que salió.
+    """
     if not BREVO_API_KEY:
         raise RuntimeError("Sin BREVO_API_KEY para el respaldo")
+    desde = email_de(msg["From"])
+    try:
+        _llamar_brevo(msg, html, texto, adjunto_eml, desde)
+        return desde
+    except RuntimeError as e:
+        if not BREVO_FROM_EMAIL or desde == BREVO_FROM_EMAIL.lower() or "sender" not in str(e).lower():
+            raise
+        logger.warning("Brevo no aceptó %s como remitente; se envía como %s", desde, BREVO_FROM_EMAIL)
+        _llamar_brevo(msg, html, texto, adjunto_eml, BREVO_FROM_EMAIL)
+        return BREVO_FROM_EMAIL.lower()
+
+
+def _llamar_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None, remitente: str) -> None:
     cabeceras = {k: msg[k] for k in ("In-Reply-To", "References") if msg[k]}
     payload = {
-        "sender": {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
+        "sender": {"name": BREVO_FROM_NAME, "email": remitente},
         "to": [{"email": email_de(msg["To"])}],
         "replyTo": {"email": email_de(msg["From"])},
         "subject": str(msg["Subject"]),
@@ -477,22 +495,22 @@ def _enviar_por_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None = No
         raise RuntimeError(f"Brevo {exc.code}: {exc.read().decode('utf-8', errors='replace')[:300]}") from exc
 
 
-def _despachar(gmail: GmailClient, msg, html: str, texto: str, adjunto_eml: bytes | None = None) -> str:
-    """Envía por Gmail; si falla, por Brevo y guarda copia en Enviados. Devuelve el canal usado."""
+def _despachar(gmail: GmailClient, msg, html: str, texto: str, adjunto_eml: bytes | None = None) -> tuple[str, str]:
+    """Envía por Gmail; si falla, por Brevo y guarda copia en Enviados. Devuelve (canal, remitente real)."""
     try:
         gmail.enviar(msg)
-        return "gmail"
+        return "gmail", gmail.address
     except Exception as error_gmail:
         logger.warning("SMTP de Gmail no disponible (%s); se usa Brevo", error_gmail)
         try:
-            _enviar_por_brevo(msg, html, texto, adjunto_eml)
+            remitente = _enviar_por_brevo(msg, html, texto, adjunto_eml)
         except Exception as error_brevo:
             raise RuntimeError(f"No salió por Gmail ({error_gmail}) ni por Brevo ({error_brevo})") from error_brevo
         try:
             gmail.guardar_en_enviados(msg)
         except Exception as e:
             logger.warning("No se pudo guardar la copia en Enviados: %s", e)
-        return "brevo"
+        return "brevo", remitente
 
 
 def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool = False,
@@ -513,7 +531,7 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
         html = _html_respuesta(texto, doc)
         plano = _texto_respuesta(texto, doc)
         msg = emisor.construir_respuesta(doc, plano, html, remitente=formataddr((BREVO_FROM_NAME, desde)))
-        canal = _despachar(emisor, msg, html, plano)
+        canal, desde = _despachar(emisor, msg, html, plano)
     except Exception as e:
         agente_db.actualizar(correo_id, {"estado": "pendiente", "error": f"No se envió: {e}"[:600]},
                              accion="envío fallido", usuario=usuario, detalle=str(e))
@@ -546,7 +564,7 @@ def reenviar(correo_id: str, destino: str, nota: str, usuario: str) -> tuple[boo
             raise RuntimeError("No se encontró el correo original en Gmail")
         texto = nota or f"Reenviado desde la cola de correos por {usuario}.\n\nResumen del agente: {doc.get('resumen', '')}"
         msg = gmail.construir_reenvio(destino, raw, doc.get("asunto", ""), texto)
-        canal = _despachar(gmail, msg, "", texto, adjunto_eml=raw)
+        canal, _ = _despachar(gmail, msg, "", texto, adjunto_eml=raw)
     except Exception as e:
         agente_db.actualizar(correo_id, {"estado": "pendiente", "error": f"No se reenvió: {e}"[:600]},
                              accion="reenvío fallido", usuario=usuario, detalle=str(e))
