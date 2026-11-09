@@ -77,7 +77,8 @@
   {% set est = estados_correo.get(c.estado, (c.estado, 'gray')) %}
   <article id="c-{{ cid }}" class="bg-white rounded-xl border {{ 'border-red-200' if c.prioridad == 'alta' and c.estado in abiertos else 'border-slate-200' }} scroll-mt-4"
            x-data="correoCard('{{ cid }}')" data-borrador="{{ c.respuesta_borrador or '' }}"
-           x-init="borrador = $el.dataset.borrador; abierto = {{ 'true' if ver or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
+           data-faltantes='{{ (c.datos_faltantes or []) | tojson }}' data-chat='{{ (c.chat_vista or []) | tojson }}'
+           x-init="borrador = $el.dataset.borrador; faltantes = JSON.parse($el.dataset.faltantes).map(d => ({ dato: d, respuesta: '' })); chat = JSON.parse($el.dataset.chat); abierto = {{ 'true' if ver or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
 
     {# Cabecera #}
     <div class="p-5">
@@ -170,12 +171,22 @@
         </div>
         {% endif %}
 
-        {% if c.datos_faltantes %}
-        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <p class="font-medium mb-1">Antes de enviar, completa:</p>
-          <ul class="list-disc pl-5 space-y-0.5">{% for d in c.datos_faltantes %}<li>{{ d }}</li>{% endfor %}</ul>
+        <div x-show="faltantes.length" x-cloak class="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <p class="text-sm font-medium text-amber-900">Faltan datos: escríbelos aquí y el agente rehace la respuesta</p>
+          <template x-for="(f, i) in faltantes" :key="i">
+            <label class="block text-xs font-medium text-amber-900"><span x-text="f.dato"></span>
+              <input x-model="f.respuesta" @keydown.enter.prevent="completar()" class="input w-full mt-1 bg-white font-normal"
+                     placeholder="Escribe el dato…">
+            </label>
+          </template>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" class="btn-primary" @click="completar()" :disabled="cargando || !faltantes.some(f => f.respuesta.trim())">
+              <i class="fa-solid" :class="cargando ? 'fa-circle-notch fa-spin' : 'fa-wand-magic-sparkles'" aria-hidden="true"></i>
+              <span x-text="cargando ? 'Rehaciendo…' : 'Completar y rehacer respuesta'"></span>
+            </button>
+            <span class="text-xs text-amber-800">Deja en blanco lo que no sepas. Lo que escribas puede servir para mejorar las FAQs.</span>
+          </div>
         </div>
-        {% endif %}
         {% if c.motivo and c.estado == 'pendiente' %}<p class="text-xs text-slate-500"><strong class="font-medium">Nota del agente:</strong> {{ c.motivo }}</p>{% endif %}
 
         <form method="post" action="/inbox/{{ cid }}/enviar" @submit="enviando = true">
@@ -199,21 +210,33 @@
             <span>Se responde en el mismo hilo, con el correo original citado debajo.</span>
           </div>
 
-          {# Pedir cambios al agente #}
-          <div x-show="pidiendo" x-cloak class="mt-3 flex flex-wrap gap-2">
-            <input x-model="instruccion" x-ref="instruccion" @keydown.enter.prevent="reescribir()" class="input flex-1 min-w-[14rem]"
-                   placeholder="Ej.: más breve, agrega el link de inscripción, tutéalo…" aria-label="Qué cambiar del borrador">
-            <button type="button" class="btn-ghost" @click="reescribir()" :disabled="cargando || !instruccion.trim()">
-              <i class="fa-solid" :class="cargando ? 'fa-circle-notch fa-spin' : 'fa-wand-magic-sparkles'" aria-hidden="true"></i>
-              <span x-text="cargando ? 'Reescribiendo…' : 'Reescribir'"></span>
-            </button>
+          {# Conversación con el agente sobre este borrador #}
+          <div class="mt-3 rounded-lg border border-slate-200">
+            <div class="px-3 py-2 border-b border-slate-100 flex flex-wrap items-center justify-between gap-1">
+              <p class="text-xs font-semibold text-slate-500"><i class="fa-solid fa-comments mr-1" aria-hidden="true"></i>Conversación con el agente</p>
+              <span class="text-xs text-slate-400">Cada mensaje rehace el borrador (menos de un centavo)</span>
+            </div>
+            <div x-show="chat.length" x-cloak x-ref="chatLista" class="px-3 py-2 space-y-2 max-h-64 overflow-y-auto">
+              <template x-for="(t, i) in chat" :key="i">
+                <div :class="t.rol === 'equipo' ? 'text-right' : ''">
+                  <div class="inline-block max-w-[85%] rounded-lg px-3 py-1.5 text-sm whitespace-pre-wrap break-words text-left"
+                       :class="t.rol === 'equipo' ? 'bg-brand-50 text-slate-800' : 'bg-slate-100 text-slate-700'" x-text="t.texto"></div>
+                  <p class="text-[11px] text-slate-400 mt-0.5" x-text="(t.rol === 'equipo' ? (t.usuario || 'Equipo') : 'Agente') + (t.fecha ? ' · ' + t.fecha : '')"></p>
+                </div>
+              </template>
+            </div>
+            <div class="p-2 flex gap-2">
+              <input x-model="instruccion" x-ref="instruccion" @keydown.enter.prevent="enviarMensaje()" class="input flex-1 min-w-0"
+                     placeholder="Ej.: el plazo es el 30 de noviembre · hazlo más breve · tutéalo…" aria-label="Mensaje para el agente">
+              <button type="button" class="btn-ghost shrink-0" @click="enviarMensaje()" :disabled="cargando || !instruccion.trim()">
+                <i class="fa-solid" :class="cargando ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'" aria-hidden="true"></i>
+                <span x-text="cargando ? 'Rehaciendo…' : 'Enviar al agente'"></span>
+              </button>
+            </div>
           </div>
 
           <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap gap-2">
-              <button type="button" class="btn-ghost" @click="pidiendo = !pidiendo; $nextTick(() => $refs.instruccion?.focus())">
-                <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Pedir cambios
-              </button>
               <button type="button" class="btn-ghost" @click="reenviando = !reenviando"><i class="fa-solid fa-share" aria-hidden="true"></i> Reenviar</button>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -256,7 +279,39 @@
         </p>
         {% if c.respuesta_enviada %}
         <div class="rounded-lg border border-green-200 bg-green-50/50 p-3 text-sm text-slate-800 whitespace-pre-wrap break-words">{{ c.respuesta_enviada }}</div>
-        {% if not c.faq_creada %}
+        {% set fs = c.faq_sugerida %}
+        {% if fs and fs.estado == 'pendiente' %}
+        <div class="rounded-lg border border-blue-200 bg-blue-50/40 p-3 space-y-2">
+          <p class="text-sm font-medium text-slate-800"><i class="fa-solid fa-lightbulb text-slate-400 mr-1" aria-hidden="true"></i>
+            {% if fs.faq_id %}Mejora sugerida para la FAQ «{{ fs.faq_pregunta_actual }}»{% else %}FAQ nueva sugerida con lo que aportaste{% endif %}</p>
+          {% if fs.motivo %}<p class="text-xs text-slate-600">{{ fs.motivo }}</p>{% endif %}
+          <form method="post" action="/inbox/{{ cid }}/faq-sugerida" class="space-y-2">
+            <input type="hidden" name="faq_id" value="{{ fs.faq_id or '' }}">
+            <input name="pregunta" value="{{ fs.pregunta }}" class="input w-full" aria-label="Pregunta" required>
+            <textarea name="respuesta" rows="7" class="input w-full leading-relaxed" aria-label="Respuesta" required>{{ fs.respuesta }}</textarea>
+            <div class="flex flex-wrap items-center gap-3">
+              <input name="categoria" value="{{ fs.categoria }}" class="input w-48" aria-label="Categoría" placeholder="Categoría">
+              <label class="flex items-center gap-1.5 text-sm text-slate-700">
+                <input type="checkbox" name="autorizada" value="1" {% if fs.faq_autorizada %}checked{% endif %}> Responde sola (autorizada)
+              </label>
+            </div>
+            <p class="text-xs text-slate-500">Revisa que no tenga datos de esta persona ni de su caso.{% if fs.faq_id %} Reemplaza el texto actual de esa FAQ.{% endif %}</p>
+            <div class="flex flex-wrap gap-2">
+              <button type="submit" class="btn-primary">{{ 'Actualizar FAQ' if fs.faq_id else 'Guardar FAQ' }}</button>
+              <button type="submit" name="accion" value="descartar" class="btn-ghost" formnovalidate>Descartar sugerencia</button>
+            </div>
+          </form>
+        </div>
+        {% elif not c.faq_creada %}
+        <form method="post" action="/inbox/{{ cid }}/sugerir-faq" x-data="{ enviando: false }" @submit="enviando = true">
+          <button type="submit" class="text-sm text-blue-600 hover:underline" :disabled="enviando">
+            <i class="fa-solid" :class="enviando ? 'fa-circle-notch fa-spin' : 'fa-lightbulb'" aria-hidden="true"></i>
+            <span x-text="enviando ? 'Pensando…' : 'Pedir al agente una FAQ con esta respuesta'"></span>
+          </button>
+          {% if fs and fs.estado == 'no_aplica' %}<span class="text-xs text-slate-500 ml-1">Antes no encontró información general: {{ fs.motivo }}</span>{% endif %}
+        </form>
+        {% endif %}
+        {% if not c.faq_creada and not (fs and fs.estado == 'pendiente') %}
         <div x-data="{ faq: false }">
           <button type="button" class="text-sm text-blue-600 hover:underline" @click="faq = !faq">Guardar como pregunta frecuente</button>
           <form x-show="faq" x-cloak method="post" action="/inbox/{{ cid }}/faq" class="mt-2 space-y-2">
@@ -323,28 +378,38 @@
 
   document.addEventListener('alpine:init', () => {
     Alpine.data('correoCard', (id) => ({
-      abierto: false, hilo: false, borrador: '', instruccion: '',
-      pidiendo: false, reenviando: false, cargando: false, enviando: false,
+      abierto: false, hilo: false, borrador: '', instruccion: '', faltantes: [], chat: [],
+      reenviando: false, cargando: false, enviando: false,
       get tieneMarcadores() { return /\[\s*COMPLETAR/i.test(this.borrador); },
-      async reescribir() {
-        if (!this.instruccion.trim() || this.cargando) return;
+      // Un turno de la conversación: datos completados y/o una indicación. El agente rehace el borrador.
+      async turno(instruccion, datos) {
+        if (this.cargando) return;
         this.cargando = true;
         try {
           const r = await fetch(`/inbox/${id}/reescribir`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ instruccion: this.instruccion, borrador: this.borrador }),
+            body: JSON.stringify({ instruccion, datos, borrador: this.borrador }),
           });
-          const datos = await r.json();
-          if (!r.ok || !datos.ok) throw new Error(datos.error || 'No se pudo reescribir');
-          this.borrador = datos.respuesta;
+          const res = await r.json();
+          if (!r.ok || !res.ok) throw new Error(res.error || 'No se pudo rehacer el borrador');
+          this.borrador = res.respuesta;
+          this.chat = res.chat || this.chat;
+          this.faltantes = (res.datos_faltantes || []).map(d => ({ dato: d, respuesta: '' }));
           this.instruccion = '';
-          this.pidiendo = false;
-          avisar('Borrador reescrito. Revísalo antes de enviar.');
+          this.$nextTick(() => { const l = this.$refs.chatLista; if (l) l.scrollTop = l.scrollHeight; });
+          avisar('Borrador actualizado. Revísalo antes de enviar.');
         } catch (e) {
           avisar(e.message, 'error');
         } finally {
           this.cargando = false;
         }
+      },
+      completar() {
+        const datos = this.faltantes.filter(f => f.respuesta.trim());
+        if (datos.length) this.turno('', datos);
+      },
+      enviarMensaje() {
+        if (this.instruccion.trim()) this.turno(this.instruccion.trim(), []);
       },
     }));
   });

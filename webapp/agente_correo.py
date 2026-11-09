@@ -26,6 +26,7 @@ import re
 import urllib.error
 import urllib.request
 import base64
+import threading
 from datetime import datetime, timedelta, timezone
 from email.utils import formataddr
 
@@ -526,6 +527,8 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
     }, accion="enviado automáticamente" if automatico else "enviado", usuario=usuario, detalle=f"desde {desde} vía {canal}")
     recibida.marcar_leido(doc.get("gm_msgid", ""))
     agente_db.contar_uso_faqs(doc.get("fuentes_usadas") or [])
+    if not automatico:
+        _sugerir_faq_en_segundo_plano(correo_id)
     _cerrar_telegram(agente_db.get_correo(correo_id),
                      "🤖 Respondido por el agente" if automatico else f"✅ Enviado por {usuario}")
     return True, "Respuesta enviada."
@@ -566,24 +569,97 @@ def descartar(correo_id: str, usuario: str, bloquear: bool = False) -> None:
     _cerrar_telegram(doc, "🚫 Remitente bloqueado" if bloquear else f"❌ Descartado por {usuario}")
 
 
-def reescribir(correo_id: str, instruccion: str, usuario: str) -> tuple[bool, str]:
+def _texto_turno_equipo(instruccion: str, datos: list[dict]) -> str:
+    partes = [f"{d['dato']}: {d['respuesta']}" for d in datos]
+    if instruccion:
+        partes.append(instruccion)
+    return "\n".join(partes)
+
+
+def reescribir(correo_id: str, instruccion: str, usuario: str,
+               datos: list[dict] | None = None) -> tuple[bool, str, str]:
+    """Un turno del chat con el agente sobre el borrador. Devuelve (ok, borrador o error, nota del agente).
+
+    `datos`: lo que el equipo completó ([{dato, respuesta}]). Se acumula en `datos_completados` y queda
+    en `chat` para los turnos siguientes y para sugerir una FAQ al enviar.
+    """
     doc = agente_db.get_correo(correo_id)
     if not doc:
-        return False, "No se encontró el correo."
+        return False, "No se encontró el correo.", ""
+    instruccion = (instruccion or "").strip()
+    datos = [{"dato": (d.get("dato") or "").strip()[:300], "respuesta": (d.get("respuesta") or "").strip()[:2000]}
+             for d in (datos or []) if (d.get("respuesta") or "").strip()]
+    if not instruccion and not datos:
+        return False, "Escribe un dato o qué cambiar.", ""
+    completados = (doc.get("datos_completados") or []) + datos
     try:
         contexto, _ = agente_contexto.remitente(doc, [])
         if doc.get("hilo_previo"):
             contexto["mensajes_anteriores_del_hilo"] = [
                 {"de": m.get("de"), "texto": m.get("texto")} for m in doc["hilo_previo"]]
-        datos, uso = agente_ia.reescribir(doc, contexto, agente_contexto.conocimiento()[0], cuenta_respuesta(doc),
-                                          doc.get("respuesta_borrador") or "", instruccion)
+        respuesta, uso = agente_ia.reescribir(
+            doc, contexto, agente_contexto.conocimiento()[0], cuenta_respuesta(doc),
+            doc.get("respuesta_borrador") or "", instruccion, completados, (doc.get("chat") or [])[-12:])
     except agente_ia.AgenteIAError as e:
-        return False, str(e)
-    nuevo = (datos.get("respuesta") or "").strip()
+        return False, str(e), ""
+    nuevo = (respuesta.get("respuesta") or "").strip()
+    nota = (respuesta.get("nota") or "").strip() or "Listo, revisa el borrador."
+    ahora = datetime.now(timezone.utc)
+    agente_db.correos_col.update_one({"_id": doc["_id"]}, {
+        "$inc": {"uso.costo_usd": uso["costo_usd"]},
+        "$push": {"chat": {"$each": [
+            {"rol": "equipo", "texto": _texto_turno_equipo(instruccion, datos), "usuario": usuario, "fecha": ahora},
+            {"rol": "agente", "texto": nota, "fecha": ahora},
+        ]}},
+    })
+    agente_db.actualizar(correo_id, {"respuesta_borrador": nuevo, "datos_faltantes": respuesta.get("datos_faltantes") or [],
+                                     "datos_completados": completados},
+                         accion="borrador reescrito", usuario=usuario, detalle=_texto_turno_equipo(instruccion, datos))
+    return True, nuevo, nota
+
+
+def sugerir_faq(correo_id: str) -> bool:
+    """Tras enviar una respuesta en la que el equipo aportó datos, propone mejorar las FAQs.
+
+    Queda en `faq_sugerida` (estado «pendiente») para que el equipo la apruebe: nunca se guarda sola.
+    """
+    doc = agente_db.get_correo(correo_id)
+    if not doc or not doc.get("respuesta_enviada"):
+        return False
+    aportes = [f"{d['dato']}: {d['respuesta']}" for d in doc.get("datos_completados") or []]
+    aportes += [t["texto"] for t in doc.get("chat") or [] if t.get("rol") == "equipo" and t.get("texto")]
+    if doc.get("editado_por_equipo") and not aportes:
+        aportes.append("El equipo editó a mano el borrador antes de enviarlo (compara con la respuesta enviada).")
+    if not aportes:
+        return False
+    faqs = [{"id": str(f["_id"]), "categoria": f.get("category"), "pregunta": f.get("question"),
+             "respuesta": (f.get("answer") or "")[:800], "autorizada": bool(f.get("autorizada"))}
+            for f in agente_db.db.faqs.find({"active": True}).limit(80)]
+    try:
+        datos, uso = agente_ia.sugerir_faq(doc.get("cuerpo") or "", doc["respuesta_enviada"], aportes, faqs)
+    except agente_ia.AgenteIAError as e:
+        logger.warning("No se pudo sugerir una FAQ para %s: %s", correo_id, e)
+        return False
     agente_db.correos_col.update_one({"_id": doc["_id"]}, {"$inc": {"uso.costo_usd": uso["costo_usd"]}})
-    agente_db.actualizar(correo_id, {"respuesta_borrador": nuevo, "datos_faltantes": datos.get("datos_faltantes") or []},
-                         accion="borrador reescrito", usuario=usuario, detalle=instruccion)
-    return True, nuevo
+    if not datos.get("sugerir"):
+        agente_db.actualizar(correo_id, {"faq_sugerida": {"estado": "no_aplica", "motivo": datos.get("motivo", "")}})
+        return False
+    existente = None
+    if datos.get("faq_id") and re.fullmatch(r"[0-9a-f]{24}", datos["faq_id"]):
+        existente = next((f for f in faqs if f["id"] == datos["faq_id"]), None)
+    agente_db.actualizar(correo_id, {"faq_sugerida": {
+        "estado": "pendiente", "pregunta": datos.get("pregunta", ""), "respuesta": datos.get("respuesta", ""),
+        "categoria": datos.get("categoria", "") or (existente or {}).get("categoria", ""),
+        "faq_id": existente["id"] if existente else None,
+        "faq_pregunta_actual": existente["pregunta"] if existente else "",
+        "faq_autorizada": bool(existente and existente["autorizada"]),
+        "motivo": datos.get("motivo", ""),
+    }}, accion="FAQ sugerida", detalle=datos.get("pregunta", ""))
+    return True
+
+
+def _sugerir_faq_en_segundo_plano(correo_id: str) -> None:
+    threading.Thread(target=sugerir_faq, args=(correo_id,), daemon=True).start()
 
 
 # ── Telegram (avisos y aprobación desde el celular) ────────────────────────────
@@ -754,7 +830,7 @@ def procesar_update_telegram(update: dict) -> None:
     respondido = (msg.get("reply_to_message") or {}).get("message_id")
     doc = agente_db.get_correo_por_telegram(respondido) if respondido else None
     if doc and texto:
-        ok, resultado = reescribir(str(doc["_id"]), texto, usuario="Telegram")
+        ok, resultado, _ = reescribir(str(doc["_id"]), texto, usuario="Telegram")
         if ok:
             _cerrar_telegram(doc, "✏️ Hay una versión nueva abajo")
             avisar_telegram(agente_db.get_correo(str(doc["_id"])))

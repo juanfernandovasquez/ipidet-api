@@ -77,8 +77,23 @@ ESQUEMA_REDACCION = {
     "properties": {
         "respuesta": {"type": "string"},
         "datos_faltantes": {"type": "array", "items": {"type": "string"}},
+        "nota": {"type": "string"},
     },
-    "required": ["respuesta", "datos_faltantes"],
+    "required": ["respuesta", "datos_faltantes", "nota"],
+}
+
+ESQUEMA_FAQ = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "sugerir": {"type": "boolean"},
+        "faq_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "pregunta": {"type": "string"},
+        "respuesta": {"type": "string"},
+        "categoria": {"type": "string"},
+        "motivo": {"type": "string"},
+    },
+    "required": ["sugerir", "faq_id", "pregunta", "respuesta", "categoria", "motivo"],
 }
 
 ESQUEMA_VERIFICACION = {
@@ -241,13 +256,57 @@ def verificar(respuesta: str, pregunta: str, fuentes: dict[str, dict]) -> tuple[
 
 
 def reescribir(correo: dict, contexto_remitente: dict, conocimiento: str, cuenta: str,
-               borrador: str, instruccion: str) -> tuple[dict, dict]:
-    """Nueva versión del borrador según la indicación del equipo (que sí es de confianza)."""
+               borrador: str, instruccion: str, datos_equipo: list[dict] | None = None,
+               conversacion: list[dict] | None = None) -> tuple[dict, dict]:
+    """Nueva versión del borrador en la conversación con el equipo (que sí es de confianza).
+
+    `datos_equipo`: lo que el equipo completó ([{dato, respuesta}]); `conversacion`: los turnos previos.
+    """
     cfg = catalogos.get_agente_config()
     contenido = _bloques_correo(correo, contexto_remitente, [])
-    contenido.append({"type": "text", "text": (
-        f"BORRADOR ACTUAL:\n{borrador}\n\n"
-        f"INDICACIÓN DEL EQUIPO DE IPIDET (aplícala; sigue valiendo todo lo demás):\n{instruccion}\n\n"
-        "Devuelve el borrador completo reescrito."
-    )})
+    partes = []
+    if conversacion:
+        partes.append("CONVERSACIÓN PREVIA CON EL EQUIPO SOBRE ESTE BORRADOR:\n" + "\n".join(
+            f"- {'Equipo' if t.get('rol') == 'equipo' else 'Agente'}: {t.get('texto', '')}" for t in conversacion))
+    if datos_equipo:
+        partes.append(
+            "DATOS QUE APORTÓ EL EQUIPO DE IPIDET (son de confianza: úsalos tal como están, reemplaza los "
+            "[COMPLETAR] que cubren y no los cambies ni los adornes):\n"
+            + "\n".join(f"- {d.get('dato', '')}: {d.get('respuesta', '')}" for d in datos_equipo))
+    partes.append(f"BORRADOR ACTUAL:\n{borrador}")
+    if instruccion:
+        partes.append(f"INDICACIÓN DEL EQUIPO (aplícala; sigue valiendo todo lo demás):\n{instruccion}")
+    partes.append(
+        "Devuelve el borrador completo reescrito. Lo que el equipo aportó puede usarse aunque no esté en las "
+        "fuentes. Deja [COMPLETAR: …] solo para lo que siga faltando y anótalo en datos_faltantes. "
+        "nota: una o dos frases para el equipo sobre qué cambiaste y qué falta, si falta algo.")
+    contenido.append({"type": "text", "text": "\n\n".join(partes)})
     return _llamar(_sistema(conocimiento, cfg, cuenta), contenido, ESQUEMA_REDACCION, cfg)
+
+
+def sugerir_faq(pregunta: str, respuesta: str, aportes_equipo: list[str], faqs: list[dict]) -> tuple[dict, dict]:
+    """Propone una FAQ nueva o la mejora de una existente con lo que el equipo aportó al responder.
+
+    Solo información general, útil para otras personas. Nunca se guarda sola: el equipo la aprueba.
+    """
+    cfg = catalogos.get_agente_config()
+    sistema = (
+        "Ayudas a mantener las preguntas frecuentes (FAQs) de IPIDET, que el agente de correos usa para responder. "
+        "Recibes un correo, la respuesta que el equipo envió y los datos que el equipo aportó para escribirla. "
+        "Propón una FAQ solo con información GENERAL que sirva para responder a otras personas: requisitos, plazos, "
+        "procedimientos, enlaces, cómo se hace algo. Nunca incluyas datos de una persona o de su caso (pagos, "
+        "deudas, estado de una postulación, si alguien es socio, nombres, correos, teléfonos personales) ni "
+        "información interna. Si lo aportado solo sirve para este caso, sugerir = false. "
+        "Si una de las FAQs existentes trata el mismo tema, pon su id en faq_id y escribe su versión mejorada: "
+        "conserva lo que ya decía y agrega lo nuevo. Si no, faq_id = null y propón una nueva. "
+        "pregunta: en forma general (como la haría cualquiera). respuesta: texto plano, sin saludo ni firma. "
+        "categoria: la de la FAQ existente o una breve (por ejemplo Admisión, Eventos). "
+        "motivo: una frase para el equipo explicando la propuesta."
+    )
+    contenido = [{"type": "text", "text": (
+        f"FAQS EXISTENTES:\n{json.dumps(faqs, ensure_ascii=False, indent=1, default=str)}\n\n"
+        f"CORREO RECIBIDO:\n<correo>\n{pregunta[:6000]}\n</correo>\n\n"
+        f"RESPUESTA ENVIADA POR EL EQUIPO:\n<respuesta>\n{respuesta[:6000]}\n</respuesta>\n\n"
+        "LO QUE APORTÓ EL EQUIPO AL REDACTARLA:\n" + "\n".join(f"- {a}" for a in aportes_equipo)
+    )}]
+    return _llamar(sistema, contenido, ESQUEMA_FAQ, cfg, max_tokens=6000)

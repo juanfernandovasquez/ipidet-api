@@ -24,6 +24,20 @@
         {% for e in eventos_agente %}<a href="/eventos/{{ e._id }}" class="text-blue-600 hover:underline">{{ e.titulo }}</a>{% if not loop.last %}, {% endif %}{% else %}ninguno todavía (se activan en la ficha de cada evento){% endfor %}.</p>
     </div>
 
+    {# ─ Sugerencias del agente a partir de respuestas del equipo #}
+    {% if sugerencias %}
+    <div class="bg-white rounded-xl border border-blue-200 p-5">
+      <h2 class="text-sm font-semibold text-slate-800 mb-1"><i class="fa-solid fa-lightbulb text-slate-400 mr-1" aria-hidden="true"></i> FAQs sugeridas desde la cola de correos</h2>
+      <p class="text-xs text-slate-500 mb-2">Con los datos que el equipo aportó al responder. Revísalas y guárdalas desde el correo.</p>
+      <ul class="space-y-1 text-sm">
+        {% for s in sugerencias %}
+        <li><a href="/inbox?ver={{ s._id }}" class="text-blue-600 hover:underline">{{ s.faq_sugerida.pregunta }}</a>
+          <span class="text-xs text-slate-500">· {{ 'mejora de una FAQ existente' if s.faq_sugerida.faq_id else 'nueva' }} · de «{{ s.asunto }}»</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
     {# ─ Probador #}
     <div class="bg-white rounded-xl border border-slate-200 p-5" x-data="probador()">
       <h2 class="text-sm font-semibold text-slate-800 mb-1"><i class="fa-solid fa-flask text-slate-400 mr-1" aria-hidden="true"></i> Probar una consulta</h2>

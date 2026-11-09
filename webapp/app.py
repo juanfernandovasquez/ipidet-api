@@ -1675,7 +1675,9 @@ async def faqs_list(request: Request, search: str = "", category: str = "", auto
         docs = [d for d in docs if bool(d.get("autorizada")) == (autorizada == "si")]
     eventos_agente = list(pdb.eventos_col.find({"usar_en_agente": True, "estado": {"$ne": "cancelado"}},
                                               {"titulo": 1, "fecha": 1}).sort("fecha", 1))
-    return templates.TemplateResponse(request, "faqs.html", _ctx(request,
+    sugerencias = list(agente_db.correos_col.find({"faq_sugerida.estado": "pendiente"},
+                                                  {"faq_sugerida": 1, "asunto": 1}).sort("enviado_at", -1).limit(20))
+    return templates.TemplateResponse(request, "faqs.html", _ctx(request, sugerencias=sugerencias,
         faqs=docs, categories=pdb.get_faq_categories(), total=total, n_autorizadas=autorizadas,
         search=search, category=category, autorizada=autorizada, eventos_agente=eventos_agente,
         agente_cfg=catalogos.get_agente_config(),
@@ -4724,6 +4726,7 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
         # A qué buzón llegó y desde cuál se responde (los anteriores a la multicuenta, la principal).
         c["cuenta_recibida"] = agente_correo.cuenta_de(c)
         c["cuenta_envio"] = c.get("enviado_desde") or agente_correo.cuenta_respuesta(c)
+        c["chat_vista"] = _chat_vista(c)
     ids_socios = {c.get("member_id") or c.get("posible_member_id") for c in correos} - {None, ""}
     socios = {m["member_id"]: f"{m.get('apellidos', '')}, {m.get('nombres', '')}".strip(", ")
               for m in pdb.members_col.find({"member_id": {"$in": list(ids_socios)}},
@@ -4753,6 +4756,12 @@ async def inbox_configuracion(request: Request):
         telegram=estado_tg, url_publica=agente_correo.url_plataforma(),
         bloqueados=agente_db.patrones_bloqueados(),
     ))
+
+
+def _chat_vista(doc: dict) -> list[dict]:
+    return [{"rol": t.get("rol"), "texto": t.get("texto", ""), "usuario": t.get("usuario", ""),
+             "fecha": _fecha_lima(t.get("fecha"), "%d/%m %H:%M") if t.get("fecha") else ""}
+            for t in doc.get("chat") or []]
 
 
 def _lista_lineas(texto: str) -> list[str]:
@@ -4839,16 +4848,18 @@ async def inbox_enviar(request: Request, correo_id: str, respuesta: str = Form("
 async def inbox_reescribir(request: Request, correo_id: str):
     datos = await request.json()
     instruccion = (datos.get("instruccion") or "").strip()
-    if not instruccion:
-        return JSONResponse({"ok": False, "error": "Escribe qué cambiar."}, status_code=400)
+    completados = [d for d in (datos.get("datos") or []) if isinstance(d, dict)]
+    if not instruccion and not any((d.get("respuesta") or "").strip() for d in completados):
+        return JSONResponse({"ok": False, "error": "Escribe un dato o qué cambiar."}, status_code=400)
     borrador = (datos.get("borrador") or "").strip()
     if borrador:
         agente_db.actualizar(correo_id, {"respuesta_borrador": borrador})
-    ok, resultado = await _en_hilo(agente_correo.reescribir, correo_id, instruccion, _usuario(request))
+    ok, resultado, nota = await _en_hilo(agente_correo.reescribir, correo_id, instruccion, _usuario(request), completados)
     if not ok:
         return JSONResponse({"ok": False, "error": resultado}, status_code=502)
     doc = agente_db.get_correo(correo_id) or {}
-    return {"ok": True, "respuesta": resultado, "datos_faltantes": doc.get("datos_faltantes") or []}
+    return {"ok": True, "respuesta": resultado, "nota": nota, "datos_faltantes": doc.get("datos_faltantes") or [],
+            "chat": _chat_vista(doc)}
 
 
 @app.post("/inbox/{correo_id}/reenviar")
@@ -4886,6 +4897,40 @@ async def inbox_vincular_socio(request: Request, correo_id: str, member_id: str 
     agente_db.actualizar(correo_id, {"member_id": member_id or None, "posible_member_id": None},
                          accion="socio vinculado", usuario=_usuario(request), detalle=member_id)
     return _volver(request, correo_id, ok="Socio vinculado al correo")
+
+
+@app.post("/inbox/{correo_id}/faq-sugerida")
+async def inbox_faq_sugerida(request: Request, correo_id: str, accion: str = Form("guardar"),
+                             pregunta: str = Form(""), respuesta: str = Form(""), categoria: str = Form(""),
+                             faq_id: str = Form(""), autorizada: str = Form("")):
+    doc = agente_db.get_correo(correo_id)
+    if not doc or not doc.get("faq_sugerida"):
+        return _volver(request, correo_id, error="No hay una FAQ sugerida para este correo")
+    if accion == "descartar":
+        agente_db.actualizar(correo_id, {"faq_sugerida.estado": "descartada"}, accion="FAQ sugerida descartada",
+                             usuario=_usuario(request))
+        return _volver(request, correo_id, msg="Sugerencia descartada")
+    if not pregunta.strip() or not respuesta.strip():
+        return _volver(request, correo_id, error="La pregunta y la respuesta son obligatorias")
+    categoria = categoria.strip() or "Correos"
+    existente = pdb.faqs_col.find_one({"_id": pdb.ObjectId(faq_id), "active": True}) if re.fullmatch(r"[0-9a-f]{24}", faq_id or "") else None
+    if existente:
+        pdb.update_faq(faq_id, pregunta.strip(), respuesta.strip(), categoria, autorizada == "1")
+        detalle, mensaje = faq_id, "FAQ actualizada"
+    else:
+        detalle = pdb.save_faq(pregunta.strip(), respuesta.strip(), categoria, autorizada == "1")
+        mensaje = "FAQ creada"
+    agente_db.actualizar(correo_id, {"faq_sugerida.estado": "guardada", "faq_creada": True},
+                         accion="FAQ sugerida guardada", usuario=_usuario(request), detalle=detalle)
+    return _volver(request, correo_id, ok=mensaje + (" y autorizada para responder sola" if autorizada == "1" else
+                                                      " (solo borradores hasta que la autorices)"))
+
+
+@app.post("/inbox/{correo_id}/sugerir-faq")
+async def inbox_sugerir_faq(request: Request, correo_id: str):
+    hay = await _en_hilo(agente_correo.sugerir_faq, correo_id)
+    return _volver(request, correo_id, **({"ok": "El agente propuso una FAQ"} if hay else
+                                          {"msg": "El agente no encontró información general para una FAQ"}))
 
 
 @app.post("/inbox/{correo_id}/faq")

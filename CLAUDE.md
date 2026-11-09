@@ -772,6 +772,10 @@ hilo_previo        [{de, fecha, texto}]
 uso                {entrada, salida, cache_lectura, cache_escritura, costo_usd, modelo}
 canal_envio        "gmail" | "brevo";  enviado_desde, enviado_por, enviado_at, reenviado_a
 filtrado_sin_ia    bool      descartado por reglas, sin llamar a la API
+chat               [{rol: equipo|agente, texto, usuario, fecha}]   conversación con el agente sobre el borrador
+datos_completados  [{dato, respuesta}]   lo que el equipo completó en los [COMPLETAR]
+faq_sugerida       {estado: pendiente|guardada|descartada|no_aplica, pregunta, respuesta, categoria,
+                    faq_id, faq_pregunta_actual, faq_autorizada, motivo}
 intentos, error, telegram_msg_id, historial [{fecha, accion, usuario, detalle}]
 ```
 
@@ -1102,11 +1106,12 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `POST` | `/inbox/revisar-ahora` | Ejecuta un ciclo ya; `recientes=N` reanaliza los últimos N del INBOX |
 | `POST` | `/inbox/telegram/conectar` | Registra el webhook de Telegram (requiere URL https) |
 | `POST` | `/inbox/{id}/enviar` | Envía la respuesta desde `desde` (cuenta elegida; bloquea si queda `[COMPLETAR`) |
-| `POST` | `/inbox/{id}/reescribir` | JSON `{instruccion, borrador}` → nuevo borrador de Claude |
+| `POST` | `/inbox/{id}/reescribir` | Turno del chat con el agente: JSON `{instruccion, datos: [{dato, respuesta}], borrador}` → `{respuesta, nota, datos_faltantes, chat}` |
 | `POST` | `/inbox/{id}/reenviar` | Reenvía el original con adjuntos; `destino`, `nota` |
 | `POST` | `/inbox/{id}/descartar` | Descarta; `bloquear=1` también bloquea al remitente |
 | `POST` | `/inbox/{id}/reabrir` · `/reprocesar` | Vuelve a la cola · analiza de nuevo |
 | `POST` | `/inbox/{id}/vincular-socio` · `/faq` | Vincula socio · guarda la respuesta como FAQ (la cola no toca cobranzas) |
+| `POST` | `/inbox/{id}/sugerir-faq` · `/faq-sugerida` | Pide al agente una FAQ con la respuesta enviada · la guarda (nueva o actualiza `faq_id`) o la descarta (`accion=descartar`) |
 | `GET` | `/inbox/{id}/adjunto/{n}` | Descarga un adjunto (se relee de Gmail) |
 | `POST` | `/webhook/telegram` | Botones y mensajes del bot; verifica `X-Telegram-Bot-Api-Secret-Token` |
 
@@ -1397,6 +1402,8 @@ Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada mi
 **Prompt:** sistema = reglas (tono y firma de la config) + conocimiento (`agente_contexto.conocimiento()` → texto y mapa de fuentes): FUENTES AUTORIZADAS con id (`faq:<id>`, `evento:<id>`, `org`) y CONTEXTO DE APOYO (FAQs sin autorizar, comunicaciones/campañas/programadas de 45 días, cronograma de 30 días, `informacion_adicional`), con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo por defecto `claude-haiku-5-5` (≈ US$ 0,001 por correo); `fallbacks="default"` solo se envía a los modelos que lo admiten (Haiku no). `/faqs` tiene un probador que simula un correo sin guardar ni enviar.
 
 **Envío:** SMTP de Gmail (queda en Enviados y en el hilo). Si falla (Render bloquea el 587 en planes gratuitos) usa la API de Brevo con `In-Reply-To`/`References` y guarda copia en Enviados por IMAP. La respuesta cita el original.
+
+**Chat y FAQs:** en cada borrador, los `[COMPLETAR]` aparecen como campos y hay una conversación con el agente (`agente_correo.reescribir`, que guarda `chat` y `datos_completados`; responder al aviso de Telegram entra en la misma conversación). Lo que el equipo aporta es de confianza para el borrador. Al enviar a mano, `sugerir_faq` (en segundo plano) propone una FAQ nueva o la mejora de una existente solo con información general; queda en `faq_sugerida` y el equipo la aprueba desde la cola (también se listan en `/faqs`). Nunca se guarda ni se autoriza sola.
 
 **Telegram:** en producción por webhook (`/webhook/telegram`, se conecta desde la configuración). Botones Enviar/Descartar, y responder al mensaje del bot pide cambios al borrador. `/bloquear`, `/desbloquear`, `/lista_bloqueados` y los comandos de eventos (`workflows/event_manager.py`) siguen funcionando. `telegram_main.py` hace polling solo si no hay webhook.
 
