@@ -21,7 +21,7 @@ import webapp.zoom_client as zoom_client
 from datetime import timedelta as _timedelta
 from urllib.parse import quote as _quote
 from config import catalogos
-from config.settings import SECRET_KEY, GMAIL_ADDRESS, GMAIL_APP_PASSWORD, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE, WC_STORE_URL
+from config.settings import SECRET_KEY, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE, WC_STORE_URL
 import threading as _threading
 import time as _time
 import uuid as _uuid
@@ -4709,14 +4709,21 @@ def _volver(request: Request, correo_id: str = "", **params) -> RedirectResponse
 
 @app.get("/inbox", response_class=HTMLResponse)
 async def inbox_page(request: Request, vista: str = "atender", categoria: str = "",
-                     search: str = "", page: int = 1, ver: str = ""):
+                     search: str = "", page: int = 1, ver: str = "", cuenta: str = ""):
     if vista not in ("atender", "respondidos", "sin_respuesta", "todos"):
         vista = "atender"
+    cuentas_agente = list(agente_correo.cuentas())
+    principal = agente_correo.cuenta_principal()
+    cuenta = cuenta.strip().lower() if cuenta.strip().lower() in cuentas_agente else ""
     doc = agente_db.get_correo(ver) if ver else None
     if doc:
         correos, total = [doc], 1
     else:
-        correos, total = agente_db.listar(vista, categoria, search, page)
+        correos, total = agente_db.listar(vista, categoria, search, page, cuenta=cuenta, principal=cuenta == principal)
+    for c in correos:
+        # A qué buzón llegó y desde cuál se responde (los anteriores a la multicuenta, la principal).
+        c["cuenta_recibida"] = agente_correo.cuenta_de(c)
+        c["cuenta_envio"] = c.get("enviado_desde") or agente_correo.cuenta_respuesta(c)
     ids_socios = {c.get("member_id") or c.get("posible_member_id") for c in correos} - {None, ""}
     socios = {m["member_id"]: f"{m.get('apellidos', '')}, {m.get('nombres', '')}".strip(", ")
               for m in pdb.members_col.find({"member_id": {"$in": list(ids_socios)}},
@@ -4729,7 +4736,7 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
         search=search, ver=ver if doc else "", conteos=agente_db.contar_por_vista(), socios=socios,
         eventos_map=eventos, categorias=catalogos.CATEGORIAS_CORREO, estados_correo=catalogos.ESTADOS_CORREO,
         agente_cfg=catalogos.get_agente_config(), agente_estado=agente_db.get_estado(),
-        admin_forward=agente_correo.ADMIN_FORWARD_EMAIL,
+        admin_forward=agente_correo.ADMIN_FORWARD_EMAIL, cuentas_agente=cuentas_agente, cuenta=cuenta,
     ))
 
 
@@ -4739,7 +4746,11 @@ async def inbox_configuracion(request: Request):
     return templates.TemplateResponse(request, "inbox_configuracion.html", _ctx(request,
         cfg=catalogos.get_agente_config(), estado=agente_db.get_estado(), uso=agente_db.resumen_uso(),
         categorias=catalogos.CATEGORIAS_CORREO, modos=catalogos.MODOS_AGENTE, esfuerzos=catalogos.ESFUERZOS_AGENTE,
-        cuenta=GMAIL_ADDRESS, telegram=estado_tg, url_publica=agente_correo.url_plataforma(),
+        cuentas_estado=[{"cuenta": c, "principal": c == agente_correo.cuenta_principal(),
+                         **agente_db.get_estado_cuenta(c, principal=c == agente_correo.cuenta_principal())}
+                        for c in agente_correo.cuentas()],
+        cuenta_2=agente_correo.cuenta_2(), cuenta_principal=agente_correo.cuenta_principal(),
+        telegram=estado_tg, url_publica=agente_correo.url_plataforma(),
         bloqueados=agente_db.patrones_bloqueados(),
     ))
 
@@ -4780,6 +4791,9 @@ async def inbox_configuracion_guardar(request: Request):
         "precio_cache_lectura": numero("precio_cache_lectura", 0, 100),
         "precio_cache_escritura": numero("precio_cache_escritura", 0, 100),
     }
+    if form.get("categorias_cuenta_2_presente"):
+        campos["categorias_cuenta_2"] = [k for k in form.getlist("categorias_cuenta_2")
+                                         if k in catalogos.CATEGORIAS_CORREO]
     catalogos.set_agente_config(campos)
     return RedirectResponse("/inbox/configuracion?ok=Configuración guardada", status_code=303)
 
@@ -4787,11 +4801,8 @@ async def inbox_configuracion_guardar(request: Request):
 @app.post("/inbox/revisar-ahora")
 async def inbox_revisar_ahora(request: Request, recientes: int = Form(0)):
     if recientes > 0:
-        def _retroceder():
-            max_uid, validez = agente_correo._gmail().max_uid()
-            agente_db.set_estado(ultimo_uid=max(0, max_uid - min(recientes, 50)), uidvalidity=validez)
         try:
-            await _en_hilo(_retroceder)
+            await _en_hilo(agente_correo.retroceder, recientes)
         except Exception as e:
             return _volver(request, error=f"No se pudo conectar con Gmail: {e}")
     resumen = await _en_hilo(agente_correo.ciclo, True)
@@ -4812,7 +4823,12 @@ async def inbox_telegram_conectar(request: Request):
 
 
 @app.post("/inbox/{correo_id}/enviar")
-async def inbox_enviar(request: Request, correo_id: str, respuesta: str = Form("")):
+async def inbox_enviar(request: Request, correo_id: str, respuesta: str = Form(""), desde: str = Form("")):
+    desde = desde.strip().lower()
+    doc = agente_db.get_correo(correo_id)
+    if doc and desde in agente_correo.cuentas() and desde != agente_correo.cuenta_respuesta(doc):
+        agente_db.actualizar(correo_id, {"cuenta_respuesta": desde, "cuenta_respuesta_manual": True},
+                             accion="cuenta de respuesta cambiada", usuario=_usuario(request), detalle=desde)
     ok, detalle = await _en_hilo(agente_correo.enviar_respuesta, correo_id, respuesta, _usuario(request))
     if not ok:
         agente_db.actualizar(correo_id, {"respuesta_borrador": respuesta.strip()})
@@ -4891,7 +4907,7 @@ async def inbox_adjunto(correo_id: str, n: int):
 
     def _leer():
         import email as _email
-        raw = agente_correo._gmail().original(doc["gm_msgid"])
+        raw = agente_correo._gmail(agente_correo.cuenta_de(doc)).original(doc["gm_msgid"])
         if not raw:
             return None
         partes = [p for p in _email.message_from_bytes(raw).walk() if not p.is_multipart()]

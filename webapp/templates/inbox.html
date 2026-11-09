@@ -52,7 +52,13 @@
         <option value="">Todas las categorías</option>
         {% for k, v in categorias.items() %}<option value="{{ k }}" {% if categoria == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
       </select>
-      {% if search or categoria or ver %}<a href="/inbox?vista={{ vista }}" class="text-sm text-slate-500 hover:text-slate-700 px-2 self-center">Limpiar</a>{% endif %}
+      {% if cuentas_agente | length > 1 %}
+      <select name="cuenta" class="input w-auto" @change="$refs.filtros.submit()" aria-label="Cuenta a la que llegó">
+        <option value="">Todas las cuentas</option>
+        {% for ca in cuentas_agente %}<option value="{{ ca }}" {% if cuenta == ca %}selected{% endif %}>Llegó a {{ ca }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      {% if search or categoria or ver or cuenta %}<a href="/inbox?vista={{ vista }}" class="text-sm text-slate-500 hover:text-slate-700 px-2 self-center">Limpiar</a>{% endif %}
     </div>
   </form>
 
@@ -87,6 +93,14 @@
           <p class="text-sm text-slate-600 mt-0.5 break-words">
             {{ c.de_nombre or c.de_email }}{% if c.de_nombre and c.de_nombre != c.de_email %} <span class="text-slate-400">&lt;{{ c.de_email }}&gt;</span>{% endif %}
             <span class="text-slate-400">· {{ c.fecha | fecha_hora_lima }}</span>
+          </p>
+          <p class="text-xs text-slate-500 mt-1">
+            <i class="fa-solid fa-inbox text-slate-400 mr-0.5" aria-hidden="true"></i> Llegó a <strong class="font-medium text-slate-700">{{ c.cuenta_recibida }}</strong>
+            {% if c.estado not in ('ignorado',) %}
+            <span class="mx-1 text-slate-300">→</span>
+            <i class="fa-solid fa-reply text-slate-400 mr-0.5" aria-hidden="true"></i> {{ 'Se respondió desde' if c.enviado_desde else 'Se responde desde' }}
+            <strong class="font-medium {{ 'text-amber-800' if c.cuenta_envio != c.cuenta_recibida else 'text-slate-700' }}">{{ c.cuenta_envio }}</strong>
+            {% endif %}
           </p>
         </div>
         <button type="button" class="text-sm text-blue-600 hover:underline shrink-0" @click="abierto = !abierto" :aria-expanded="abierto">
@@ -173,7 +187,17 @@
           <p x-show="tieneMarcadores" x-cloak class="mt-1 text-xs text-amber-800">
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Reemplaza los textos [COMPLETAR …] antes de enviar.
           </p>
-          <p class="mt-1 text-xs text-slate-500">Se responde en el mismo hilo, con el correo original citado debajo.</p>
+          <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            {% if cuentas_agente | length > 1 %}
+            <label class="inline-flex items-center gap-1.5">Responder desde
+              <select name="desde" class="input w-auto text-xs py-1">
+                {% for ca in cuentas_agente %}<option value="{{ ca }}" {% if c.cuenta_envio == ca %}selected{% endif %}>{{ ca }}</option>{% endfor %}
+              </select>
+            </label>
+            <span>·</span>
+            {% endif %}
+            <span>Se responde en el mismo hilo, con el correo original citado debajo.</span>
+          </div>
 
           {# Pedir cambios al agente #}
           <div x-show="pidiendo" x-cloak class="mt-3 flex flex-wrap gap-2">

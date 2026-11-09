@@ -11,6 +11,9 @@ DB_NAME = "ipidet_agent"
 
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+# Segunda cuenta que lee el agente de correos (administración): temas delicados.
+GMAIL_ADDRESS_2 = os.getenv("GMAIL_ADDRESS_2")
+GMAIL_APP_PASSWORD_2 = os.getenv("GMAIL_APP_PASSWORD_2")
 
 ADMIN_FORWARD_EMAIL = os.getenv("ADMIN_FORWARD_EMAIL", "administracion@ipidet.org")
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.85"))

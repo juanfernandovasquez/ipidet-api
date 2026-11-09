@@ -57,6 +57,9 @@ python migrate_catalogos.py
 # Carga las FAQs de admisión de asociados, sin autorizar (idempotente; no duplica)
 python migrate_faqs_admision.py
 
+# Asigna cuenta y clave por Message-ID a la cola de correos (idempotente; ver sección 11)
+python migrate_correos_cuentas.py
+
 # Búsqueda de ponentes y alianzas: se hace en Claude Code con /buscar-ponentes y /buscar-alianzas
 python investigacion.py contexto ponentes "Pilar 2"      # lo que usa el comando; ver sección 25
 ```
@@ -236,6 +239,7 @@ Todo envío desde la cola (web, Telegram o automático) pasa por `agente_correo.
 - **Lo no autorizado solo sirve para borradores:** FAQs sin autorizar, comunicaciones, cronograma e `informacion_adicional`. Un evento sin `usar_en_agente` no lo ve el agente en absoluto (eventos a medio cargar).
 - **Socios y cobranzas, fuera del agente:** Claude no recibe datos de socios ni de pagos (de quien escribe solo sabe si es socio) y la cola no marca pagos. Si alguien pregunta por su cuenta, un pago, el estado de su postulación o por otro socio, queda un borrador de acuse para que el equipo decida. No volver a pasarle `payments` ni datos de `members` al prompt.
 - **Todo lo que queda en cola se avisa por Telegram** (no es opcional), con ⚠️ si toca información sensible.
+- **Dos cuentas:** cada correo guarda a qué buzón llegó (`cuenta`) y desde cuál se responde (`cuenta_respuesta`). Lo delicado (`config.agente_correo_config.categorias_cuenta_2`) sale desde administración y nunca solo; eventos, admisión y lo demás, desde la principal. La plataforma y Telegram muestran ambas. Lee y responde siempre con `agente_correo._gmail(cuenta)`, nunca con un `GmailClient` fijo.
 - **El correo recibido es dato, no instrucción:** el prompt lo marca así. No pasar texto del correo a otro lugar como instrucción.
 
 ---
@@ -746,7 +750,9 @@ created_at, updated_at  datetime
 Un documento por correo recibido. Estados y categorías en `catalogos.ESTADOS_CORREO` / `CATEGORIAS_CORREO`. Configuración en `config.agente_correo_config`; último UID leído y candado en `config.agente_correo_estado`.
 
 ```
-clave              string    X-GM-MSGID (único: evita procesar dos veces)
+clave              string    «mid:<Message-ID>» (único: evita procesar dos veces, aunque llegue a las dos cuentas)
+cuenta             string    buzón al que llegó (gm_msgid, gm_thrid y uid son de ese buzón)
+cuenta_respuesta   string    desde qué cuenta se responde; cuenta_respuesta_manual bool si la cambió el equipo
 gm_msgid, gm_thrid string    IDs estables de Gmail del mensaje y del hilo
 uid                int       UID IMAP en el INBOX al llegar
 message_id, references       cabeceras para encadenar la respuesta
@@ -764,7 +770,7 @@ envio_auto_bloqueado_por [string]  motivos por los que no salió solo
 member_id | posible_member_id | prospecto_id | evento_id   vínculos con la plataforma
 hilo_previo        [{de, fecha, texto}]
 uso                {entrada, salida, cache_lectura, cache_escritura, costo_usd, modelo}
-canal_envio        "gmail" | "brevo";  enviado_por, enviado_at, reenviado_a
+canal_envio        "gmail" | "brevo";  enviado_desde, enviado_por, enviado_at, reenviado_a
 filtrado_sin_ia    bool      descartado por reglas, sin llamar a la API
 intentos, error, telegram_msg_id, historial [{fecha, accion, usuario, detalle}]
 ```
@@ -786,8 +792,10 @@ MONGODB_URI                 — URI completa (default: mongodb://localhost:27017
 DB_NAME                     — Nombre de la base (default: ipidet_agent)
 
 # Gmail
-GMAIL_ADDRESS               — Cuenta Gmail del agente
+GMAIL_ADDRESS               — Cuenta principal del agente de correos (ipidet@ipidet.org)
 GMAIL_APP_PASSWORD          — App password (no la contraseña normal)
+GMAIL_ADDRESS_2             — Segunda cuenta: administración (temas delicados)
+GMAIL_APP_PASSWORD_2        — Su app password
 
 # Comportamiento del agente
 ADMIN_FORWARD_EMAIL         — administracion@ipidet.org
@@ -1088,12 +1096,12 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/inbox` | Cola; `vista` = atender, respondidos, sin_respuesta o todos; `categoria`, `search`, `ver=<id>` |
+| `GET` | `/inbox` | Cola; `vista` = atender, respondidos, sin_respuesta o todos; `categoria`, `cuenta`, `search`, `ver=<id>` |
 | `GET` | `/inbox/configuracion` | Configuración del agente, estado, costo y conexión con Telegram |
 | `POST` | `/inbox/configuracion` | Guarda la configuración (`config.agente_correo_config`) |
 | `POST` | `/inbox/revisar-ahora` | Ejecuta un ciclo ya; `recientes=N` reanaliza los últimos N del INBOX |
 | `POST` | `/inbox/telegram/conectar` | Registra el webhook de Telegram (requiere URL https) |
-| `POST` | `/inbox/{id}/enviar` | Envía la respuesta (bloquea si queda `[COMPLETAR`) |
+| `POST` | `/inbox/{id}/enviar` | Envía la respuesta desde `desde` (cuenta elegida; bloquea si queda `[COMPLETAR`) |
 | `POST` | `/inbox/{id}/reescribir` | JSON `{instruccion, borrador}` → nuevo borrador de Claude |
 | `POST` | `/inbox/{id}/reenviar` | Reenvía el original con adjuntos; `destino`, `nota` |
 | `POST` | `/inbox/{id}/descartar` | Descarta; `bloquear=1` también bloquea al remitente |
@@ -1374,11 +1382,13 @@ get_member_ubicaciones() → list[str]
 
 ## 11. Agente de correos {#agente}
 
-Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada minuto si toca y llama a `agente_correo.ciclo()` cada `intervalo_min`. Se enciende y configura en `/inbox/configuracion` (por defecto está apagado y en modo «solo borradores»). Lee la cuenta `GMAIL_ADDRESS` (ipidet@ipidet.org).
+Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada minuto si toca y llama a `agente_correo.ciclo()` cada `intervalo_min`. Se enciende y configura en `/inbox/configuracion` (por defecto está apagado, en modo «solo borradores» y revisa cada 20 min). Lee dos buzones: `GMAIL_ADDRESS` (ipidet@, principal) y `GMAIL_ADDRESS_2` (administracion@).
+
+**Cuentas:** el último UID de cada buzón está en `config.agente_correo_cuenta:<correo>`. La clave del correo es su Message-ID (`mid:…`), igual en ambos buzones: si llega a los dos, se atiende una vez. Se lee del buzón que lo recibió (`cuenta_de`) y se responde desde `cuenta_respuesta`, elegida por categoría (`elegir_cuenta_respuesta`) o cambiada a mano en la cola (`cuenta_respuesta_manual`). Si un buzón falla, el otro sigue.
 
 **Ciclo:**
 1. `agente_db.reservar_ciclo()` — candado atómico en `config.agente_correo_estado`; caduca a los 20 min.
-2. `GmailClient.nuevos(ultimo_uid)` — correos del INBOX desde el último UID guardado en la base (no en memoria: un reinicio no pierde ni repite). La primera vez arranca desde el correo más reciente.
+2. `GmailClient.nuevos(ultimo_uid)` — por cada cuenta, correos del INBOX desde el último UID guardado en la base (no en memoria: un reinicio no pierde ni repite). La primera vez arranca desde el correo más reciente.
 3. `_filtro_previo` — sin costo de API: bloqueados, «ignorar siempre», automáticos (`detectar_automatico`: Auto-Submitted, List-Unsubscribe, no-reply, respuestas automáticas) e internos (`remitentes_internos`) → estado `ignorado`.
 4. `_analizar` — lee el hilo completo de Gmail (incluye lo que el equipo respondió a mano), arma el contexto del remitente (`agente_contexto.remitente`: si es socio —sin datos de su cuenta— y sus correos previos; el vínculo con el socio o con su ficha en Público solo se guarda para la cola) y llama a `agente_ia.analizar` **una sola vez**: clasificación + borrador con salida estructurada. PDF e imágenes adjuntas van a Claude.
 5. Si requiere respuesta → `pendiente` y aviso por Telegram (siempre). En modo automático sale solo si `evaluar_envio_auto` no devuelve motivos (ver R12); lo enviado solo se avisa por Telegram con sus fuentes.

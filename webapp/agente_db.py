@@ -36,6 +36,7 @@ def asegurar_indices() -> None:
     correos_col.create_index([("estado", ASCENDING), ("fecha", DESCENDING)])
     correos_col.create_index([("de_email", ASCENDING), ("fecha", DESCENDING)])
     correos_col.create_index("gm_thrid")
+    correos_col.create_index("cuenta", sparse=True)
     correos_col.create_index("telegram_msg_id", sparse=True)
     _INDICES_LISTOS = True
 
@@ -89,10 +90,28 @@ def liberar_ciclo(**campos) -> None:
     set_estado(en_curso_hasta=None, **campos)
 
 
+def get_estado_cuenta(cuenta: str, principal: bool = False) -> dict:
+    """Último UID leído de cada buzón. La principal hereda el valor de antes de ser multicuenta."""
+    doc = _config.find_one({"_id": f"agente_correo_cuenta:{cuenta}"}) or {}
+    if doc.get("ultimo_uid") is None and principal:
+        previo = get_estado()
+        if previo.get("ultimo_uid") is not None:
+            return {**doc, "ultimo_uid": previo["ultimo_uid"], "uidvalidity": previo.get("uidvalidity")}
+    return doc
+
+
+def set_estado_cuenta(cuenta: str, **campos) -> None:
+    _config.update_one({"_id": f"agente_correo_cuenta:{cuenta}"}, {"$set": {"cuenta": cuenta, **campos}}, upsert=True)
+
+
 # ── Cola ───────────────────────────────────────────────────────────────────────
 
 def clave_correo(msg: dict) -> str:
-    return msg.get("gm_msgid") or msg.get("message_id") or f"uid:{msg.get('uid')}"
+    """Identifica el correo aunque llegue a las dos cuentas (el Message-ID es el mismo en ambas)."""
+    mid = (msg.get("message_id") or "").strip().strip("<>").lower()
+    if mid:
+        return f"mid:{mid}"
+    return f"{msg.get('cuenta', '')}:{msg.get('gm_msgid') or msg.get('uid')}"
 
 
 def registrar_recibido(msg: dict) -> str | None:
@@ -100,6 +119,7 @@ def registrar_recibido(msg: dict) -> str | None:
     asegurar_indices()
     doc = {
         "clave": clave_correo(msg),
+        "cuenta": msg.get("cuenta", ""),
         "gm_msgid": msg.get("gm_msgid", ""),
         "gm_thrid": msg.get("gm_thrid", ""),
         "uid": msg.get("uid"),
@@ -197,9 +217,16 @@ def liberar_analisis_trabados(minutos: int = 15) -> int:
     return r.modified_count
 
 
-def pendientes_para_verificar(limite: int = 20) -> list[dict]:
+def _de_cuenta(cuenta: str, principal: bool) -> dict:
+    """Filtro de los correos de un buzón (los anteriores a la multicuenta son de la principal)."""
+    if principal:
+        return {"$or": [{"cuenta": cuenta}, {"cuenta": {"$in": ["", None]}}, {"cuenta": {"$exists": False}}]}
+    return {"cuenta": cuenta}
+
+
+def pendientes_para_verificar(cuenta: str, principal: bool, limite: int = 20) -> list[dict]:
     """Pendientes con hilo de Gmail, para detectar los que el equipo ya respondió desde Gmail."""
-    return list(correos_col.find({"estado": "pendiente", "gm_thrid": {"$ne": ""}},
+    return list(correos_col.find({"estado": "pendiente", "gm_thrid": {"$ne": ""}, **_de_cuenta(cuenta, principal)},
                                  {"gm_thrid": 1, "fecha": 1}).sort("fecha", DESCENDING).limit(limite))
 
 
@@ -224,8 +251,10 @@ def contar_uso_faqs(fuentes: list[str]) -> None:
 
 
 def listar(vista: str = "atender", categoria: str = "", search: str = "",
-           page: int = 1, per_page: int = 25) -> tuple[list, int]:
+           page: int = 1, per_page: int = 25, cuenta: str = "", principal: bool = False) -> tuple[list, int]:
     q: dict = {}
+    if cuenta:
+        q.update(_de_cuenta(cuenta, principal))
     if vista == "atender":
         q["estado"] = {"$in": list(catalogos.ESTADOS_CORREO_ABIERTOS)}
     elif vista == "respondidos":
@@ -236,7 +265,8 @@ def listar(vista: str = "atender", categoria: str = "", search: str = "",
         q["categoria"] = categoria
     if search:
         patron = {"$regex": re.escape(search.strip()), "$options": "i"}
-        q["$or"] = [{"asunto": patron}, {"de": patron}, {"cuerpo": patron}, {"resumen": patron}]
+        q.setdefault("$and", []).append(
+            {"$or": [{"asunto": patron}, {"de": patron}, {"cuerpo": patron}, {"resumen": patron}]})
     total = correos_col.count_documents(q)
     orden = [("prioridad_orden", ASCENDING), ("fecha", DESCENDING)] if vista == "atender" else [("fecha", DESCENDING)]
     docs = list(correos_col.find(q, {"cuerpo_original": 0}).sort(orden)

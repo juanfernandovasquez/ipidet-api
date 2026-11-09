@@ -129,6 +129,9 @@ ESFUERZOS_AGENTE = {"low": "Bajo (más rápido y barato)", "medium": "Medio (rec
 # o eventos autorizados). El resto —consultas generales, pagos, socios, proveedores, quejas—
 # siempre va a revisión del equipo.
 CATEGORIAS_CORREO_AUTO = ("evento", "admision")
+# Por defecto, estas categorías se responden desde la segunda cuenta (administración); el resto,
+# desde la principal. Se cambia en /inbox/configuracion (`categorias_cuenta_2`) y en cada correo.
+CATEGORIAS_CUENTA_2_DEFECTO = ["consulta_socio", "pago", "proveedor", "critico"]
 
 _AGENTE_DEFECTO = {
     "activo": False,
@@ -151,6 +154,7 @@ _AGENTE_DEFECTO = {
     "remitentes_internos": [],
     "remitentes_ignorar": [],
     "remitentes_permitidos": [],
+    "categorias_cuenta_2": CATEGORIAS_CUENTA_2_DEFECTO,
     # USD por millón de tokens (tarifa de Haiku 5.5); solo para estimar el costo que se muestra.
     "precio_entrada": 0.10,
     "precio_salida": 0.50,

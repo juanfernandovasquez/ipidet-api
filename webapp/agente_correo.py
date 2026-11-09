@@ -1,8 +1,13 @@
 """
 Agente de correos: corre dentro de la web (scheduler.run_agente_correo_scheduler).
 
+Lee dos buzones (GMAIL_ADDRESS, la principal, y GMAIL_ADDRESS_2, administración). Cada correo
+guarda la cuenta a la que llegó (`cuenta`) y la cuenta desde la que se responde
+(`cuenta_respuesta`), que se elige por categoría: lo delicado (config `categorias_cuenta_2`)
+sale desde administración y nunca solo; el resto, desde la principal.
+
 Ciclo (`ciclo()`):
-  1. Lee los correos nuevos del INBOX desde el último UID guardado en la base.
+  1. Lee los correos nuevos del INBOX de cada cuenta desde el último UID guardado en la base.
   2. Filtra sin gastar API: remitentes bloqueados, correos automáticos y remitentes internos.
   3. Analiza el resto con Claude (agente_ia) usando el conocimiento de la plataforma y el hilo.
   4. Deja el borrador en la cola (/inbox). En modo automático envía solo lo que cumple
@@ -29,7 +34,7 @@ import requests
 from config import catalogos
 from config.settings import (
     ADMIN_FORWARD_EMAIL, BREVO_API_KEY, BREVO_FROM_EMAIL, BREVO_FROM_NAME,
-    GMAIL_ADDRESS, GMAIL_APP_PASSWORD, PORTAL_API_BASE, SECRET_KEY,
+    GMAIL_ADDRESS, GMAIL_ADDRESS_2, GMAIL_APP_PASSWORD, GMAIL_APP_PASSWORD_2, PORTAL_API_BASE, SECRET_KEY,
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
 )
 from gmail.client import GmailClient, detectar_automatico, email_de, parsear
@@ -42,15 +47,64 @@ _MARCADOR = re.compile(r"\[\s*COMPLETAR", re.I)
 _LIMA = timezone(timedelta(hours=-5))
 
 
-def _gmail() -> GmailClient:
-    if not (GMAIL_ADDRESS and GMAIL_APP_PASSWORD):
+# ── Cuentas ────────────────────────────────────────────────────────────────────
+
+def cuentas() -> dict[str, str]:
+    """{correo: contraseña de aplicación} de los buzones que lee el agente; el primero es el principal."""
+    pares = [(GMAIL_ADDRESS, GMAIL_APP_PASSWORD), (GMAIL_ADDRESS_2, GMAIL_APP_PASSWORD_2)]
+    return {e.strip().lower(): p for e, p in pares if e and p}
+
+
+def cuenta_principal() -> str:
+    return (GMAIL_ADDRESS or "").strip().lower()
+
+
+def cuenta_2() -> str:
+    """La cuenta de administración (temas delicados), si está configurada."""
+    c = (GMAIL_ADDRESS_2 or "").strip().lower()
+    return c if c in cuentas() else ""
+
+
+def cuenta_de(doc: dict) -> str:
+    """Buzón al que llegó el correo (los anteriores a la multicuenta llegaron a la principal)."""
+    return (doc.get("cuenta") or cuenta_principal()).lower()
+
+
+def cuenta_respuesta(doc: dict) -> str:
+    """Cuenta desde la que sale la respuesta; si no está configurada, la que lo recibió."""
+    c = (doc.get("cuenta_respuesta") or "").lower()
+    return c if c in cuentas() else cuenta_de(doc)
+
+
+def elegir_cuenta_respuesta(cfg: dict, categoria: str, recibida: str) -> str:
+    if cuenta_2() and categoria in (cfg.get("categorias_cuenta_2") or []):
+        return cuenta_2()
+    if categoria in ("interno", "automatico"):
+        return recibida
+    return cuenta_principal() or recibida
+
+
+def _gmail(cuenta: str = "") -> GmailClient:
+    todas = cuentas()
+    if not todas:
         raise RuntimeError("Faltan GMAIL_ADDRESS y GMAIL_APP_PASSWORD en el entorno del servidor.")
-    return GmailClient(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+    cuenta = (cuenta or cuenta_principal()).lower()
+    if cuenta not in todas:
+        raise RuntimeError(f"La cuenta {cuenta} no está configurada en el servidor.")
+    return GmailClient(cuenta, todas[cuenta])
 
 
 def direcciones_propias() -> set[str]:
     org = catalogos.get_organizacion()
-    return {e.lower() for e in (GMAIL_ADDRESS, BREVO_FROM_EMAIL, org.get("email"), ADMIN_FORWARD_EMAIL) if e}
+    return {e.strip().lower() for e in (*cuentas(), GMAIL_ADDRESS, GMAIL_ADDRESS_2, BREVO_FROM_EMAIL,
+                                        org.get("email"), ADMIN_FORWARD_EMAIL) if e}
+
+
+def retroceder(recientes: int) -> None:
+    """«Probar con correos recientes»: vuelve a leer los últimos N de cada buzón (los ya registrados no se repiten)."""
+    for cuenta, clave in cuentas().items():
+        max_uid, validez = GmailClient(cuenta, clave).max_uid()
+        agente_db.set_estado_cuenta(cuenta, ultimo_uid=max(0, max_uid - min(recientes, 50)), uidvalidity=validez)
 
 
 def url_plataforma() -> str:
@@ -72,38 +126,62 @@ def ciclo(forzar: bool = False) -> dict:
         agente_db.asegurar_indices()
         agente_db.liberar_envios_trabados()
         agente_db.liberar_analisis_trabados()
-        gmail = _gmail()
-        estado = agente_db.get_estado()
-        max_uid, validez = gmail.max_uid()
-        ultimo = estado.get("ultimo_uid")
-        if ultimo is None or (estado.get("uidvalidity") and estado.get("uidvalidity") != validez):
-            # Primera vez (o Gmail renumeró): se empieza desde ahora, sin procesar el histórico.
-            ultimo = max_uid
-            agente_db.set_estado(ultimo_uid=max_uid, uidvalidity=validez)
-
-        mensajes, _ = gmail.nuevos(int(ultimo), int(cfg.get("max_por_ciclo") or 15))
+        if not cuentas():
+            raise RuntimeError("Faltan GMAIL_ADDRESS y GMAIL_APP_PASSWORD en el entorno del servidor.")
+        clientes = {c: GmailClient(c, p) for c, p in cuentas().items()}
         cache: dict = {}
-        for msg in mensajes:
-            resultado = procesar_mensaje(gmail, msg, cfg, cache)
-            if resultado:
-                resumen["nuevos"] += 1
-                resumen[resultado] = resumen.get(resultado, 0) + 1
-            agente_db.set_estado(ultimo_uid=msg["uid"])
+        errores, pendientes = [], 0
+        for cuenta, gmail in clientes.items():
+            try:
+                pendientes += _leer_cuenta(gmail, cfg, cache, resumen)
+            except Exception as e:
+                # Un buzón caído (contraseña cambiada, Gmail no responde) no detiene al otro.
+                logger.exception("Agente de correos: no se pudo leer %s", cuenta)
+                agente_db.set_estado_cuenta(cuenta, ultimo_error=str(e)[:300])
+                errores.append(f"{cuenta}: {e}")
 
         for doc in agente_db.para_reintentar():
             if cache.get("api_no_disponible"):
                 break
-            resultado = reprocesar(str(doc["_id"]), gmail=gmail, cache=cache)
-            resumen[resultado] = resumen.get(resultado, 0) + 1
+            gmail = clientes.get(cuenta_de(doc))
+            if gmail:
+                resultado = reprocesar(str(doc["_id"]), gmail=gmail, cache=cache)
+                resumen[resultado] = resumen.get(resultado, 0) + 1
 
-        _verificar_respondidos_en_gmail(gmail)
-        agente_db.liberar_ciclo(ultima_revision=ahora, ultimo_error=cache.get("api_no_disponible"), ultimo_resumen=resumen,
-                                pendientes_en_inbox=max(0, max_uid - int(ultimo) - len(mensajes)))
+        for cuenta, gmail in clientes.items():
+            _verificar_respondidos_en_gmail(gmail, cuenta == cuenta_principal())
+        error = "; ".join(filter(None, [cache.get("api_no_disponible"), *errores]))[:500] or None
+        agente_db.liberar_ciclo(ultima_revision=ahora, ultimo_error=error, ultimo_resumen=resumen,
+                                pendientes_en_inbox=pendientes)
     except Exception as e:
         logger.exception("Agente de correos: ciclo fallido")
         agente_db.liberar_ciclo(ultima_revision=ahora, ultimo_error=str(e)[:500], ultimo_resumen=resumen)
         resumen["error"] = str(e)
     return resumen
+
+
+def _leer_cuenta(gmail: GmailClient, cfg: dict, cache: dict, resumen: dict) -> int:
+    """Procesa los correos nuevos de un buzón. Devuelve cuántos quedan sin leer (tope por ciclo)."""
+    cuenta = gmail.address
+    estado = agente_db.get_estado_cuenta(cuenta, principal=cuenta == cuenta_principal())
+    max_uid, validez = gmail.max_uid()
+    ultimo = estado.get("ultimo_uid")
+    if ultimo is None or (estado.get("uidvalidity") and estado.get("uidvalidity") != validez):
+        # Primera vez (o Gmail renumeró): se empieza desde ahora, sin procesar el histórico.
+        ultimo = max_uid
+        agente_db.set_estado_cuenta(cuenta, ultimo_uid=max_uid, uidvalidity=validez)
+
+    mensajes, _ = gmail.nuevos(int(ultimo), int(cfg.get("max_por_ciclo") or 15))
+    agente_db.set_estado_cuenta(cuenta, ultimo_uid=int(ultimo))
+    for msg in mensajes:
+        msg["cuenta"] = cuenta
+        resultado = procesar_mensaje(gmail, msg, cfg, cache)
+        if resultado:
+            resumen["nuevos"] += 1
+            resumen[resultado] = resumen.get(resultado, 0) + 1
+        agente_db.set_estado_cuenta(cuenta, ultimo_uid=msg["uid"])
+    agente_db.set_estado_cuenta(cuenta, uidvalidity=validez, ultima_revision=datetime.now(timezone.utc), ultimo_error=None)
+    return max(0, max_uid - int(ultimo) - len(mensajes))
 
 
 def _filtro_previo(msg: dict, cfg: dict) -> tuple[str, str] | None:
@@ -165,7 +243,7 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
     contexto, vinculos = agente_contexto.remitente(doc, hilo)
     texto_conocimiento, fuentes = _conocimiento(cache)
     try:
-        analisis, uso = agente_ia.analizar(doc, contexto, adjuntos, texto_conocimiento, GMAIL_ADDRESS)
+        analisis, uso = agente_ia.analizar(doc, contexto, adjuntos, texto_conocimiento, cuenta_de(doc))
     except agente_ia.AgenteIAError as e:
         agente_db.marcar_error(correo_id, str(e), contar_intento=not e.transitorio)
         if e.transitorio:
@@ -197,6 +275,8 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
         "analizado_at": datetime.now(timezone.utc),
         "error": None,
     }
+    if not doc.get("cuenta_respuesta_manual"):
+        campos["cuenta_respuesta"] = elegir_cuenta_respuesta(cfg, analisis.get("categoria"), cuenta_de(doc))
     motivos: list[str] = []
     if estado == "pendiente":
         motivos, verificacion, uso_verificacion = evaluar_envio_auto(cfg, {**doc, **campos}, fuentes)
@@ -228,6 +308,9 @@ def _motivos_para_no_enviar_solo(cfg: dict, doc: dict, fuentes: dict) -> list[st
     if doc.get("categoria") not in catalogos.CATEGORIAS_CORREO_AUTO:
         etiqueta = catalogos.CATEGORIAS_CORREO.get(doc.get("categoria"), (doc.get("categoria"),))[0]
         motivos.append(f"Los correos de tipo «{etiqueta}» siempre los revisa el equipo")
+    desde = doc.get("cuenta_respuesta") or cuenta_de(doc)
+    if desde != cuenta_principal():
+        motivos.append(f"Se responde desde {desde}: lo de esa cuenta siempre lo revisa el equipo")
     if doc.get("accion") != "responder":
         motivos.append("El agente sugiere revisarlo antes")
     usadas = doc.get("fuentes_usadas") or []
@@ -291,8 +374,9 @@ def probar(texto: str, asunto: str = "", de_email: str = "") -> dict:
     contexto, _ = agente_contexto.remitente(doc, [])
     texto_conocimiento, fuentes = agente_contexto.conocimiento()
     analisis, uso = agente_ia.analizar(doc, contexto, [], texto_conocimiento, GMAIL_ADDRESS)
-    doc.update({k: analisis.get(k) for k in analisis}, respuesta_borrador=(analisis.get("respuesta") or "").strip())
     cfg = {**catalogos.get_agente_config(), "modo": "automatico"}
+    doc.update({k: analisis.get(k) for k in analisis}, respuesta_borrador=(analisis.get("respuesta") or "").strip(),
+               cuenta_respuesta=elegir_cuenta_respuesta(cfg, analisis.get("categoria"), cuenta_principal()))
     motivos, verificacion, uso_v = evaluar_envio_auto(cfg, doc, fuentes) if analisis.get("requiere_respuesta") else (
         ["El agente considera que este correo no necesita respuesta"], None, None)
     return {
@@ -301,6 +385,7 @@ def probar(texto: str, asunto: str = "", de_email: str = "") -> dict:
         "resumen": analisis.get("resumen"),
         "fuentes": [fuentes[f]["titulo"] if f in fuentes else f"{f} (no autorizada)" for f in analisis.get("fuentes_usadas") or []],
         "saldria_solo": not motivos,
+        "responderia_desde": doc["cuenta_respuesta"],
         "motivos": motivos,
         "verificacion": verificacion,
         "costo_usd": round(uso["costo_usd"] + (uso_v or {}).get("costo_usd", 0), 4),
@@ -312,7 +397,7 @@ def reprocesar(correo_id: str, gmail: GmailClient | None = None, cache: dict | N
     doc = agente_db.get_correo(correo_id)
     if not doc:
         return "errores"
-    gmail = gmail or _gmail()
+    gmail = gmail or _gmail(cuenta_de(doc))
     adjuntos = []
     if doc.get("gm_msgid"):
         try:
@@ -331,9 +416,9 @@ def reprocesar(correo_id: str, gmail: GmailClient | None = None, cache: dict | N
         return "errores"
 
 
-def _verificar_respondidos_en_gmail(gmail: GmailClient) -> None:
+def _verificar_respondidos_en_gmail(gmail: GmailClient, principal: bool) -> None:
     propias = direcciones_propias()
-    for doc in agente_db.pendientes_para_verificar():
+    for doc in agente_db.pendientes_para_verificar(gmail.address, principal):
         try:
             if gmail.respondido_despues(doc["gm_thrid"], doc["fecha"], propias):
                 agente_db.actualizar(str(doc["_id"]), {"estado": "respondido_gmail"},
@@ -372,7 +457,7 @@ def _enviar_por_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None = No
     payload = {
         "sender": {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
         "to": [{"email": email_de(msg["To"])}],
-        "replyTo": {"email": GMAIL_ADDRESS},
+        "replyTo": {"email": email_de(msg["From"])},
         "subject": str(msg["Subject"]),
         "htmlContent": html or f"<pre>{_html.escape(texto)}</pre>",
         "textContent": texto,
@@ -420,11 +505,14 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
     if not doc:
         return False, "Este correo ya fue atendido por otra persona."
     try:
-        gmail = gmail or _gmail()
+        # Se lee del buzón que lo recibió y se responde desde la cuenta elegida para el tema.
+        recibida = gmail if gmail and gmail.address == cuenta_de(doc) else _gmail(cuenta_de(doc))
+        desde = cuenta_respuesta(doc)
+        emisor = recibida if desde == recibida.address else _gmail(desde)
         html = _html_respuesta(texto, doc)
         plano = _texto_respuesta(texto, doc)
-        msg = gmail.construir_respuesta(doc, plano, html, remitente=formataddr((BREVO_FROM_NAME, GMAIL_ADDRESS)))
-        canal = _despachar(gmail, msg, html, plano)
+        msg = emisor.construir_respuesta(doc, plano, html, remitente=formataddr((BREVO_FROM_NAME, desde)))
+        canal = _despachar(emisor, msg, html, plano)
     except Exception as e:
         agente_db.actualizar(correo_id, {"estado": "pendiente", "error": f"No se envió: {e}"[:600]},
                              accion="envío fallido", usuario=usuario, detalle=str(e))
@@ -433,10 +521,10 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
     estado = "enviado_auto" if automatico else "enviado"
     agente_db.actualizar(correo_id, {
         "estado": estado, "respuesta_enviada": texto, "enviado_at": datetime.now(timezone.utc),
-        "enviado_por": usuario, "enviado_message_id": msg["Message-ID"], "canal_envio": canal,
+        "enviado_por": usuario, "enviado_message_id": msg["Message-ID"], "canal_envio": canal, "enviado_desde": desde,
         "editado_por_equipo": texto != (doc.get("borrador_original") or "").strip(), "error": None,
-    }, accion="enviado automáticamente" if automatico else "enviado", usuario=usuario, detalle=f"vía {canal}")
-    gmail.marcar_leido(doc.get("gm_msgid", ""))
+    }, accion="enviado automáticamente" if automatico else "enviado", usuario=usuario, detalle=f"desde {desde} vía {canal}")
+    recibida.marcar_leido(doc.get("gm_msgid", ""))
     agente_db.contar_uso_faqs(doc.get("fuentes_usadas") or [])
     _cerrar_telegram(agente_db.get_correo(correo_id),
                      "🤖 Respondido por el agente" if automatico else f"✅ Enviado por {usuario}")
@@ -449,7 +537,7 @@ def reenviar(correo_id: str, destino: str, nota: str, usuario: str) -> tuple[boo
     if not doc:
         return False, "Este correo ya fue atendido por otra persona."
     try:
-        gmail = _gmail()
+        gmail = _gmail(cuenta_de(doc))
         raw = gmail.original(doc["gm_msgid"]) if doc.get("gm_msgid") else None
         if not raw:
             raise RuntimeError("No se encontró el correo original en Gmail")
@@ -487,7 +575,7 @@ def reescribir(correo_id: str, instruccion: str, usuario: str) -> tuple[bool, st
         if doc.get("hilo_previo"):
             contexto["mensajes_anteriores_del_hilo"] = [
                 {"de": m.get("de"), "texto": m.get("texto")} for m in doc["hilo_previo"]]
-        datos, uso = agente_ia.reescribir(doc, contexto, agente_contexto.conocimiento()[0], GMAIL_ADDRESS,
+        datos, uso = agente_ia.reescribir(doc, contexto, agente_contexto.conocimiento()[0], cuenta_respuesta(doc),
                                           doc.get("respuesta_borrador") or "", instruccion)
     except agente_ia.AgenteIAError as e:
         return False, str(e)
@@ -549,9 +637,11 @@ def avisar_telegram(doc: dict | None) -> None:
         avisos.append("⚠️ Toca información sensible: revísalo antes de aprobar.")
     if doc.get("datos_faltantes"):
         avisos.append("✍️ Falta completar: " + "; ".join(doc["datos_faltantes"])[:300])
+    buzones = (f"📥 Llegó a {cuenta_de(doc)} · responde desde {cuenta_respuesta(doc)}\n"
+               if len(cuentas()) > 1 else "")
     texto = (
         f"📨 {categoria} · prioridad {doc.get('prioridad', 'media')} · {quien}\n"
-        f"De: {doc.get('de')}\nAsunto: {doc.get('asunto')}\n\n"
+        f"{buzones}De: {doc.get('de')}\nAsunto: {doc.get('asunto')}\n\n"
         f"{doc.get('resumen') or ''}\n"
         + ("\n" + "\n".join(avisos) + "\n" if avisos else "")
         + (f"\n💬 Borrador:\n{borrador[:2800]}" if borrador else "")

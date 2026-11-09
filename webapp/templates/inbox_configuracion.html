@@ -36,7 +36,35 @@
     {# 1. Funcionamiento #}
     <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
       <h2 class="text-sm font-semibold text-slate-800">Funcionamiento</h2>
-      <p class="text-sm text-slate-600">Lee la cuenta <strong>{{ cuenta or 'sin configurar' }}</strong>. Al activarlo por primera vez empieza desde el correo más reciente: no procesa el historial.</p>
+      <div class="rounded-lg border border-slate-200 divide-y divide-slate-100">
+        {% for c in cuentas_estado %}
+        <div class="px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span class="font-medium text-slate-800">{{ c.cuenta }}</span>
+          <span class="badge {{ 'badge-blue' if c.principal else 'badge-amber' }}">{{ 'Principal' if c.principal else 'Administración: temas delicados' }}</span>
+          <span class="text-xs text-slate-500">Última lectura: {{ c.ultima_revision | fecha_hora_lima if c.ultima_revision else 'todavía no' }}</span>
+          {% if c.ultimo_error %}<span class="text-xs text-red-700 w-full">No se pudo leer: {{ c.ultimo_error }}</span>{% endif %}
+        </div>
+        {% else %}
+        <p class="px-3 py-2 text-sm text-red-700">No hay cuentas configuradas (GMAIL_ADDRESS y GMAIL_APP_PASSWORD en el servidor).</p>
+        {% endfor %}
+      </div>
+      <p class="text-sm text-slate-600">Lee el INBOX de {{ 'estas cuentas' if cuentas_estado | length > 1 else 'esta cuenta' }}. Una cuenta nueva empieza desde su correo más reciente: no procesa el historial (para eso, «Probar con correos recientes» al final).
+        {% if not cuenta_2 %}Para leer también la cuenta de administración, agrega GMAIL_ADDRESS_2 y GMAIL_APP_PASSWORD_2 en el servidor.{% endif %}</p>
+      {% if cuenta_2 %}
+      <div class="rounded-lg border border-slate-200 p-3 space-y-2">
+        <input type="hidden" name="categorias_cuenta_2_presente" value="1">
+        <p class="text-sm text-slate-700 font-medium">Desde qué cuenta se responde</p>
+        <p class="text-xs text-slate-500">Las categorías marcadas se responden desde <strong>{{ cuenta_2 }}</strong> y nunca salen solas. El resto, desde <strong>{{ cuenta_principal }}</strong>, llegue a la cuenta que llegue. En cada correo de la cola se puede cambiar antes de enviar.</p>
+        <div class="grid sm:grid-cols-2 gap-x-4 gap-y-1">
+          {% for k, v in categorias.items() if k not in ('interno', 'automatico') %}
+          <label class="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="categorias_cuenta_2" value="{{ k }}" {% if k in cfg.categorias_cuenta_2 %}checked{% endif %} class="mt-0.5">
+            <span>{{ v[0] }} <span class="text-xs text-slate-500">· {{ v[2] }}</span></span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
       <label class="flex items-start gap-2 text-sm text-slate-700">
         <input type="checkbox" name="activo" value="1" {% if cfg.activo %}checked{% endif %} class="mt-0.5">
         <span><strong>Revisar el correo automáticamente</strong><br><span class="text-slate-500">Usa la API de Claude: cada correo analizado tiene un costo.</span></span>
@@ -67,6 +95,7 @@
         <ul class="text-xs text-slate-600 list-disc pl-5 space-y-1">
           <li>Solo respuestas que se apoyan <strong>únicamente</strong> en <a href="/faqs" class="text-blue-600 hover:underline">FAQs autorizadas</a> y en eventos con «Usar en las respuestas del agente» activado.</li>
           <li>Solo consultas de eventos y de admisión. Consultas generales, pagos y cobranzas, socios, proveedores, quejas y conversaciones internas siempre van a revisión.</li>
+          <li>Solo desde la cuenta principal: lo que se responde desde administración siempre lo revisa el equipo.</li>
           <li>Nada con datos personales, dinero fuera de una FAQ, adjuntos, datos por completar, ni hilos donde el equipo ya está conversando.</li>
           <li>Antes de enviar, una segunda revisión compara la respuesta con el texto de esas fuentes y la detiene si encuentra algo sin respaldo.</li>
           <li>Todo lo demás queda como borrador en la cola y se avisa por Telegram, igual que lo que se envía solo.</li>
