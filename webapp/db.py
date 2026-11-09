@@ -4992,8 +4992,57 @@ def create_prospecto(nombre: str, apellido: str, email: str,
     return str(result.inserted_id)
 
 
+def guardar_prospecto_desde_correo(email: str, datos: dict, estado: str, tags: list,
+                                   fuente_detalle: str = "", prospecto_id: str = "") -> tuple[str, bool]:
+    """Agrega a Público a quien escribió a IPIDET, o actualiza su ficha. Devuelve (id, creado).
+
+    Con `prospecto_id` (ficha ya vinculada al correo) el estado y las etiquetas quedan como los
+    dejó el equipo. Si la ficha se encuentra por email, solo se completan los campos vacíos y las
+    etiquetas se suman: no se pisa lo que alguien ya cargó a mano.
+    """
+    from config import catalogos
+    email = (email or "").strip().lower()
+    tags = list(dict.fromkeys(t.strip() for t in tags if t and t.strip()))
+    datos = {k: (datos.get(k) or "").strip() for k in ("nombre", "apellido", "celular", "titulo",
+                                                      "empresa", "ciudad", "notas")}
+    # «convertido» solo lo pone la conversión a socio; desde la cola no se llega ni se sale de ahí.
+    estado = estado if estado in catalogos.ESTADOS_PUBLICO and estado != "convertido" else ""
+    ahora = datetime.now(timezone.utc)
+
+    existente = None
+    if prospecto_id:
+        try:
+            existente = publico_col.find_one({"_id": ObjectId(prospecto_id)})
+        except Exception:
+            existente = None
+    if not existente and email:
+        existente = publico_col.find_one({"email": email})
+
+    if existente:
+        cambios: dict = {"updated_at": ahora}
+        for k, v in datos.items():
+            if v and not (existente.get(k) or "").strip():
+                cambios[k] = v
+        if estado and existente.get("estado") != "convertido":
+            cambios["estado"] = estado
+        cambios["tags"] = tags if prospecto_id else list(dict.fromkeys((existente.get("tags") or []) + tags))
+        publico_col.update_one({"_id": existente["_id"]}, {"$set": cambios})
+        return str(existente["_id"]), False
+
+    if not email:
+        raise ValueError("El correo no tiene la dirección del remitente")
+    nuevo_id = create_prospecto(
+        nombre=datos["nombre"] or email.split("@")[0], apellido=datos["apellido"], email=email,
+        celular=datos["celular"], titulo=datos["titulo"], empresa=datos["empresa"], ciudad=datos["ciudad"],
+        notas=datos["notas"], fuente="correo", fuente_detalle=fuente_detalle[:200], tags=tags,
+    )
+    if estado and estado != "nuevo":
+        publico_col.update_one({"_id": ObjectId(nuevo_id)}, {"$set": {"estado": estado}})
+    return nuevo_id, True
+
+
 def update_prospecto(prospecto_id: str, fields: dict) -> None:
-    allowed = {"nombre", "apellido", "email", "celular", "titulo", "empresa",
+    allowed = {"nombre", "apellido", "email", "celular", "dni", "titulo", "empresa",
                "ciudad", "notas", "fuente", "fuente_detalle", "tags", "estado",
                "postulacion", "member_id"}
     update = {k: v for k, v in fields.items() if k in allowed}

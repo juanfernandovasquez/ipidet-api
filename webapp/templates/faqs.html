@@ -28,7 +28,8 @@
     {% if sugerencias %}
     <div class="bg-white rounded-xl border border-blue-200 p-5">
       <h2 class="text-sm font-semibold text-slate-800 mb-1"><i class="fa-solid fa-lightbulb text-slate-400 mr-1" aria-hidden="true"></i> FAQs sugeridas desde la cola de correos</h2>
-      <p class="text-xs text-slate-500 mb-2">Con los datos que el equipo aportó al responder. Revísalas y guárdalas desde el correo.</p>
+      <p class="text-xs text-slate-500 mb-2">Con los datos que el equipo aportó al responder. Revísalas todas juntas en
+        <a href="/inbox?vista=faqs" class="text-blue-600 hover:underline">FAQs por aprobar</a> de la cola de correos.</p>
       <ul class="space-y-1 text-sm">
         {% for s in sugerencias %}
         <li><a href="/inbox?ver={{ s._id }}" class="text-blue-600 hover:underline">{{ s.faq_sugerida.pregunta }}</a>

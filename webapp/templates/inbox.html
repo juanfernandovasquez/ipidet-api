@@ -37,11 +37,13 @@
   <form method="get" x-ref="filtros" class="mb-4">
     <input type="hidden" name="vista" value="{{ vista }}">
     <div class="flex flex-wrap items-center gap-1 border-b border-slate-200 mb-3" role="tablist">
-      {% for clave, nombre in [('atender', 'Por atender'), ('respondidos', 'Respondidos'), ('sin_respuesta', 'Sin respuesta'), ('todos', 'Todos')] %}
+      {% for clave, nombre in [('atender', 'Por atender'), ('faqs', 'FAQs por aprobar'), ('respondidos', 'Respondidos'), ('sin_respuesta', 'Sin respuesta'), ('todos', 'Todos')] %}
+      {% if clave != 'faqs' or conteos.faqs or vista == 'faqs' %}
       <a href="/inbox?vista={{ clave }}" role="tab" aria-selected="{{ 'true' if vista == clave and not ver else 'false' }}"
          class="px-3 py-2 text-sm -mb-px border-b-2 {{ 'border-brand-700 text-slate-900 font-semibold' if vista == clave and not ver else 'border-transparent text-slate-500 hover:text-slate-800' }}">
-        {{ nombre }} <span class="text-xs text-slate-400">{{ conteos[clave] }}</span>
+        {{ nombre }} <span class="{{ 'badge badge-blue' if clave == 'faqs' else 'text-xs text-slate-400' }}">{{ conteos[clave] }}</span>
       </a>
+      {% endif %}
       {% endfor %}
     </div>
     <div class="flex flex-wrap gap-2">
@@ -62,6 +64,19 @@
     </div>
   </form>
 
+  {% if vista == 'faqs' and not ver %}
+  <div class="mb-4 rounded-xl border border-blue-200 bg-blue-50/50 px-4 py-3 text-sm text-slate-700">
+    <p class="font-semibold text-slate-800 mb-1"><i class="fa-solid fa-graduation-cap text-slate-400 mr-1" aria-hidden="true"></i>Cómo aprende el agente de tus respuestas</p>
+    <ol class="list-decimal pl-5 space-y-0.5">
+      <li>En un borrador completas un dato que faltaba, le das una indicación en la conversación o lo corriges a mano.</li>
+      <li>Al enviar, el agente separa lo que sirve para cualquiera de lo que es solo de esa persona y propone una FAQ nueva o la mejora de una existente.</li>
+      <li>Aquí la revisas: la guardas (puedes editarla), o la descartas. <strong class="font-medium">Nada cambia hasta que la apruebes.</strong></li>
+      <li>Si marcas «Responde sola», el agente podrá usarla para responder sin revisión las consultas de evento y admisión (cuando esté en modo automático). Sin marcarla, solo la usa para borradores.</li>
+    </ol>
+    <p class="mt-1 text-xs text-slate-500">Si envías el borrador tal cual, no hay nada nuevo que aprender y no se propone ninguna FAQ.</p>
+  </div>
+  {% endif %}
+
   {% if not correos %}
   <div class="bg-white rounded-xl border border-slate-200 p-12 text-center">
     <i class="fa-solid fa-inbox text-3xl text-slate-300 mb-3 block" aria-hidden="true"></i>
@@ -78,7 +93,7 @@
   <article id="c-{{ cid }}" class="bg-white rounded-xl border {{ 'border-red-200' if c.prioridad == 'alta' and c.estado in abiertos else 'border-slate-200' }} scroll-mt-4"
            x-data="correoCard('{{ cid }}')" data-borrador="{{ c.respuesta_borrador or '' }}"
            data-faltantes='{{ (c.datos_faltantes or []) | tojson }}' data-chat='{{ (c.chat_vista or []) | tojson }}'
-           x-init="borrador = $el.dataset.borrador; faltantes = JSON.parse($el.dataset.faltantes).map(d => ({ dato: d, respuesta: '' })); chat = JSON.parse($el.dataset.chat); abierto = {{ 'true' if ver or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
+           x-init="borrador = $el.dataset.borrador; faltantes = JSON.parse($el.dataset.faltantes).map(d => ({ dato: d, respuesta: '' })); chat = JSON.parse($el.dataset.chat); abierto = {{ 'true' if ver or vista == 'faqs' or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
 
     {# Cabecera #}
     <div class="p-5">
@@ -123,9 +138,76 @@
           <button type="submit" class="text-blue-600 hover:underline ml-1">Vincular</button>
         </form>
         {% endif %}
-        {% if c.prospecto_id %}<a href="/publico/{{ c.prospecto_id }}" class="text-blue-600 hover:underline"><i class="fa-solid fa-address-book mr-1" aria-hidden="true"></i>Ficha en Público</a>{% endif %}
         {% if c.evento_id %}<a href="/eventos/{{ c.evento_id }}" class="text-blue-600 hover:underline"><i class="fa-solid fa-calendar-week mr-1" aria-hidden="true"></i>{{ eventos_map.get(c.evento_id, 'Evento') }}</a>{% endif %}
       </div>
+
+      {# Público: quien escribe y no es socio queda en la base para darle seguimiento #}
+      {% if not c.member_id and (c.prospecto_id or c.publico_sugerido) %}
+      {% set pr = prospectos.get(c.prospecto_id) if c.prospecto_id else none %}
+      {% set sug = c.publico_sugerido or {} %}
+      <div class="mt-3" x-data="publicoForm()" data-tags='{{ ((pr.tags if pr else sug.tags) or []) | tojson }}'
+           x-init="tags = JSON.parse($el.dataset.tags)">
+        {% if pr %}
+        <div class="flex flex-wrap items-center gap-1.5 text-sm">
+          <a href="/publico/{{ c.prospecto_id }}" class="text-blue-600 hover:underline"><i class="fa-solid fa-address-book mr-1" aria-hidden="true"></i>{{ pr.nombre or 'Ficha' }} en Público</a>
+          {% set ep = estados_publico.get(pr.estado, (pr.estado, 'gray')) %}
+          <span class="badge badge-{{ ep[1] }}">{{ ep[0] }}</span>
+          {% for t in pr.tags %}<span class="badge badge-gray">{{ t }}</span>{% endfor %}
+          <button type="button" class="text-xs text-blue-600 hover:underline ml-1" @click="abierto = !abierto" x-text="abierto ? 'Cerrar' : 'Cambiar estado o etiquetas'"></button>
+        </div>
+        {% elif c.prospecto_id %}
+        <a href="/publico/{{ c.prospecto_id }}" class="text-sm text-blue-600 hover:underline"><i class="fa-solid fa-address-book mr-1" aria-hidden="true"></i>Ficha en Público</a>
+        {% else %}
+        <button type="button" class="btn-ghost text-xs" @click="abierto = !abierto" :aria-expanded="abierto">
+          <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Agregar a Público
+        </button>
+        <span class="text-xs text-slate-500 ml-1">No es socio: guárdalo para hacerle seguimiento.</span>
+        {% endif %}
+
+        {% if pr or not c.prospecto_id %}
+        <form x-show="abierto" x-cloak method="post" action="/inbox/{{ cid }}/publico" class="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-3">
+          {% if not pr %}
+          <p class="text-xs text-slate-500">Datos que el agente leyó en el correo y la firma. Corrígelos si hace falta; el correo de contacto será <strong class="font-medium text-slate-700">{{ c.de_email }}</strong>.</p>
+          <div class="grid sm:grid-cols-3 gap-2">
+            <label class="text-xs font-medium text-slate-600">Nombre<input name="nombre" value="{{ sug.nombre }}" class="input w-full mt-1 font-normal"></label>
+            <label class="text-xs font-medium text-slate-600">Apellido<input name="apellido" value="{{ sug.apellido }}" class="input w-full mt-1 font-normal"></label>
+            <label class="text-xs font-medium text-slate-600">Celular<input name="celular" value="{{ sug.celular }}" class="input w-full mt-1 font-normal"></label>
+            <label class="text-xs font-medium text-slate-600">Profesión<input name="titulo" value="{{ sug.titulo }}" list="titulos-publico" class="input w-full mt-1 font-normal"></label>
+            <label class="text-xs font-medium text-slate-600">Empresa<input name="empresa" value="{{ sug.empresa }}" class="input w-full mt-1 font-normal"></label>
+            <label class="text-xs font-medium text-slate-600">Ciudad<input name="ciudad" value="{{ sug.ciudad }}" class="input w-full mt-1 font-normal"></label>
+          </div>
+          <label class="block text-xs font-medium text-slate-600">Notas<input name="notas" value="{{ sug.notas }}" class="input w-full mt-1 font-normal" placeholder="Opcional"></label>
+          {% endif %}
+          <div class="grid sm:grid-cols-[12rem_1fr] gap-2">
+            <label class="text-xs font-medium text-slate-600">Estado
+              <select name="estado" class="input w-full mt-1 font-normal">
+                {% set actual = pr.estado if pr else sug.estado %}
+                {% for k, v in estados_publico.items() if k != 'convertido' or actual == 'convertido' %}
+                <option value="{{ k }}" {% if actual == k %}selected{% endif %}>{{ v[0] }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <div class="text-xs font-medium text-slate-600">Etiquetas
+              <div class="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+                <template x-for="t in tags" :key="t">
+                  <span class="badge badge-gray gap-1"><span x-text="t"></span>
+                    <button type="button" @click="quitar(t)" class="text-slate-500 hover:text-red-700" :aria-label="'Quitar ' + t"><i class="fa-solid fa-xmark text-[10px]" aria-hidden="true"></i></button>
+                    <input type="hidden" name="tags" :value="t">
+                  </span>
+                </template>
+                <input x-model="nueva" list="etiquetas-publico" @keydown.enter.prevent="agregar()" @change="agregar()"
+                       class="flex-1 min-w-[8rem] border-0 p-0 text-sm font-normal focus:ring-0" placeholder="Escribe o elige una etiqueta…" aria-label="Nueva etiqueta">
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="submit" class="btn-primary text-xs"><i class="fa-solid fa-check" aria-hidden="true"></i> {{ 'Guardar cambios' if pr else 'Agregar a Público' }}</button>
+            {% if not pr %}<span class="text-xs text-slate-500">Sus otros correos quedarán unidos a la misma ficha.</span>{% endif %}
+          </div>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
 
     <div x-show="abierto" x-cloak class="border-t border-slate-100">
@@ -214,7 +296,7 @@
           <div class="mt-3 rounded-lg border border-slate-200">
             <div class="px-3 py-2 border-b border-slate-100 flex flex-wrap items-center justify-between gap-1">
               <p class="text-xs font-semibold text-slate-500"><i class="fa-solid fa-comments mr-1" aria-hidden="true"></i>Conversación con el agente</p>
-              <span class="text-xs text-slate-400">Cada mensaje rehace el borrador (menos de un centavo)</span>
+              <span class="text-xs text-slate-400">Cada mensaje rehace el borrador (menos de un centavo). Lo que aportes aquí se propone como FAQ al enviar.</span>
             </div>
             <div x-show="chat.length" x-cloak x-ref="chatLista" class="px-3 py-2 space-y-2 max-h-64 overflow-y-auto">
               <template x-for="(t, i) in chat" :key="i">
@@ -285,6 +367,13 @@
           <p class="text-sm font-medium text-slate-800"><i class="fa-solid fa-lightbulb text-slate-400 mr-1" aria-hidden="true"></i>
             {% if fs.faq_id %}Mejora sugerida para la FAQ «{{ fs.faq_pregunta_actual }}»{% else %}FAQ nueva sugerida con lo que aportaste{% endif %}</p>
           {% if fs.motivo %}<p class="text-xs text-slate-600">{{ fs.motivo }}</p>{% endif %}
+          {% if fs.faq_id and faqs_actuales.get(fs.faq_id) %}
+          <details class="rounded-lg border border-slate-200 bg-white">
+            <summary class="cursor-pointer px-3 py-1.5 text-xs font-medium text-slate-600">Ver la respuesta que tiene hoy esa FAQ</summary>
+            <div class="px-3 pb-2 text-sm text-slate-600 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{{ faqs_actuales[fs.faq_id] }}</div>
+          </details>
+          <p class="text-xs font-medium text-slate-600">Texto propuesto (reemplaza al actual):</p>
+          {% endif %}
           <form method="post" action="/inbox/{{ cid }}/faq-sugerida" class="space-y-2">
             <input type="hidden" name="faq_id" value="{{ fs.faq_id or '' }}">
             <input name="pregunta" value="{{ fs.pregunta }}" class="input w-full" aria-label="Pregunta" required>
@@ -348,6 +437,9 @@
   {% endfor %}
   </div>
 
+  <datalist id="etiquetas-publico">{% for t in etiquetas_publico %}<option value="{{ t }}"></option>{% endfor %}</datalist>
+  <datalist id="titulos-publico">{% for t in titulos_publico %}<option value="{{ t }}"></option>{% endfor %}</datalist>
+
   {% set paginas = ((total + per_page - 1) // per_page) %}
   {% if paginas > 1 and not ver %}
   <nav class="mt-5 flex items-center justify-between text-sm" aria-label="Paginación">
@@ -377,6 +469,17 @@
   });
 
   document.addEventListener('alpine:init', () => {
+    // Estado y etiquetas de la persona en Público.
+    Alpine.data('publicoForm', () => ({
+      abierto: false, tags: [], nueva: '',
+      agregar() {
+        const t = this.nueva.trim();
+        if (t && !this.tags.some(x => x.toLowerCase() === t.toLowerCase())) this.tags.push(t);
+        this.nueva = '';
+      },
+      quitar(t) { this.tags = this.tags.filter(x => x !== t); },
+    }));
+
     Alpine.data('correoCard', (id) => ({
       abierto: false, hilo: false, borrador: '', instruccion: '', faltantes: [], chat: [],
       reenviando: false, cargando: false, enviando: false,

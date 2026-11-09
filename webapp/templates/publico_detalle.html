@@ -73,7 +73,7 @@
             </div>
             <div>
               <dt class="text-xs font-medium text-slate-400 mb-0.5">Fuente</dt>
-              <dd class="text-slate-700">{{ (prospecto.fuente or 'manual') | capitalize }}{% if prospecto.fuente_detalle %} — {{ prospecto.fuente_detalle }}{% endif %}</dd>
+              <dd class="text-slate-700">{{ fuentes_publico.get(prospecto.fuente or 'manual', prospecto.fuente) }}{% if prospecto.fuente_detalle %} — {{ prospecto.fuente_detalle }}{% endif %}</dd>
             </div>
             <div class="col-span-2">
               <dt class="text-xs font-medium text-slate-400 mb-1">Etiquetas</dt>
@@ -149,7 +149,7 @@
               <div>
                 <label class="block text-xs font-medium text-slate-600 mb-1">Fuente</label>
                 <select name="fuente" class="input w-full text-sm">
-                  {% for v, l in [("manual","Manual"),("excel","Excel"),("portal","Portal"),("evento","Evento"),("referido","Referido")] %}
+                  {% for v, l in fuentes_publico.items() %}
                   <option value="{{ v }}" {% if prospecto.fuente == v %}selected{% endif %}>{{ l }}</option>
                   {% endfor %}
                 </select>
@@ -233,6 +233,36 @@
           </ul>
           {% else %}
           <p class="text-sm text-slate-400 py-4 text-center">Sin comunicaciones enviadas aún.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Correos que escribió a IPIDET (cola del agente de correos) -->
+      <div class="bg-white rounded-2xl border border-slate-200">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-2">
+          <h2 class="font-semibold text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-inbox text-slate-400" aria-hidden="true"></i> Correos que nos escribió
+          </h2>
+          {% if correos_recibidos %}<span class="text-xs text-slate-500">{{ correos_recibidos | length }}{% if correos_recibidos | length >= 20 %}+ (los 20 más recientes){% endif %}</span>{% endif %}
+        </div>
+        <div class="px-6 py-4">
+          {% if correos_recibidos %}
+          <ul class="divide-y divide-slate-100">
+            {% for c in correos_recibidos %}
+            {% set cat = categorias_correo.get(c.categoria) %}
+            {% set est = estados_correo.get(c.estado, (c.estado, 'gray')) %}
+            <li class="py-2.5 text-sm">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <a href="/inbox?ver={{ c._id | string }}" class="font-medium text-blue-600 hover:underline break-words">{{ c.asunto or '(sin asunto)' }}</a>
+                {% if cat %}<span class="badge badge-{{ cat[1] }}">{{ cat[0] }}</span>{% endif %}
+                <span class="badge badge-{{ est[1] }}">{{ est[0] }}</span>
+              </div>
+              <div class="text-xs text-slate-500 mt-0.5">{{ c.fecha | fecha_hora_lima }}{% if c.resumen %} · {{ c.resumen }}{% endif %}</div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="text-sm text-slate-400 py-4 text-center">No ha escrito a los correos de IPIDET.</p>
           {% endif %}
         </div>
       </div>

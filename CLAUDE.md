@@ -768,6 +768,8 @@ borrador_original  string    lo que propuso el agente (para medir cuánto edita 
 respuesta_enviada  string    lo que salió; editado_por_equipo bool
 envio_auto_bloqueado_por [string]  motivos por los que no salió solo
 member_id | posible_member_id | prospecto_id | evento_id   vínculos con la plataforma
+contacto           {nombre, apellido, celular, empresa, cargo, profesion, ciudad}   lo que el remitente dice de sí
+                   en el correo o su firma (lo extrae el agente); prellena «Agregar a Público»
 hilo_previo        [{de, fecha, texto}]
 uso                {entrada, salida, cache_lectura, cache_escritura, costo_usd, modelo}
 canal_envio        "gmail" | "brevo";  enviado_desde, enviado_por, enviado_at, reenviado_a
@@ -1100,7 +1102,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/inbox` | Cola; `vista` = atender, respondidos, sin_respuesta o todos; `categoria`, `cuenta`, `search`, `ver=<id>` |
+| `GET` | `/inbox` | Cola; `vista` = atender, faqs (FAQs sugeridas por aprobar), respondidos, sin_respuesta o todos; `categoria`, `cuenta`, `search`, `ver=<id>` |
 | `GET` | `/inbox/configuracion` | Configuración del agente, estado, costo y conexión con Telegram |
 | `POST` | `/inbox/configuracion` | Guarda la configuración (`config.agente_correo_config`) |
 | `POST` | `/inbox/revisar-ahora` | Ejecuta un ciclo ya; `recientes=N` reanaliza los últimos N del INBOX |
@@ -1111,6 +1113,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `POST` | `/inbox/{id}/descartar` | Descarta; `bloquear=1` también bloquea al remitente |
 | `POST` | `/inbox/{id}/reabrir` · `/reprocesar` | Vuelve a la cola · analiza de nuevo |
 | `POST` | `/inbox/{id}/vincular-socio` · `/faq` | Vincula socio · guarda la respuesta como FAQ (la cola no toca cobranzas) |
+| `POST` | `/inbox/{id}/publico` | Agrega a Público a quien escribió (no socio) o cambia su estado y etiquetas; une todos sus correos a la ficha |
 | `POST` | `/inbox/{id}/sugerir-faq` · `/faq-sugerida` | Pide al agente una FAQ con la respuesta enviada · la guarda (nueva o actualiza `faq_id`) o la descarta (`accion=descartar`) |
 | `GET` | `/inbox/{id}/adjunto/{n}` | Descarga un adjunto (se relee de Gmail) |
 | `POST` | `/webhook/telegram` | Botones y mensajes del bot; verifica `X-Telegram-Bot-Api-Secret-Token` |
@@ -1405,7 +1408,7 @@ Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada mi
 
 **Render gratuito:** el servicio se duerme sin visitas; el usuario tiene una página externa que lo visita cada 10 min, por eso el scheduler sigue corriendo. Si el agente deja de revisar, revisa primero eso.
 
-**Chat y FAQs:** en cada borrador, los `[COMPLETAR]` aparecen como campos y hay una conversación con el agente (`agente_correo.reescribir`, que guarda `chat` y `datos_completados`; responder al aviso de Telegram entra en la misma conversación). Lo que el equipo aporta es de confianza para el borrador. Al enviar a mano, `sugerir_faq` (en segundo plano) propone una FAQ nueva o la mejora de una existente solo con información general; queda en `faq_sugerida` y el equipo la aprueba desde la cola (también se listan en `/faqs`). Nunca se guarda ni se autoriza sola.
+**Chat y FAQs:** en cada borrador, los `[COMPLETAR]` aparecen como campos y hay una conversación con el agente (`agente_correo.reescribir`, que guarda `chat` y `datos_completados`; responder al aviso de Telegram entra en la misma conversación). Lo que el equipo aporta es de confianza para el borrador. Al enviar a mano, `sugerir_faq` (en segundo plano) propone una FAQ nueva o la mejora de una existente solo con información general; queda en `faq_sugerida` y el equipo la aprueba en la pestaña «FAQs por aprobar» de la cola (`/inbox?vista=faqs`, que explica el proceso y muestra el texto actual de la FAQ a mejorar; también se listan en `/faqs`). Solo se propone si hubo aportes del equipo (`agente_correo.aportes_del_equipo`); al enviar, el aviso lo dice. Nunca se guarda ni se autoriza sola.
 
 **Telegram:** en producción por webhook (`/webhook/telegram`, se conecta desde la configuración). Botones Enviar/Descartar, y responder al mensaje del bot pide cambios al borrador. `/bloquear`, `/desbloquear`, `/lista_bloqueados` y los comandos de eventos (`workflows/event_manager.py`) siguen funcionando. `telegram_main.py` hace polling solo si no hay webhook.
 
@@ -1528,7 +1531,9 @@ nuevo → interesado → postulante → convertido
                               /members/{id}  (convert_prospecto_to_member)
 ```
 
-`inactivo` = baja voluntaria o descarte.
+`inactivo` = baja voluntaria o descarte. Estados y fuentes: `catalogos.ESTADOS_PUBLICO` / `FUENTES_PUBLICO`.
+
+**Desde la cola de correos:** quien escribe y no es socio se agrega con «Agregar a Público» (`/inbox/{id}/publico` → `db.guardar_prospecto_desde_correo`), con fuente `correo`, los datos que el agente leyó en la firma (`correos.contacto`) y el estado sugerido por categoría (`catalogos.ESTADO_PUBLICO_POR_CATEGORIA`: admisión → postulante). Si la ficha ya existe por email solo completa campos vacíos y suma etiquetas. La ficha muestra «Correos que nos escribió». No aparece para correos automáticos, internos ni de proveedores.
 
 ### Colección `publico`
 
@@ -1541,7 +1546,7 @@ titulo          string    mismo vocabulario controlado que members.titulo
 empresa         string
 ciudad          string
 notas           string
-fuente          string    "manual"|"excel"|"zoom"|"portal"|"evento"|"referido"
+fuente          string    catalogos.FUENTES_PUBLICO: "manual"|"excel"|"zoom"|"correo"|"portal"|"evento"|"referido"
 fuente_detalle  string    detalle libre de la fuente
 estado          string    "nuevo"|"interesado"|"postulante"|"convertido"|"inactivo"
 es_socio        bool      True si ya fue convertido a member

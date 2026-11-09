@@ -261,6 +261,8 @@ def listar(vista: str = "atender", categoria: str = "", search: str = "",
         q["estado"] = {"$in": ["enviado", "enviado_auto", "respondido_gmail", "reenviado"]}
     elif vista == "sin_respuesta":
         q["estado"] = {"$in": ["ignorado", "descartado"]}
+    elif vista == "faqs":
+        q["faq_sugerida.estado"] = "pendiente"
     if categoria:
         q["categoria"] = categoria
     if search:
@@ -280,6 +282,7 @@ def contar_por_vista() -> dict:
     respondidos = sum(conteo.get(e, 0) for e in ("enviado", "enviado_auto", "respondido_gmail", "reenviado"))
     return {"atender": abiertos, "respondidos": respondidos,
             "sin_respuesta": conteo.get("ignorado", 0) + conteo.get("descartado", 0),
+            "faqs": correos_col.count_documents({"faq_sugerida.estado": "pendiente"}),
             "todos": sum(conteo.values())}
 
 
@@ -297,6 +300,29 @@ def historial_remitente(de_email: str, excluir_id=None, limite: int = 3) -> list
     if excluir_id:
         q["_id"] = {"$ne": excluir_id}
     return list(correos_col.find(q, {"asunto": 1, "fecha": 1, "resumen": 1, "estado": 1, "respuesta_enviada": 1})
+                .sort("fecha", DESCENDING).limit(limite))
+
+
+def vincular_prospecto(de_email: str, prospecto_id: str, usuario: str = "") -> int:
+    """Une a la ficha de Público todos los correos de ese remitente. Devuelve cuántos cambió."""
+    de_email = (de_email or "").strip().lower()
+    if not de_email:
+        return 0
+    r = correos_col.update_many(
+        {"de_email": de_email, "prospecto_id": {"$ne": prospecto_id}},
+        {"$set": {"prospecto_id": prospecto_id, "updated_at": _ahora()},
+         "$push": {"historial": _evento_historial("agregado a Público", usuario or "equipo", prospecto_id)}},
+    )
+    return r.modified_count
+
+
+def correos_de_remitente(de_email: str, limite: int = 20) -> list[dict]:
+    """Correos que una persona envió a IPIDET, para su ficha en Público."""
+    de_email = (de_email or "").strip().lower()
+    if not de_email:
+        return []
+    return list(correos_col.find({"de_email": de_email},
+                                 {"asunto": 1, "fecha": 1, "resumen": 1, "estado": 1, "categoria": 1})
                 .sort("fecha", DESCENDING).limit(limite))
 
 

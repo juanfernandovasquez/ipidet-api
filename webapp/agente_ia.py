@@ -47,6 +47,9 @@ def _client() -> anthropic.Anthropic:
     return _cliente
 
 
+# Lo que la persona dice de sí misma en el correo o su firma; sirve para agregarla a Público.
+CAMPOS_CONTACTO = ("nombre", "apellido", "celular", "empresa", "cargo", "profesion", "ciudad")
+
 ESQUEMA_ANALISIS = {
     "type": "object",
     "additionalProperties": False,
@@ -65,10 +68,16 @@ ESQUEMA_ANALISIS = {
         "respuesta": {"type": "string"},
         "datos_faltantes": {"type": "array", "items": {"type": "string"}},
         "evento_id": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "contacto": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {k: {"type": "string"} for k in CAMPOS_CONTACTO},
+            "required": list(CAMPOS_CONTACTO),
+        },
     },
     "required": ["categoria", "prioridad", "requiere_respuesta", "accion", "fuentes_usadas",
                  "solo_fuentes_autorizadas", "datos_sensibles", "puede_enviarse_sin_revision",
-                 "confianza", "resumen", "motivo", "respuesta", "datos_faltantes", "evento_id"],
+                 "confianza", "resumen", "motivo", "respuesta", "datos_faltantes", "evento_id", "contacto"],
 }
 
 ESQUEMA_REDACCION = {
@@ -132,6 +141,7 @@ Reglas:
 10. Estilo: {cfg.get("estilo", "").strip()}
 11. resumen: una o dos frases para el equipo (qué pide y qué le respondes). motivo: por qué elegiste la acción y, si debe revisarse, qué revisar.
 12. evento_id: el id (sin el prefijo «evento:») del evento al que se refiere el correo, si aplica; si no, null.
+13. contacto: lo que el remitente dice de sí mismo en este correo, su firma o su nombre visible (nombre, apellido, celular, empresa donde trabaja, cargo, profesión —por ejemplo Contador o Abogado— y ciudad). Copia solo lo que aparece escrito; deja "" lo que no esté. No uses datos de terceros mencionados en el correo. Es solo para el registro del equipo: no lo menciones en la respuesta.
 
 Categorías:
 {categorias}"""

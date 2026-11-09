@@ -85,6 +85,19 @@ ESTADOS_PONENTE: dict[str, tuple[str, str]] = {
 }
 ORIGENES_PONENTE = {"busqueda": "Búsqueda con IA", "evento": "Expositor de un evento", "manual": "Agregado a mano"}
 
+# Etapas de una persona en Público (CRM). «convertido» solo se alcanza al pasarla al padrón.
+ESTADOS_PUBLICO: dict[str, tuple[str, str]] = {
+    "nuevo":      ("Nuevo",      "slate"),
+    "interesado": ("Interesado", "blue"),
+    "postulante": ("Postulante", "amber"),
+    "convertido": ("Convertido", "green"),
+    "inactivo":   ("Inactivo",   "gray"),
+}
+FUENTES_PUBLICO = {"manual": "Manual", "excel": "Excel", "zoom": "Zoom", "correo": "Correo",
+                   "portal": "Portal", "evento": "Evento", "referido": "Referido"}
+# Etapa que se sugiere al agregar a Público a quien escribió, según de qué trata su correo.
+ESTADO_PUBLICO_POR_CATEGORIA = {"admision": "postulante", "evento": "interesado", "consulta_general": "interesado"}
+
 # Valores si la colección aún no los tiene; se editan en /alianzas y /ponentes.
 _ALIANZAS_DEFECTO = {"propuestas_por_corrida": 5, "perfil": "", "criterios": ""}
 _PONENTES_DEFECTO = {"propuestas_por_corrida": 5, "publico": "", "temas": ""}

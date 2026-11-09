@@ -270,6 +270,7 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
         "member_id": vinculos.get("member_id"),
         "posible_member_id": vinculos.get("posible_member_id"),
         "prospecto_id": vinculos.get("prospecto_id"),
+        "contacto": {k: (v or "").strip()[:120] for k, v in (analisis.get("contacto") or {}).items()},
         "hilo_previo": [{"de": m.get("de"), "fecha": m.get("fecha"), "texto": (m.get("cuerpo") or "")[:1500]} for m in hilo],
         "hilo_con_equipo": any(email_de(m.get("de", "")) in propias for m in hilo),
         "uso": uso,
@@ -545,10 +546,13 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
     }, accion="enviado automáticamente" if automatico else "enviado", usuario=usuario, detalle=f"desde {desde} vía {canal}")
     recibida.marcar_leido(doc.get("gm_msgid", ""))
     agente_db.contar_uso_faqs(doc.get("fuentes_usadas") or [])
-    if not automatico:
+    sugerira = not automatico and bool(aportes_del_equipo(agente_db.get_correo(correo_id) or {}))
+    if sugerira:
         _sugerir_faq_en_segundo_plano(correo_id)
     _cerrar_telegram(agente_db.get_correo(correo_id),
                      "🤖 Respondido por el agente" if automatico else f"✅ Enviado por {usuario}")
+    if sugerira:
+        return True, "Respuesta enviada. Con lo que aportaste, el agente prepara una FAQ: revísala en «FAQs por aprobar»."
     return True, "Respuesta enviada."
 
 
@@ -636,6 +640,19 @@ def reescribir(correo_id: str, instruccion: str, usuario: str,
     return True, nuevo, nota
 
 
+def aportes_del_equipo(doc: dict) -> list[str]:
+    """Lo que el equipo agregó al borrador del agente: de ahí salen las FAQs sugeridas.
+
+    Datos completados en los [COMPLETAR], indicaciones en el chat o una edición a mano. Si el
+    equipo envió el borrador tal cual, no hay nada nuevo que aprender.
+    """
+    aportes = [f"{d['dato']}: {d['respuesta']}" for d in doc.get("datos_completados") or []]
+    aportes += [t["texto"] for t in doc.get("chat") or [] if t.get("rol") == "equipo" and t.get("texto")]
+    if doc.get("editado_por_equipo") and not aportes:
+        aportes.append("El equipo editó a mano el borrador antes de enviarlo (compara con la respuesta enviada).")
+    return aportes
+
+
 def sugerir_faq(correo_id: str) -> bool:
     """Tras enviar una respuesta en la que el equipo aportó datos, propone mejorar las FAQs.
 
@@ -644,10 +661,7 @@ def sugerir_faq(correo_id: str) -> bool:
     doc = agente_db.get_correo(correo_id)
     if not doc or not doc.get("respuesta_enviada"):
         return False
-    aportes = [f"{d['dato']}: {d['respuesta']}" for d in doc.get("datos_completados") or []]
-    aportes += [t["texto"] for t in doc.get("chat") or [] if t.get("rol") == "equipo" and t.get("texto")]
-    if doc.get("editado_por_equipo") and not aportes:
-        aportes.append("El equipo editó a mano el borrador antes de enviarlo (compara con la respuesta enviada).")
+    aportes = aportes_del_equipo(doc)
     if not aportes:
         return False
     faqs = [{"id": str(f["_id"]), "categoria": f.get("category"), "pregunta": f.get("question"),

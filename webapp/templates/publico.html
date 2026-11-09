@@ -148,7 +148,7 @@
                           class="text-xs rounded border py-0.5 pl-1.5 pr-1 w-full min-w-[5.5rem] focus:outline-none focus:ring-1 focus:ring-violet-400 cursor-pointer
                                  {{ 'border-violet-300 bg-violet-50 text-violet-700 font-semibold' if fuente else 'border-slate-200 bg-white text-slate-500' }}">
                     <option value="" {% if not fuente %}selected{% endif %}>Todas</option>
-                    {% for v, l in [("manual","Manual"),("excel","Excel"),("zoom","Zoom"),("portal","Portal"),("evento","Evento"),("referido","Referido")] %}
+                    {% for v, l in fuentes_publico.items() %}
                     <option value="{{ v }}" {% if fuente == v %}selected{% endif %}>{{ l }}</option>
                     {% endfor %}
                   </select>
@@ -283,8 +283,8 @@
               </td>
               <td class="px-4 py-3 text-slate-600 text-xs hidden lg:table-cell">{{ p.ciudad or '—' }}</td>
               <td class="px-4 py-3">
-                {% set fuente_colors = {"manual": "slate", "excel": "blue", "portal": "green", "evento": "purple", "zoom": "cyan", "referido": "orange"} %}
-                <span class="badge badge-{{ fuente_colors.get(p.fuente, 'gray') }}">{{ (p.fuente or 'manual') | capitalize }}</span>
+                {% set fuente_colors = {"manual": "slate", "excel": "blue", "portal": "green", "evento": "purple", "zoom": "cyan", "correo": "amber", "referido": "orange"} %}
+                <span class="badge badge-{{ fuente_colors.get(p.fuente, 'gray') }}">{{ fuentes_publico.get(p.fuente or 'manual', p.fuente) }}</span>
               </td>
               <td class="px-4 py-3 hidden sm:table-cell">
                 {% if p.es_socio %}
@@ -420,10 +420,7 @@
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">Fuente</label>
             <select name="fuente" class="input w-full text-sm">
-              <option value="manual">Manual</option>
-              <option value="portal">Portal web</option>
-              <option value="evento">Evento</option>
-              <option value="referido">Referido</option>
+              {% for v, l in fuentes_publico.items() if v not in ('excel', 'zoom') %}<option value="{{ v }}">{{ l }}</option>{% endfor %}
             </select>
           </div>
         </div>

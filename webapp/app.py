@@ -204,6 +204,7 @@ def _ctx(request: Request, **kwargs):
     return {
         "flash": request.session.pop("_flash", None),
         "status_labels": STATUS_LABELS,
+        "fuentes_publico": catalogos.FUENTES_PUBLICO,
         "medios_pago": pdb.get_medios_pago(),
         "bancos": pdb.get_bancos(),
         "periodos": catalogos.get_periodos(),
@@ -4712,7 +4713,7 @@ def _volver(request: Request, correo_id: str = "", **params) -> RedirectResponse
 @app.get("/inbox", response_class=HTMLResponse)
 async def inbox_page(request: Request, vista: str = "atender", categoria: str = "",
                      search: str = "", page: int = 1, ver: str = "", cuenta: str = ""):
-    if vista not in ("atender", "respondidos", "sin_respuesta", "todos"):
+    if vista not in ("atender", "respondidos", "sin_respuesta", "faqs", "todos"):
         vista = "atender"
     cuentas_agente = list(agente_correo.cuentas())
     principal = agente_correo.cuenta_principal()
@@ -4734,13 +4735,73 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
     ids_eventos = [pdb.ObjectId(c["evento_id"]) for c in correos if c.get("evento_id")]
     eventos = {str(e["_id"]): e.get("titulo", "") for e in pdb.eventos_col.find(
         {"_id": {"$in": ids_eventos}}, {"titulo": 1})} if ids_eventos else {}
+    # Fichas en Público de quienes escribieron (estado y etiquetas se editan desde la cola).
+    ids_prospectos = [pdb.ObjectId(c["prospecto_id"]) for c in correos
+                      if c.get("prospecto_id") and pdb.ObjectId.is_valid(c["prospecto_id"])]
+    prospectos = {str(p["_id"]): {"nombre": f"{p.get('nombre', '')} {p.get('apellido', '')}".strip(),
+                                  "estado": p.get("estado") or "nuevo", "tags": p.get("tags") or []}
+                  for p in pdb.publico_col.find({"_id": {"$in": ids_prospectos}},
+                                                {"nombre": 1, "apellido": 1, "estado": 1, "tags": 1})} if ids_prospectos else {}
+    for c in correos:
+        # Solo personas: nada de avisos automáticos, proveedores ni el propio equipo.
+        if (not c.get("member_id") and not c.get("prospecto_id") and not c.get("filtrado_sin_ia")
+                and c.get("categoria") and c["categoria"] not in _CATEGORIAS_SIN_PUBLICO):
+            c["publico_sugerido"] = _publico_sugerido(c, eventos)
+    # Para una mejora de FAQ, el texto que tiene hoy: el equipo compara antes de aprobar.
+    ids_faqs = [pdb.ObjectId(fid) for c in correos
+                if (fid := (c.get("faq_sugerida") or {}).get("faq_id")) and pdb.ObjectId.is_valid(fid)]
+    faqs_actuales = {str(f["_id"]): f.get("answer", "") for f in pdb.faqs_col.find(
+        {"_id": {"$in": ids_faqs}}, {"answer": 1})} if ids_faqs else {}
     return templates.TemplateResponse(request, "inbox.html", _ctx(request,
         correos=correos, total=total, page=page, per_page=25, vista=vista, categoria=categoria,
         search=search, ver=ver if doc else "", conteos=agente_db.contar_por_vista(), socios=socios,
         eventos_map=eventos, categorias=catalogos.CATEGORIAS_CORREO, estados_correo=catalogos.ESTADOS_CORREO,
         agente_cfg=catalogos.get_agente_config(), agente_estado=agente_db.get_estado(),
         admin_forward=agente_correo.ADMIN_FORWARD_EMAIL, cuentas_agente=cuentas_agente, cuenta=cuenta,
+        prospectos=prospectos, estados_publico=catalogos.ESTADOS_PUBLICO, faqs_actuales=faqs_actuales,
+        etiquetas_publico=[t["tag"] for t in pdb.get_all_tags()] if correos else [],
+        titulos_publico=sorted(set(pdb.get_member_titulos()) | set(pdb.get_publico_titulos())) if correos else [],
     ))
+
+
+_CATEGORIAS_SIN_PUBLICO = ("automatico", "interno", "proveedor")
+
+
+def _publico_sugerido(c: dict, eventos: dict) -> dict:
+    """Datos para agregar a Público a quien escribió: lo que el agente leyó en el correo o su firma.
+
+    Los correos analizados antes de que el agente extrajera el contacto usan el nombre visible.
+    """
+    contacto = c.get("contacto") or {}
+    nombre, apellido = contacto.get("nombre", ""), contacto.get("apellido", "")
+    if not nombre and not apellido:
+        visible = (c.get("de_nombre") or "").strip().strip('"')
+        if visible and "@" not in visible:
+            partes = visible.split()
+            nombre, apellido = " ".join(partes[:1]), " ".join(partes[1:])
+    # Se usa el vocabulario del padrón; «Contadora» o «Abogada» se reconocen como «Contador», «Abogado».
+    titulos = {_sin_tildes_simple(t)[:-1]: t for t in pdb.get_member_titulos() if len(t) > 4}
+    profesion = contacto.get("profesion", "")
+    clave_profesion = _sin_tildes_simple(profesion)[:-1]
+    etiquetas = []
+    if c.get("evento_id") and eventos.get(c["evento_id"]):
+        etiquetas.append(eventos[c["evento_id"]])
+    return {
+        "nombre": nombre.title() if nombre.isupper() else nombre,
+        "apellido": apellido.title() if apellido.isupper() else apellido,
+        "celular": contacto.get("celular", ""), "empresa": contacto.get("empresa", ""),
+        "ciudad": contacto.get("ciudad", ""),
+        "titulo": titulos.get(clave_profesion, profesion) if len(profesion) > 4 else profesion,
+        "notas": f"Cargo: {contacto['cargo']}" if contacto.get("cargo") else "",
+        "estado": catalogos.ESTADO_PUBLICO_POR_CATEGORIA.get(c.get("categoria"), "nuevo"),
+        "tags": etiquetas,
+    }
+
+
+def _sin_tildes_simple(texto: str) -> str:
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFD", (texto or "").strip().lower())
+                   if unicodedata.category(ch) != "Mn")
 
 
 @app.get("/inbox/configuracion", response_class=HTMLResponse)
@@ -4897,6 +4958,30 @@ async def inbox_vincular_socio(request: Request, correo_id: str, member_id: str 
     agente_db.actualizar(correo_id, {"member_id": member_id or None, "posible_member_id": None},
                          accion="socio vinculado", usuario=_usuario(request), detalle=member_id)
     return _volver(request, correo_id, ok="Socio vinculado al correo")
+
+
+@app.post("/inbox/{correo_id}/publico")
+async def inbox_publico(request: Request, correo_id: str):
+    """Agrega a Público a quien escribió (o cambia su estado y etiquetas) y une sus correos a la ficha."""
+    doc = agente_db.get_correo(correo_id)
+    if not doc:
+        return _volver(request, error="No se encontró el correo")
+    if doc.get("member_id"):
+        return _volver(request, correo_id, error="Quien escribió ya es socio: su ficha está en el padrón")
+    form = await request.form()
+    etiquetas = [t for t in form.getlist("tags") if isinstance(t, str)]
+    try:
+        prospecto_id, creado = pdb.guardar_prospecto_desde_correo(
+            doc.get("de_email", ""),
+            {k: str(form.get(k) or "") for k in ("nombre", "apellido", "celular", "titulo", "empresa", "ciudad", "notas")},
+            str(form.get("estado") or ""), etiquetas,
+            fuente_detalle=f"Correo: {doc.get('asunto') or ''}".strip(),
+            prospecto_id=doc.get("prospecto_id") or "",
+        )
+    except ValueError as e:
+        return _volver(request, correo_id, error=str(e))
+    agente_db.vincular_prospecto(doc.get("de_email", ""), prospecto_id, _usuario(request))
+    return _volver(request, correo_id, ok="Agregado a Público" if creado else "Ficha en Público actualizada")
 
 
 @app.post("/inbox/{correo_id}/faq-sugerida")
@@ -5181,6 +5266,8 @@ async def publico_detalle(request: Request, prospecto_id: str):
     all_tags = pdb.get_all_tags()
     return templates.TemplateResponse(request, "publico_detalle.html", _ctx(request,
         prospecto=p, titulos=titulos, all_tags=all_tags,
+        correos_recibidos=agente_db.correos_de_remitente(p.get("email", "")),
+        categorias_correo=catalogos.CATEGORIAS_CORREO, estados_correo=catalogos.ESTADOS_CORREO,
     ))
 
 
