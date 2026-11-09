@@ -93,7 +93,8 @@
   <article id="c-{{ cid }}" class="bg-white rounded-xl border {{ 'border-red-200' if c.prioridad == 'alta' and c.estado in abiertos else 'border-slate-200' }} scroll-mt-4"
            x-data="correoCard('{{ cid }}')" data-borrador="{{ c.respuesta_borrador or '' }}"
            data-faltantes='{{ (c.datos_faltantes or []) | tojson }}' data-chat='{{ (c.chat_vista or []) | tojson }}'
-           x-init="borrador = $el.dataset.borrador; faltantes = JSON.parse($el.dataset.faltantes).map(d => ({ dato: d, respuesta: '' })); chat = JSON.parse($el.dataset.chat); abierto = {{ 'true' if ver or vista == 'faqs' or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
+           data-archivos='{{ archivos.get(cid, []) | tojson }}'
+           x-init="borrador = $el.dataset.borrador; faltantes = JSON.parse($el.dataset.faltantes).map(d => ({ dato: d, respuesta: '' })); chat = JSON.parse($el.dataset.chat); archivos = JSON.parse($el.dataset.archivos); abierto = {{ 'true' if ver or vista == 'faqs' or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
 
     {# Cabecera #}
     <div class="p-5">
@@ -275,11 +276,47 @@
           <label class="block text-xs font-semibold text-slate-500 mb-1" for="r-{{ cid }}">
             Respuesta {% if c.respuesta_borrador %}<span class="font-normal">(borrador del agente, edítalo si hace falta)</span>{% endif %}
           </label>
-          <textarea id="r-{{ cid }}" name="respuesta" rows="10" x-model="borrador" class="input w-full leading-relaxed"
-                    placeholder="Escribe la respuesta…"></textarea>
+          <textarea id="r-{{ cid }}" name="respuesta" rows="10" x-model="borrador" x-ref="respuesta" @paste="pegar($event)" @click="$el.dataset.tocado = '1'" @keyup="$el.dataset.tocado = '1'"
+                    class="input w-full leading-relaxed" placeholder="Escribe la respuesta…"></textarea>
           <p x-show="tieneMarcadores" x-cloak class="mt-1 text-xs text-amber-800">
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Reemplaza los textos [COMPLETAR …] antes de enviar.
           </p>
+          <p x-show="imagenesFaltantes.length" x-cloak class="mt-1 text-xs text-amber-800">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Falta la imagen <span x-text="imagenesFaltantes.join(', ')"></span>: insértala de nuevo o borra su marca.
+          </p>
+
+          {# Adjuntos e imágenes de la respuesta #}
+          <div class="mt-2 flex flex-wrap items-center gap-2">
+            <input type="file" x-ref="fileAdjunto" class="hidden" multiple accept="{% for e in ext_adjunto %}.{{ e }}{{ ',' if not loop.last }}{% endfor %}"
+                   @change="subirVarios($event, 'adjunto')">
+            <input type="file" x-ref="fileImagen" class="hidden" accept="{% for e in ext_imagen %}.{{ e }}{{ ',' if not loop.last }}{% endfor %}"
+                   @change="subirVarios($event, 'imagen')">
+            <button type="button" class="btn-ghost text-xs" @click="$refs.fileAdjunto.click()" :disabled="subiendo">
+              <i class="fa-solid fa-paperclip" aria-hidden="true"></i> Adjuntar archivo
+            </button>
+            <button type="button" class="btn-ghost text-xs" @click="$refs.fileImagen.click()" :disabled="subiendo">
+              <i class="fa-solid fa-image" aria-hidden="true"></i> Insertar imagen en el texto
+            </button>
+            <span x-show="subiendo" x-cloak class="text-xs text-slate-500"><i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Cargando…</span>
+            <span x-show="!subiendo" class="text-xs text-slate-400">La imagen va donde está el cursor. También puedes pegarla con Ctrl+V.</span>
+          </div>
+          <ul x-show="archivos.length" x-cloak class="mt-2 flex flex-wrap gap-2">
+            <template x-for="a in archivos" :key="a.id">
+              <li class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white pl-2 pr-1 py-1 text-xs text-slate-700">
+                <template x-if="a.tipo === 'imagen'">
+                  <img :src="`/inbox/${id}/archivos/${a.id}`" alt="" class="h-8 w-8 rounded object-cover">
+                </template>
+                <i x-show="a.tipo !== 'imagen'" class="fa-solid fa-paperclip text-slate-400" aria-hidden="true"></i>
+                <a :href="`/inbox/${id}/archivos/${a.id}`" target="_blank" rel="noopener" class="hover:underline max-w-[14rem] truncate" x-text="a.nombre"></a>
+                <span class="text-slate-400" x-text="tamano(a.tamano)"></span>
+                <span x-show="a.tipo === 'imagen'" class="badge" :class="enTexto(a) ? 'badge-green' : 'badge-gray'" x-text="enTexto(a) ? 'en el texto' : 'no está en el texto'"></span>
+                <button type="button" x-show="a.tipo === 'imagen' && !enTexto(a)" class="text-blue-600 hover:underline" @click="insertar(`[imagen: ${a.nombre}]`)">Insertar</button>
+                <button type="button" class="w-6 h-6 rounded text-slate-400 hover:text-red-700 hover:bg-red-50" @click="quitar(a)" :aria-label="'Quitar ' + a.nombre">
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </li>
+            </template>
+          </ul>
           <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             {% if cuentas_agente | length > 1 %}
             <label class="inline-flex items-center gap-1.5">Responder desde
@@ -323,7 +360,7 @@
             </div>
             <div class="flex flex-wrap gap-2">
               <button type="submit" form="descartar-{{ cid }}" class="btn-ghost">Descartar</button>
-              <button type="submit" class="btn-primary" :disabled="enviando || !borrador.trim() || tieneMarcadores">
+              <button type="submit" class="btn-primary" :disabled="enviando || subiendo || !borrador.trim() || tieneMarcadores || imagenesFaltantes.length">
                 <i class="fa-solid" :class="enviando ? 'fa-circle-notch fa-spin' : 'fa-paper-plane'" aria-hidden="true"></i>
                 <span x-text="enviando ? 'Enviando…' : 'Enviar respuesta'">Enviar respuesta</span>
               </button>
@@ -361,6 +398,10 @@
         </p>
         {% if c.respuesta_enviada %}
         <div class="rounded-lg border border-green-200 bg-green-50/50 p-3 text-sm text-slate-800 whitespace-pre-wrap break-words">{{ c.respuesta_enviada }}</div>
+        {% if c.adjuntos_enviados %}
+        <p class="text-xs text-slate-500"><i class="fa-solid fa-paperclip mr-1" aria-hidden="true"></i>Se envió con:
+          {% for a in c.adjuntos_enviados %}{{ a.nombre }}{% if a.tipo == 'imagen' %} (imagen en el texto){% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
+        {% endif %}
         {% set fs = c.faq_sugerida %}
         {% if fs and fs.estado == 'pendiente' %}
         <div class="rounded-lg border border-blue-200 bg-blue-50/40 p-3 space-y-2">
@@ -480,10 +521,72 @@
       quitar(t) { this.tags = this.tags.filter(x => x !== t); },
     }));
 
+    // Marca de una imagen en el texto: [imagen: nombre.png]
+    const MARCA_IMAGEN = /\[\s*imagen\s*:\s*([^\]\n]+?)\s*\]/gi;
+    const escaparRegex = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
     Alpine.data('correoCard', (id) => ({
-      abierto: false, hilo: false, borrador: '', instruccion: '', faltantes: [], chat: [],
-      reenviando: false, cargando: false, enviando: false,
+      id, abierto: false, hilo: false, borrador: '', instruccion: '', faltantes: [], chat: [],
+      reenviando: false, cargando: false, enviando: false, archivos: [], subiendo: false,
       get tieneMarcadores() { return /\[\s*COMPLETAR/i.test(this.borrador); },
+      get marcasImagen() { return [...this.borrador.matchAll(MARCA_IMAGEN)].map(m => m[1].trim().toLowerCase()); },
+      // Cada marca del texto necesita su imagen cargada (si no, el servidor no deja enviar).
+      get imagenesFaltantes() {
+        const cargadas = this.archivos.filter(a => a.tipo === 'imagen').map(a => a.nombre.toLowerCase());
+        return this.marcasImagen.filter(n => !cargadas.includes(n));
+      },
+      enTexto(a) { return this.marcasImagen.includes(a.nombre.toLowerCase()); },
+      tamano(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; },
+      async subirVarios(e, tipo) {
+        for (const f of [...e.target.files]) await this.subir(f, tipo);
+        e.target.value = '';
+      },
+      async subir(archivo, tipo) {
+        this.subiendo = true;
+        try {
+          const datos = new FormData();
+          datos.append('archivo', archivo);
+          datos.append('tipo', tipo);
+          const r = await fetch(`/inbox/${id}/archivos`, { method: 'POST', body: datos });
+          const res = await r.json().catch(() => ({}));
+          if (!r.ok || !res.ok) throw new Error(res.error || 'No se pudo cargar el archivo');
+          this.archivos.push(res.archivo);
+          if (res.marca) this.insertar(res.marca);
+        } catch (err) {
+          avisar(err.message, 'error');
+        } finally {
+          this.subiendo = false;
+        }
+      },
+      // La marca va en su propia línea, donde quedó el cursor (o al final si nunca se tocó el texto).
+      insertar(marca) {
+        const t = this.$refs.respuesta;
+        const pos = t && t.selectionStart != null && t.dataset.tocado ? t.selectionStart : this.borrador.length;
+        const antes = this.borrador.slice(0, pos), despues = this.borrador.slice(pos);
+        const texto = (antes && !antes.endsWith('\n') ? '\n' : '') + marca + (despues.startsWith('\n') ? '' : '\n');
+        this.borrador = antes + texto + despues;
+        this.$nextTick(() => { if (t) { t.focus(); t.setSelectionRange(pos + texto.length, pos + texto.length); t.dataset.tocado = '1'; } });
+      },
+      async pegar(e) {
+        const imagenes = [...(e.clipboardData?.items || [])].filter(i => i.kind === 'file' && i.type.startsWith('image/'));
+        if (!imagenes.length) return;
+        e.preventDefault();
+        e.target.dataset.tocado = '1';
+        for (const item of imagenes) {
+          const f = item.getAsFile();
+          const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+          await this.subir(new File([f], `imagen-${Date.now()}.${ext}`, { type: f.type }), 'imagen');
+        }
+      },
+      async quitar(a) {
+        const r = await fetch(`/inbox/${id}/archivos/${a.id}/borrar`, { method: 'POST' });
+        if (!r.ok) { avisar('No se pudo quitar el archivo', 'error'); return; }
+        this.archivos = this.archivos.filter(x => x.id !== a.id);
+        if (a.tipo === 'imagen') {
+          const marca = new RegExp('\\n?\\[\\s*imagen\\s*:\\s*' + escaparRegex(a.nombre) + '\\s*\\]', 'gi');
+          this.borrador = this.borrador.replace(marca, '');
+        }
+      },
       // Un turno de la conversación: datos completados y/o una indicación. El agente rehace el borrador.
       async turno(instruccion, datos) {
         if (this.cargando) return;

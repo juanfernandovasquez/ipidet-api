@@ -289,6 +289,8 @@ def reescribir(correo: dict, contexto_remitente: dict, conocimiento: str, cuenta
     partes.append(
         "Devuelve el borrador completo reescrito. Lo que el equipo aportó puede usarse aunque no esté en las "
         "fuentes. Deja [COMPLETAR: …] solo para lo que siga faltando y anótalo en datos_faltantes. "
+        "Las marcas [imagen: …] son imágenes que el equipo insertó: consérvalas exactas y en el mismo lugar del "
+        "texto, salvo que el equipo pida moverlas o quitarlas. "
         "nota: una o dos frases para el equipo sobre qué cambiaste y qué falta, si falta algo.")
     contenido.append({"type": "text", "text": "\n\n".join(partes)})
     return _llamar(_sistema(conocimiento, cfg, cuenta), contenido, ESQUEMA_REDACCION, cfg)

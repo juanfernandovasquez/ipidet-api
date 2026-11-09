@@ -451,6 +451,7 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `users_col` | `users` | `webapp/auth.py` | Usuarios de la plataforma web |
 | `correos_col` | `correos` | `webapp/agente_db.py` | Cola del agente de correos: un documento por correo recibido (ver 7.13) |
 | `_blocked` | `blocked_senders` | `webapp/agente_db.py` | Remitentes bloqueados desde la cola o con /bloquear en Telegram |
+| `archivos_col` | `correos_archivos` | `webapp/agente_db.py` | Adjuntos e imágenes que el equipo agrega a una respuesta (bytes; `correo_id`, `tipo` adjunto\|imagen, `token`) |
 | `bot_state` | `bot_state` | `knowledge_base/db.py` | Offset del bot de Telegram (solo polling local) |
 
 ### 7.2 Máquina de estados: `payments.estado`
@@ -1116,6 +1117,9 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `POST` | `/inbox/{id}/publico` | Agrega a Público a quien escribió (no socio) o cambia su estado y etiquetas; une todos sus correos a la ficha |
 | `POST` | `/inbox/{id}/sugerir-faq` · `/faq-sugerida` | Pide al agente una FAQ con la respuesta enviada · la guarda (nueva o actualiza `faq_id`) o la descarta (`accion=descartar`) |
 | `GET` | `/inbox/{id}/adjunto/{n}` | Descarga un adjunto (se relee de Gmail) |
+| `POST` | `/inbox/{id}/archivos` · `/archivos/{aid}/borrar` | Carga (`archivo`, `tipo` = adjunto o imagen) o quita un archivo de la respuesta; JSON |
+| `GET` | `/inbox/{id}/archivos/{aid}` | Ver lo cargado (con sesión) |
+| `GET` | `/correo-img/{token}.{ext}` | **Público**: imágenes del texto de respuestas, para quien recibe el correo |
 | `POST` | `/webhook/telegram` | Botones y mensajes del bot; verifica `X-Telegram-Bot-Api-Secret-Token` |
 
 #### API JSON
@@ -1405,6 +1409,8 @@ Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada mi
 **Prompt:** sistema = reglas (tono y firma de la config) + conocimiento (`agente_contexto.conocimiento()` → texto y mapa de fuentes): FUENTES AUTORIZADAS con id (`faq:<id>`, `evento:<id>`, `org`) y CONTEXTO DE APOYO (FAQs sin autorizar, comunicaciones/campañas/programadas de 45 días, cronograma de 30 días, `informacion_adicional`), con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo por defecto `claude-haiku-5-5` (≈ US$ 0,001 por correo); `fallbacks="default"` solo se envía a los modelos que lo admiten (Haiku no). `/faqs` tiene un probador que simula un correo sin guardar ni enviar.
 
 **Envío:** SMTP de Gmail (queda en Enviados y en el hilo). Si falla —en Render siempre, porque el plan gratuito bloquea el SMTP— usa la API de Brevo con `In-Reply-To`/`References` y guarda copia en Enviados por IMAP. Brevo envía como la cuenta de respuesta (el dominio ipidet.org está autenticado en Brevo); si rechaza ese remitente, reintenta como `BREVO_FROM_EMAIL` con «responder a» la cuenta. `enviado_desde` guarda el remitente real. La respuesta cita el original.
+
+**Adjuntos e imágenes:** el equipo los carga en el borrador (se guardan en `correos_archivos`, así también salen al aprobar desde Telegram). Los adjuntos van en el correo, por Gmail y por Brevo. Brevo no admite imágenes incrustadas (CID), así que una imagen del texto queda como marca `[imagen: nombre]` en el borrador y al enviar pasa a `<img>` con su dirección pública `/correo-img/…` (token aleatorio; los adjuntos nunca son públicos). Si una marca no tiene imagen cargada, no se puede enviar. El agente conserva las marcas al rehacer el borrador. Límites: 8 MB por archivo y 15 MB por respuesta; tipos en `_EXT_ADJUNTO` / `_EXT_IMAGEN` de `app.py`.
 
 **Render gratuito:** el servicio se duerme sin visitas; el usuario tiene una página externa que lo visita cada 10 min, por eso el scheduler sigue corriendo. Si el agente deja de revisar, revisa primero eso.
 

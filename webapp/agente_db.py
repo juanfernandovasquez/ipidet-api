@@ -7,6 +7,7 @@ los cambios de estado pasan siempre por las funciones de este módulo, que regis
 quién hizo qué en `historial`.
 """
 import re
+import secrets
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
@@ -24,6 +25,9 @@ _UTC = CodecOptions(tz_aware=True, tzinfo=timezone.utc)
 correos_col = db.get_collection("correos", codec_options=_UTC)
 _config = db.get_collection("config", codec_options=_UTC)
 _blocked = db.blocked_senders
+# Archivos que el equipo agrega a una respuesta: adjuntos e imágenes del texto. Van aparte del
+# correo para no acercarlo al límite de 16 MB de MongoDB y para enviarlos también desde Telegram.
+archivos_col = db.get_collection("correos_archivos", codec_options=_UTC)
 
 _INDICES_LISTOS = False
 
@@ -38,6 +42,8 @@ def asegurar_indices() -> None:
     correos_col.create_index("gm_thrid")
     correos_col.create_index("cuenta", sparse=True)
     correos_col.create_index("telegram_msg_id", sparse=True)
+    archivos_col.create_index("correo_id")
+    archivos_col.create_index("token", unique=True)
     _INDICES_LISTOS = True
 
 
@@ -403,3 +409,48 @@ def buscar_prospecto(email: str) -> dict | None:
             for z in (p.get("zoom_eventos") or [])[-5:]
         ],
     }
+
+
+# ── Archivos de la respuesta (adjuntos e imágenes en el texto) ────────────────
+
+def guardar_archivo(correo_id: str, tipo: str, nombre: str, mime: str, datos: bytes,
+                    url_base: str, usuario: str = "") -> dict:
+    """Guarda un adjunto o una imagen del texto. Las imágenes tienen una dirección pública
+    (Brevo no admite imágenes incrustadas: el correo las muestra desde la plataforma)."""
+    token = secrets.token_urlsafe(24)
+    ext = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else "bin"
+    doc = {
+        "correo_id": correo_id, "tipo": tipo, "nombre": nombre, "mime": mime, "tamano": len(datos),
+        "datos": datos, "token": token, "usuario": usuario, "created_at": _ahora(),
+        "url": f"{url_base.rstrip('/')}/correo-img/{token}.{ext}" if tipo == "imagen" else "",
+    }
+    doc["_id"] = archivos_col.insert_one(doc).inserted_id
+    return _archivo_vista(doc)
+
+
+def _archivo_vista(doc: dict) -> dict:
+    return {"id": str(doc["_id"]), "tipo": doc["tipo"], "nombre": doc["nombre"], "mime": doc["mime"],
+            "tamano": doc["tamano"], "url": doc.get("url", "")}
+
+
+def archivos_de(correo_id: str, con_datos: bool = False) -> list[dict]:
+    proyeccion = None if con_datos else {"datos": 0}
+    docs = archivos_col.find({"correo_id": correo_id}, proyeccion).sort("created_at", ASCENDING)
+    return [({**_archivo_vista(d), "datos": d["datos"]} if con_datos else _archivo_vista(d)) for d in docs]
+
+
+def archivos_por_correo(correo_ids: list[str]) -> dict[str, list[dict]]:
+    salida: dict[str, list[dict]] = {}
+    for d in archivos_col.find({"correo_id": {"$in": correo_ids}}, {"datos": 0}).sort("created_at", ASCENDING):
+        salida.setdefault(d["correo_id"], []).append(_archivo_vista(d))
+    return salida
+
+
+def borrar_archivo(correo_id: str, archivo_id: str) -> bool:
+    oid = _oid(archivo_id)
+    return bool(oid) and archivos_col.delete_one({"_id": oid, "correo_id": correo_id}).deleted_count == 1
+
+
+def imagen_publica(token: str) -> dict | None:
+    """Solo las imágenes del texto se sirven sin sesión; los adjuntos nunca."""
+    return archivos_col.find_one({"token": token, "tipo": "imagen"}, {"datos": 1, "mime": 1})

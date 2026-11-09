@@ -432,8 +432,31 @@ def _verificar_respondidos_en_gmail(gmail: GmailClient, principal: bool) -> None
 
 # ── Acciones sobre un correo ───────────────────────────────────────────────────
 
-def _html_respuesta(texto: str, doc: dict) -> str:
-    cuerpo = _html.escape(texto).replace("\n", "<br>\n")
+# Marca que deja la plataforma donde va una imagen del texto: [imagen: nombre.png]
+MARCA_IMAGEN = re.compile(r"\[\s*imagen\s*:\s*([^\]\n]+?)\s*\]", re.I)
+
+
+def _cuerpo_html(texto: str, imagenes: dict[str, str]) -> str:
+    """Texto plano a HTML; cada [imagen: nombre] pasa a <img> con la dirección pública de la imagen."""
+    partes, ultimo = [], 0
+    for m in MARCA_IMAGEN.finditer(texto):
+        partes.append(_html.escape(texto[ultimo:m.start()]).replace("\n", "<br>\n"))
+        url = imagenes.get(m.group(1).strip().lower())
+        partes.append(f'<img src="{_html.escape(url)}" alt="{_html.escape(m.group(1).strip())}" '
+                      'style="max-width:100%;height:auto;display:block;margin:8px 0">' if url else _html.escape(m.group(0)))
+        ultimo = m.end()
+    partes.append(_html.escape(texto[ultimo:]).replace("\n", "<br>\n"))
+    return "".join(partes)
+
+
+def imagenes_faltantes(texto: str, archivos: list[dict]) -> list[str]:
+    """Marcas [imagen: …] del texto sin una imagen cargada (se borró o se escribió a mano)."""
+    nombres = {a["nombre"].lower() for a in archivos if a["tipo"] == "imagen"}
+    return [m.group(1).strip() for m in MARCA_IMAGEN.finditer(texto) if m.group(1).strip().lower() not in nombres]
+
+
+def _html_respuesta(texto: str, doc: dict, imagenes: dict[str, str] | None = None) -> str:
+    cuerpo = _cuerpo_html(texto, imagenes or {})
     fecha = agente_contexto.fecha_lima(doc.get("fecha"), "%d/%m/%Y %H:%M")
     original = _html.escape((doc.get("cuerpo") or "")[:4000]).replace("\n", "<br>\n")
     return (
@@ -451,7 +474,7 @@ def _texto_respuesta(texto: str, doc: dict) -> str:
     return f"{texto.rstrip()}\n\nEl {fecha}, {doc.get('de', '')} escribió:\n{cita}\n"
 
 
-def _enviar_por_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None = None) -> str:
+def _enviar_por_brevo(msg, html: str, texto: str, adjuntos: list[dict] | None = None) -> str:
     """Respaldo si el SMTP de Gmail no está disponible (Render bloquea el puerto 587 en planes gratuitos).
 
     Envía como la cuenta del mensaje (el dominio está autenticado en Brevo). Si Brevo no acepta ese
@@ -462,17 +485,17 @@ def _enviar_por_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None = No
         raise RuntimeError("Sin BREVO_API_KEY para el respaldo")
     desde = email_de(msg["From"])
     try:
-        _llamar_brevo(msg, html, texto, adjunto_eml, desde)
+        _llamar_brevo(msg, html, texto, adjuntos, desde)
         return desde
     except RuntimeError as e:
         if not BREVO_FROM_EMAIL or desde == BREVO_FROM_EMAIL.lower() or "sender" not in str(e).lower():
             raise
         logger.warning("Brevo no aceptó %s como remitente; se envía como %s", desde, BREVO_FROM_EMAIL)
-        _llamar_brevo(msg, html, texto, adjunto_eml, BREVO_FROM_EMAIL)
+        _llamar_brevo(msg, html, texto, adjuntos, BREVO_FROM_EMAIL)
         return BREVO_FROM_EMAIL.lower()
 
 
-def _llamar_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None, remitente: str) -> None:
+def _llamar_brevo(msg, html: str, texto: str, adjuntos: list[dict] | None, remitente: str) -> None:
     cabeceras = {k: msg[k] for k in ("In-Reply-To", "References") if msg[k]}
     payload = {
         "sender": {"name": BREVO_FROM_NAME, "email": remitente},
@@ -484,8 +507,8 @@ def _llamar_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None, remiten
     }
     if cabeceras:
         payload["headers"] = cabeceras
-    if adjunto_eml:
-        payload["attachment"] = [{"name": "correo-original.eml", "content": base64.b64encode(adjunto_eml).decode()}]
+    if adjuntos:
+        payload["attachment"] = [{"name": a["nombre"], "content": base64.b64encode(a["datos"]).decode()} for a in adjuntos]
     req = urllib.request.Request(
         "https://api.brevo.com/v3/smtp/email", data=json.dumps(payload).encode("utf-8"),
         headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json"}, method="POST",
@@ -496,15 +519,18 @@ def _llamar_brevo(msg, html: str, texto: str, adjunto_eml: bytes | None, remiten
         raise RuntimeError(f"Brevo {exc.code}: {exc.read().decode('utf-8', errors='replace')[:300]}") from exc
 
 
-def _despachar(gmail: GmailClient, msg, html: str, texto: str, adjunto_eml: bytes | None = None) -> tuple[str, str]:
-    """Envía por Gmail; si falla, por Brevo y guarda copia en Enviados. Devuelve (canal, remitente real)."""
+def _despachar(gmail: GmailClient, msg, html: str, texto: str, adjuntos: list[dict] | None = None) -> tuple[str, str]:
+    """Envía por Gmail; si falla, por Brevo y guarda copia en Enviados. Devuelve (canal, remitente real).
+
+    `adjuntos` ([{nombre, datos}]) ya van dentro de `msg` para Gmail; a Brevo se le pasan aparte.
+    """
     try:
         gmail.enviar(msg)
         return "gmail", gmail.address
     except Exception as error_gmail:
         logger.warning("SMTP de Gmail no disponible (%s); se usa Brevo", error_gmail)
         try:
-            remitente = _enviar_por_brevo(msg, html, texto, adjunto_eml)
+            remitente = _enviar_por_brevo(msg, html, texto, adjuntos)
         except Exception as error_brevo:
             raise RuntimeError(f"No salió por Gmail ({error_gmail}) ni por Brevo ({error_brevo})") from error_brevo
         try:
@@ -521,18 +547,29 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
         return False, "La respuesta está vacía."
     if _MARCADOR.search(texto):
         return False, "La respuesta todavía tiene marcadores [COMPLETAR …]."
+    archivos = agente_db.archivos_de(correo_id, con_datos=True)
+    faltan = imagenes_faltantes(texto, archivos)
+    if faltan:
+        return False, f"Falta cargar la imagen: {', '.join(faltan)}. Insértala de nuevo o borra la marca [imagen: …]."
     doc = agente_db.reclamar_para_envio(correo_id, usuario)
     if not doc:
         return False, "Este correo ya fue atendido por otra persona."
+    # Imágenes: solo las que siguen en el texto. Adjuntos: todos los que el equipo cargó.
+    usadas = {m.group(1).strip().lower() for m in MARCA_IMAGEN.finditer(texto)}
+    imagenes = {a["nombre"].lower(): a["url"] for a in archivos if a["tipo"] == "imagen" and a["nombre"].lower() in usadas}
+    adjuntos = [a for a in archivos if a["tipo"] == "adjunto"]
     try:
         # Se lee del buzón que lo recibió y se responde desde la cuenta elegida para el tema.
         recibida = gmail if gmail and gmail.address == cuenta_de(doc) else _gmail(cuenta_de(doc))
         desde = cuenta_respuesta(doc)
         emisor = recibida if desde == recibida.address else _gmail(desde)
-        html = _html_respuesta(texto, doc)
+        html = _html_respuesta(texto, doc, imagenes)
         plano = _texto_respuesta(texto, doc)
         msg = emisor.construir_respuesta(doc, plano, html, remitente=formataddr((BREVO_FROM_NAME, desde)))
-        canal, desde = _despachar(emisor, msg, html, plano)
+        for a in adjuntos:
+            principal, _, secundario = (a["mime"] or "application/octet-stream").partition("/")
+            msg.add_attachment(a["datos"], maintype=principal, subtype=secundario or "octet-stream", filename=a["nombre"])
+        canal, desde = _despachar(emisor, msg, html, plano, adjuntos)
     except Exception as e:
         agente_db.actualizar(correo_id, {"estado": "pendiente", "error": f"No se envió: {e}"[:600]},
                              accion="envío fallido", usuario=usuario, detalle=str(e))
@@ -543,6 +580,8 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
         "estado": estado, "respuesta_enviada": texto, "enviado_at": datetime.now(timezone.utc),
         "enviado_por": usuario, "enviado_message_id": msg["Message-ID"], "canal_envio": canal, "enviado_desde": desde,
         "editado_por_equipo": texto != (doc.get("borrador_original") or "").strip(), "error": None,
+        "adjuntos_enviados": [{"nombre": a["nombre"], "tipo": a["tipo"], "tamano": a["tamano"], "url": a["url"]}
+                              for a in archivos if a["tipo"] == "adjunto" or a["nombre"].lower() in imagenes],
     }, accion="enviado automáticamente" if automatico else "enviado", usuario=usuario, detalle=f"desde {desde} vía {canal}")
     recibida.marcar_leido(doc.get("gm_msgid", ""))
     agente_db.contar_uso_faqs(doc.get("fuentes_usadas") or [])
@@ -568,7 +607,7 @@ def reenviar(correo_id: str, destino: str, nota: str, usuario: str) -> tuple[boo
             raise RuntimeError("No se encontró el correo original en Gmail")
         texto = nota or f"Reenviado desde la cola de correos por {usuario}.\n\nResumen del agente: {doc.get('resumen', '')}"
         msg = gmail.construir_reenvio(destino, raw, doc.get("asunto", ""), texto)
-        canal, _ = _despachar(gmail, msg, "", texto, adjunto_eml=raw)
+        canal, _ = _despachar(gmail, msg, "", texto, adjuntos=[{"nombre": "correo-original.eml", "datos": raw}])
     except Exception as e:
         agente_db.actualizar(correo_id, {"estado": "pendiente", "error": f"No se reenvió: {e}"[:600]},
                              accion="reenvío fallido", usuario=usuario, detalle=str(e))

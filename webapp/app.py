@@ -4,7 +4,7 @@ import base64 as _b64
 from markupsafe import Markup, escape
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File, HTTPException
 from typing import List
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.types import ASGIApp, Scope, Receive, Send
@@ -99,7 +99,7 @@ app.add_middleware(
 )
 
 _PUBLIC_PATHS = {"/login", "/logout"}
-_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/")
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/", "/correo-img/")
 
 class _AuthMiddleware:
     """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
@@ -4728,6 +4728,7 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
         c["cuenta_recibida"] = agente_correo.cuenta_de(c)
         c["cuenta_envio"] = c.get("enviado_desde") or agente_correo.cuenta_respuesta(c)
         c["chat_vista"] = _chat_vista(c)
+    archivos = agente_db.archivos_por_correo([str(c["_id"]) for c in correos if c.get("estado") in ("pendiente", "error")])
     ids_socios = {c.get("member_id") or c.get("posible_member_id") for c in correos} - {None, ""}
     socios = {m["member_id"]: f"{m.get('apellidos', '')}, {m.get('nombres', '')}".strip(", ")
               for m in pdb.members_col.find({"member_id": {"$in": list(ids_socios)}},
@@ -4759,6 +4760,7 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
         agente_cfg=catalogos.get_agente_config(), agente_estado=agente_db.get_estado(),
         admin_forward=agente_correo.ADMIN_FORWARD_EMAIL, cuentas_agente=cuentas_agente, cuenta=cuenta,
         prospectos=prospectos, estados_publico=catalogos.ESTADOS_PUBLICO, faqs_actuales=faqs_actuales,
+        archivos=archivos, ext_adjunto=sorted(_EXT_ADJUNTO), ext_imagen=sorted(_EXT_IMAGEN),
         etiquetas_publico=[t["tag"] for t in pdb.get_all_tags()] if correos else [],
         titulos_publico=sorted(set(pdb.get_member_titulos()) | set(pdb.get_publico_titulos())) if correos else [],
     ))
@@ -4982,6 +4984,79 @@ async def inbox_publico(request: Request, correo_id: str):
         return _volver(request, correo_id, error=str(e))
     agente_db.vincular_prospecto(doc.get("de_email", ""), prospecto_id, _usuario(request))
     return _volver(request, correo_id, ok="Agregado a Público" if creado else "Ficha en Público actualizada")
+
+
+# Lo que acepta Brevo como adjunto (rechaza el envío completo si llega otro tipo).
+_EXT_ADJUNTO = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "rtf", "txt", "csv",
+                "jpg", "jpeg", "png", "gif", "zip", "ics"}
+_EXT_IMAGEN = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif"}
+_MAX_ARCHIVO = 8 * 1024 * 1024        # por archivo
+_MAX_TOTAL_RESPUESTA = 15 * 1024 * 1024  # todo lo de una respuesta (Brevo admite hasta 20 MB por correo)
+
+
+@app.post("/inbox/{correo_id}/archivos")
+async def inbox_archivo_subir(request: Request, correo_id: str, archivo: UploadFile = File(...),
+                              tipo: str = Form("adjunto")):
+    """Carga un adjunto o una imagen para la respuesta. Devuelve JSON con lo cargado."""
+    doc = agente_db.get_correo(correo_id)
+    if not doc or doc.get("estado") not in ("pendiente", "error"):
+        return JSONResponse({"ok": False, "error": "Este correo ya no está por atender"}, status_code=400)
+    tipo = "imagen" if tipo == "imagen" else "adjunto"
+    nombre = re.sub(r"[\\/:*?\"<>|\[\]\r\n]+", "_", (archivo.filename or "archivo").strip())[:120] or "archivo"
+    ext = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else ""
+    if tipo == "imagen" and ext not in _EXT_IMAGEN:
+        return JSONResponse({"ok": False, "error": "Para el texto usa una imagen JPG, PNG o GIF"}, status_code=400)
+    if tipo == "adjunto" and ext not in _EXT_ADJUNTO:
+        return JSONResponse({"ok": False, "error": f"No se puede adjuntar un .{ext or 'sin extensión'}. "
+                             "Usa PDF, Word, Excel, PowerPoint, imagen o ZIP."}, status_code=400)
+    datos = await archivo.read()
+    if not datos:
+        return JSONResponse({"ok": False, "error": "El archivo está vacío"}, status_code=400)
+    if len(datos) > _MAX_ARCHIVO:
+        return JSONResponse({"ok": False, "error": "El archivo pesa más de 8 MB"}, status_code=400)
+    existentes = agente_db.archivos_de(correo_id)
+    if sum(a["tamano"] for a in existentes) + len(datos) > _MAX_TOTAL_RESPUESTA:
+        return JSONResponse({"ok": False, "error": "Entre todos los archivos pasan los 15 MB que admite un correo"},
+                            status_code=400)
+    # Nombres únicos dentro de la respuesta: la marca [imagen: nombre] tiene que apuntar a una sola.
+    usados = {a["nombre"].lower() for a in existentes}
+    base, punto, extension = nombre.rpartition(".")
+    base = base if punto else nombre
+    n = 2
+    while nombre.lower() in usados:
+        nombre = f"{base} ({n}){punto}{extension}"
+        n += 1
+    mime = _EXT_IMAGEN.get(ext) if tipo == "imagen" else (archivo.content_type or "application/octet-stream")
+    url_base = agente_correo.url_plataforma() or str(request.base_url)
+    vista = agente_db.guardar_archivo(correo_id, tipo, nombre, mime, datos, url_base, _usuario(request))
+    return {"ok": True, "archivo": vista, "marca": f"[imagen: {nombre}]" if tipo == "imagen" else ""}
+
+
+@app.post("/inbox/{correo_id}/archivos/{archivo_id}/borrar")
+async def inbox_archivo_borrar(request: Request, correo_id: str, archivo_id: str):
+    return {"ok": agente_db.borrar_archivo(correo_id, archivo_id)}
+
+
+@app.get("/inbox/{correo_id}/archivos/{archivo_id}")
+async def inbox_archivo_ver(request: Request, correo_id: str, archivo_id: str):
+    """El equipo revisa lo que cargó (con sesión)."""
+    for a in agente_db.archivos_de(correo_id, con_datos=True):
+        if a["id"] == archivo_id:
+            from urllib.parse import quote
+            return Response(a["datos"], media_type=a["mime"],
+                            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(a['nombre'])}"})
+    raise HTTPException(404)
+
+
+@app.get("/correo-img/{nombre}")
+async def correo_imagen_publica(nombre: str):
+    """Imágenes insertadas en respuestas enviadas: las ve quien recibe el correo, sin sesión.
+    Brevo no admite imágenes incrustadas, así que el correo las carga desde aquí."""
+    doc = agente_db.imagen_publica(nombre.rsplit(".", 1)[0])
+    if not doc:
+        raise HTTPException(404)
+    return Response(doc["datos"], media_type=doc.get("mime") or "image/png",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @app.post("/inbox/{correo_id}/faq-sugerida")
