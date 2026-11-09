@@ -4831,6 +4831,22 @@ def _lista_lineas(texto: str) -> list[str]:
     return [l.strip().lower() for l in re.split(r"[\n,;]+", texto or "") if l.strip()]
 
 
+@app.post("/inbox/encendido")
+async def inbox_encendido(request: Request, activo: str = Form("")):
+    """Botón Encender / Apagar: solo cambia si el agente revisa solo; el modo de envío no se toca."""
+    encender = activo == "1"
+    catalogos.set_agente_config({"activo": encender})
+    cfg = catalogos.get_agente_config()
+    if encender:
+        modo = "solo prepara borradores" if cfg.get("modo") != "automatico" else "envía solo lo autorizado"
+        msg = f"Agente encendido: revisará el correo cada {cfg.get('intervalo_min') or 20} min y {modo}"
+    else:
+        msg = "Agente apagado: ya no revisa el correo solo"
+    destino = "/inbox/configuracion" if "/configuracion" in (request.headers.get("referer") or "") else "/inbox"
+    from urllib.parse import urlencode
+    return RedirectResponse(f"{destino}?{urlencode({'ok': msg})}", status_code=303)
+
+
 @app.post("/inbox/configuracion")
 async def inbox_configuracion_guardar(request: Request):
     form = await request.form()

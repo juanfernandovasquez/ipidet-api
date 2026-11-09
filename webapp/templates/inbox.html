@@ -17,10 +17,13 @@
 
   {# ─ Estado del agente #}
   {% if not agente_cfg.activo %}
-  <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-    <i class="fa-solid fa-circle-pause mr-1" aria-hidden="true"></i>
-    El agente está apagado: no revisa el correo solo. Puedes usar «Revisar ahora» o
-    <a href="/inbox/configuracion" class="font-medium underline">activarlo en Configuración</a>.
+  <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center justify-between gap-3">
+    <p><i class="fa-solid fa-circle-pause mr-1" aria-hidden="true"></i>
+      <strong>El agente está apagado:</strong> no revisa el correo solo. Al encenderlo revisará cada {{ agente_cfg.intervalo_min }} min{% if agente_cfg.modo != 'automatico' %} y solo preparará borradores{% endif %}.</p>
+    <form method="post" action="/inbox/encendido">
+      <input type="hidden" name="activo" value="1">
+      <button type="submit" class="btn-primary"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Encender el agente</button>
+    </form>
   </div>
   {% elif agente_estado.ultimo_error %}
   <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

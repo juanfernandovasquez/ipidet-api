@@ -8,6 +8,28 @@
 {% block content %}
 <div class="max-w-4xl space-y-5">
 
+  {# ─ Encender / apagar: lo primero que se ve #}
+  <section class="rounded-xl border {{ 'border-green-200 bg-green-50' if cfg.activo else 'border-amber-200 bg-amber-50' }} px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+    <div class="min-w-0">
+      <p class="font-semibold {{ 'text-green-900' if cfg.activo else 'text-amber-900' }}">
+        <i class="fa-solid {{ 'fa-circle-play' if cfg.activo else 'fa-circle-pause' }} mr-1" aria-hidden="true"></i>
+        {% if cfg.activo %}El agente está encendido{% else %}El agente está apagado{% endif %}
+      </p>
+      <p class="text-sm {{ 'text-green-800' if cfg.activo else 'text-amber-800' }} mt-0.5">
+        {% if cfg.activo %}Revisa el correo cada {{ cfg.intervalo_min }} min{% if cfg.modo == 'automatico' %} y envía solo lo autorizado{% else %}, prepara borradores y avisa por Telegram. Nada sale sin aprobación{% endif %}.
+        {% else %}No revisa el correo solo. Al encenderlo revisará cada {{ cfg.intervalo_min }} min{% if cfg.modo != 'automatico' %} y solo preparará borradores: nada sale sin aprobación{% endif %}.{% endif %}
+      </p>
+    </div>
+    <form method="post" action="/inbox/encendido" {% if cfg.activo %}data-confirm="¿Apagar el agente? Dejará de revisar el correo solo."{% endif %}>
+      <input type="hidden" name="activo" value="{{ '0' if cfg.activo else '1' }}">
+      {% if cfg.activo %}
+      <button type="submit" class="btn-ghost"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Apagar</button>
+      {% else %}
+      <button type="submit" class="btn-primary"><i class="fa-solid fa-power-off" aria-hidden="true"></i> Encender el agente</button>
+      {% endif %}
+    </form>
+  </section>
+
   {# ─ Estado #}
   <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
     <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
@@ -69,7 +91,7 @@
       <div x-data="{ activo: {{ 'true' if cfg.activo else 'false' }} }" class="space-y-3">
       <label class="flex items-start gap-2 text-sm text-slate-700">
         <input type="checkbox" name="activo" value="1" x-model="activo" {% if cfg.activo %}checked{% endif %} class="mt-0.5">
-        <span><strong>Revisar el correo automáticamente</strong><br>
+        <span><strong>Agente encendido (revisa el correo automáticamente)</strong><br>
           <span class="text-slate-500">Mirar el buzón no cuesta nada. Solo se paga cada correo nuevo de una persona que el agente analiza (≈ US$ 0,001); los automáticos se descartan gratis.</span></span>
       </label>
       <p x-show="!activo" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
