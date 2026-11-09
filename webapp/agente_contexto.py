@@ -135,16 +135,10 @@ def _cronograma() -> list:
 def _apoyo() -> dict:
     cfg = catalogos.get_agente_config()
     return {
-        "periodo_de_cobro_actual": catalogos.get_periodo_actual(),
         "descripcion_de_ipidet": catalogos.get_alianzas_config().get("perfil", ""),
         "informacion_del_equipo": cfg.get("informacion_adicional") or "",
         "faqs_sin_autorizar": [{"pregunta": f.get("question"), "respuesta": _texto(f.get("answer"), 1200)}
                                for f in db.faqs.find({"active": True, "autorizada": {"$ne": True}}).limit(60)],
-        "cuotas_y_productos": [
-            _sin_vacios({"producto": p.get("nombre"), "periodo": p.get("periodo"), "precio_soles": p.get("precio")})
-            for p in db.productos.find({"activo": True}, {"nombre": 1, "periodo": 1, "precio": 1}).sort("periodo", -1)
-        ],
-        "medios_de_pago": catalogos.get_catalogo("medios_pago"),
         "comunicaciones": _comunicaciones(),
         "cronograma_de_redes": _cronograma(),
     }
@@ -166,27 +160,25 @@ def conocimiento() -> tuple[str, dict[str, dict]]:
 # ── Remitente ──────────────────────────────────────────────────────────────────
 
 def remitente(correo: dict, hilo: list[dict]) -> tuple[dict, dict]:
-    """(contexto para Claude, vínculos para la plataforma: member_id / prospecto_id)."""
+    """(contexto para Claude, vínculos para la plataforma: member_id / prospecto_id).
+
+    Claude no recibe datos de socios ni de cobranzas: solo sabe si el remitente es socio, para el
+    trato. Los vínculos (socio, ficha en Público) son para que el equipo los vea en la cola.
+    """
     email = correo.get("de_email", "")
     vinculos: dict = {}
-    contexto: dict = {"email": email, "nombre_visible": correo.get("de_nombre", "")}
-
     socio = agente_db.buscar_socio_por_email(email)
+    contexto: dict = {"email": email, "nombre_visible": correo.get("de_nombre", ""),
+                      "es_socio_de_ipidet": bool(socio)}
     if socio:
-        contexto["socio_verificado_por_email"] = agente_db.resumen_socio(socio)
         vinculos["member_id"] = socio["member_id"]
     else:
         posible = agente_db.buscar_socio_por_nombre(correo.get("de_nombre", ""))
         if posible:
-            contexto["posible_socio_por_nombre_NO_verificado"] = {
-                "member_id": posible["member_id"],
-                "nombre": f"{posible.get('nombres', '')} {posible.get('apellidos', '')}".strip(),
-            }
             vinculos["posible_member_id"] = posible["member_id"]
 
     prospecto = agente_db.buscar_prospecto(email)
     if prospecto:
-        contexto["registro_en_publico"] = prospecto
         vinculos["prospecto_id"] = prospecto["prospecto_id"]
 
     previos = agente_db.historial_remitente(email, excluir_id=correo.get("_id"))

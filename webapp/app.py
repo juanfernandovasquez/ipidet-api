@@ -4775,7 +4775,6 @@ async def inbox_configuracion_guardar(request: Request):
         "remitentes_internos": _lista_lineas(form.get("remitentes_internos")),
         "remitentes_ignorar": _lista_lineas(form.get("remitentes_ignorar")),
         "remitentes_permitidos": _lista_lineas(form.get("remitentes_permitidos")),
-        "telegram_avisos": form.get("telegram_avisos") == "1",
         "precio_entrada": numero("precio_entrada", 0, 100),
         "precio_salida": numero("precio_salida", 0, 500),
         "precio_cache_lectura": numero("precio_cache_lectura", 0, 100),
@@ -4871,24 +4870,6 @@ async def inbox_vincular_socio(request: Request, correo_id: str, member_id: str 
     agente_db.actualizar(correo_id, {"member_id": member_id or None, "posible_member_id": None},
                          accion="socio vinculado", usuario=_usuario(request), detalle=member_id)
     return _volver(request, correo_id, ok="Socio vinculado al correo")
-
-
-@app.post("/inbox/{correo_id}/registrar-pago")
-async def inbox_registrar_pago(request: Request, correo_id: str, member_id: str = Form(...),
-                               periodo: str = Form(...), fecha_pago: str = Form(""),
-                               medio_pago: str = Form("")):
-    member_id, periodo = member_id.strip().upper(), periodo.strip()
-    if not pdb.members_col.find_one({"member_id": member_id}, {"_id": 1}):
-        return _volver(request, correo_id, error=f"No existe el socio {member_id}")
-    if periodo not in catalogos.get_periodos():
-        return _volver(request, correo_id, error="Elige un período válido")
-    payment_id = pdb.get_or_create_payment(member_id, periodo)
-    remitente = (agente_db.get_correo(correo_id) or {}).get("de_email", "")
-    pdb.update_payment(payment_id, estado="pagado", fecha_pago=fecha_pago.strip() or pdb._hoy_lima(),
-                       medio=medio_pago or None, pagado_por=f"Constancia por correo ({remitente})")
-    agente_db.actualizar(correo_id, {"member_id": member_id, "pago_registrado": {"payment_id": payment_id, "periodo": periodo}},
-                         accion="pago registrado", usuario=_usuario(request), detalle=f"{member_id} {periodo}")
-    return _volver(request, correo_id, ok=f"Cuota {periodo} de {member_id} marcada como pagada. Falta enviar la respuesta.")
 
 
 @app.post("/inbox/{correo_id}/faq")

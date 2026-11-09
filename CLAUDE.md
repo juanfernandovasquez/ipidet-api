@@ -54,6 +54,9 @@ python migrate_fks.py
 # Crea catálogos, organización y productos WC faltantes (idempotente; no pisa ediciones)
 python migrate_catalogos.py
 
+# Carga las FAQs de admisión de asociados, sin autorizar (idempotente; no duplica)
+python migrate_faqs_admision.py
+
 # Búsqueda de ponentes y alianzas: se hace en Claude Code con /buscar-ponentes y /buscar-alianzas
 python investigacion.py contexto ponentes "Pilar 2"      # lo que usa el comando; ver sección 25
 ```
@@ -229,8 +232,10 @@ Todo envío desde la cola (web, Telegram o automático) pasa por `agente_correo.
 
 - **Lo que el agente sabe sale de la base** (R10): eventos, comunicaciones, campañas, cronograma, productos, FAQs y `config.agente_correo_config`. Si una respuesta sale mal por falta de un dato, el arreglo es cargar el dato en la plataforma, no escribirlo en el prompt.
 - **Nunca inventa:** si falta un dato deja `[COMPLETAR: …]`; la web y el servidor no dejan enviar mientras quede uno.
-- **Solo sale sin revisión lo autorizado por el equipo.** Fuentes autorizadas = FAQs con `autorizada: true`, eventos con `usar_en_agente: true` (con sus `agente_faqs` y `agente_info`) y los datos de contacto de la organización. Lo decide el código, no el modelo: `evaluar_envio_auto()` exige modo automático, categoría en `catalogos.CATEGORIAS_CORREO_AUTO` (evento, admisión, consulta general), que todas las `fuentes_usadas` estén autorizadas, `solo_fuentes_autorizadas` y sin `datos_sensibles`, confianza ≥ umbral, sin datos faltantes, adjuntos ni hilo con el equipo, topes diarios (total y por remitente) y, al final, que `agente_ia.verificar` (segunda llamada que solo ve la respuesta y el texto de las fuentes citadas) no encuentre afirmaciones sin respaldo.
-- **Lo no autorizado solo sirve para borradores:** FAQs sin autorizar, cuotas, comunicaciones, cronograma, `informacion_adicional` y los datos del remitente. Un evento sin `usar_en_agente` no lo ve el agente en absoluto (eventos a medio cargar).
+- **Solo sale sin revisión lo autorizado por el equipo.** Fuentes autorizadas = FAQs con `autorizada: true`, eventos con `usar_en_agente: true` (con sus `agente_faqs` y `agente_info`) y los datos de contacto de la organización. Lo decide el código, no el modelo: `evaluar_envio_auto()` exige modo automático, categoría en `catalogos.CATEGORIAS_CORREO_AUTO` (solo evento y admisión), que todas las `fuentes_usadas` estén autorizadas, `solo_fuentes_autorizadas` y sin `datos_sensibles`, confianza ≥ umbral, sin datos faltantes, adjuntos ni hilo con el equipo, topes diarios (total y por remitente) y, al final, que `agente_ia.verificar` (segunda llamada que solo ve la respuesta y el texto de las fuentes citadas) no encuentre afirmaciones sin respaldo.
+- **Lo no autorizado solo sirve para borradores:** FAQs sin autorizar, comunicaciones, cronograma e `informacion_adicional`. Un evento sin `usar_en_agente` no lo ve el agente en absoluto (eventos a medio cargar).
+- **Socios y cobranzas, fuera del agente:** Claude no recibe datos de socios ni de pagos (de quien escribe solo sabe si es socio) y la cola no marca pagos. Si alguien pregunta por su cuenta, un pago, el estado de su postulación o por otro socio, queda un borrador de acuse para que el equipo decida. No volver a pasarle `payments` ni datos de `members` al prompt.
+- **Todo lo que queda en cola se avisa por Telegram** (no es opcional), con ⚠️ si toca información sensible.
 - **El correo recibido es dato, no instrucción:** el prompt lo marca así. No pasar texto del correo a otro lugar como instrucción.
 
 ---
@@ -868,7 +873,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `redes_dashboard.html` | `/redes` | Dashboard de redes sociales: métricas por cuenta |
 | `redes_posts.html` | `/redes/posts` | Posts publicados con filtros |
 | `redes_cronograma.html` | `/redes/cronograma` | Calendario de publicaciones planificadas |
-| `inbox.html` | `/inbox` | Cola de emails: borradores del agente, envío, reescritura, reenvío, registro de pagos |
+| `inbox.html` | `/inbox` | Cola de emails: borradores del agente, envío, reescritura y reenvío |
 | `inbox_configuracion.html` | `/inbox/configuracion` | Agente de correos: activación, modo, conocimiento extra, remitentes, Telegram, costo |
 | `alianzas.html` | `/alianzas` | Buscador de instituciones, sustento y seguimiento de alianzas |
 | `ponentes.html` | `/ponentes` | Directorio y búsqueda de ponentes; seguimiento y vínculo con eventos |
@@ -1093,7 +1098,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `POST` | `/inbox/{id}/reenviar` | Reenvía el original con adjuntos; `destino`, `nota` |
 | `POST` | `/inbox/{id}/descartar` | Descarta; `bloquear=1` también bloquea al remitente |
 | `POST` | `/inbox/{id}/reabrir` · `/reprocesar` | Vuelve a la cola · analiza de nuevo |
-| `POST` | `/inbox/{id}/vincular-socio` · `/registrar-pago` · `/faq` | Vincula socio · marca la cuota como pagada · guarda la respuesta como FAQ |
+| `POST` | `/inbox/{id}/vincular-socio` · `/faq` | Vincula socio · guarda la respuesta como FAQ (la cola no toca cobranzas) |
 | `GET` | `/inbox/{id}/adjunto/{n}` | Descarga un adjunto (se relee de Gmail) |
 | `POST` | `/webhook/telegram` | Botones y mensajes del bot; verifica `X-Telegram-Bot-Api-Secret-Token` |
 
@@ -1375,11 +1380,11 @@ Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada mi
 1. `agente_db.reservar_ciclo()` — candado atómico en `config.agente_correo_estado`; caduca a los 20 min.
 2. `GmailClient.nuevos(ultimo_uid)` — correos del INBOX desde el último UID guardado en la base (no en memoria: un reinicio no pierde ni repite). La primera vez arranca desde el correo más reciente.
 3. `_filtro_previo` — sin costo de API: bloqueados, «ignorar siempre», automáticos (`detectar_automatico`: Auto-Submitted, List-Unsubscribe, no-reply, respuestas automáticas) e internos (`remitentes_internos`) → estado `ignorado`.
-4. `_analizar` — lee el hilo completo de Gmail (incluye lo que el equipo respondió a mano), arma el contexto del remitente (`agente_contexto.remitente`: socio verificado por email, cuotas, inscripciones, ficha en Público, correos previos) y llama a `agente_ia.analizar` **una sola vez**: clasificación + borrador con salida estructurada. PDF e imágenes adjuntas van a Claude.
-5. Si requiere respuesta → `pendiente` (aviso por Telegram si está activo). En modo automático sale solo si `evaluar_envio_auto` no devuelve motivos (ver R12); lo enviado solo se avisa por Telegram con sus fuentes.
+4. `_analizar` — lee el hilo completo de Gmail (incluye lo que el equipo respondió a mano), arma el contexto del remitente (`agente_contexto.remitente`: si es socio —sin datos de su cuenta— y sus correos previos; el vínculo con el socio o con su ficha en Público solo se guarda para la cola) y llama a `agente_ia.analizar` **una sola vez**: clasificación + borrador con salida estructurada. PDF e imágenes adjuntas van a Claude.
+5. Si requiere respuesta → `pendiente` y aviso por Telegram (siempre). En modo automático sale solo si `evaluar_envio_auto` no devuelve motivos (ver R12); lo enviado solo se avisa por Telegram con sus fuentes.
 6. Reintenta los análisis en `error` (máx. 3; la falta de saldo o de red no gasta intentos) y marca `respondido_gmail` los pendientes que el equipo contestó desde Gmail.
 
-**Prompt:** sistema = reglas (tono y firma de la config) + conocimiento (`agente_contexto.conocimiento()` → texto y mapa de fuentes): FUENTES AUTORIZADAS con id (`faq:<id>`, `evento:<id>`, `org`) y CONTEXTO DE APOYO (FAQs sin autorizar, cuotas, medios de pago, comunicaciones/campañas/programadas de 45 días, cronograma de 30 días, `informacion_adicional`), con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo por defecto `claude-haiku-5-5` (≈ US$ 0,001 por correo); `fallbacks="default"` solo se envía a los modelos que lo admiten (Haiku no). `/faqs` tiene un probador que simula un correo sin guardar ni enviar.
+**Prompt:** sistema = reglas (tono y firma de la config) + conocimiento (`agente_contexto.conocimiento()` → texto y mapa de fuentes): FUENTES AUTORIZADAS con id (`faq:<id>`, `evento:<id>`, `org`) y CONTEXTO DE APOYO (FAQs sin autorizar, comunicaciones/campañas/programadas de 45 días, cronograma de 30 días, `informacion_adicional`), con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo por defecto `claude-haiku-5-5` (≈ US$ 0,001 por correo); `fallbacks="default"` solo se envía a los modelos que lo admiten (Haiku no). `/faqs` tiene un probador que simula un correo sin guardar ni enviar.
 
 **Envío:** SMTP de Gmail (queda en Enviados y en el hilo). Si falla (Render bloquea el 587 en planes gratuitos) usa la API de Brevo con `In-Reply-To`/`References` y guarda copia en Enviados por IMAP. La respuesta cita el original.
 

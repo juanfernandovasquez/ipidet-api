@@ -95,10 +95,10 @@ _PONENTES_DEFECTO = {"propuestas_por_corrida": 5, "publico": "", "temas": ""}
 # remitentes internos, modo) vive en config.agente_correo_config.
 CATEGORIAS_CORREO: dict[str, tuple[str, str, str]] = {
     # clave: (etiqueta, color de badge, cuándo aplica — se le explica así a Claude)
-    "consulta_socio":  ("Socio",          "blue",   "Un socio pregunta por su cuota, estado de cuenta, constancia, comprobante o datos"),
+    "consulta_socio":  ("Socio",          "blue",   "Un socio pregunta por su cuota, estado de cuenta, constancia, comprobante, sus datos o los de otro socio"),
     "pago":            ("Pago",           "amber",  "Envía o menciona un comprobante, voucher o constancia de pago/transferencia"),
     "evento":          ("Evento",         "green",  "Consulta o inscripción a un evento, conversatorio, foro, grabación o certificado de asistencia"),
-    "admision":        ("Admisión",       "purple", "Quiere asociarse: requisitos, postulación, costos de ingreso"),
+    "admision":        ("Admisión",       "purple", "Quiere asociarse: requisitos, procedimiento, documentos y cuotas de ingreso (no el estado de una postulación concreta: eso es consulta_socio)"),
     "consulta_general": ("Consulta",      "slate",  "Otra consulta del público que IPIDET puede responder"),
     "institucional":   ("Institucional",  "orange", "Otra institución, universidad o prensa: invitaciones, convenios, propuestas"),
     "proveedor":       ("Proveedor",      "gray",   "Facturas, cobros o avisos de proveedores y plataformas que usa IPIDET"),
@@ -126,8 +126,9 @@ MODOS_AGENTE = {
 }
 ESFUERZOS_AGENTE = {"low": "Bajo (más rápido y barato)", "medium": "Medio (recomendado)", "high": "Alto (más cuidadoso)"}
 # Categorías en las que una respuesta puede salir sola (si además se apoya solo en FAQs
-# o eventos autorizados). El resto —pagos, socios, proveedores, quejas— siempre va a revisión.
-CATEGORIAS_CORREO_AUTO = ("evento", "admision", "consulta_general")
+# o eventos autorizados). El resto —consultas generales, pagos, socios, proveedores, quejas—
+# siempre va a revisión del equipo.
+CATEGORIAS_CORREO_AUTO = ("evento", "admision")
 
 _AGENTE_DEFECTO = {
     "activo": False,
@@ -150,7 +151,6 @@ _AGENTE_DEFECTO = {
     "remitentes_internos": [],
     "remitentes_ignorar": [],
     "remitentes_permitidos": [],
-    "telegram_avisos": True,
     # USD por millón de tokens (tarifa de Haiku 5.5); solo para estimar el costo que se muestra.
     "precio_entrada": 0.10,
     "precio_salida": 0.50,

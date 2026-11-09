@@ -209,10 +209,9 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
     if estado == "pendiente" and not motivos:
         ok, _ = enviar_respuesta(correo_id, respuesta, usuario="agente", automatico=True, gmail=gmail)
         if ok:
-            if cfg.get("telegram_avisos"):
-                avisar_telegram_enviado_solo(agente_db.get_correo(correo_id))
+            avisar_telegram_enviado_solo(agente_db.get_correo(correo_id))
             return "enviados_solos"
-    if estado == "pendiente" and cfg.get("telegram_avisos"):
+    if estado == "pendiente":
         avisar_telegram(agente_db.get_correo(correo_id))
     return "analizados" if estado == "pendiente" else "sin_respuesta"
 
@@ -543,10 +542,18 @@ def avisar_telegram(doc: dict | None) -> None:
         return
     categoria = catalogos.CATEGORIAS_CORREO.get(doc.get("categoria"), ("Correo",))[0]
     borrador = (doc.get("respuesta_borrador") or "").strip()
+    quien = ("Socio" if doc.get("member_id") else "Posible socio (por nombre, sin verificar)"
+             if doc.get("posible_member_id") else "No es socio")
+    avisos = []
+    if doc.get("datos_sensibles"):
+        avisos.append("⚠️ Toca información sensible: revísalo antes de aprobar.")
+    if doc.get("datos_faltantes"):
+        avisos.append("✍️ Falta completar: " + "; ".join(doc["datos_faltantes"])[:300])
     texto = (
-        f"📨 {categoria} · prioridad {doc.get('prioridad', 'media')}\n"
+        f"📨 {categoria} · prioridad {doc.get('prioridad', 'media')} · {quien}\n"
         f"De: {doc.get('de')}\nAsunto: {doc.get('asunto')}\n\n"
         f"{doc.get('resumen') or ''}\n"
+        + ("\n" + "\n".join(avisos) + "\n" if avisos else "")
         + (f"\n💬 Borrador:\n{borrador[:2800]}" if borrador else "")
         + ("\n\n✏️ Responde a este mensaje para pedir cambios al borrador." if borrador else "")
     )

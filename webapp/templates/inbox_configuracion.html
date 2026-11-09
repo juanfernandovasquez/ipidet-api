@@ -66,10 +66,10 @@
         <p class="text-sm text-slate-700 font-medium">Qué puede salir sin revisión</p>
         <ul class="text-xs text-slate-600 list-disc pl-5 space-y-1">
           <li>Solo respuestas que se apoyan <strong>únicamente</strong> en <a href="/faqs" class="text-blue-600 hover:underline">FAQs autorizadas</a> y en eventos con «Usar en las respuestas del agente» activado.</li>
-          <li>Solo consultas de eventos, admisión o generales. Pagos, cuentas de socios, proveedores, quejas y conversaciones internas siempre van a revisión.</li>
+          <li>Solo consultas de eventos y de admisión. Consultas generales, pagos y cobranzas, socios, proveedores, quejas y conversaciones internas siempre van a revisión.</li>
           <li>Nada con datos personales, dinero fuera de una FAQ, adjuntos, datos por completar, ni hilos donde el equipo ya está conversando.</li>
           <li>Antes de enviar, una segunda revisión compara la respuesta con el texto de esas fuentes y la detiene si encuentra algo sin respaldo.</li>
-          <li>Todo lo demás queda como borrador en la cola. Lo que se envía solo se avisa por Telegram.</li>
+          <li>Todo lo demás queda como borrador en la cola y se avisa por Telegram, igual que lo que se envía solo.</li>
         </ul>
         <div class="grid sm:grid-cols-3 gap-3">
           <label class="block text-xs font-medium text-slate-600">Confianza mínima (0,5 a 1)
@@ -92,12 +92,13 @@
         <strong>Para responder solo</strong> usa únicamente las <a href="/faqs" class="text-blue-600 hover:underline">FAQs autorizadas</a>,
         los <a href="/eventos" class="text-blue-600 hover:underline">eventos</a> con «Usar en las respuestas del agente» activado (con sus preguntas propias) y los datos de contacto de la
         <a href="/configuracion" class="text-blue-600 hover:underline">organización</a>.
-        <strong>Para los borradores</strong> además lee las FAQs sin autorizar, las cuotas, las comunicaciones y campañas de 45 días,
-        el <a href="/redes/cronograma" class="text-blue-600 hover:underline">cronograma de redes</a>, lo que escribas abajo y, de quien escribe, su ficha de socio, cuotas e inscripciones.
+        <strong>Para los borradores</strong> además lee las FAQs sin autorizar, las comunicaciones y campañas de 45 días,
+        el <a href="/redes/cronograma" class="text-blue-600 hover:underline">cronograma de redes</a> y lo que escribas abajo.
+        <strong>No recibe datos de socios ni de cobranzas</strong>: de quien escribe solo sabe si es socio. Si alguien pregunta por su cuenta, un pago o su postulación, deja un borrador para que el equipo lo revise.
       </p>
       <label class="block text-xs font-medium text-slate-600">Información adicional para responder
         <textarea name="informacion_adicional" rows="8" class="input w-full mt-1 leading-relaxed"
-                  placeholder="Cuentas bancarias para pagar la cuota, horario de atención, requisitos de admisión, cómo se piden constancias, qué no responder…">{{ cfg.informacion_adicional }}</textarea>
+                  placeholder="Horario de atención, a quién derivar cada tema, qué no responder…">{{ cfg.informacion_adicional }}</textarea>
         <span class="block mt-1 font-normal text-slate-500">Sirve para que los borradores salgan más completos, pero <strong>nunca autoriza un envío automático</strong>: lo que deba responderse solo va como FAQ autorizada. Lo que no esté en ningún lado, el agente no lo inventa: deja un [COMPLETAR …].</span>
       </label>
       <div class="grid sm:grid-cols-2 gap-3">
@@ -136,10 +137,7 @@
     {# 4. Avisos y costos #}
     <section class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
       <h2 class="text-sm font-semibold text-slate-800">Avisos y costos</h2>
-      <label class="flex items-start gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="telegram_avisos" value="1" {% if cfg.telegram_avisos %}checked{% endif %} class="mt-0.5">
-        <span>Avisar por Telegram cada correo por atender, con botones para enviar o descartar y la opción de pedir cambios respondiendo al mensaje.</span>
-      </label>
+      <p class="text-sm text-slate-700">Cada correo que queda por atender se avisa por Telegram, con botones para enviar o descartar y la opción de pedir cambios respondiendo al mensaje. Lo sensible llega marcado con ⚠️.</p>
       <div class="grid sm:grid-cols-5 gap-3">
         <label class="block text-xs font-medium text-slate-600 sm:col-span-1">Modelo
           <input name="modelo" value="{{ cfg.modelo }}" list="modelos-claude" class="input w-full mt-1 font-mono text-xs">

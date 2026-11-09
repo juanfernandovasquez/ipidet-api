@@ -330,48 +330,6 @@ def buscar_socio_por_nombre(nombre: str) -> dict | None:
     return encontrados[0] if len(encontrados) == 1 else None
 
 
-def resumen_socio(socio: dict) -> dict:
-    """Lo que el agente necesita saber del socio para responderle."""
-    member_id = socio["member_id"]
-    periodos_cobro = set(catalogos.get_periodos_cobro())
-    pagos = []
-    for p in db.payments.find({"member_id": member_id}).sort("periodo", DESCENDING).limit(4):
-        cuotas = p.get("cuotas") or []
-        pagos.append({
-            "periodo": p.get("periodo"),
-            "estado": catalogos.ESTADOS_PAGO.get(p.get("estado"), (p.get("estado"),))[0],
-            "periodo_en_cobro": p.get("periodo") in periodos_cobro,
-            "empresa_pagadora": p.get("empresa_pagadora") or "",
-            "fecha_pago": p.get("fecha_pago") or "",
-            "comprobante": p.get("num_comprobante") or "",
-            "cuotas_pendientes": [
-                {"numero": c.get("numero"), "monto": c.get("monto"), "vence": c.get("fecha_venc")}
-                for c in cuotas if c.get("estado") != "pagado"
-            ],
-            "monto_pendiente_parcial": max(0.0, float(p.get("monto_total") or 0)
-                                           - sum(float(x.get("monto") or 0) for x in p.get("pagos_parciales") or []))
-            if p.get("monto_total") else None,
-        })
-    hoy = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%Y-%m-%d")
-    inscrito = [
-        {"evento": e.get("titulo"), "fecha": e.get("fecha")}
-        for e in db.eventos_ipidet.find({"inscritos.member_id": member_id, "fecha": {"$gte": hoy}},
-                                        {"titulo": 1, "fecha": 1}).limit(5)
-    ]
-    tipos = {t["valor"]: t["label"] for t in catalogos.get_catalogo("tipos_socio")}
-    return {
-        "member_id": member_id,
-        "nombre": f"{socio.get('nombres', '')} {socio.get('apellidos', '')}".strip(),
-        "titulo": socio.get("titulo") or "",
-        "tipo_socio": tipos.get(socio.get("tipo_socio"), socio.get("tipo_socio") or ""),
-        "estado_socio": socio.get("estado") or "",
-        "fecha_ingreso": str(socio.get("fecha_ingreso") or "")[:10],
-        "ubicacion": socio.get("ubicacion") or "",
-        "pagos": pagos,
-        "inscrito_en_proximos_eventos": inscrito,
-    }
-
-
 def buscar_prospecto(email: str) -> dict | None:
     if not email:
         return None

@@ -212,26 +212,6 @@
           <button type="submit" class="btn-ghost"><i class="fa-solid fa-share" aria-hidden="true"></i> Reenviar</button>
         </form>
 
-        {% if c.categoria == 'pago' or c.accion == 'registrar_pago' %}
-        <form method="post" action="/inbox/{{ cid }}/registrar-pago" class="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
-          <p class="text-sm font-medium text-slate-700">Registrar el pago en cobranzas
-            {% if c.pago_registrado %}<span class="badge badge-green ml-1">Registrado: {{ c.pago_registrado.periodo }}</span>{% endif %}</p>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <input name="member_id" value="{{ c.member_id or c.posible_member_id or '' }}" placeholder="IPIDET-0000" class="input" aria-label="Código de socio" required>
-            <select name="periodo" class="input" aria-label="Período">
-              {% for p in periodos_cobro or periodos %}<option value="{{ p }}" {% if p == periodo_actual %}selected{% endif %}>{{ p }}</option>{% endfor %}
-            </select>
-            <input type="date" name="fecha_pago" class="input" aria-label="Fecha de pago">
-            <select name="medio_pago" class="input" aria-label="Medio de pago">
-              <option value="">Medio de pago</option>
-              {% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
-            </select>
-          </div>
-          <p class="text-xs text-slate-500">Revisa el comprobante adjunto antes. Marca la cuota como pagada; la respuesta al socio se envía aparte.</p>
-          <button type="submit" class="btn-ghost"><i class="fa-solid fa-check" aria-hidden="true"></i> Marcar como pagado</button>
-        </form>
-        {% endif %}
-
         {% if c.envio_auto_bloqueado_por and agente_cfg.modo == 'automatico' %}
         <p class="text-xs text-slate-500"><strong class="font-medium">No se envió solo porque:</strong> {{ c.envio_auto_bloqueado_por | join(' · ') }}</p>
         {% endif %}
