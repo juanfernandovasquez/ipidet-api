@@ -769,6 +769,8 @@ puede_enviarse_sin_revision, confianza, resumen, motivo, datos_faltantes[]
 respuesta_borrador string    borrador vigente (editable)
 borrador_original  string    lo que propuso el agente (para medir cuánto edita el equipo)
 respuesta_enviada  string    lo que salió; editado_por_equipo bool
+respuesta_cc, respuesta_cco [string]  copias del borrador (se guardan al escribir; las usa también Telegram)
+enviado_cc, enviado_cco     [string]  copias con que salió; adjuntos_enviados [{nombre, tipo, tamano, url}]
 envio_auto_bloqueado_por [string]  motivos por los que no salió solo
 member_id | posible_member_id | prospecto_id | evento_id   vínculos con la plataforma
 contacto           {nombre, apellido, celular, empresa, cargo, profesion, ciudad}   lo que el remitente dice de sí
@@ -1119,6 +1121,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `POST` | `/inbox/{id}/publico` | Agrega a Público a quien escribió (no socio) o cambia su estado y etiquetas; une todos sus correos a la ficha |
 | `POST` | `/inbox/{id}/sugerir-faq` · `/faq-sugerida` | Pide al agente una FAQ con la respuesta enviada · la guarda (nueva o actualiza `faq_id`) o la descarta (`accion=descartar`) |
 | `GET` | `/inbox/{id}/adjunto/{n}` | Descarga un adjunto (se relee de Gmail) |
+| `POST` | `/inbox/{id}/copias` | JSON `{cc, cco}`: guarda las copias del borrador → `{cc, cco, invalidos}` |
 | `POST` | `/inbox/{id}/archivos` · `/archivos/{aid}/borrar` | Carga (`archivo`, `tipo` = adjunto o imagen) o quita un archivo de la respuesta; JSON |
 | `GET` | `/inbox/{id}/archivos/{aid}` | Ver lo cargado (con sesión) |
 | `GET` | `/correo-img/{token}.{ext}` | **Público**: imágenes del texto de respuestas, para quien recibe el correo |
@@ -1411,6 +1414,8 @@ Corre dentro de la web: `scheduler.run_agente_correo_scheduler()` revisa cada mi
 **Prompt:** sistema = reglas (tono y firma de la config) + conocimiento (`agente_contexto.conocimiento()` → texto y mapa de fuentes): FUENTES AUTORIZADAS con id (`faq:<id>`, `evento:<id>`, `org`) y CONTEXTO DE APOYO (FAQs sin autorizar, comunicaciones/campañas/programadas de 45 días, cronograma de 30 días, `informacion_adicional`), con `cache_control`. El correo va en el mensaje de usuario dentro de `<correo>`. Modelo por defecto `claude-haiku-5-5` (≈ US$ 0,001 por correo); `fallbacks="default"` solo se envía a los modelos que lo admiten (Haiku no). `/faqs` tiene un probador que simula un correo sin guardar ni enviar.
 
 **Envío:** SMTP de Gmail (queda en Enviados y en el hilo). Si falla —en Render siempre, porque el plan gratuito bloquea el SMTP— usa la API de Brevo con `In-Reply-To`/`References` y guarda copia en Enviados por IMAP. Brevo envía como la cuenta de respuesta (el dominio ipidet.org está autenticado en Brevo); si rechaza ese remitente, reintenta como `BREVO_FROM_EMAIL` con «responder a» la cuenta. `enviado_desde` guarda el remitente real. La respuesta cita el original.
+
+**Copias:** `enviar_respuesta(..., cc=, cco=)`; sin ellos (Telegram) usa `respuesta_cc` / `respuesta_cco`. Quita al destinatario de las copias y de CCO a quien ya va en CC; máximo `MAX_COPIAS`. Las respuestas automáticas nunca llevan copias. «Responder a todos» = `copias_del_original` (Para y CC del original, sin direcciones de IPIDET ni el remitente).
 
 **Adjuntos e imágenes:** el equipo los carga en el borrador (se guardan en `correos_archivos`, así también salen al aprobar desde Telegram). Los adjuntos van en el correo, por Gmail y por Brevo. Brevo no admite imágenes incrustadas (CID), así que una imagen del texto queda como marca `[imagen: nombre]` en el borrador y al enviar pasa a `<img>` con su dirección pública `/correo-img/…` (token aleatorio; los adjuntos nunca son públicos). Si una marca no tiene imagen cargada, no se puede enviar. El agente conserva las marcas al rehacer el borrador. Límites: 8 MB por archivo y 15 MB por respuesta; tipos en `_EXT_ADJUNTO` / `_EXT_IMAGEN` de `app.py`.
 
