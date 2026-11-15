@@ -5227,32 +5227,127 @@ async def publico_list(
     ))
 
 
+# Columnas de la plantilla de Público: (campo, encabezado, ancho, explicación).
+# El importador también acepta los encabezados del Exportar y sinónimos comunes (_alias_columna).
+_COLUMNAS_PUBLICO = [
+    ("nombre",         "Nombre",               18, "Nombres de la persona."),
+    ("apellido",       "Apellido",             20, "Apellidos."),
+    ("email",          "Email *",              30, "Obligatorio. Identifica a la persona: si ya está en Público, se completa su ficha."),
+    ("celular",        "Celular",              15, "Con o sin código de país."),
+    ("titulo",         "Título",               18, "Profesión. Elige de la lista o escribe otra."),
+    ("empresa",        "Empresa",              26, "Centro de trabajo."),
+    ("ciudad",         "Ciudad",               14, "Ciudad o región."),
+    ("estado",         "Estado",               13, "nuevo, interesado, postulante o inactivo. Vacío = nuevo."),
+    ("notas",          "Notas",                32, "Comentarios internos."),
+    ("fuente_detalle", "Detalle de la fuente", 24, "De dónde viene la lista (p. ej. el nombre de la feria o del evento)."),
+    ("tags",           "Etiquetas",            22, "Separadas por coma."),
+]
+_ALIAS_COLUMNA_PUBLICO = {
+    "nombre": "nombre", "nombres": "nombre",
+    "apellido": "apellido", "apellidos": "apellido",
+    "email": "email", "e_mail": "email", "correo": "email", "correo_electronico": "email", "mail": "email",
+    "celular": "celular", "telefono": "celular", "movil": "celular", "whatsapp": "celular",
+    "titulo": "titulo", "profesion": "titulo",
+    "empresa": "empresa", "centro_de_trabajo": "empresa", "centro_trabajo": "empresa", "institucion": "empresa",
+    "ciudad": "ciudad", "ubicacion": "ciudad", "region": "ciudad",
+    "estado": "estado",
+    "notas": "notas", "nota": "notas", "comentarios": "notas",
+    "fuente_detalle": "fuente_detalle", "detalle_de_la_fuente": "fuente_detalle",
+    "detalle_fuente": "fuente_detalle", "origen": "fuente_detalle",
+    "tags": "tags", "etiquetas": "tags",
+}
+
+
+def _alias_columna(encabezado) -> str:
+    """«Título *» → titulo; «Correo electrónico» → email. Vacío si la columna no se importa."""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(encabezado or "")).encode("ascii", "ignore").decode().lower()
+    t = re.sub(r"\(.*?\)|\*", "", t).strip()
+    t = re.sub(r"[^a-z0-9]+", "_", t).strip("_")
+    return _ALIAS_COLUMNA_PUBLICO.get(t, "")
+
+
+def _celda_texto(v) -> str:
+    """Valor de una celda como texto: 999000001.0 → «999000001», fechas en ISO."""
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    if hasattr(v, "isoformat"):
+        return v.isoformat()[:10]
+    return str(v).strip()
+
+
+def _encabezado_excel(ws, headers: list, anchos: list | None = None) -> None:
+    hfill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+    hfont = Font(color="FFFFFF", bold=True)
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.fill = hfill
+        cell.font = hfont
+        cell.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = (anchos[ci - 1] if anchos else 20)
+    ws.freeze_panes = "A2"
+
+
 @app.get("/publico/template-excel")
 async def publico_template_excel():
+    from openpyxl.worksheet.datavalidation import DataValidation
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Prospectos"
-    headers = ["nombre", "apellido", "email", "celular", "titulo",
-               "empresa", "ciudad", "notas", "fuente_detalle", "tags"]
-    header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
-    header_font = Font(color="FFFFFF", bold=True)
-    for col_idx, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col_idx, value=h)
-        cell.fill = header_fill
-        cell.font = header_font
-        cell.alignment = Alignment(horizontal="center")
-        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 18
-    # Example row
-    ws.append(["Juan", "Pérez", "juan@ejemplo.com", "999000001",
-               "Contador", "Mi Empresa S.A.", "Lima",
-               "Interesado en membresía ordinaria", "Feria 2026", "feria,lima"])
+    ws.title = "Público"
+    _encabezado_excel(ws, [c[1] for c in _COLUMNAS_PUBLICO], [c[2] for c in _COLUMNAS_PUBLICO])
+    filas = 1000
+    letra = {c[0]: openpyxl.utils.get_column_letter(i) for i, c in enumerate(_COLUMNAS_PUBLICO, 1)}
+    # Celular como texto: Excel no se come los ceros ni el «+51».
+    ws.column_dimensions[letra["celular"]].number_format = "@"
+
+    # Listas desplegables con los valores de la base (R10): estados y títulos en uso.
+    listas = wb.create_sheet("Listas")
+    estados = [k for k in catalogos.ESTADOS_PUBLICO if k != "convertido"]
+    titulos = sorted(set(pdb.get_member_titulos()) | set(pdb.get_publico_titulos()))
+    listas["A1"], listas["B1"] = "Estado", "Título"
+    for i, v in enumerate(estados, 2):
+        listas[f"A{i}"] = v
+    for i, v in enumerate(titulos, 2):
+        listas[f"B{i}"] = v
+    listas.sheet_state = "hidden"
+    dv_estado = DataValidation(type="list", formula1=f"=Listas!$A$2:$A${len(estados) + 1}", allow_blank=True,
+                               showErrorMessage=True, errorTitle="Estado",
+                               error="Usa un estado de la lista o deja la celda vacía.")
+    dv_estado.add(f"{letra['estado']}2:{letra['estado']}{filas + 1}")
+    ws.add_data_validation(dv_estado)
+    if titulos:
+        # Sugerencia, no obligación: se puede escribir un título que aún no esté en la lista.
+        dv_titulo = DataValidation(type="list", formula1=f"=Listas!$B$2:$B${len(titulos) + 1}",
+                                   allow_blank=True, showErrorMessage=False)
+        dv_titulo.add(f"{letra['titulo']}2:{letra['titulo']}{filas + 1}")
+        ws.add_data_validation(dv_titulo)
+
+    ins = wb.create_sheet("Instrucciones")
+    _encabezado_excel(ins, ["Columna", "Qué poner"], [24, 90])
+    for _, h, _, ayuda in _COLUMNAS_PUBLICO:
+        ins.append([h, ayuda])
+    ins.append([])
+    for linea in (
+        "Llena una fila por persona en la hoja «Público», a partir de la fila 2. No cambies los encabezados.",
+        "Solo el email es obligatorio. Las filas sin email o con un email no válido se informan y no se cargan.",
+        "Si el email ya está en Público, solo se completan los datos que su ficha tiene vacíos y se suman las etiquetas: no se borra ni se pisa nada.",
+        "También puedes importar un archivo descargado con «Exportar»: las columnas que no están aquí se ignoran.",
+        "Máximo 5000 filas por archivo.",
+    ):
+        ins.append(["", linea])
+    for row in ins.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=plantilla_prospectos.xlsx"},
+        headers={"Content-Disposition": "attachment; filename=plantilla_publico.xlsx"},
     )
 
 
@@ -5274,30 +5369,20 @@ async def publico_export(
     )
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Público IPIDET"
-    headers = ["Nombre", "Apellido", "Email", "Celular", "Título", "Empresa",
-               "Ciudad", "Estado", "Es socio", "Fuente", "Tags", "Eventos Zoom"]
-    hfill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
-    hfont = Font(color="FFFFFF", bold=True)
-    for ci, h in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=ci, value=h)
-        cell.fill = hfill
-        cell.font = hfont
-        cell.alignment = Alignment(horizontal="center")
-        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = 20
+    ws.title = "Público"
+    # Mismas columnas que la plantilla (se puede volver a importar) + datos solo de lectura al final.
+    headers = [c[1].rstrip(" *") for c in _COLUMNAS_PUBLICO] + ["Fuente", "Es socio", "Eventos Zoom"]
+    _encabezado_excel(ws, headers, [c[2] for c in _COLUMNAS_PUBLICO] + [12, 10, 40])
+    fuentes = catalogos.FUENTES_PUBLICO
     for d in docs:
-        tags_str = ",".join(d.get("tags") or [])
         zoom_str = "; ".join(
-            ze.get("evento_titulo", ze.get("evento_id", ""))
+            ze.get("evento_titulo") or ze.get("evento_id") or ""
             for ze in (d.get("zoom_eventos") or [])
         )
-        ws.append([
-            d.get("nombre", ""), d.get("apellido", ""), d.get("email", ""),
-            d.get("celular", ""), d.get("titulo", ""), d.get("empresa", ""),
-            d.get("ciudad", ""), d.get("estado", ""),
-            "Sí" if d.get("es_socio") else "No",
-            d.get("fuente", ""), tags_str, zoom_str,
-        ])
+        fila = [", ".join(d.get("tags") or []) if campo == "tags" else (d.get(campo) or "")
+                for campo, *_ in _COLUMNAS_PUBLICO]
+        ws.append(fila + [fuentes.get(d.get("fuente") or "", d.get("fuente") or ""),
+                          "Sí" if d.get("es_socio") else "No", zoom_str])
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -5323,25 +5408,44 @@ async def publico_importar(request: Request, archivo: UploadFile = File(...)):
         wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
     except Exception:
         return RedirectResponse("/publico?error=archivo_invalido", status_code=303)
-    ws = wb.active
-    if ws.max_row and ws.max_row > 5001:
-        return RedirectResponse("/publico?error=demasiadas_filas", status_code=303)
+    # La hoja con datos: «Público» si existe (plantilla), si no la primera.
+    ws = wb["Público"] if "Público" in wb.sheetnames else wb.worksheets[0]
     rows_iter = ws.iter_rows(values_only=True)
-    headers_row = next(rows_iter, None)
-    if not headers_row:
-        return RedirectResponse("/publico?error=archivo_vacio", status_code=303)
-    headers = [str(h).strip().lower() if h else "" for h in headers_row]
+    # Encabezados: la primera de las 10 primeras filas que tenga una columna de email.
+    campos, n_fila = None, 0
+    for row in rows_iter:
+        n_fila += 1
+        cand = [_alias_columna(h) for h in (row or ())]
+        if "email" in cand:
+            campos = cand
+            break
+        if n_fila >= 10:
+            break
+    if campos is None:
+        return RedirectResponse("/publico?error=sin_columna_email", status_code=303)
     rows = []
     for row in rows_iter:
-        if not any(row):
+        n_fila += 1
+        if not row or not any(_celda_texto(v) for v in row):
             continue
-        row_dict = {headers[i]: (str(v).strip() if v is not None else "") for i, v in enumerate(row) if i < len(headers)}
-        rows.append(row_dict)
+        if len(rows) >= 5000:
+            return RedirectResponse("/publico?error=demasiadas_filas", status_code=303)
+        d = {"_fila": n_fila}
+        for i, v in enumerate(row):
+            if i < len(campos) and campos[i] and not d.get(campos[i]):
+                d[campos[i]] = _celda_texto(v)
+        rows.append(d)
+    wb.close()
+    if not rows:
+        return RedirectResponse("/publico?error=archivo_vacio", status_code=303)
     result = pdb.import_prospectos_bulk(rows)
-    return RedirectResponse(
-        f"/publico?ok=importado&insertados={result['insertados']}&actualizados={result['actualizados']}&errores={result['errores']}",
-        status_code=303,
-    )
+    detalle = "; ".join(f"fila {f}: {m}" for f, m in result["detalle_errores"][:8])
+    if len(result["detalle_errores"]) > 8:
+        detalle += f"; y {len(result['detalle_errores']) - 8} más"
+    return RedirectResponse("/publico?" + urlencode({
+        "ok": "importado", "insertados": result["insertados"], "actualizados": result["actualizados"],
+        "sin_cambios": result["sin_cambios"], "errores": result["errores"], "detalle": detalle,
+    }), status_code=303)
 
 
 @app.post("/publico/nuevo")

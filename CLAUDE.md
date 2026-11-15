@@ -1546,6 +1546,8 @@ nuevo → interesado → postulante → convertido
 
 `inactivo` = baja voluntaria o descarte. Estados y fuentes: `catalogos.ESTADOS_PUBLICO` / `FUENTES_PUBLICO`.
 
+**Carga masiva:** `GET /publico/template-excel` (plantilla con hoja de instrucciones y listas de estados y títulos sacadas de la base) → `POST /publico/importar`. Columnas en `_COLUMNAS_PUBLICO` de `app.py`; el importador reconoce encabezados con tildes, sinónimos (`_ALIAS_COLUMNA_PUBLICO`) y el archivo de `GET /publico/export`, que usa las mismas columnas. Los botones de la cabecera (`header_actions`) están fuera de todo `x-data`: abren los modales con `onclick="window.dispatchEvent(...)"`, no con `@click`.
+
 **Desde la cola de correos:** quien escribe y no es socio se agrega con «Agregar a Público» (`/inbox/{id}/publico` → `db.guardar_prospecto_desde_correo`), con fuente `correo`, los datos que el agente leyó en la firma (`correos.contacto`) y el estado sugerido por categoría (`catalogos.ESTADO_PUBLICO_POR_CATEGORIA`: admisión → postulante). Si la ficha ya existe por email solo completa campos vacíos y suma etiquetas. La ficha muestra «Correos que nos escribió». No aparece para correos automáticos, internos ni de proveedores.
 
 ### Colección `publico`
@@ -1587,7 +1589,8 @@ update_prospecto(prospecto_id, fields)
 delete_prospecto(prospecto_id)
 convert_prospecto_to_member(prospecto_id, periodo_actual) → member_id
 upsert_prospectos_from_zoom(evento_id, evento_titulo, evento_fecha, registrantes[])
-import_prospectos_bulk(rows[]) → {insertados, actualizados, errores}
+import_prospectos_bulk(rows[]) → {insertados, actualizados, sin_cambios, errores, detalle_errores}
+  # por email; a una ficha existente solo le completa campos vacíos y le suma etiquetas (nunca borra)
 get_all_tags() → [{tag, count}]
 get_zoom_eventos_disponibles() → [{_id, titulo, fecha, count}]
 ```

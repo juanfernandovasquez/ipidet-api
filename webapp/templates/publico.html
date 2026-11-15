@@ -3,19 +3,20 @@
 {% block heading %}Público / Prospectos{% endblock %}
 
 {% block header_actions %}
-<button @click="$dispatch('open-campana')"
+{# La cabecera de base.html está fuera de todo x-data: @click no funciona aquí, por eso onclick. #}
+<button type="button" onclick="window.dispatchEvent(new CustomEvent('open-campana'))"
         class="btn-primary flex items-center gap-2">
   <i class="fa-solid fa-paper-plane"></i> Enviar campaña
 </button>
-<button @click="$dispatch('open-nuevo')"
+<button type="button" onclick="window.dispatchEvent(new CustomEvent('open-nuevo'))"
         class="btn-ghost flex items-center gap-2 text-sm">
   <i class="fa-solid fa-plus"></i> Nuevo
 </button>
-<a href="/publico/export?{{ request.url.query }}"
-   class="btn-ghost flex items-center gap-2 text-sm">
+<a href="/publico/export{% if request.url.query %}?{{ request.url.query }}{% endif %}" download
+   class="btn-ghost flex items-center gap-2 text-sm" title="Descarga en Excel lo que muestra la tabla con los filtros actuales">
   <i class="fa-solid fa-file-arrow-down"></i> Exportar
 </a>
-<button @click="$dispatch('open-importar')"
+<button type="button" onclick="window.dispatchEvent(new CustomEvent('open-importar'))"
         class="btn-ghost flex items-center gap-2 text-sm">
   <i class="fa-solid fa-file-arrow-up"></i> Importar
 </button>
@@ -29,22 +30,37 @@
      @open-importar.window="modalImportar=true"
      @open-campana.window="abrirCampana()">
 
-  {% if request.query_params.get('ok') == 'importado' %}
-  <div class="mb-4 flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
-    <i class="fa-solid fa-circle-check text-green-500"></i>
-    Importación completada:
-    <strong>{{ request.query_params.get('insertados', 0) }}</strong> nuevos,
-    <strong>{{ request.query_params.get('actualizados', 0) }}</strong> actualizados,
-    <strong>{{ request.query_params.get('errores', 0) }}</strong> errores.
+  {% set qp = request.query_params %}
+  {% if qp.get('ok') == 'importado' %}
+  {% set n_err = qp.get('errores', '0') | int %}
+  <div class="mb-4 text-sm rounded-xl px-4 py-2.5 border {{ 'text-amber-800 bg-amber-50 border-amber-200' if n_err else 'text-green-700 bg-green-50 border-green-200' }}">
+    <div class="flex items-center gap-2 flex-wrap">
+      <i class="fa-solid {{ 'fa-triangle-exclamation text-amber-500' if n_err else 'fa-circle-check text-green-500' }}"></i>
+      Importación terminada:
+      <strong>{{ qp.get('insertados', 0) }}</strong> nuevos,
+      <strong>{{ qp.get('actualizados', 0) }}</strong> completados,
+      <strong>{{ qp.get('sin_cambios', 0) }}</strong> sin cambios,
+      <strong>{{ n_err }}</strong> con errores.
+    </div>
+    {% if qp.get('detalle') %}<div class="mt-1 text-xs">No se cargaron: {{ qp.get('detalle') }}.</div>{% endif %}
   </div>
-  {% elif request.query_params.get('ok') == 'eliminado' %}
+  {% elif qp.get('ok') == 'eliminado' %}
   <div class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
     <i class="fa-solid fa-circle-check mr-1.5 text-amber-500"></i> Prospecto desactivado.
   </div>
-  {% elif request.query_params.get('error') %}
+  {% elif qp.get('error') %}
+  {% set errores_import = {
+    'tipo_invalido': 'El archivo debe ser un Excel (.xlsx).',
+    'archivo_grande': 'El archivo pesa más de 5 MB.',
+    'archivo_invalido': 'No se pudo leer el archivo. Guárdalo de nuevo como Excel (.xlsx) e inténtalo otra vez.',
+    'demasiadas_filas': 'El archivo tiene más de 5000 filas. Divídelo en varios.',
+    'archivo_vacio': 'El archivo no tiene filas con datos debajo de los encabezados.',
+    'sin_columna_email': 'No se encontró la columna «Email». Usa la plantilla y no cambies los encabezados.',
+    'duplicado': 'No se pudo crear: ya existe una persona con ese email.',
+  } %}
   <div class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
     <i class="fa-solid fa-circle-exclamation mr-1.5 text-red-500"></i>
-    Error: {{ request.query_params.get('error') }}.
+    {{ errores_import.get(qp.get('error'), 'Error: ' ~ qp.get('error')) }}
   </div>
   {% endif %}
 
@@ -556,24 +572,32 @@
         </h3>
         <button @click="modalImportar=false" class="text-slate-400 hover:text-slate-600 text-xl w-7 h-7 flex items-center justify-center rounded hover:bg-slate-100">×</button>
       </div>
-      <div class="px-6 py-5 space-y-4">
-        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
-          <i class="fa-solid fa-circle-info mr-1.5"></i>
-          El archivo debe tener las columnas de la <a href="/publico/template-excel" class="underline font-medium">plantilla Excel</a>.
-          Si un email ya existe se actualiza; si es nuevo se inserta.
+      <form method="post" action="/publico/importar" enctype="multipart/form-data" class="px-6 py-5 space-y-5">
+        <div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">1. Descarga la plantilla</div>
+          <a href="/publico/template-excel" download class="btn-ghost inline-flex items-center gap-2 text-sm">
+            <i class="fa-solid fa-file-excel"></i> Descargar plantilla Excel
+          </a>
+          <p class="text-xs text-slate-500 mt-2">
+            Una fila por persona. Solo el email es obligatorio; la hoja «Instrucciones» explica cada columna.
+            También sirve un archivo bajado con «Exportar».
+          </p>
         </div>
-        <form method="post" action="/publico/importar" enctype="multipart/form-data">
-          <label class="block text-xs font-medium text-slate-600 mb-1">Archivo Excel (.xlsx)</label>
-          <input type="file" name="archivo" accept=".xlsx"
-                 class="block w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
-          <div class="flex justify-end gap-2 mt-4">
-            <button type="button" @click="modalImportar=false" class="btn-ghost">Cancelar</button>
-            <button type="submit" class="btn-primary">
-              <i class="fa-solid fa-upload mr-1.5"></i> Importar
-            </button>
-          </div>
-        </form>
-      </div>
+        <div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">2. Sube el archivo lleno</div>
+          <input type="file" name="archivo" accept=".xlsx" required
+                 class="block w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer">
+          <p class="text-xs text-slate-500 mt-2">
+            Si el email ya está en Público, solo se completan los datos vacíos de su ficha y se suman las etiquetas: no se borra nada.
+          </p>
+        </div>
+        <div class="flex justify-end gap-2 pt-1">
+          <button type="button" @click="modalImportar=false" class="btn-ghost">Cancelar</button>
+          <button type="submit" class="btn-primary">
+            <i class="fa-solid fa-upload mr-1.5"></i> Importar
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 

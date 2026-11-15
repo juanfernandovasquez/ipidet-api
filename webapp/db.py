@@ -5068,46 +5068,78 @@ def log_comunicacion_prospecto(prospecto_id: str, asunto: str, plantilla_nombre:
     )
 
 
+CAMPOS_IMPORT_PUBLICO = ("nombre", "apellido", "email", "celular", "titulo", "empresa",
+                         "ciudad", "estado", "notas", "fuente_detalle", "tags")
+_EMAIL_RX = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
 def import_prospectos_bulk(rows: list) -> dict:
-    """Upsert list of dicts by email. Returns {insertados, actualizados, errores}."""
-    insertados = actualizados = errores = 0
+    """Carga masiva de Público, por email. Cada fila: dict con CAMPOS_IMPORT_PUBLICO y `_fila`.
+
+    Un email nuevo se inserta (fuente «excel»). Si ya existe, solo se completan los campos que
+    la ficha tiene vacíos y las etiquetas se suman: una celda en blanco nunca borra un dato, y lo
+    que el equipo cargó a mano no se pisa. El estado se aplica si es válido (nunca «convertido»).
+    Devuelve {insertados, actualizados, sin_cambios, errores, detalle_errores: [(fila, motivo)]}.
+    """
+    from config import catalogos
+    insertados = actualizados = sin_cambios = 0
+    detalle: list[tuple[int, str]] = []
+    vistos: set[str] = set()
     for row in rows:
-        email = (row.get("email") or "").strip().lower()
+        fila = row.get("_fila", 0)
+        email = str(row.get("email") or "").strip().lower()
         if not email:
-            errores += 1
+            detalle.append((fila, "sin email"))
             continue
+        if not _EMAIL_RX.match(email):
+            detalle.append((fila, f"email no válido ({email[:40]})"))
+            continue
+        if email in vistos:
+            detalle.append((fila, f"email repetido en el archivo ({email})"))
+            continue
+        vistos.add(email)
         try:
-            existing = publico_col.find_one({"email": email}, {"_id": 1})
-            tags_raw = row.get("tags") or ""
-            tags = [t.strip() for t in str(tags_raw).split(",") if t.strip()]
-            doc: dict = {
-                "nombre":         (row.get("nombre") or "").strip(),
-                "apellido":       (row.get("apellido") or "").strip(),
-                "email":          email,
-                "celular":        str(row.get("celular") or "").strip(),
-                "titulo":         (row.get("titulo") or "").strip(),
-                "empresa":        (row.get("empresa") or "").strip(),
-                "ciudad":         (row.get("ciudad") or "").strip(),
-                "notas":          (row.get("notas") or "").strip(),
-                "fuente_detalle": (row.get("fuente_detalle") or "").strip(),
-                "tags":           tags,
-                "updated_at":     datetime.now(timezone.utc),
-            }
-            if existing:
-                publico_col.update_one({"_id": existing["_id"]}, {"$set": doc})
-                actualizados += 1
+            tags = list(dict.fromkeys(t.strip() for t in str(row.get("tags") or "").split(",") if t.strip()))
+            datos = {k: str(row.get(k) or "").strip() for k in
+                     ("nombre", "apellido", "celular", "titulo", "empresa", "ciudad", "notas", "fuente_detalle")}
+            estado = str(row.get("estado") or "").strip().lower()
+            if estado and (estado not in catalogos.ESTADOS_PUBLICO or estado == "convertido"):
+                estado = ""
+            ahora = datetime.now(timezone.utc)
+            existente = publico_col.find_one({"email": email})
+            if existente:
+                cambios: dict = {k: v for k, v in datos.items()
+                                 if v and not str(existente.get(k) or "").strip()}
+                tags_previos = existente.get("tags") or []
+                if any(t not in tags_previos for t in tags):
+                    cambios["tags"] = list(dict.fromkeys(tags_previos + tags))
+                if estado and estado != existente.get("estado") and existente.get("estado") != "convertido":
+                    cambios["estado"] = estado
+                if cambios:
+                    cambios["updated_at"] = ahora
+                    publico_col.update_one({"_id": existente["_id"]}, {"$set": cambios})
+                    actualizados += 1
+                else:
+                    sin_cambios += 1
             else:
-                doc["fuente"]        = "excel"
-                doc["estado"]        = "nuevo"
-                doc["postulacion"]   = None
-                doc["member_id"]     = None
-                doc["comunicaciones"] = []
-                doc["created_at"]    = datetime.now(timezone.utc)
-                publico_col.insert_one(doc)
+                publico_col.insert_one({
+                    **datos,
+                    "email":          email,
+                    "tags":           tags,
+                    "fuente":         "excel",
+                    "estado":         estado or "nuevo",
+                    "es_socio":       False,
+                    "postulacion":    None,
+                    "member_id":      None,
+                    "comunicaciones": [],
+                    "created_at":     ahora,
+                    "updated_at":     ahora,
+                })
                 insertados += 1
-        except Exception:
-            errores += 1
-    return {"insertados": insertados, "actualizados": actualizados, "errores": errores}
+        except Exception as exc:
+            detalle.append((fila, f"no se pudo guardar ({type(exc).__name__})"))
+    return {"insertados": insertados, "actualizados": actualizados, "sin_cambios": sin_cambios,
+            "errores": len(detalle), "detalle_errores": detalle}
 
 
 def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str | None = None) -> str:
