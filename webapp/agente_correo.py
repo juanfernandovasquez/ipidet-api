@@ -28,7 +28,7 @@ import urllib.request
 import base64
 import threading
 from datetime import datetime, timedelta, timezone
-from email.utils import formataddr
+from email.utils import formataddr, getaddresses
 
 import requests
 
@@ -507,6 +507,9 @@ def _llamar_brevo(msg, html: str, texto: str, adjuntos: list[dict] | None, remit
     }
     if cabeceras:
         payload["headers"] = cabeceras
+    for cabecera, clave in (("Cc", "cc"), ("Bcc", "bcc")):
+        if msg[cabecera]:
+            payload[clave] = [{"email": e} for _, e in getaddresses([str(msg[cabecera])]) if e]
     if adjuntos:
         payload["attachment"] = [{"name": a["nombre"], "content": base64.b64encode(a["datos"]).decode()} for a in adjuntos]
     req = urllib.request.Request(
@@ -540,13 +543,45 @@ def _despachar(gmail: GmailClient, msg, html: str, texto: str, adjuntos: list[di
         return "brevo", remitente
 
 
+_EMAIL_VALIDO = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
+MAX_COPIAS = 20
+
+
+def leer_copias(valor) -> tuple[list[str], list[str]]:
+    """Texto con correos separados por coma, punto y coma o línea (o una lista) → (válidos, inválidos)."""
+    partes = valor if isinstance(valor, list) else re.split(r"[,;\s]+", valor or "")
+    validos, invalidos = [], []
+    for p in partes:
+        e = email_de(p) or p.strip().strip("<>").lower()
+        if not e:
+            continue
+        (validos if _EMAIL_VALIDO.match(e) else invalidos).append(e)
+    return list(dict.fromkeys(validos)), invalidos
+
+
+def copias_del_original(doc: dict) -> list[str]:
+    """Quienes estaban en el correo original (Para y CC), sin IPIDET ni quien escribió: «responder a todos»."""
+    excluir = direcciones_propias() | {email_de(doc.get("reply_to") or doc.get("de") or ""), doc.get("de_email", "")}
+    return [e for e in dict.fromkeys((doc.get("para") or []) + (doc.get("cc") or [])) if e and e not in excluir]
+
+
 def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool = False,
-                     gmail: GmailClient | None = None) -> tuple[bool, str]:
+                     gmail: GmailClient | None = None, cc: list[str] | None = None,
+                     cco: list[str] | None = None) -> tuple[bool, str]:
+    """`cc` / `cco`: copias y copias ocultas. Si no se pasan (Telegram), se usan las que el equipo
+    guardó en el borrador. Las respuestas automáticas nunca llevan copias."""
     texto = (texto or "").strip()
     if not texto:
         return False, "La respuesta está vacía."
     if _MARCADOR.search(texto):
         return False, "La respuesta todavía tiene marcadores [COMPLETAR …]."
+    if not automatico and (cc is None or cco is None):
+        guardado = agente_db.get_correo(correo_id) or {}
+        cc = (guardado.get("respuesta_cc") or []) if cc is None else cc
+        cco = (guardado.get("respuesta_cco") or []) if cco is None else cco
+    cc, cco = ([], []) if automatico else (list(cc or []), list(cco or []))
+    if len(cc) + len(cco) > MAX_COPIAS:
+        return False, f"Son demasiadas copias: el máximo es {MAX_COPIAS} entre CC y CCO."
     archivos = agente_db.archivos_de(correo_id, con_datos=True)
     faltan = imagenes_faltantes(texto, archivos)
     if faltan:
@@ -566,6 +601,14 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
         html = _html_respuesta(texto, doc, imagenes)
         plano = _texto_respuesta(texto, doc)
         msg = emisor.construir_respuesta(doc, plano, html, remitente=formataddr((BREVO_FROM_NAME, desde)))
+        # Nadie recibe dos veces: fuera de las copias el destinatario y quien ya va en CC.
+        principal_para = email_de(msg["To"])
+        cc = [e for e in cc if e != principal_para]
+        cco = [e for e in cco if e != principal_para and e not in cc]
+        if cc:
+            msg["Cc"] = ", ".join(cc)
+        if cco:
+            msg["Bcc"] = ", ".join(cco)  # smtplib lo quita de la cabecera al enviar
         for a in adjuntos:
             principal, _, secundario = (a["mime"] or "application/octet-stream").partition("/")
             msg.add_attachment(a["datos"], maintype=principal, subtype=secundario or "octet-stream", filename=a["nombre"])
@@ -582,6 +625,7 @@ def enviar_respuesta(correo_id: str, texto: str, usuario: str, automatico: bool 
         "editado_por_equipo": texto != (doc.get("borrador_original") or "").strip(), "error": None,
         "adjuntos_enviados": [{"nombre": a["nombre"], "tipo": a["tipo"], "tamano": a["tamano"], "url": a["url"]}
                               for a in archivos if a["tipo"] == "adjunto" or a["nombre"].lower() in imagenes],
+        "enviado_cc": cc, "enviado_cco": cco,
     }, accion="enviado automáticamente" if automatico else "enviado", usuario=usuario, detalle=f"desde {desde} vía {canal}")
     recibida.marcar_leido(doc.get("gm_msgid", ""))
     agente_db.contar_uso_faqs(doc.get("fuentes_usadas") or [])

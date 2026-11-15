@@ -4728,6 +4728,9 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
         c["cuenta_recibida"] = agente_correo.cuenta_de(c)
         c["cuenta_envio"] = c.get("enviado_desde") or agente_correo.cuenta_respuesta(c)
         c["chat_vista"] = _chat_vista(c)
+    for c in correos:
+        if c.get("estado") in ("pendiente", "error"):
+            c["copias_original"] = agente_correo.copias_del_original(c)
     archivos = agente_db.archivos_por_correo([str(c["_id"]) for c in correos if c.get("estado") in ("pendiente", "error")])
     ids_socios = {c.get("member_id") or c.get("posible_member_id") for c in correos} - {None, ""}
     socios = {m["member_id"]: f"{m.get('apellidos', '')}, {m.get('nombres', '')}".strip(", ")
@@ -4911,16 +4914,37 @@ async def inbox_telegram_conectar(request: Request):
 
 
 @app.post("/inbox/{correo_id}/enviar")
-async def inbox_enviar(request: Request, correo_id: str, respuesta: str = Form(""), desde: str = Form("")):
+async def inbox_enviar(request: Request, correo_id: str, respuesta: str = Form(""), desde: str = Form(""),
+                       cc: str = Form(""), cco: str = Form("")):
     desde = desde.strip().lower()
+    copias, malas = agente_correo.leer_copias(cc)
+    ocultas, malas_o = agente_correo.leer_copias(cco)
+    if malas or malas_o:
+        agente_db.actualizar(correo_id, {"respuesta_borrador": respuesta.strip()})
+        return _volver(request, correo_id, error=f"Revisa estas direcciones: {', '.join(malas + malas_o)}")
+    agente_db.actualizar(correo_id, {"respuesta_cc": copias, "respuesta_cco": ocultas})
     doc = agente_db.get_correo(correo_id)
     if doc and desde in agente_correo.cuentas() and desde != agente_correo.cuenta_respuesta(doc):
         agente_db.actualizar(correo_id, {"cuenta_respuesta": desde, "cuenta_respuesta_manual": True},
                              accion="cuenta de respuesta cambiada", usuario=_usuario(request), detalle=desde)
-    ok, detalle = await _en_hilo(agente_correo.enviar_respuesta, correo_id, respuesta, _usuario(request))
+    ok, detalle = await _en_hilo(agente_correo.enviar_respuesta, correo_id, respuesta, _usuario(request),
+                                 cc=copias, cco=ocultas)
     if not ok:
         agente_db.actualizar(correo_id, {"respuesta_borrador": respuesta.strip()})
     return _volver(request, "" if ok else correo_id, **({"ok": detalle} if ok else {"error": detalle}))
+
+
+@app.post("/inbox/{correo_id}/copias")
+async def inbox_copias(request: Request, correo_id: str):
+    """Guarda CC y CCO del borrador mientras se escriben: así también salen si se aprueba desde Telegram."""
+    datos = await request.json()
+    copias, malas = agente_correo.leer_copias(datos.get("cc") or "")
+    ocultas, malas_o = agente_correo.leer_copias(datos.get("cco") or "")
+    doc = agente_db.get_correo(correo_id)
+    if not doc or doc.get("estado") not in ("pendiente", "error"):
+        return JSONResponse({"ok": False, "error": "Este correo ya no está por atender"}, status_code=400)
+    agente_db.actualizar(correo_id, {"respuesta_cc": copias, "respuesta_cco": ocultas})
+    return {"ok": True, "cc": copias, "cco": ocultas, "invalidos": malas + malas_o}
 
 
 @app.post("/inbox/{correo_id}/reescribir")

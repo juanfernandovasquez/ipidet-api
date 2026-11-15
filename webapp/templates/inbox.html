@@ -97,7 +97,9 @@
            x-data="correoCard('{{ cid }}')" data-borrador="{{ c.respuesta_borrador or '' }}"
            data-faltantes='{{ (c.datos_faltantes or []) | tojson }}' data-chat='{{ (c.chat_vista or []) | tojson }}'
            data-archivos='{{ archivos.get(cid, []) | tojson }}'
-           x-init="borrador = $el.dataset.borrador; faltantes = JSON.parse($el.dataset.faltantes).map(d => ({ dato: d, respuesta: '' })); chat = JSON.parse($el.dataset.chat); archivos = JSON.parse($el.dataset.archivos); abierto = {{ 'true' if ver or vista == 'faqs' or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
+           data-cc="{{ (c.respuesta_cc or []) | join(', ') }}" data-cco="{{ (c.respuesta_cco or []) | join(', ') }}"
+           data-todos='{{ (c.copias_original or []) | tojson }}'
+           x-init="borrador = $el.dataset.borrador; faltantes = JSON.parse($el.dataset.faltantes).map(d => ({ dato: d, respuesta: '' })); chat = JSON.parse($el.dataset.chat); archivos = JSON.parse($el.dataset.archivos); cc = $el.dataset.cc || ''; cco = $el.dataset.cco || ''; todos = JSON.parse($el.dataset.todos || '[]'); copias = !!(cc || cco); abierto = {{ 'true' if ver or vista == 'faqs' or (c.estado in abiertos and loop.index <= 3) else 'false' }}">
 
     {# Cabecera #}
     <div class="p-5">
@@ -332,6 +334,27 @@
             <span>Se responde en el mismo hilo, con el correo original citado debajo.</span>
           </div>
 
+          {# Copias #}
+          <div class="mt-2 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-slate-500">Para: <strong class="font-medium text-slate-700">{{ c.reply_to or c.de_email }}</strong></span>
+              <button type="button" x-show="!copias" class="text-blue-600 hover:underline" @click="copias = true; $nextTick(() => $refs.cc.focus())">+ CC / CCO</button>
+              <button type="button" x-show="pendientesTodos.length > 0" x-cloak class="text-blue-600 hover:underline" @click="responderATodos()"
+                      x-text="'Responder a todos: agregar en CC a ' + pendientesTodos.join(', ')"></button>
+            </div>
+            <div x-show="copias" x-cloak class="mt-2 grid sm:grid-cols-2 gap-2">
+              <label class="font-medium text-slate-600">CC <span class="font-normal text-slate-400">(todos lo ven)</span>
+                <input name="cc" x-model="cc" x-ref="cc" @change="guardarCopias()" class="input w-full mt-1 font-normal text-sm"
+                       placeholder="correo@ejemplo.com, otro@ejemplo.com" autocomplete="email">
+              </label>
+              <label class="font-medium text-slate-600">CCO <span class="font-normal text-slate-400">(copia oculta: nadie más lo ve)</span>
+                <input name="cco" x-model="cco" @change="guardarCopias()" class="input w-full mt-1 font-normal text-sm"
+                       placeholder="correo@ejemplo.com" autocomplete="email">
+              </label>
+              <p class="sm:col-span-2 text-slate-400">Separa varias direcciones con comas. Se guardan solas: también salen si apruebas desde Telegram.</p>
+            </div>
+          </div>
+
           {# Conversación con el agente sobre este borrador #}
           <div class="mt-3 rounded-lg border border-slate-200">
             <div class="px-3 py-2 border-b border-slate-100 flex flex-wrap items-center justify-between gap-1">
@@ -401,6 +424,10 @@
         </p>
         {% if c.respuesta_enviada %}
         <div class="rounded-lg border border-green-200 bg-green-50/50 p-3 text-sm text-slate-800 whitespace-pre-wrap break-words">{{ c.respuesta_enviada }}</div>
+        {% if c.enviado_cc or c.enviado_cco %}
+        <p class="text-xs text-slate-500"><i class="fa-solid fa-users mr-1" aria-hidden="true"></i>
+          {% if c.enviado_cc %}Con copia a {{ c.enviado_cc | join(', ') }}{% endif %}{% if c.enviado_cc and c.enviado_cco %} · {% endif %}{% if c.enviado_cco %}Copia oculta a {{ c.enviado_cco | join(', ') }}{% endif %}</p>
+        {% endif %}
         {% if c.adjuntos_enviados %}
         <p class="text-xs text-slate-500"><i class="fa-solid fa-paperclip mr-1" aria-hidden="true"></i>Se envió con:
           {% for a in c.adjuntos_enviados %}{{ a.nombre }}{% if a.tipo == 'imagen' %} (imagen en el texto){% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
@@ -531,6 +558,31 @@
     Alpine.data('correoCard', (id) => ({
       id, abierto: false, hilo: false, borrador: '', instruccion: '', faltantes: [], chat: [],
       reenviando: false, cargando: false, enviando: false, archivos: [], subiendo: false,
+      cc: '', cco: '', todos: [], copias: false,
+      listaCorreos(t) { return (t || '').split(/[,;\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean); },
+      // «Responder a todos»: quienes estaban en el original y todavía no van en CC ni CCO.
+      get pendientesTodos() {
+        const ya = [...this.listaCorreos(this.cc), ...this.listaCorreos(this.cco)];
+        return this.todos.filter(e => !ya.includes(e));
+      },
+      responderATodos() {
+        this.cc = [...this.listaCorreos(this.cc), ...this.pendientesTodos].join(', ');
+        this.copias = true;
+        this.guardarCopias();
+      },
+      async guardarCopias() {
+        try {
+          const r = await fetch(`/inbox/${id}/copias`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cc: this.cc, cco: this.cco }),
+          });
+          const res = await r.json();
+          if (!r.ok || !res.ok) throw new Error(res.error || 'No se pudieron guardar las copias');
+          if (res.invalidos.length) avisar('Revisa estas direcciones: ' + res.invalidos.join(', '), 'error');
+        } catch (e) {
+          avisar(e.message, 'error');
+        }
+      },
       get tieneMarcadores() { return /\[\s*COMPLETAR/i.test(this.borrador); },
       get marcasImagen() { return [...this.borrador.matchAll(MARCA_IMAGEN)].map(m => m[1].trim().toLowerCase()); },
       // Cada marca del texto necesita su imagen cargada (si no, el servidor no deja enviar).
