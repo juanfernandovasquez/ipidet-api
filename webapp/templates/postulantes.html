@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Postulantes — IPIDET{% endblock %}
+{% block heading %}Postulantes{% endblock %}
+
+{% block header_actions %}
+{# La cabecera está fuera de todo x-data: los botones usan onclick, no @click. #}
+<a href="/postulantes/export?{{ request.url.query }}" download class="btn-ghost flex items-center gap-2 text-sm"
+   title="Descarga en Excel la lista con los filtros actuales">
+  <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Exportar
+</a>
+<button type="button" class="btn-primary flex items-center gap-2"
+        onclick="window.dispatchEvent(new CustomEvent('pos-nuevo'))">
+  <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Nuevo postulante
+</button>
+{% endblock %}
+
+
+{% block content %}
+{% macro qs(cambios) -%}
+{%- set base = {"search": f.search, "etapa": f.etapa, "tipo_socio": f.tipo_socio, "responsable": f.responsable,
+                "seguimiento": f.seguimiento, "origen": f.origen} -%}
+{%- set _ = base.update(cambios) -%}
+?{% for k, v in base.items() if v %}{{ k }}={{ v | urlencode }}&{% endfor %}
+{%- endmacro %}
+{% set tipos_map = dict(tipos_socio_items) %}
+<div x-data="{ nuevo: false }" @pos-nuevo.window="nuevo = true">
+
+  <p class="text-sm text-slate-500 mb-4 max-w-3xl">
+    Personas que quieren asociarse a IPIDET. No son socios: entran al padrón solo cuando se las da de alta desde su ficha.
+    Las consultas de admisión que llegan por correo se registran aquí solas.
+  </p>
+
+  {% if not tiene_requisitos %}
+  <div class="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+    <i class="fa-solid fa-list-check mr-1.5" aria-hidden="true"></i>
+    Aún no hay requisitos de admisión para marcar en cada ficha.
+    <a href="/configuracion#requisitos_admision" class="underline font-medium">Cárgalos en Configuración</a>.
+  </div>
+  {% endif %}
+
+  <!-- Resumen -->
+  <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+    <a href="/postulantes" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-slate-300">
+      <div class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">En proceso</div>
+      <div class="text-2xl font-bold text-slate-800">{{ stats.abiertas }}</div>
+    </a>
+    <a href="/postulantes?seguimiento=vencido" class="rounded-xl border p-4 {{ 'bg-red-50 border-red-200 hover:border-red-300' if stats.vencidos else 'bg-white border-slate-200 hover:border-slate-300' }}">
+      <div class="text-[11px] uppercase tracking-wide mb-1 {{ 'text-red-600' if stats.vencidos else 'text-slate-500' }}">Seguimiento vencido</div>
+      <div class="text-2xl font-bold {{ 'text-red-700' if stats.vencidos else 'text-slate-800' }}">{{ stats.vencidos }}</div>
+    </a>
+    <a href="/postulantes?responsable=sin" class="rounded-xl border p-4 {{ 'bg-amber-50 border-amber-200 hover:border-amber-300' if stats.sin_responsable else 'bg-white border-slate-200 hover:border-slate-300' }}">
+      <div class="text-[11px] uppercase tracking-wide mb-1 {{ 'text-amber-700' if stats.sin_responsable else 'text-slate-500' }}">Sin responsable</div>
+      <div class="text-2xl font-bold {{ 'text-amber-800' if stats.sin_responsable else 'text-slate-800' }}">{{ stats.sin_responsable }}</div>
+    </a>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Nuevos este mes</div>
+      <div class="text-2xl font-bold text-slate-800">{{ stats.nuevos_mes }}</div>
+    </div>
+    <a href="/postulantes?etapa=socio" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-slate-300">
+      <div class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Socios nuevos este mes</div>
+      <div class="text-2xl font-bold text-brand-700">{{ stats.socios_mes }}</div>
+    </a>
+  </div>
+
+  <!-- Etapas (embudo) -->
+  <div class="flex flex-wrap items-center gap-1.5 mb-4" role="tablist" aria-label="Etapa">
+    {% set chips = [("abiertas", "En proceso", "slate")] %}
+    {% for k, v in etapas.items() %}{% set _ = chips.append((k, v[0], v[1])) %}{% endfor %}
+    {% set _ = chips.append(("todas", "Todas", "slate")) %}
+    {% for k, label, color in chips %}
+    {% set activo = (f.etapa or 'abiertas') == k %}
+    <a href="/postulantes{{ qs({'etapa': k}) }}" role="tab" aria-selected="{{ 'true' if activo else 'false' }}"
+       class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm border transition-colors
+              {{ 'bg-slate-800 text-white border-slate-800' if activo else 'bg-white text-slate-600 border-slate-200 hover:border-slate-300' }}">
+      {% if k in etapas %}<span class="w-2 h-2 rounded-full badge-{{ color }}" aria-hidden="true"></span>{% endif %}
+      {{ label }}
+      <span class="text-xs {{ 'text-white/70' if activo else 'text-slate-400' }}">{{ conteo.get(k, 0) }}</span>
+    </a>
+    {% if k == 'aprobado' %}<span class="text-slate-300 mx-1" aria-hidden="true">|</span>{% endif %}
+    {% endfor %}
+  </div>
+
+  <!-- Filtros -->
+  <form method="get" action="/postulantes" x-ref="filtros" class="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex flex-wrap items-end gap-3">
+    <input type="hidden" name="etapa" value="{{ f.etapa }}">
+    <label class="flex-1 min-w-48 text-xs font-medium text-slate-600">Buscar
+      <input type="text" name="search" value="{{ f.search }}" placeholder="Nombre, email, empresa, DNI…" class="input w-full mt-1 text-sm font-normal"
+             @input="clearTimeout(window._t); window._t = setTimeout(() => $refs.filtros.submit(), 450)"
+             x-init="if ($el.value) { $el.focus(); $el.setSelectionRange($el.value.length, $el.value.length) }">
+    </label>
+    <label class="text-xs font-medium text-slate-600">Tipo de socio
+      <select name="tipo_socio" class="input mt-1 text-sm font-normal" @change="$refs.filtros.submit()">
+        <option value="">Todos</option>
+        {% for v, l in tipos_socio_items %}<option value="{{ v }}" {% if f.tipo_socio == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs font-medium text-slate-600">Responsable
+      <select name="responsable" class="input mt-1 text-sm font-normal" @change="$refs.filtros.submit()">
+        <option value="">Todos</option>
+        <option value="sin" {% if f.responsable == 'sin' %}selected{% endif %}>Sin responsable</option>
+        {% for u in usuarios %}<option value="{{ u }}" {% if f.responsable == u %}selected{% endif %}>{{ u }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="text-xs font-medium text-slate-600">Seguimiento
+      <select name="seguimiento" class="input mt-1 text-sm font-normal" @change="$refs.filtros.submit()">
+        <option value="">Todos</option>
+        <option value="vencido" {% if f.seguimiento == 'vencido' %}selected{% endif %}>Vencido</option>
+        <option value="hoy" {% if f.seguimiento == 'hoy' %}selected{% endif %}>Para hoy</option>
+        <option value="semana" {% if f.seguimiento == 'semana' %}selected{% endif %}>Próximos 7 días</option>
+        <option value="sin" {% if f.seguimiento == 'sin' %}selected{% endif %}>Sin fecha</option>
+      </select>
+    </label>
+    <label class="text-xs font-medium text-slate-600">Origen
+      <select name="origen" class="input mt-1 text-sm font-normal" @change="$refs.filtros.submit()">
+        <option value="">Todos</option>
+        {% for v, l in origenes.items() %}<option value="{{ v }}" {% if f.origen == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if f.search or f.tipo_socio or f.responsable or f.seguimiento or f.origen %}
+    <a href="/postulantes?etapa={{ f.etapa }}" class="btn-ghost text-sm">Limpiar</a>
+    {% endif %}
+  </form>
+
+  <!-- Tabla -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    {% if postulantes %}
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase tracking-wide">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold">Postulante</th>
+          <th class="text-left px-3 py-3 font-semibold">Etapa</th>
+          <th class="text-left px-3 py-3 font-semibold">Tipo</th>
+          <th class="text-left px-3 py-3 font-semibold">Requisitos</th>
+          <th class="text-left px-3 py-3 font-semibold">Próximo paso</th>
+          <th class="text-left px-3 py-3 font-semibold">Responsable</th>
+          <th class="text-left px-3 py-3 font-semibold">Origen</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for p in postulantes %}
+        {% set et = etapas.get(p.etapa, (p.etapa, 'gray', '')) %}
+        <tr class="hover:bg-slate-50 cursor-pointer" onclick="location.href='/postulantes/{{ p._id }}'">
+          <td class="px-4 py-3">
+            <a href="/postulantes/{{ p._id }}" class="font-medium text-slate-800 hover:text-blue-700">{{ p.persona.nombre_completo or p.persona.email }}</a>
+            <div class="text-xs text-slate-500 font-mono">{{ p.persona.email }}</div>
+            {% if p.persona.empresa or p.persona.titulo %}<div class="text-[11px] text-slate-400">{{ p.persona.titulo }}{% if p.persona.titulo and p.persona.empresa %} · {% endif %}{{ p.persona.empresa }}</div>{% endif %}
+          </td>
+          <td class="px-3 py-3 whitespace-nowrap">
+            <span class="badge badge-{{ et[1] }}" title="{{ et[2] }}">{{ et[0] }}</span>
+            {% if p.dias_en_etapa is not none and p.abierta %}
+            <div class="text-[11px] mt-0.5 {{ 'text-amber-700' if p.dias_en_etapa > 30 else 'text-slate-400' }}">hace {{ p.dias_en_etapa }} día{{ '' if p.dias_en_etapa == 1 else 's' }}</div>
+            {% endif %}
+          </td>
+          <td class="px-3 py-3 text-slate-600">{{ tipos_map.get(p.tipo_socio, p.tipo_socio) or '—' }}</td>
+          <td class="px-3 py-3">
+            {% if p.req_total %}
+            <div class="flex items-center gap-2 min-w-24">
+              <div class="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden" aria-hidden="true">
+                <div class="h-full bg-brand-600" style="width: {{ (100 * p.req_hechos / p.req_total) | round | int }}%"></div>
+              </div>
+              <span class="text-xs text-slate-500 tabular-nums">{{ p.req_hechos }}/{{ p.req_total }}</span>
+            </div>
+            {% else %}<span class="text-slate-300">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-3 max-w-64">
+            {% if p.proxima_accion %}<div class="text-slate-700 truncate" title="{{ p.proxima_accion }}">{{ p.proxima_accion }}</div>{% endif %}
+            {% if p.fecha_seguimiento %}
+            <div class="text-xs {{ 'text-red-700 font-medium' if p.seguimiento_estado == 'vencido' else 'text-amber-700 font-medium' if p.seguimiento_estado == 'hoy' else 'text-slate-500' }}">
+              {% if p.seguimiento_estado == 'vencido' %}<i class="fa-solid fa-triangle-exclamation mr-0.5" aria-hidden="true"></i>Vencido · {% elif p.seguimiento_estado == 'hoy' %}Hoy · {% endif %}{{ p.fecha_seguimiento | format_fecha }}
+            </div>
+            {% elif p.abierta and not p.proxima_accion %}<span class="text-xs text-slate-400">Sin definir</span>{% endif %}
+          </td>
+          <td class="px-3 py-3 text-xs {{ 'text-amber-700' if p.abierta and not p.responsable else 'text-slate-600' }}">{{ p.responsable or ('Sin asignar' if p.abierta else '—') }}</td>
+          <td class="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">
+            {% if p.origen == 'correo' %}<i class="fa-solid fa-envelope mr-1 text-slate-400" aria-hidden="true"></i>{% endif %}{{ origenes.get(p.origen, p.origen) }}
+            <div class="text-[11px] text-slate-400">{{ p.created_at | format_fecha }}</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="px-6 py-14 text-center text-slate-500">
+      <i class="fa-solid fa-user-clock text-3xl text-slate-300 mb-3" aria-hidden="true"></i>
+      <p>No hay postulantes con estos filtros.</p>
+      <p class="text-sm text-slate-400 mt-1">Las consultas de admisión por correo aparecen aquí solas; también puedes registrar uno a mano.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if pages > 1 %}
+  <div class="flex items-center justify-between mt-4 text-sm text-slate-500">
+    <span>{{ total }} postulante{{ '' if total == 1 else 's' }}</span>
+    <div class="flex gap-1">
+      {% if page > 1 %}<a href="/postulantes{{ qs({}) }}page={{ page - 1 }}" class="btn-ghost text-sm">Anterior</a>{% endif %}
+      <span class="px-3 py-1.5">Página {{ page }} de {{ pages }}</span>
+      {% if page < pages %}<a href="/postulantes{{ qs({}) }}page={{ page + 1 }}" class="btn-ghost text-sm">Siguiente</a>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="mt-3 text-sm text-slate-500">{{ total }} postulante{{ '' if total == 1 else 's' }}</p>
+  {% endif %}
+
+  <!-- Modal: nuevo postulante -->
+  <div x-show="nuevo" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+       @keydown.escape.window="nuevo = false">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg" @click.outside="nuevo = false">
+      <div class="flex items-center gap-2 px-6 py-4 border-b border-slate-200">
+        <i class="fa-solid fa-user-plus text-slate-500" aria-hidden="true"></i>
+        <h3 class="font-semibold text-slate-800 flex-1">Nuevo postulante</h3>
+        <button type="button" @click="nuevo = false" class="text-slate-400 hover:text-slate-600 p-1" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form method="post" action="/postulantes/nuevo" class="px-6 py-5 space-y-4">
+        <p class="text-xs text-slate-500">Si el email ya está en Público, se usa esa ficha. Si es de un socio, no se registra.</p>
+        <label class="block text-xs font-medium text-slate-600">Email *
+          <input type="email" name="email" required class="input w-full mt-1 text-sm font-normal" placeholder="persona@correo.com">
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="text-xs font-medium text-slate-600">Nombre<input type="text" name="nombre" class="input w-full mt-1 text-sm font-normal"></label>
+          <label class="text-xs font-medium text-slate-600">Apellido<input type="text" name="apellido" class="input w-full mt-1 text-sm font-normal"></label>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="text-xs font-medium text-slate-600">Celular<input type="text" name="celular" class="input w-full mt-1 text-sm font-normal"></label>
+          <label class="text-xs font-medium text-slate-600">Tipo de socio
+            <select name="tipo_socio" class="input w-full mt-1 text-sm font-normal">
+              <option value="">Por definir</option>
+              {% for v, l in tipos_socio_items %}<option value="{{ v }}">{{ l }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <label class="block text-xs font-medium text-slate-600">Nota
+          <textarea name="nota" rows="2" class="input w-full mt-1 text-sm font-normal resize-none" placeholder="Cómo llegó, qué pidió…"></textarea>
+        </label>
+        <div class="flex justify-end gap-2 pt-1">
+          <button type="button" @click="nuevo = false" class="btn-ghost">Cancelar</button>
+          <button type="submit" class="btn-primary"><i class="fa-solid fa-check mr-1.5" aria-hidden="true"></i> Registrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include "_aviso_query.html" %}
+{% endblock %}

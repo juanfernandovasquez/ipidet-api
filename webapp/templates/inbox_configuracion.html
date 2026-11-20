@@ -88,6 +88,14 @@
         </div>
       </div>
       {% endif %}
+      <div class="rounded-lg border border-slate-200 p-3">
+        <input type="hidden" name="matricular_publico_presente" value="1">
+        <label class="flex items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="matricular_publico" value="1" {% if cfg.matricular_publico %}checked{% endif %} class="mt-0.5">
+          <span><strong>Registrar en Público a quien nos consulta</strong><br>
+            <span class="text-slate-500">Quien escribe por un evento, admisión u otra consulta y no es socio queda en <a href="/publico" class="text-blue-600 hover:underline">Público</a> para su seguimiento. Si quiere asociarse, también en <a href="/postulantes" class="text-blue-600 hover:underline">Postulantes</a>. Nunca cambia el estado que el equipo ya le puso.</span></span>
+        </label>
+      </div>
       <div x-data="{ activo: {{ 'true' if cfg.activo else 'false' }} }" class="space-y-3">
       <label class="flex items-start gap-2 text-sm text-slate-700">
         <input type="checkbox" name="activo" value="1" x-model="activo" {% if cfg.activo %}checked{% endif %} class="mt-0.5">

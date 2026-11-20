@@ -39,6 +39,7 @@ productos_col = _db.productos
 comprobantes_col = _db.comprobantes
 config_col = _db.config
 publico_col = _db.publico
+postulantes_col = _db.postulantes
 
 redes_cuentas_col    = _db.redes_cuentas
 redes_metricas_col   = _db.redes_metricas
@@ -1853,6 +1854,7 @@ _CRUCE_LABELS: dict = {
     "sin_cuota_num":       ("Sin N° cuota",           "red"),
     "estado_incompatible": ("Estado incompatible",    "amber"),
     "cuota_no_existe":     ("Cuota no existe",        "red"),
+    "nota_credito":        ("Con nota de crédito",    "slate"),
     "error":               ("Error interno",          "red"),
 }
 
@@ -1863,9 +1865,19 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
                                   medio_pago: str = "",
                                   fecha_pago: str = "") -> list[dict]:
     """Cruza cada item del comprobante con el payment exacto via FK directa.
-    Requiere payment_id + tipo_pago en cada item. Sin ellos el item queda sin sincronizar."""
+    Requiere payment_id + tipo_pago en cada item. Sin ellos el item queda sin sincronizar.
+    Una nota de crédito nunca marca pagos: su efecto se aplica con registrar_nota_credito."""
     results: list[dict] = []
     seen: set = set()
+    if tipo == "nota_credito":
+        return results
+    if comprobante_id:
+        try:
+            _c = comprobantes_col.find_one({"_id": ObjectId(comprobante_id)}, {"tipo": 1})
+        except Exception:
+            _c = None
+        if _c and _c.get("tipo") == "nota_credito":
+            return results
 
     def _res(item: dict, status: str, msg: str) -> dict:
         label, color = _CRUCE_LABELS.get(status, (status, "slate"))
@@ -1882,6 +1894,10 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
     for item in items:
         mid = item.get("member_id")
         if not mid:
+            continue
+        if item.get("nc_id"):
+            # Línea anulada o corregida con nota de crédito: su pago lo decidió la nota.
+            results.append(_res(item, "nota_credito", "Línea afectada por una nota de crédito: no se sincroniza"))
             continue
 
         monto        = _sf(item.get("monto"))
@@ -3651,13 +3667,18 @@ def get_comprobante_stats() -> dict:
     hoy = _date.today()
     este_mes = hoy.strftime("%Y-%m")
     q = {"estado": {"$ne": "anulado"}}
-    docs = list(comprobantes_col.find(q, {"tipo": 1, "fecha_emision": 1, "estado": 1}))
+    docs = list(comprobantes_col.find(q, {"tipo": 1, "fecha_emision": 1, "estado": 1, "monto_total": 1,
+                                          "efecto_pago": 1}))
     cs = get_credito_stats()
     emitidos = [d for d in docs if d.get("estado") != "pre_registrado"]
+    notas = [d for d in emitidos if d.get("tipo") == "nota_credito"]
     return {
-        "total":                len(emitidos),
+        "total":                len(emitidos) - len(notas),
         "boletas":              sum(1 for d in emitidos if d.get("tipo") == "boleta"),
         "facturas":             sum(1 for d in emitidos if d.get("tipo") == "factura"),
+        "notas_credito":        len(notas),
+        "notas_credito_monto":  round(sum(_sf(d.get("monto_total")) for d in notas), 2),
+        "notas_sin_efecto":     sum(1 for d in notas if not d.get("efecto_pago")),
         "este_mes":             sum(1 for d in emitidos if (d.get("fecha_emision") or "").startswith(este_mes)),
         "pre_registrados":      sum(1 for d in docs if d.get("estado") == "pre_registrado"),
         "credito_pendiente":    cs["total_pendiente"],
@@ -3675,7 +3696,7 @@ def get_comprobantes_unified(
     page: int = 1, per_page: int = 50,
 ) -> tuple:
     """Lista unificada de comprobantes (boletas/facturas) + facturas_credito."""
-    include_comp = tipo in ("", "boleta", "factura", "recibo")
+    include_comp = tipo in ("", "boleta", "factura", "recibo", "nota_credito")
     # credito docs always render as "Factura" in the tipo-doc column
     include_cred = tipo in ("", "credito", "factura")
     member_cache: dict = {}
@@ -3954,74 +3975,329 @@ def update_comprobante(comprobante_id: str, fields: dict) -> None:
         comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": update})
 
 
+_SIN_COMPROBANTE = {
+    "num_comprobante": None, "comprobante_id": None, "tipo_comprobante": None,
+    "fecha_emision_comprobante": None, "comprobante_emitido": False,
+}
+
+
+def _desvincular_pagos(comprobante_id: str, items: list, modo: str) -> list[dict]:
+    """Quita el comprobante de los pagos de esas líneas (solo por FK, R8). Devuelve lo que tocó.
+
+    modo «anular»     → lo que hacía siempre anular un comprobante: el pago vuelve a «debe».
+    modo «devolucion» → igual, y además se borra la fecha y el medio de pago (no hubo ingreso).
+    modo «reemplazo»  → el pago conserva su estado: solo queda sin comprobante.
+    Un pago parcial solo se desvincula: si se devolvió dinero, el parcial se corrige en Cobranzas.
+    """
+    devolver = modo in ("anular", "devolucion")
+    tocados: list[dict] = []
+    vistos: set = set()
+    for item in items:
+        pid, tipo = item.get("payment_id"), item.get("tipo_pago")
+        if not pid:
+            continue
+        try:
+            oid = ObjectId(pid)
+        except Exception:
+            continue
+        clave = (pid, tipo, item.get("cuota_numero"))
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        r = None
+        if tipo == "principal":
+            cambios = dict(_SIN_COMPROBANTE)
+            if devolver:
+                cambios["estado"] = "debe"
+            if modo == "devolucion":
+                cambios.update({"fecha_pago": None, "medio_pago": None, "banco_origen": None, "pagado_por": None})
+            r = payments_col.update_one({"_id": oid, "comprobante_id": comprobante_id}, {"$set": cambios})
+        elif tipo == "cuota" and item.get("cuota_numero") is not None:
+            cambios = {"cuotas.$.num_comprobante": None, "cuotas.$.comprobante_id": None,
+                       "cuotas.$.fecha_emision_comprobante": None}
+            if devolver:
+                cambios.update({"cuotas.$.estado": "pendiente", "cuotas.$.fecha_pago": None})
+            if modo == "devolucion":
+                cambios["cuotas.$.medio_pago"] = None
+            r = payments_col.update_one(
+                {"_id": oid, "cuotas": {"$elemMatch": {"numero": item["cuota_numero"],
+                                                       "comprobante_id": comprobante_id}}},
+                {"$set": cambios},
+            )
+            _sync_estado_from_cuotas(pid)
+        elif tipo == "parcial":
+            r = payments_col.update_one(
+                {"_id": oid, "pagos_parciales.comprobante_id": comprobante_id},
+                {"$set": {"pagos_parciales.$.num_comprobante": None, "pagos_parciales.$.comprobante_id": None}},
+            )
+            _sync_estado_from_parciales(pid)
+        if r is not None and r.modified_count:
+            tocados.append({"payment_id": pid, "tipo_pago": tipo, "cuota_numero": item.get("cuota_numero"),
+                            "member_id": item.get("member_id"), "accion": modo})
+    return tocados
+
+
 def delete_comprobante(comprobante_id: str) -> None:
-    comp = comprobantes_col.find_one({"_id": ObjectId(comprobante_id)}, {"items": 1})
+    comp = comprobantes_col.find_one({"_id": ObjectId(comprobante_id)}, {"items": 1, "tipo": 1})
+    if comp and comp.get("tipo") == "nota_credito":
+        anular_nota_credito(comprobante_id)
+        return
     comprobantes_col.update_one({"_id": ObjectId(comprobante_id)}, {"$set": {"estado": "anulado"}})
     if not comp:
         return
-    items = comp.get("items") or []
-    reverted_pids: set = set()
-    for item in items:
-        pid = item.get("payment_id")
-        if not pid:
-            continue
-        tipo = item.get("tipo_pago")
-        try:
-            _oid = ObjectId(pid)
-        except Exception:
-            continue
-        if tipo == "principal":
-            if pid not in reverted_pids:
-                payments_col.update_one(
-                    {"_id": _oid, "comprobante_id": comprobante_id},
-                    {"$set": {
-                        "estado": "debe",
-                        "num_comprobante": None,
-                        "comprobante_id": None,
-                        "tipo_comprobante": None,
-                        "fecha_emision_comprobante": None,
-                        "comprobante_emitido": False,
-                    }},
-                )
-                reverted_pids.add(pid)
-        elif tipo == "cuota":
-            cuota_num = item.get("cuota_numero")
-            if cuota_num is not None:
-                payments_col.update_one(
-                    {"_id": _oid, "cuotas.numero": cuota_num,
-                     "cuotas.comprobante_id": comprobante_id},
-                    {"$set": {
-                        "cuotas.$.estado": "pendiente",
-                        "cuotas.$.num_comprobante": None,
-                        "cuotas.$.comprobante_id": None,
-                        "cuotas.$.fecha_pago": None,
-                        "cuotas.$.fecha_emision_comprobante": None,
-                    }},
-                )
-                if pid not in reverted_pids:
-                    _sync_estado_from_cuotas(pid)
-        elif tipo == "parcial":
-            payments_col.update_many(
-                {"_id": _oid, "pagos_parciales.comprobante_id": comprobante_id},
-                {"$set": {
-                    "pagos_parciales.$.num_comprobante": None,
-                    "pagos_parciales.$.comprobante_id": None,
-                }},
-            )
-            if pid not in reverted_pids:
-                _sync_estado_from_parciales(pid)
-    # Fallback: clear payments linked by comprobante_id but not in items
+    _desvincular_pagos(comprobante_id, comp.get("items") or [], "anular")
+    # Pagos que apuntan al comprobante sin estar en sus líneas
     payments_col.update_many(
         {"comprobante_id": comprobante_id},
-        {"$set": {
-            "estado": "debe",
-            "num_comprobante": None,
-            "comprobante_id": None,
-            "tipo_comprobante": None,
-            "fecha_emision_comprobante": None,
-            "comprobante_emitido": False,
-        }},
+        {"$set": {**_SIN_COMPROBANTE, "estado": "debe"}},
     )
+
+
+# ── Notas de crédito ──────────────────────────────────────────────────────────
+# Una nota de crédito es un comprobante con tipo «nota_credito» y FK `doc_ref_id` al comprobante
+# que modifica. Sus líneas son solo descriptivas (sin payment_id): lo que cambia en los pagos lo
+# decide el equipo con `efecto_pago` y se aplica sobre las líneas del original (`lineas_ref`).
+
+def _saldo_comprobante(original: dict) -> float:
+    """Lo que aún se puede acreditar: monto del comprobante menos sus notas de crédito vigentes."""
+    acreditado = sum(_sf(n.get("monto")) for n in (original.get("notas_credito") or []))
+    return round(_sf(original.get("monto_total")) - acreditado, 2)
+
+
+def _recalcular_notas_de(original_id: str) -> None:
+    """Rehace en el original la lista de notas vigentes, lo acreditado y si quedó anulado."""
+    notas = list(comprobantes_col.find(
+        {"tipo": "nota_credito", "doc_ref_id": original_id, "estado": {"$ne": "anulado"}},
+        {"numero": 1, "monto_total": 1, "fecha_emision": 1, "motivo_codigo": 1},
+    ).sort("fecha_emision", 1))
+    original = comprobantes_col.find_one({"_id": ObjectId(original_id)}, {"monto_total": 1})
+    if not original:
+        return
+    acreditado = round(sum(_sf(n.get("monto_total")) for n in notas), 2)
+    comprobantes_col.update_one({"_id": ObjectId(original_id)}, {"$set": {
+        "notas_credito": [{"id": str(n["_id"]), "numero": n.get("numero", ""), "monto": _sf(n.get("monto_total")),
+                           "fecha": n.get("fecha_emision", ""), "motivo_codigo": n.get("motivo_codigo", "")}
+                          for n in notas],
+        "monto_acreditado": acreditado,
+        "anulado_por_nc": bool(notas) and acreditado >= _sf(original.get("monto_total")) - 0.009,
+    }})
+
+
+def info_para_nota_credito(original_id: str) -> dict | None:
+    """Lo que necesita el formulario: datos del original, sus líneas con el estado de cada pago y el saldo."""
+    try:
+        original = comprobantes_col.find_one({"_id": ObjectId(original_id)})
+    except Exception:
+        return None
+    if not original:
+        return None
+    lineas = []
+    for idx, it in enumerate(original.get("items") or []):
+        pago = None
+        if it.get("payment_id"):
+            try:
+                pago = payments_col.find_one({"_id": ObjectId(it["payment_id"])},
+                                             {"estado": 1, "periodo": 1, "comprobante_id": 1})
+            except Exception:
+                pago = None
+        m = members_col.find_one({"member_id": it.get("member_id")}, {"nombres": 1, "apellidos": 1}) \
+            if it.get("member_id") else None
+        lineas.append({
+            "idx": idx,
+            "member_id": it.get("member_id") or "",
+            "nombre": f"{(m or {}).get('apellidos', '')} {(m or {}).get('nombres', '')}".strip(),
+            "producto_nombre": it.get("producto_nombre") or "",
+            "monto": _sf(it.get("monto")),
+            "tipo_pago": it.get("tipo_pago") or "",
+            "cuota_numero": it.get("cuota_numero"),
+            "periodo": (pago or {}).get("periodo", ""),
+            "estado_pago": (pago or {}).get("estado", ""),
+            "vinculado": bool(pago),
+        })
+    return {
+        "id": str(original["_id"]),
+        "numero": original.get("numero", ""),
+        "tipo": original.get("tipo", ""),
+        "estado": original.get("estado", ""),
+        "fecha_emision": original.get("fecha_emision", ""),
+        "monto_total": _sf(original.get("monto_total")),
+        "saldo": _saldo_comprobante(original),
+        "empresa": original.get("empresa", ""),
+        "destinatario": original.get("destinatario_nombre", ""),
+        "sunat_emitido": original.get("sunat_estado") == "emitido",
+        "notas_credito": original.get("notas_credito") or [],
+        "lineas": lineas,
+    }
+
+
+def _lineas_elegidas(original: dict, lineas_idx: list | None) -> list:
+    items = original.get("items") or []
+    if lineas_idx is None:
+        return list(items)
+    elegidas = []
+    for i in lineas_idx:
+        try:
+            elegidas.append(items[int(i)])
+        except (ValueError, IndexError, TypeError):
+            raise ValueError("Una de las líneas elegidas no existe en el comprobante")
+    return elegidas
+
+
+def _aplicar_efecto(nc_id: str, original: dict, efecto: str, lineas: list,
+                    lineas_idx: list | None) -> list[dict]:
+    if efecto == "ninguno":
+        return []
+    tocados = _desvincular_pagos(str(original["_id"]), lineas, efecto)
+    # Las líneas afectadas quedan marcadas con la nota: ninguna sincronización (al arrancar el
+    # servidor, «vincular pagos» o al editar el comprobante) vuelve a marcar esos pagos como pagados.
+    items = list(original.get("items") or [])
+    for i in (range(len(items)) if lineas_idx is None else lineas_idx):
+        if 0 <= int(i) < len(items):
+            items[int(i)] = {**items[int(i)], "nc_id": nc_id}
+    if items:
+        comprobantes_col.update_one({"_id": original["_id"]}, {"$set": {"items": items}})
+    # Comprobante sin líneas vinculadas (datos antiguos): pagos que lo apuntan directamente.
+    if not any(it.get("payment_id") for it in lineas) and not (original.get("items") or []):
+        for p in payments_col.find({"comprobante_id": str(original["_id"])}, {"member_id": 1}):
+            tocados += _desvincular_pagos(str(original["_id"]), [{
+                "payment_id": str(p["_id"]), "tipo_pago": "principal", "member_id": p.get("member_id"),
+            }], efecto)
+    return tocados
+
+
+def registrar_nota_credito(original_id: str, numero: str, fecha_emision: str, motivo_codigo: str,
+                           motivo: str, monto: float, lineas_idx: list | None, efecto: str,
+                           origen: str = "manual", items_xml: list | None = None,
+                           xml_raw: str = "", sunat: dict | None = None,
+                           validar_saldo: bool = True) -> tuple[str, list[dict]]:
+    """Registra una nota de crédito sobre un comprobante y aplica su efecto en los pagos.
+
+    `lineas_idx` = posiciones de las líneas del original que afecta (None = todas).
+    `efecto` = clave de catalogos.EFECTOS_NOTA_CREDITO, o "" si queda por definir (importación XML).
+    Devuelve (id de la nota, pagos que cambiaron).
+    """
+    from config import catalogos
+    numero = (numero or "").strip().upper()
+    if not numero:
+        raise ValueError("Falta el número de la nota de crédito")
+    if motivo_codigo not in catalogos.MOTIVOS_NOTA_CREDITO:
+        raise ValueError("Elige el motivo de la nota de crédito")
+    if efecto and efecto not in catalogos.EFECTOS_NOTA_CREDITO:
+        raise ValueError("Efecto en la cobranza no válido")
+    monto = round(_sf(monto), 2)
+    if monto <= 0:
+        raise ValueError("El monto debe ser mayor a cero")
+    original = comprobantes_col.find_one({"_id": ObjectId(original_id)})
+    if not original or original.get("tipo") not in ("boleta", "factura"):
+        raise ValueError("El comprobante que modifica no existe o no es boleta ni factura")
+    if original.get("estado") != "emitido":
+        raise ValueError("Solo se puede hacer una nota de crédito de un comprobante emitido")
+    if comprobantes_col.find_one({"tipo": "nota_credito", "numero": numero, "estado": {"$ne": "anulado"}}):
+        raise ValueError(f"Ya existe la nota de crédito {numero}")
+    saldo = _saldo_comprobante(original)
+    if validar_saldo and monto > saldo + 0.009:
+        raise ValueError(f"El monto supera lo que queda por acreditar del comprobante (S/ {saldo:.2f})")
+    lineas = _lineas_elegidas(original, lineas_idx)
+    if efecto in ("devolucion", "reemplazo") and lineas_idx is not None and not lineas:
+        raise ValueError("Elige qué líneas del comprobante afecta la nota")
+
+    if items_xml:
+        items = [{k: it.get(k) for k in ("member_id", "producto_nombre", "monto", "codigo_sunat")}
+                 for it in items_xml]
+    else:
+        items = [{"member_id": it.get("member_id"), "producto_nombre": it.get("producto_nombre"),
+                  "monto": _sf(it.get("monto")), "codigo_sunat": it.get("codigo_sunat")} for it in lineas]
+        # Descuento parcial con una sola línea: la línea lleva el monto de la nota.
+        if len(items) == 1 or not items:
+            items = [{**(items[0] if items else {}), "monto": monto}]
+    socios = list(dict.fromkeys(it["member_id"] for it in items if it.get("member_id"))) or original.get("socios") or []
+    ahora = datetime.now(timezone.utc)
+    doc = {
+        "numero":              numero,
+        "tipo":                "nota_credito",
+        "fecha_emision":       fecha_emision or _date.today().isoformat(),
+        "fecha_carga":         ahora.strftime("%Y-%m-%d"),
+        "monto_total":         monto,
+        "producto_nombre":     catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo],
+        "concepto":            (motivo or catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo]).strip(),
+        "motivo_codigo":       motivo_codigo,
+        "motivo":              (motivo or catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo]).strip(),
+        "doc_ref_id":          str(original["_id"]),
+        "doc_ref_numero":      original.get("numero", ""),
+        "doc_ref_tipo":        original.get("tipo", ""),
+        "lineas_ref":          [int(i) for i in lineas_idx] if lineas_idx is not None else None,
+        "empresa":             original.get("empresa", ""),
+        "empresa_id":          original.get("empresa_id"),
+        "ruc_empresa":         original.get("ruc_empresa", ""),
+        "destinatario_id":     original.get("destinatario_id", ""),
+        "destinatario_nombre": original.get("destinatario_nombre", ""),
+        "destinatario_dni":    original.get("destinatario_dni", ""),
+        "socios":              socios,
+        "items":               items,
+        "estado":              "emitido",
+        "origen":              origen,
+        "efecto_pago":         efecto,
+        "pagos_afectados":     [],
+        "xml_raw":             xml_raw or "",
+        "created_at":          ahora,
+    }
+    if sunat:
+        doc.update(sunat)
+    nc_id = str(comprobantes_col.insert_one(doc).inserted_id)
+    tocados = _aplicar_efecto(nc_id, original, efecto, lineas, lineas_idx) if efecto else []
+    if efecto:
+        comprobantes_col.update_one({"_id": ObjectId(nc_id)},
+                                    {"$set": {"pagos_afectados": tocados, "efecto_aplicado_at": ahora}})
+    _recalcular_notas_de(str(original["_id"]))
+    return nc_id, tocados
+
+
+def aplicar_efecto_nota_credito(nc_id: str, efecto: str, lineas_idx: list | None) -> list[dict]:
+    """Define el efecto de una nota que quedó pendiente (importada por XML). Se aplica una sola vez."""
+    from config import catalogos
+    if efecto not in catalogos.EFECTOS_NOTA_CREDITO:
+        raise ValueError("Elige qué pasa con la cobranza")
+    nc = comprobantes_col.find_one({"_id": ObjectId(nc_id), "tipo": "nota_credito"})
+    if not nc:
+        raise ValueError("Nota de crédito no encontrada")
+    if nc.get("efecto_pago"):
+        raise ValueError("El efecto de esta nota ya se aplicó")
+    if not nc.get("doc_ref_id"):
+        raise ValueError(f"El comprobante {nc.get('doc_ref_numero') or ''} no está en la plataforma. "
+                         "Impórtalo primero; la nota se vincula sola.")
+    original = comprobantes_col.find_one({"_id": ObjectId(nc["doc_ref_id"])})
+    if not original:
+        raise ValueError("El comprobante que modifica ya no existe")
+    lineas = _lineas_elegidas(original, lineas_idx)
+    if efecto in ("devolucion", "reemplazo") and lineas_idx is not None and not lineas:
+        raise ValueError("Elige qué líneas del comprobante afecta la nota")
+    tocados = _aplicar_efecto(nc_id, original, efecto, lineas, lineas_idx)
+    comprobantes_col.update_one({"_id": ObjectId(nc_id)}, {"$set": {
+        "efecto_pago": efecto, "pagos_afectados": tocados, "efecto_aplicado_at": datetime.now(timezone.utc),
+        "lineas_ref": [int(i) for i in lineas_idx] if lineas_idx is not None else None,
+    }})
+    return tocados
+
+
+def anular_nota_credito(nc_id: str) -> None:
+    """Quita el registro de la nota. No restaura los pagos: eso se corrige en Cobranzas."""
+    nc = comprobantes_col.find_one({"_id": ObjectId(nc_id), "tipo": "nota_credito"}, {"doc_ref_id": 1})
+    if not nc:
+        return
+    comprobantes_col.update_one({"_id": nc["_id"]}, {"$set": {"estado": "anulado"}})
+    if nc.get("doc_ref_id"):
+        _recalcular_notas_de(nc["doc_ref_id"])
+
+
+def vincular_notas_pendientes(comprobante_id: str, numero: str) -> int:
+    """Al cargar un comprobante, se le unen las notas de crédito importadas antes que él."""
+    r = comprobantes_col.update_many(
+        {"tipo": "nota_credito", "doc_ref_numero": numero, "doc_ref_id": None, "estado": {"$ne": "anulado"}},
+        {"$set": {"doc_ref_id": comprobante_id}},
+    )
+    if r.modified_count:
+        _recalcular_notas_de(comprobante_id)
+    return r.modified_count
 
 
 def sync_comp_credito_to_payments(comprobante_id: str, nuevo_estado: str, fecha_cobro: str = "") -> None:
@@ -4050,13 +4326,15 @@ def get_comprobante_by_id(comprobante_id: str) -> dict | None:
     return doc
 
 
-def get_ultimo_correlativo_info(serie: str) -> dict | None:
+def get_ultimo_correlativo_info(serie: str, notas_credito: bool = False) -> dict | None:
     """Returns {numero, ambiente} for the highest emitted correlativo in the serie, or None.
-    Counts ALL emitted docs regardless of ambiente to avoid number reuse."""
+    Counts ALL emitted docs regardless of ambiente to avoid number reuse.
+    Las notas de crédito llevan su propia numeración: `notas_credito=True` cuenta solo esas."""
     import re as _re
     pattern = f"^{_re.escape(serie)}-\\d+$"
     docs = list(comprobantes_col.find(
-        {"sunat_estado": "emitido", "numero": {"$regex": pattern}},
+        {"sunat_estado": "emitido", "numero": {"$regex": pattern},
+         "tipo": "nota_credito" if notas_credito else {"$ne": "nota_credito"}},
         {"numero": 1, "sunat_ambiente": 1},
     ))
     best_num = -1
@@ -4079,6 +4357,12 @@ def get_ultimo_correlativo_emitido(serie: str) -> int | None:
     """Returns the highest correlativo (as int) emitted to SUNAT for a given serie.
     serie = 'B001', 'F001', etc.  Returns None if no emitted docs for that serie."""
     info = get_ultimo_correlativo_info(serie)
+    return info["numero"] if info else None
+
+
+def get_ultimo_correlativo_emitido_nc(serie: str) -> int | None:
+    """Último correlativo de nota de crédito emitido por la plataforma en esa serie (BC01, FC01…)."""
+    info = get_ultimo_correlativo_info(serie, notas_credito=True)
     return info["numero"] if info else None
 
 
@@ -5121,34 +5405,353 @@ def import_prospectos_bulk(rows: list) -> dict:
                     actualizados += 1
                 else:
                     sin_cambios += 1
+                persona_id = str(existente["_id"])
             else:
-                publico_col.insert_one({
+                persona_id = str(publico_col.insert_one({
                     **datos,
                     "email":          email,
                     "tags":           tags,
                     "fuente":         "excel",
                     "estado":         estado or "nuevo",
                     "es_socio":       False,
-                    "postulacion":    None,
                     "member_id":      None,
                     "comunicaciones": [],
                     "created_at":     ahora,
                     "updated_at":     ahora,
-                })
+                }).inserted_id)
                 insertados += 1
+            if estado == "postulante":
+                try:
+                    crear_postulacion(persona_id, origen="excel", usuario="importación")
+                except ValueError as exc:   # ya es socio: queda en Público, sin postulación
+                    detalle.append((fila, f"no se abrió su postulación: {exc}"))
         except Exception as exc:
             detalle.append((fila, f"no se pudo guardar ({type(exc).__name__})"))
     return {"insertados": insertados, "actualizados": actualizados, "sin_cambios": sin_cambios,
             "errores": len(detalle), "detalle_errores": detalle}
 
 
-def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str | None = None) -> str:
-    """Crea un socio desde el prospecto y lo marca como convertido. Devuelve el member_id."""
+# ── Postulantes (proceso de admisión) ─────────────────────────────────────────
+# Una postulación por proceso, unida por `prospecto_id` a la persona en Público, que es la única
+# ficha con sus datos. Nunca toca `members`: el socio solo se crea con alta_postulante_como_socio.
+
+def _hist(accion: str, usuario: str, detalle: str = "") -> dict:
+    return {"fecha": datetime.now(timezone.utc), "accion": accion, "usuario": usuario or "equipo",
+            "detalle": (detalle or "")[:500]}
+
+
+def _socio_con_email(email: str) -> dict | None:
+    email = (email or "").strip()
+    if not email:
+        return None
+    return members_col.find_one({"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}},
+                                {"member_id": 1, "nombres": 1, "apellidos": 1})
+
+
+def postulacion_abierta(prospecto_id: str) -> dict | None:
+    return postulantes_col.find_one({"prospecto_id": prospecto_id,
+                                     "etapa": {"$in": list(catalogos.ETAPAS_POSTULANTE_ABIERTAS)}})
+
+
+def postulaciones_por_prospecto(prospecto_ids: list[str]) -> dict[str, dict]:
+    """La postulación más reciente de cada persona (abierta o no), para mostrarla en Público y la cola."""
+    if not prospecto_ids:
+        return {}
+    res: dict[str, dict] = {}
+    for p in postulantes_col.find({"prospecto_id": {"$in": list(set(prospecto_ids))}},
+                                  {"prospecto_id": 1, "etapa": 1, "created_at": 1}).sort("created_at", 1):
+        res[p["prospecto_id"]] = {"id": str(p["_id"]), "etapa": p.get("etapa")}
+    return res
+
+
+def _sync_estado_publico(prospecto_id: str, etapa: str) -> None:
+    """Público refleja la postulación: abierta → «postulante»; cerrada → «interesado»."""
+    p = publico_col.find_one({"_id": ObjectId(prospecto_id)}, {"estado": 1})
+    if not p or p.get("estado") == "convertido":
+        return
+    if etapa in catalogos.ETAPAS_POSTULANTE_ABIERTAS:
+        nuevo = "postulante"
+    elif etapa == "socio":
+        nuevo = "convertido"
+    else:
+        nuevo = "interesado" if p.get("estado") == "postulante" else p.get("estado")
+    if nuevo != p.get("estado"):
+        publico_col.update_one({"_id": p["_id"]}, {"$set": {"estado": nuevo, "updated_at": datetime.now(timezone.utc)}})
+
+
+def crear_postulacion(prospecto_id: str, origen: str = "manual", usuario: str = "",
+                      tipo_socio: str = "", nota: str = "", correo_id: str = "",
+                      detalle: str = "") -> tuple[str, bool]:
+    """Abre la postulación de una persona de Público. Si ya tiene una abierta, la devuelve.
+    Devuelve (id, creada). Rechaza a quien ya es socio: los postulantes no se mezclan con el padrón."""
+    try:
+        persona = publico_col.find_one({"_id": ObjectId(prospecto_id)})
+    except Exception:
+        persona = None
+    if not persona:
+        raise ValueError("La persona no está en Público")
+    if persona.get("member_id") or persona.get("estado") == "convertido":
+        raise ValueError("Esta persona ya es socio de IPIDET")
+    socio = _socio_con_email(persona.get("email", ""))
+    if socio:
+        raise ValueError(f"Su correo ya pertenece al socio {socio.get('member_id')}: no se registra como postulante")
+    abierta = postulacion_abierta(prospecto_id)
+    if abierta:
+        if correo_id and correo_id not in (abierta.get("correo_ids") or []):
+            postulantes_col.update_one({"_id": abierta["_id"]}, {
+                "$push": {"historial": _hist("nuevo correo", usuario, detalle)},
+                "$addToSet": {"correo_ids": correo_id},
+                "$set": {"updated_at": datetime.now(timezone.utc)},
+            })
+        return str(abierta["_id"]), False
+    ahora = datetime.now(timezone.utc)
+    tipos_validos = {t.get("valor") for t in catalogos.get_catalogo("tipos_socio")}
+    doc = {
+        "prospecto_id":      prospecto_id,
+        "etapa":             "consulta",
+        "etapa_desde":       ahora,
+        "tipo_socio":        tipo_socio if tipo_socio in tipos_validos else "",
+        "origen":            origen if origen in catalogos.ORIGENES_POSTULANTE else "manual",
+        "responsable":       "",
+        "proxima_accion":    "",
+        "fecha_seguimiento": "",
+        "requisitos":        {},
+        "notas":             [{"texto": nota.strip(), "usuario": usuario or "equipo", "fecha": ahora}] if nota.strip() else [],
+        "correo_ids":        [correo_id] if correo_id else [],
+        "historial":         [_hist("postulación abierta", usuario,
+                                    detalle or catalogos.ORIGENES_POSTULANTE.get(origen, origen))],
+        "member_id":         None,
+        "motivo_cierre":     "",
+        "created_at":        ahora,
+        "updated_at":        ahora,
+    }
+    pid = str(postulantes_col.insert_one(doc).inserted_id)
+    _sync_estado_publico(prospecto_id, "consulta")
+    return pid, True
+
+
+def _persona_publico(p: dict | None) -> dict:
+    p = p or {}
+    return {k: p.get(k) or "" for k in ("nombre", "apellido", "email", "celular", "dni", "titulo",
+                                       "empresa", "ciudad", "fuente", "fuente_detalle")} | \
+           {"tags": p.get("tags") or [], "nombre_completo": f"{p.get('apellido', '')} {p.get('nombre', '')}".strip()}
+
+
+def _enriquecer_postulante(d: dict, persona: dict | None, requisitos: list, hoy: str) -> dict:
+    d["_id"] = str(d["_id"])
+    d["persona"] = _persona_publico(persona)
+    hechos = d.get("requisitos") or {}
+    d["req_total"] = len(requisitos)
+    d["req_hechos"] = sum(1 for r in requisitos if (hechos.get(r["id"]) or {}).get("hecho"))
+    fs = d.get("fecha_seguimiento") or ""
+    abierta = d.get("etapa") in catalogos.ETAPAS_POSTULANTE_ABIERTAS
+    d["abierta"] = abierta
+    d["seguimiento_estado"] = ("" if not abierta or not fs else
+                               "vencido" if fs < hoy else "hoy" if fs == hoy else "pendiente")
+    desde = d.get("etapa_desde") or d.get("created_at")
+    if isinstance(desde, datetime):
+        desde = desde if desde.tzinfo else desde.replace(tzinfo=timezone.utc)
+        d["dias_en_etapa"] = (datetime.now(timezone.utc) - desde).days
+    else:
+        d["dias_en_etapa"] = None
+    return d
+
+
+def get_postulantes(search: str = "", etapa: str = "abiertas", tipo_socio: str = "",
+                    responsable: str = "", seguimiento: str = "", origen: str = "",
+                    page: int = 1, per_page: int = 50) -> tuple[list, int, dict]:
+    """Lista paginada. etapa: «abiertas» (por defecto), «todas» o una clave de ETAPAS_POSTULANTE.
+    Devuelve (docs, total, conteo por etapa)."""
+    hoy = _date.today().isoformat()
+    q: dict = {}
+    if etapa == "abiertas" or not etapa:
+        q["etapa"] = {"$in": list(catalogos.ETAPAS_POSTULANTE_ABIERTAS)}
+    elif etapa in catalogos.ETAPAS_POSTULANTE:
+        q["etapa"] = etapa
+    if tipo_socio:
+        q["tipo_socio"] = tipo_socio
+    if origen:
+        q["origen"] = origen
+    if responsable == "sin":
+        q["responsable"] = {"$in": [None, ""]}
+    elif responsable:
+        q["responsable"] = responsable
+    if seguimiento == "vencido":
+        q["fecha_seguimiento"] = {"$nin": [None, ""], "$lt": hoy}
+    elif seguimiento == "hoy":
+        q["fecha_seguimiento"] = hoy
+    elif seguimiento == "semana":
+        q["fecha_seguimiento"] = {"$gte": hoy, "$lte": (_date.today() + _timedelta(days=7)).isoformat()}
+    elif seguimiento == "sin":
+        q["fecha_seguimiento"] = {"$in": [None, ""]}
+    if search:
+        rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+        ids = [str(p["_id"]) for p in publico_col.find(
+            {"$or": [{"nombre": rx}, {"apellido": rx}, {"email": rx}, {"empresa": rx}, {"celular": rx}, {"dni": rx}]},
+            {"_id": 1}).limit(2000)]
+        q["prospecto_id"] = {"$in": ids}
+
+    conteo = {k: 0 for k in catalogos.ETAPAS_POSTULANTE}
+    q_sin_etapa = {k: v for k, v in q.items() if k != "etapa"}
+    for row in postulantes_col.aggregate([{"$match": q_sin_etapa}, {"$group": {"_id": "$etapa", "n": {"$sum": 1}}}]):
+        conteo[row["_id"]] = row["n"]
+    conteo["abiertas"] = sum(conteo.get(k, 0) for k in catalogos.ETAPAS_POSTULANTE_ABIERTAS)
+    conteo["todas"] = sum(v for k, v in conteo.items() if k in catalogos.ETAPAS_POSTULANTE)
+
+    total = postulantes_col.count_documents(q)
+    # Primero lo que hay que atender: seguimiento más próximo (los sin fecha al final), luego lo más nuevo.
+    docs = list(postulantes_col.aggregate([
+        {"$match": q},
+        {"$addFields": {"_sin_fecha": {"$cond": [{"$in": [{"$ifNull": ["$fecha_seguimiento", ""]}, ["", None]]}, 1, 0]}}},
+        {"$sort": {"_sin_fecha": 1, "fecha_seguimiento": 1, "created_at": -1}},
+        {"$skip": max(page - 1, 0) * per_page}, {"$limit": per_page},
+    ]))
+    personas = {str(p["_id"]): p for p in publico_col.find(
+        {"_id": {"$in": [ObjectId(d["prospecto_id"]) for d in docs if ObjectId.is_valid(d.get("prospecto_id", ""))]}})}
+    requisitos = catalogos.get_catalogo("requisitos_admision")
+    return [_enriquecer_postulante(d, personas.get(d.get("prospecto_id")), requisitos, hoy) for d in docs], total, conteo
+
+
+def get_postulante(postulante_id: str) -> dict | None:
+    try:
+        d = postulantes_col.find_one({"_id": ObjectId(postulante_id)})
+    except Exception:
+        return None
+    if not d:
+        return None
+    persona = publico_col.find_one({"_id": ObjectId(d["prospecto_id"])}) if ObjectId.is_valid(d.get("prospecto_id", "")) else None
+    d = _enriquecer_postulante(d, persona, catalogos.get_catalogo("requisitos_admision"), _date.today().isoformat())
+    d["requisitos"] = _clean(d.get("requisitos") or {})   # va a la página como JSON
+    d["persona"]["zoom_eventos"] = (persona or {}).get("zoom_eventos") or []
+    d["otras"] = [_clean(o) for o in postulantes_col.find(
+        {"prospecto_id": d["prospecto_id"], "_id": {"$ne": ObjectId(d["_id"])}},
+        {"etapa": 1, "created_at": 1, "motivo_cierre": 1}).sort("created_at", -1)]
+    return d
+
+
+def get_responsables_postulantes() -> list[str]:
+    return sorted(r for r in postulantes_col.distinct("responsable") if r)
+
+
+def actualizar_postulante(postulante_id: str, campos: dict, usuario: str) -> None:
+    """Cambia etapa, tipo de socio, responsable y seguimiento. Deja todo en el historial.
+    Cerrar (desistió / no admitido) pide motivo. «socio» no se elige: es el alta."""
+    d = postulantes_col.find_one({"_id": ObjectId(postulante_id)})
+    if not d:
+        raise ValueError("Postulación no encontrada")
+    ahora = datetime.now(timezone.utc)
+    cambios: dict = {}
+    eventos: list = []
+    etapa = campos.get("etapa")
+    if etapa and etapa != d.get("etapa"):
+        if etapa not in catalogos.ETAPAS_POSTULANTE or etapa == "socio":
+            raise ValueError("Etapa no válida")
+        if d.get("etapa") == "socio":
+            raise ValueError("Ya es socio: la postulación está cerrada")
+        motivo = (campos.get("motivo_cierre") or "").strip()
+        if etapa in catalogos.ETAPAS_POSTULANTE_CIERRE and not motivo:
+            raise ValueError("Escribe el motivo del cierre")
+        if etapa not in catalogos.ETAPAS_POSTULANTE_CIERRE:
+            # Reabrir: no puede haber dos postulaciones abiertas de la misma persona.
+            otra = postulacion_abierta(d["prospecto_id"])
+            if otra and otra["_id"] != d["_id"]:
+                raise ValueError("Esta persona ya tiene otra postulación abierta")
+        cambios.update({"etapa": etapa, "etapa_desde": ahora,
+                        "motivo_cierre": motivo if etapa in catalogos.ETAPAS_POSTULANTE_CIERRE else ""})
+        etiqueta = catalogos.ETAPAS_POSTULANTE[etapa][0]
+        eventos.append(_hist("etapa", usuario, f"{etiqueta}{': ' + motivo if motivo else ''}"))
+    if "tipo_socio" in campos:
+        tipos = {t.get("valor"): t.get("label") or t.get("valor") for t in catalogos.get_catalogo("tipos_socio")}
+        if (campos["tipo_socio"] in tipos or campos["tipo_socio"] == "") and campos["tipo_socio"] != d.get("tipo_socio"):
+            cambios["tipo_socio"] = campos["tipo_socio"]
+            eventos.append(_hist("tipo de socio", usuario, tipos.get(campos["tipo_socio"]) or "por definir"))
+    for k, etiqueta in (("responsable", "responsable"), ("proxima_accion", "próxima acción"),
+                        ("fecha_seguimiento", "seguimiento")):
+        if k in campos:
+            v = (campos[k] or "").strip()[:300]
+            if k == "fecha_seguimiento" and v and not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+                raise ValueError("Fecha de seguimiento no válida")
+            if v != (d.get(k) or ""):
+                cambios[k] = v
+                visible = "/".join(reversed(v.split("-"))) if k == "fecha_seguimiento" and v else v
+                eventos.append(_hist(etiqueta, usuario, visible or "—"))
+    if not cambios:
+        return
+    cambios["updated_at"] = ahora
+    postulantes_col.update_one({"_id": d["_id"]}, {"$set": cambios, "$push": {"historial": {"$each": eventos}}})
+    if "etapa" in cambios:
+        _sync_estado_publico(d["prospecto_id"], cambios["etapa"])
+
+
+def marcar_requisito_postulante(postulante_id: str, req_id: str, hecho: bool, usuario: str) -> None:
+    req = next((r for r in catalogos.get_catalogo("requisitos_admision") if r.get("id") == req_id), None)
+    if not req:
+        raise ValueError("Requisito desconocido")
+    postulantes_col.update_one({"_id": ObjectId(postulante_id)}, {
+        "$set": {f"requisitos.{req_id}": {"hecho": bool(hecho), "fecha": datetime.now(timezone.utc),
+                                          "usuario": usuario or "equipo"},
+                 "updated_at": datetime.now(timezone.utc)},
+        "$push": {"historial": _hist("requisito", usuario, f"{'✓' if hecho else '✗'} {req.get('label', req_id)}")},
+    })
+
+
+def agregar_nota_postulante(postulante_id: str, texto: str, usuario: str) -> None:
+    texto = (texto or "").strip()
+    if not texto:
+        raise ValueError("La nota está vacía")
+    postulantes_col.update_one({"_id": ObjectId(postulante_id)}, {
+        "$push": {"notas": {"texto": texto[:3000], "usuario": usuario or "equipo", "fecha": datetime.now(timezone.utc)}},
+        "$set": {"updated_at": datetime.now(timezone.utc)},
+    })
+
+
+def alta_postulante_como_socio(postulante_id: str, periodo_actual: str | None, usuario: str) -> str:
+    """Único paso que crea al socio: solo desde «Aprobado». Devuelve el member_id."""
+    d = postulantes_col.find_one({"_id": ObjectId(postulante_id)})
+    if not d:
+        raise ValueError("Postulación no encontrada")
+    if d.get("etapa") != "aprobado":
+        raise ValueError("Primero marca la postulación como «Aprobado»")
+    persona = publico_col.find_one({"_id": ObjectId(d["prospecto_id"])}, {"email": 1})
+    socio = _socio_con_email((persona or {}).get("email", ""))
+    if socio:
+        raise ValueError(f"Su correo ya pertenece al socio {socio.get('member_id')}")
+    mid = convert_prospecto_to_member(d["prospecto_id"], periodo_actual, cerrar_postulacion=False)
+    if d.get("tipo_socio"):
+        update_member_tipo_socio(mid, d["tipo_socio"])
+    postulantes_col.update_one({"_id": d["_id"]}, {
+        "$set": {"etapa": "socio", "etapa_desde": datetime.now(timezone.utc), "member_id": mid,
+                 "updated_at": datetime.now(timezone.utc)},
+        "$push": {"historial": _hist("alta como socio", usuario, mid)},
+    })
+    return mid
+
+
+def get_postulantes_stats() -> dict:
+    hoy = _date.today().isoformat()
+    abiertas = {"etapa": {"$in": list(catalogos.ETAPAS_POSTULANTE_ABIERTAS)}}
+    inicio_mes = _date.today().replace(day=1)
+    return {
+        "abiertas":    postulantes_col.count_documents(abiertas),
+        "vencidos":    postulantes_col.count_documents({**abiertas, "fecha_seguimiento": {"$nin": [None, ""], "$lt": hoy}}),
+        "sin_responsable": postulantes_col.count_documents({**abiertas, "responsable": {"$in": [None, ""]}}),
+        "nuevos_mes":  postulantes_col.count_documents({"created_at": {"$gte": datetime(inicio_mes.year, inicio_mes.month, 1, tzinfo=timezone.utc)}}),
+        "socios_mes":  postulantes_col.count_documents({"etapa": "socio", "etapa_desde": {"$gte": datetime(inicio_mes.year, inicio_mes.month, 1, tzinfo=timezone.utc)}}),
+    }
+
+
+def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str | None = None,
+                                cerrar_postulacion: bool = True) -> str:
+    """Crea un socio desde el prospecto y lo marca como convertido. Devuelve el member_id.
+    Si tiene una postulación abierta, queda cerrada como «Ya es socio»."""
     p = publico_col.find_one({"_id": ObjectId(prospecto_id)})
     if not p:
         raise ValueError("Prospecto no encontrado")
     if p.get("member_id"):
         return p["member_id"]
+    socio = _socio_con_email(p.get("email", ""))
+    if socio:
+        raise ValueError(f"Su correo ya pertenece al socio {socio.get('member_id')}")
     mid = create_member(
         apellidos      = p.get("apellido") or "",
         nombres        = p.get("nombre") or "",
@@ -5161,6 +5764,16 @@ def convert_prospecto_to_member(prospecto_id: str, periodo_actual: str | None = 
         periodo_actual = periodo_actual,
     )
     update_prospecto(prospecto_id, {"estado": "convertido", "member_id": mid})
+    if cerrar_postulacion:
+        abierta = postulacion_abierta(prospecto_id)
+        if abierta:
+            if abierta.get("tipo_socio"):
+                update_member_tipo_socio(mid, abierta["tipo_socio"])
+            postulantes_col.update_one({"_id": abierta["_id"]}, {
+                "$set": {"etapa": "socio", "etapa_desde": datetime.now(timezone.utc), "member_id": mid,
+                         "updated_at": datetime.now(timezone.utc)},
+                "$push": {"historial": _hist("alta como socio", "equipo", f"{mid} · convertido desde Público")},
+            })
     return mid
 
 

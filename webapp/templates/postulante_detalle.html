@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}{{ pe.nombre_completo or pe.email }} — Postulantes IPIDET{% endblock %}
+{% block heading %}{{ pe.nombre_completo or pe.email }}{% endblock %}
+
+{% block header_actions %}
+<a href="/postulantes" class="btn-ghost flex items-center gap-2 text-sm">
+  <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Postulantes
+</a>
+<a href="/publico/{{ pos.prospecto_id }}" class="btn-ghost flex items-center gap-2 text-sm" title="Datos de la persona, etiquetas y comunicaciones">
+  <i class="fa-solid fa-address-book" aria-hidden="true"></i> Ficha en Público
+</a>
+{% endblock %}
+
+{% block content %}
+{% set et = etapas.get(pos.etapa, (pos.etapa, 'gray', '')) %}
+{% set tipos_map = dict(tipos_socio_items) %}
+{% set pasos = ['consulta', 'documentos', 'evaluacion', 'aprobado', 'socio'] %}
+{% set idx = pasos.index(pos.etapa) if pos.etapa in pasos else -1 %}
+
+<!-- Etapas -->
+<div class="bg-white rounded-2xl border border-slate-200 px-5 py-4 mb-5">
+  {% if pos.etapa in cierre %}
+  <div class="flex flex-wrap items-center gap-2 text-sm">
+    <span class="badge badge-{{ et[1] }}">{{ et[0] }}</span>
+    <span class="text-slate-600">{{ pos.motivo_cierre }}</span>
+    <span class="text-xs text-slate-400 ml-auto">Para retomarla, elige otra etapa en «Seguimiento».</span>
+  </div>
+  {% else %}
+  <ol class="flex flex-wrap items-center gap-y-2 text-sm" aria-label="Etapas de la postulación">
+    {% for k in pasos %}
+    {% set hecho = loop.index0 < idx %}{% set actual = loop.index0 == idx %}
+    <li class="flex items-center">
+      <span class="inline-flex items-center gap-2 rounded-full px-3 py-1
+                   {{ 'bg-brand-700 text-white' if actual else 'text-brand-700' if hecho else 'text-slate-400' }}"
+            {% if actual %}aria-current="step"{% endif %}>
+        <i class="fa-solid {{ 'fa-circle-check' if hecho else 'fa-circle-dot' if actual else 'fa-circle' }} text-xs" aria-hidden="true"></i>
+        {{ etapas[k][0] }}
+      </span>
+      {% if not loop.last %}<span class="w-6 h-px bg-slate-200 mx-1" aria-hidden="true"></span>{% endif %}
+    </li>
+    {% endfor %}
+    {% if pos.dias_en_etapa is not none and pos.abierta %}
+    <li class="ml-auto text-xs {{ 'text-amber-700' if pos.dias_en_etapa > 30 else 'text-slate-400' }}">
+      En esta etapa hace {{ pos.dias_en_etapa }} día{{ '' if pos.dias_en_etapa == 1 else 's' }}
+    </li>
+    {% endif %}
+  </ol>
+  {% endif %}
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+
+  <!-- ── Columna principal ── -->
+  <div class="xl:col-span-2 space-y-5">
+
+    <!-- Requisitos -->
+    <section class="bg-white rounded-2xl border border-slate-200"
+             x-data="requisitosPostulante()" data-hechos='{{ (pos.requisitos or {}) | tojson }}'
+             x-init="hechos = JSON.parse($el.dataset.hechos)">
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+        <h2 class="font-semibold text-slate-800 flex-1">Requisitos de admisión</h2>
+        {% if requisitos %}<span class="text-sm text-slate-500 tabular-nums" x-text="cuantos() + ' de {{ requisitos | length }}'"></span>{% endif %}
+      </div>
+      {% if requisitos %}
+      <ul class="divide-y divide-slate-100">
+        {% for r in requisitos %}
+        <li>
+          <label class="flex items-center gap-3 px-5 py-2.5 cursor-pointer hover:bg-slate-50" {% if not pos.abierta %}title="La postulación está cerrada"{% endif %}>
+            <input type="checkbox" class="w-4 h-4" :checked="!!(hechos['{{ r.id }}'] || {}).hecho"
+                   @change="marcar('{{ r.id }}', $event.target.checked)" {% if not pos.abierta %}disabled{% endif %}>
+            <span class="flex-1 text-sm" :class="(hechos['{{ r.id }}'] || {}).hecho ? 'text-slate-500 line-through' : 'text-slate-800'">{{ r.label }}</span>
+            <span class="text-[11px] text-slate-400" x-show="(hechos['{{ r.id }}'] || {}).hecho"
+                  x-text="quien('{{ r.id }}')"></span>
+          </label>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="px-5 py-4 text-sm text-slate-500">
+        No hay requisitos cargados. <a href="/configuracion#requisitos_admision" class="text-blue-600 hover:underline">Agrégalos en Configuración</a>
+        (por ejemplo: CV, copia del título, constancia de colegiatura, entrevista, pago de ingreso).
+      </p>
+      {% endif %}
+    </section>
+
+    <!-- Línea de tiempo -->
+    <section class="bg-white rounded-2xl border border-slate-200">
+      <div class="px-5 py-4 border-b border-slate-100">
+        <h2 class="font-semibold text-slate-800">Seguimiento</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Notas del equipo, cambios de la postulación y los correos que nos escribió.</p>
+      </div>
+      <form method="post" action="/postulantes/{{ pos._id }}/nota" class="px-5 py-4 border-b border-slate-100 space-y-2">
+        <label for="nota" class="sr-only">Nueva nota</label>
+        <textarea id="nota" name="texto" rows="2" required class="input w-full text-sm resize-y"
+                  placeholder="Ej.: Llamé y enviará sus documentos el lunes."></textarea>
+        <div class="flex justify-end"><button type="submit" class="btn-primary text-sm"><i class="fa-solid fa-plus mr-1" aria-hidden="true"></i> Agregar nota</button></div>
+      </form>
+      {% if linea %}
+      <ol class="px-5 py-4 space-y-4">
+        {% for i in linea %}
+        <li class="flex gap-3">
+          <div class="mt-0.5 w-7 h-7 rounded-full flex items-center justify-center shrink-0
+                      {{ 'bg-blue-50 text-blue-600' if i.tipo == 'correo' else 'bg-amber-50 text-amber-700' if i.tipo == 'nota' else 'bg-slate-100 text-slate-500' }}" aria-hidden="true">
+            <i class="fa-solid {{ 'fa-envelope' if i.tipo == 'correo' else 'fa-note-sticky' if i.tipo == 'nota' else 'fa-clock-rotate-left' }} text-xs"></i>
+          </div>
+          <div class="flex-1 min-w-0 text-sm">
+            {% if i.tipo == 'correo' %}
+            {% set cat = categorias_correo.get(i.categoria) %}{% set est = estados_correo.get(i.estado, (i.estado, 'gray')) %}
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-slate-500">Escribió:</span>
+              <a href="/inbox?ver={{ i.id }}" class="font-medium text-blue-600 hover:underline break-words">{{ i.titulo }}</a>
+              {% if cat %}<span class="badge badge-{{ cat[1] }}">{{ cat[0] }}</span>{% endif %}
+              <span class="badge badge-{{ est[1] }}">{{ est[0] }}</span>
+            </div>
+            {% if i.detalle %}<p class="text-slate-600 mt-0.5">{{ i.detalle }}</p>{% endif %}
+            {% elif i.tipo == 'nota' %}
+            <p class="text-slate-800 whitespace-pre-wrap">{{ i.detalle }}</p>
+            {% else %}
+            <p class="text-slate-700"><span class="font-medium first-letter:uppercase inline-block">{{ i.titulo }}</span>{% if i.detalle %}: {{ i.detalle }}{% endif %}</p>
+            {% endif %}
+            <div class="text-[11px] text-slate-400 mt-0.5">{{ i.fecha | fecha_hora_lima if i.fecha else '' }}{% if i.usuario %} · {{ i.usuario }}{% endif %}</div>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+    </section>
+  </div>
+
+  <!-- ── Columna lateral ── -->
+  <div class="space-y-5">
+
+    <!-- Persona -->
+    <section class="bg-white rounded-2xl border border-slate-200 p-5">
+      <h2 class="font-semibold text-slate-800 text-sm mb-3">Datos de contacto</h2>
+      <dl class="space-y-2 text-sm">
+        <div><dt class="text-xs text-slate-400">Email</dt><dd class="font-mono text-slate-700 break-all"><a href="mailto:{{ pe.email }}" class="hover:underline">{{ pe.email }}</a></dd></div>
+        {% for etiqueta, valor in [("Celular", pe.celular), ("DNI", pe.dni), ("Profesión", pe.titulo), ("Empresa", pe.empresa), ("Ciudad", pe.ciudad)] if valor %}
+        <div><dt class="text-xs text-slate-400">{{ etiqueta }}</dt><dd class="text-slate-700">{{ valor }}</dd></div>
+        {% endfor %}
+        {% if pe.zoom_eventos %}
+        <div><dt class="text-xs text-slate-400">Webinars</dt>
+          <dd class="text-slate-700">{{ pe.zoom_eventos | length }} inscripción(es), asistió a {{ pe.zoom_eventos | selectattr('asistio') | list | length }}</dd></div>
+        {% endif %}
+        {% if pe.tags %}
+        <div class="flex flex-wrap gap-1 pt-1">{% for t in pe.tags %}<span class="badge badge-gray">{{ t }}</span>{% endfor %}</div>
+        {% endif %}
+      </dl>
+      <a href="/publico/{{ pos.prospecto_id }}" class="inline-block mt-3 text-xs text-blue-600 hover:underline">Editar sus datos en Público</a>
+    </section>
+
+    <!-- Seguimiento -->
+    {% if pos.etapa != 'socio' %}
+    <section class="bg-white rounded-2xl border border-slate-200 p-5"
+             x-data='{ etapa: {{ pos.etapa | tojson }}, cierre: {{ cierre | list | tojson }} }'>
+      <h2 class="font-semibold text-slate-800 text-sm mb-3">Gestión</h2>
+      <form method="post" action="/postulantes/{{ pos._id }}/actualizar" class="space-y-3">
+        <label class="block text-xs font-medium text-slate-600">Etapa
+          <select name="etapa" x-model="etapa" class="input w-full mt-1 text-sm font-normal">
+            {% for k, v in etapas.items() if k != 'socio' %}
+            <option value="{{ k }}" {% if k == pos.etapa %}selected{% endif %}>{{ v[0] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label x-show="cierre.includes(etapa)" x-cloak class="block text-xs font-medium text-slate-600">Motivo del cierre *
+          <input type="text" name="motivo_cierre" value="{{ pos.motivo_cierre or '' }}" maxlength="300"
+                 class="input w-full mt-1 text-sm font-normal" placeholder="Ej.: no completó documentos en 3 meses"
+                 :required="cierre.includes(etapa)">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Tipo de socio
+          <select name="tipo_socio" class="input w-full mt-1 text-sm font-normal">
+            <option value="">Por definir</option>
+            {% for v, l in tipos_socio_items %}<option value="{{ v }}" {% if pos.tipo_socio == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Responsable
+          <select name="responsable" class="input w-full mt-1 text-sm font-normal">
+            <option value="">Sin asignar</option>
+            {% for u in usuarios %}<option value="{{ u }}" {% if pos.responsable == u %}selected{% endif %}>{{ u }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Próximo paso
+          <input type="text" name="proxima_accion" value="{{ pos.proxima_accion or '' }}" maxlength="300"
+                 class="input w-full mt-1 text-sm font-normal" placeholder="Ej.: recordarle enviar su título">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Fecha de seguimiento
+          <input type="date" name="fecha_seguimiento" value="{{ pos.fecha_seguimiento or '' }}" class="input w-full mt-1 text-sm font-normal">
+          {% if pos.seguimiento_estado == 'vencido' %}<span class="block mt-1 text-red-700 font-normal">Vencido</span>{% endif %}
+        </label>
+        <button type="submit" class="btn-primary w-full text-sm"><i class="fa-solid fa-check mr-1.5" aria-hidden="true"></i> Guardar</button>
+      </form>
+    </section>
+    {% endif %}
+
+    <!-- Alta -->
+    <section class="bg-white rounded-2xl border {{ 'border-green-200' if pos.etapa in ('aprobado', 'socio') else 'border-slate-200' }} p-5">
+      <h2 class="font-semibold text-slate-800 text-sm mb-2">Alta como socio</h2>
+      {% if pos.etapa == 'socio' %}
+      <p class="text-sm text-green-800"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i>
+        Ya es socio{% if pos.member_id %}: <a href="/members/{{ pos.member_id }}" class="underline font-medium">{{ pos.member_id }}</a>{% endif %}.</p>
+      {% elif pos.etapa == 'aprobado' %}
+      <p class="text-xs text-slate-500 mb-3">Crea su ficha en el padrón con los datos de Público{% if pos.tipo_socio %} como socio {{ tipos_map.get(pos.tipo_socio, pos.tipo_socio) | lower }}{% endif %}. No se puede deshacer.</p>
+      <form method="post" action="/postulantes/{{ pos._id }}/alta" class="space-y-3"
+            data-confirm="¿Dar de alta a {{ pe.nombre_completo or pe.email }} como socio de IPIDET? Se creará su ficha en el padrón.">
+        <label class="block text-xs font-medium text-slate-600">Período inicial de cuota
+          <select name="periodo_actual" class="input w-full mt-1 text-sm font-normal">
+            {% for yr in periodos_cobro %}<option value="{{ yr }}" {% if yr == periodo_actual %}selected{% endif %}>{{ yr }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn-primary w-full text-sm"><i class="fa-solid fa-user-check mr-1.5" aria-hidden="true"></i> Dar de alta como socio</button>
+      </form>
+      {% else %}
+      <p class="text-xs text-slate-500">Se habilita cuando la postulación está «Aprobado». Hasta entonces no aparece en el padrón ni en cobranzas.</p>
+      {% endif %}
+    </section>
+
+    <!-- Datos de la postulación -->
+    <section class="bg-white rounded-2xl border border-slate-200 p-5 text-sm space-y-1.5">
+      <div class="flex justify-between gap-2"><span class="text-slate-400">Origen</span><span class="text-slate-700">{{ origenes.get(pos.origen, pos.origen) }}</span></div>
+      <div class="flex justify-between gap-2"><span class="text-slate-400">Abierta</span><span class="text-slate-700">{{ pos.created_at | format_fecha }}</span></div>
+      {% if pos.otras %}
+      <div class="pt-2 border-t border-slate-100">
+        <div class="text-xs text-slate-400 mb-1">Otras postulaciones</div>
+        {% for o in pos.otras %}
+        <a href="/postulantes/{{ o._id }}" class="flex justify-between gap-2 text-xs hover:underline">
+          <span>{{ o.created_at | format_fecha }}</span>
+          <span class="badge badge-{{ etapas.get(o.etapa, ('', 'gray'))[1] }}">{{ etapas.get(o.etapa, (o.etapa,))[0] }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% include "_aviso_query.html" %}
+<script>
+function requisitosPostulante() {
+  return {
+    hechos: {},
+    cuantos() { return Object.values(this.hechos).filter(h => h && h.hecho).length; },
+    quien(id) {
+      const h = this.hechos[id] || {};
+      return [h.usuario, h.fecha ? fechaPe(String(h.fecha).slice(0, 10)) : ''].filter(Boolean).join(' · ');
+    },
+    async marcar(id, hecho) {
+      const antes = this.hechos[id];
+      this.hechos[id] = { hecho, fecha: new Date().toISOString(), usuario: 'tú' };
+      try {
+        const r = await fetch('/postulantes/{{ pos._id }}/requisito', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, hecho }),
+        });
+        if (!r.ok) throw new Error((await r.json()).error || 'No se pudo guardar');
+      } catch (e) {
+        this.hechos[id] = antes;
+        avisar(e.message, 'error');
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

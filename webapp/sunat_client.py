@@ -323,46 +323,75 @@ def emitir_factura(comprobante: dict, empresa: dict | None) -> dict:
 
 # ── Anulación ──────────────────────────────────────────────────────────────
 
-def anular_boleta(comprobante: dict, correlativo_nc: str,
-                  motivo: str = "ANULACION DE LA OPERACION") -> dict:
-    """Anula una boleta via Nota de Crédito (tipoDoc 07)."""
-    if not APISPERU_TOKEN:
-        return {"ok": False, "error": "APISPERU_TOKEN no configurado en .env"}
+def serie_nota_credito(serie_original: str) -> str:
+    """Serie de la nota según el comprobante: B001 → BC01, F001 → FC01.
+    SUNAT exige que empiece con B (si modifica una boleta) o F (si modifica una factura)."""
+    s = (serie_original or "").upper()
+    return f"{s[:1] or 'B'}C{s[-2:] if len(s) == 4 else '01'}"
 
-    serie, correlativo = _parse_numero(comprobante["numero"])
-    monto = float(comprobante.get("monto_total") or 0)
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
-    # B001 → BB01, B002 → BB02 (SUNAT convention for NC de boleta)
-    nc_serie = "BB" + serie[2:] if len(serie) == 4 else "BB01"
+def _cliente_de(comprobante: dict, member: dict | None, empresa: dict | None) -> dict:
+    if comprobante.get("tipo") == "factura":
+        ruc = (empresa or {}).get("ruc", "").strip() or comprobante.get("ruc_empresa", "")
+        razon = ((empresa or {}).get("razon_social") or comprobante.get("empresa") or "CLIENTE").strip()
+        return {"tipoDoc": "6", "numDoc": ruc, "rznSocial": razon.upper()}
+    dni = comprobante.get("destinatario_dni") or (member or {}).get("dni") or "00000000"
+    nombre = (comprobante.get("destinatario_nombre") or " ".join(filter(None, [
+        (member or {}).get("nombres", ""), (member or {}).get("apellidos", "")])).strip() or "CLIENTE")
+    return {"tipoDoc": "1", "numDoc": str(dni), "rznSocial": nombre.upper()}
 
-    dni = comprobante.get("destinatario_dni") or "00000000"
-    nombre = (comprobante.get("destinatario_nombre") or "CLIENTE").upper()
 
-    payload = {
+def payload_nota_credito(original: dict, nota: dict, member: dict | None = None,
+                         empresa: dict | None = None) -> dict:
+    """Arma la Nota de Crédito (tipoDoc 07) para APISPERU.
+    nota = {numero 'BC01-00001', fecha_emision, motivo_codigo, motivo, monto, items}."""
+    serie_ref, corr_ref = _parse_numero(original["numero"])
+    serie, correlativo = _parse_numero(nota["numero"])
+    monto = round(float(nota.get("monto") or 0), 2)
+    fecha = nota.get("fecha_emision") or datetime.now().strftime("%Y-%m-%d")
+    motivo = (nota.get("motivo") or "ANULACION DE LA OPERACION").upper()[:250]
+    items = nota.get("items") or []
+    # Las líneas deben sumar el total: si no (descuento parcial sobre varias líneas), va una sola.
+    if abs(sum(float(it.get("monto") or 0) for it in items) - monto) > 0.009:
+        items = []
+    return {
         "ublVersion": "2.1",
         "tipoDoc": "07",
-        "serie": nc_serie,
-        "correlativo": str(correlativo_nc),
-        "fechaEmision": f"{fecha_hoy}T00:00:00-05:00",
-        "tipDocAfectado": "03",
-        "numDocfectado": f"{serie}-{correlativo}",
-        "codMotivo": "01",
-        "desMotivo": motivo.upper(),
+        "serie": serie,
+        "correlativo": correlativo,
+        "fechaEmision": f"{fecha}T00:00:00-05:00",
+        "tipDocAfectado": "01" if original.get("tipo") == "factura" else "03",
+        "numDocfectado": f"{serie_ref}-{corr_ref}",
+        "codMotivo": nota["motivo_codigo"],
+        "desMotivo": motivo,
         "tipoMoneda": "PEN",
-        "client": {"tipoDoc": "1", "numDoc": str(dni), "rznSocial": nombre},
+        "client": _cliente_de(original, member, empresa),
         "company": _ipidet_company(),
+        "mtoOperGravadas": 0,
         "mtoOperExoneradas": monto,
         "mtoIGV": 0,
         "totalImpuestos": 0,
         "mtoImpVenta": monto,
-        "details": _build_details(
-            comprobante.get("items") or [],
-            monto,
-            (comprobante.get("concepto") or "ANULACION").upper(),
-        ),
+        "details": _build_details(items, monto, motivo),
         "legends": [{"code": "1000", "value": _monto_a_letras(monto)}],
     }
+
+
+def emitir_nota_credito(original: dict, nota: dict, member: dict | None = None,
+                        empresa: dict | None = None) -> dict:
+    """Envía una Nota de Crédito a SUNAT vía APISPERU. Retorna {ok, xml, hash, cdr_*, error}."""
+    if not APISPERU_TOKEN:
+        return {"ok": False, "error": "APISPERU_TOKEN no configurado en .env"}
+    if not IPIDET_RUC:
+        return {"ok": False, "error": "IPIDET_RUC no configurado en .env"}
+    if nota.get("motivo_codigo") == "13":
+        return {"ok": False, "error": "El motivo 13 (ajuste de cuotas) no se puede emitir desde la plataforma."}
+    try:
+        payload = payload_nota_credito(original, nota, member, empresa)
+    except (ValueError, KeyError) as e:
+        return {"ok": False, "error": str(e)}
+    if payload["client"]["tipoDoc"] == "6" and not re.match(r"^\d{11}$", payload["client"]["numDoc"] or ""):
+        return {"ok": False, "error": "La empresa del comprobante no tiene un RUC válido. Complétalo en Empresas."}
 
     try:
         with httpx.Client(timeout=30) as http:

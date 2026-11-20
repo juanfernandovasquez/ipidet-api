@@ -26,6 +26,7 @@ ALL_SECTIONS = [s[0] for s in SECCIONES]
 # Mapeo prefijo de ruta → clave de sección
 _PATH_MAP = [
     ("/members",          "members"),
+    ("/postulantes",      "members"),   # admisión: lo ve quien ve el padrón
     ("/billing",          "billing"),
     ("/fraccionamientos", "fraccionamientos"),
     ("/configuracion",    "billing"),

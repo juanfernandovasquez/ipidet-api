@@ -63,7 +63,7 @@
 
   <!-- Catálogos -->
   {% for key, meta in catalogos_def.items() %}
-  <section class="bg-white rounded-xl border border-slate-200 p-5 min-w-0"
+  <section id="{{ key }}" class="bg-white rounded-xl border border-slate-200 p-5 min-w-0 scroll-mt-20"
            x-data="catalogoEditor()"
            data-key="{{ key }}"
            data-formato="{{ meta.formato }}"

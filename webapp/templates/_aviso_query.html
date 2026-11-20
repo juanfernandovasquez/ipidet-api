@@ -1,0 +1,13 @@
+{# Muestra ?ok= / ?msg= / ?error= como aviso y los quita de la dirección (para no repetirlos al recargar). #}
+<script>
+document.addEventListener('alpine:initialized', () => {
+  const url = new URL(location.href);
+  const ok = url.searchParams.get('ok') || url.searchParams.get('msg');
+  const error = url.searchParams.get('error');
+  if (!ok && !error) return;
+  if (error) window.avisar(error, 'error');
+  else if (ok) window.avisar(ok);
+  ['ok', 'msg', 'error'].forEach(k => url.searchParams.delete(k));
+  history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
+});
+</script>

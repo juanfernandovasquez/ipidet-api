@@ -161,6 +161,18 @@
           {% for t in pr.tags %}<span class="badge badge-gray">{{ t }}</span>{% endfor %}
           <button type="button" class="text-xs text-blue-600 hover:underline ml-1" @click="abierto = !abierto" x-text="abierto ? 'Cerrar' : 'Cambiar estado o etiquetas'"></button>
         </div>
+        {% set po = postulaciones.get(c.prospecto_id) %}
+        <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-sm">
+          {% if po and po.etapa in abiertas_postulante %}
+          {% set epo = etapas_postulante.get(po.etapa, (po.etapa, 'gray')) %}
+          <a href="/postulantes/{{ po.id }}" class="text-blue-600 hover:underline"><i class="fa-solid fa-user-clock mr-1" aria-hidden="true"></i>Postulante</a>
+          <span class="badge badge-{{ epo[1] }}">{{ epo[0] }}</span>
+          {% elif pr.estado != 'convertido' %}
+          <form method="post" action="/inbox/{{ cid }}/postulante" class="inline">
+            <button type="submit" class="text-xs text-blue-600 hover:underline"><i class="fa-solid fa-user-clock mr-1" aria-hidden="true"></i>Quiere asociarse: pasar a Postulantes</button>
+          </form>
+          {% endif %}
+        </div>
         {% elif c.prospecto_id %}
         <a href="/publico/{{ c.prospecto_id }}" class="text-sm text-blue-600 hover:underline"><i class="fa-solid fa-address-book mr-1" aria-hidden="true"></i>Ficha en Público</a>
         {% else %}
@@ -168,6 +180,9 @@
           <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Agregar a Público
         </button>
         <span class="text-xs text-slate-500 ml-1">No es socio: guárdalo para hacerle seguimiento.</span>
+        <form method="post" action="/inbox/{{ cid }}/postulante" class="inline ml-1">
+          <button type="submit" class="text-xs text-blue-600 hover:underline"><i class="fa-solid fa-user-clock mr-1" aria-hidden="true"></i>Quiere asociarse: pasar a Postulantes</button>
+        </form>
         {% endif %}
 
         {% if pr or not c.prospecto_id %}
@@ -208,6 +223,7 @@
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <button type="submit" class="btn-primary text-xs"><i class="fa-solid fa-check" aria-hidden="true"></i> {{ 'Guardar cambios' if pr else 'Agregar a Público' }}</button>
+            <span class="text-xs text-slate-500">Con estado «Postulante» también queda en Postulantes.</span>
             {% if not pr %}<span class="text-xs text-slate-500">Sus otros correos quedarán unidos a la misma ficha.</span>{% endif %}
           </div>
         </form>

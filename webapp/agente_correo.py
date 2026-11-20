@@ -287,6 +287,7 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
             uso["costo_usd"] = round(uso["costo_usd"] + uso_verificacion["costo_usd"], 5)
     campos["envio_auto_bloqueado_por"] = motivos
     agente_db.guardar_analisis(correo_id, campos, estado, detalle=analisis.get("resumen") or "")
+    matricular(correo_id, cfg)
 
     if estado == "pendiente" and not motivos:
         ok, _ = enviar_respuesta(correo_id, respuesta, usuario="agente", automatico=True, gmail=gmail)
@@ -296,6 +297,81 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
     if estado == "pendiente":
         avisar_telegram(agente_db.get_correo(correo_id))
     return "analizados" if estado == "pendiente" else "sin_respuesta"
+
+
+# ── Público y Postulantes ──────────────────────────────────────────────────────
+
+def _sin_tildes(texto: str) -> str:
+    import unicodedata
+    return "".join(ch for ch in unicodedata.normalize("NFD", (texto or "").strip().lower())
+                   if unicodedata.category(ch) != "Mn")
+
+
+def datos_para_publico(doc: dict, titulo_evento: str = "") -> dict:
+    """Ficha de Público a partir de lo que el agente leyó en el correo o la firma.
+    Los correos analizados antes de que el agente extrajera el contacto usan el nombre visible."""
+    from webapp import db as pdb
+    contacto = doc.get("contacto") or {}
+    nombre, apellido = contacto.get("nombre", ""), contacto.get("apellido", "")
+    if not nombre and not apellido:
+        visible = (doc.get("de_nombre") or "").strip().strip('"')
+        if visible and "@" not in visible:
+            partes = visible.split()
+            nombre, apellido = " ".join(partes[:1]), " ".join(partes[1:])
+    # Vocabulario del padrón: «Contadora» o «Abogada» se reconocen como «Contador», «Abogado».
+    raiz = lambda t: re.sub(r"[ao]$", "", _sin_tildes(t))   # quita la vocal de género final
+    titulos = {raiz(t): t for t in pdb.get_member_titulos() if len(t) > 4}
+    profesion = contacto.get("profesion", "")
+    return {
+        "nombre": nombre.title() if nombre.isupper() else nombre,
+        "apellido": apellido.title() if apellido.isupper() else apellido,
+        "celular": contacto.get("celular", ""), "empresa": contacto.get("empresa", ""),
+        "ciudad": contacto.get("ciudad", ""),
+        "titulo": titulos.get(raiz(profesion), profesion) if len(profesion) > 4 else profesion,
+        "notas": f"Cargo: {contacto['cargo']}" if contacto.get("cargo") else "",
+        "estado": catalogos.ESTADO_PUBLICO_POR_CATEGORIA.get(doc.get("categoria"), "nuevo"),
+        "tags": [titulo_evento] if titulo_evento else [],
+    }
+
+
+def matricular(correo_id: str, cfg: dict | None = None) -> dict:
+    """Pasa a Público a quien escribió una consulta y no es socio; si quiere asociarse, abre su
+    postulación. Nunca baja de etapa a nadie ni pisa lo que cargó el equipo. No interrumpe el ciclo."""
+    from webapp import db as pdb
+    cfg = cfg or catalogos.get_agente_config()
+    doc = agente_db.get_correo(correo_id)
+    if (not doc or not cfg.get("matricular_publico", True) or doc.get("member_id")
+            or doc.get("posible_member_id") or doc.get("filtrado_sin_ia")
+            or doc.get("categoria") not in catalogos.CATEGORIAS_PUBLICO_AUTO):
+        return {}
+    email = (doc.get("de_email") or "").strip().lower()
+    if not email or email in direcciones_propias() or pdb._socio_con_email(email):
+        return {}
+    res: dict = {}
+    try:
+        titulo_evento = ""
+        if doc.get("evento_id") and re.fullmatch(r"[0-9a-f]{24}", doc["evento_id"]):
+            ev = pdb.eventos_col.find_one({"_id": pdb.ObjectId(doc["evento_id"])}, {"titulo": 1})
+            titulo_evento = (ev or {}).get("titulo", "")
+        datos = datos_para_publico(doc, titulo_evento)
+        existente = pdb.publico_col.find_one({"email": email}, {"_id": 1, "estado": 1})
+        if existente and existente.get("estado") == "convertido":
+            return {}
+        # A una ficha existente solo se le completan datos y se le suman etiquetas (estado intacto).
+        prospecto_id, creado = pdb.guardar_prospecto_desde_correo(
+            email, datos, "" if existente else datos["estado"], datos["tags"],
+            fuente_detalle=f"«{doc.get('asunto') or 'sin asunto'}»")
+        agente_db.vincular_prospecto(email, prospecto_id, "agente")
+        res = {"prospecto_id": prospecto_id, "publico_creado": creado}
+        if doc.get("categoria") == "admision":
+            postulante_id, abierta = pdb.crear_postulacion(
+                prospecto_id, origen="correo", usuario="agente", correo_id=correo_id,
+                detalle=f"Correo: {doc.get('asunto') or ''}".strip())
+            res.update({"postulante_id": postulante_id, "postulacion_creada": abierta})
+        agente_db.actualizar(correo_id, {"matriculado": res})
+    except Exception as e:  # la ficha es un extra: el correo sigue su curso
+        logger.warning("No se pudo pasar a Público el correo %s: %s", correo_id, e)
+    return res
 
 
 def _motivos_para_no_enviar_solo(cfg: dict, doc: dict, fuentes: dict) -> list[str]:
@@ -828,6 +904,11 @@ def avisar_telegram(doc: dict | None) -> None:
         avisos.append("⚠️ Toca información sensible: revísalo antes de aprobar.")
     if doc.get("datos_faltantes"):
         avisos.append("✍️ Falta completar: " + "; ".join(doc["datos_faltantes"])[:300])
+    mat = doc.get("matriculado") or {}
+    if mat.get("postulacion_creada"):
+        avisos.append("🧭 Quiere asociarse: quedó registrado en Postulantes.")
+    elif mat.get("publico_creado"):
+        avisos.append("📇 Quedó registrado en Público para su seguimiento.")
     buzones = (f"📥 Llegó a {cuenta_de(doc)} · responde desde {cuenta_respuesta(doc)}\n"
                if len(cuentas()) > 1 else "")
     texto = (

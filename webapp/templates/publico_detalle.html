@@ -16,8 +16,11 @@
     <i class="fa-solid fa-circle-check text-green-500"></i>
     {% if request.query_params.get('ok') == 'actualizado' %}Datos actualizados correctamente.
     {% elif request.query_params.get('ok') == 'estado' %}Estado actualizado.
-    {% elif request.query_params.get('ok') == 'postulacion' %}Postulación registrada.
     {% else %}Operación exitosa.{% endif %}
+  </div>
+  {% elif request.query_params.get('error') %}
+  <div class="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+    <i class="fa-solid fa-circle-exclamation text-red-500" aria-hidden="true"></i> {{ request.query_params.get('error') }}
   </div>
   {% endif %}
 
@@ -285,7 +288,7 @@
         </div>
         <form method="post" action="/publico/{{ prospecto._id }}/estado" class="flex gap-2">
           <select name="estado" class="input flex-1 text-sm">
-            {% for v, l in [("nuevo","Nuevo"),("interesado","Interesado"),("postulante","Postulante"),("inactivo","Inactivo")] %}
+            {% for v, l in [("nuevo","Nuevo"),("interesado","Interesado"),("postulante","Postulante (abre su postulación)"),("inactivo","Inactivo")] %}
             <option value="{{ v }}" {% if prospecto.estado == v %}selected{% endif %}>{{ l }}</option>
             {% endfor %}
           </select>
@@ -350,46 +353,61 @@
       </div>
 
       <!-- Postulación -->
+      {% set abierta = postulaciones | selectattr('etapa', 'in', abiertas_postulante) | first %}
       {% if prospecto.estado != 'convertido' %}
       <div class="bg-white rounded-2xl border border-slate-200 p-5">
-        <h2 class="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
-          <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-xs font-bold flex items-center justify-center">2</span>
-          Postulación a IPIDET
+        <h2 class="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-user-clock text-slate-400" aria-hidden="true"></i> Postulación a IPIDET
         </h2>
-        {% if prospecto.postulacion %}
-        <div class="mb-3 text-sm bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <div class="font-medium text-amber-800">Tipo: {{ prospecto.postulacion.tipo }}</div>
-          {% if prospecto.postulacion.fecha %}<div class="text-xs text-amber-600 mt-0.5">{{ prospecto.postulacion.fecha | format_fecha }}</div>{% endif %}
-          {% if prospecto.postulacion.notas %}<div class="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{{ prospecto.postulacion.notas }}</div>{% endif %}
+        {% if abierta %}
+        {% set ea = etapas_postulante.get(abierta.etapa, (abierta.etapa, 'gray')) %}
+        <div class="flex items-center gap-2 text-sm mb-3">
+          <span class="badge badge-{{ ea[1] }}">{{ ea[0] }}</span>
+          <span class="text-xs text-slate-500">desde {{ abierta.created_at | format_fecha }}</span>
         </div>
-        {% endif %}
-        <form method="post" action="/publico/{{ prospecto._id }}/postulacion" class="space-y-3">
-          <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">Tipo de membresía</label>
-            <select name="tipo_postulacion" class="input w-full text-sm">
-              {% for v, l in tipos_socio_items %}
-              <option value="{{ v }}" {% if prospecto.postulacion and prospecto.postulacion.tipo == v %}selected{% endif %}>{{ l }}</option>
-              {% endfor %}
+        <a href="/postulantes/{{ abierta._id }}" class="btn-primary w-full text-sm justify-center">
+          <i class="fa-solid fa-arrow-right mr-1.5" aria-hidden="true"></i> Ver su postulación
+        </a>
+        {% else %}
+        <p class="text-xs text-slate-500 mb-3">Si quiere asociarse, regístralo en Postulantes para seguir su proceso de admisión.</p>
+        <form method="post" action="/publico/{{ prospecto._id }}/postular" class="space-y-3">
+          <label class="block text-xs font-medium text-slate-600">Tipo de socio
+            <select name="tipo_socio" class="input w-full mt-1 text-sm font-normal">
+              <option value="">Por definir</option>
+              {% for v, l in tipos_socio_items %}<option value="{{ v }}">{{ l }}</option>{% endfor %}
             </select>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">Notas</label>
-            <textarea name="notas_postulacion" rows="2" class="input w-full text-sm resize-none"
-                      placeholder="Observaciones adicionales…">{{ prospecto.postulacion.notas if prospecto.postulacion else '' }}</textarea>
-          </div>
+          </label>
+          <label class="block text-xs font-medium text-slate-600">Nota
+            <textarea name="nota" rows="2" class="input w-full mt-1 text-sm font-normal resize-none" placeholder="Opcional"></textarea>
+          </label>
           <button type="submit" class="btn-primary w-full text-sm">
-            <i class="fa-solid fa-paper-plane mr-1.5"></i> Registrar postulación
+            <i class="fa-solid fa-user-clock mr-1.5" aria-hidden="true"></i> Pasar a Postulantes
           </button>
         </form>
+        {% endif %}
+        {% set previas = postulaciones | rejectattr('etapa', 'in', abiertas_postulante) | list %}
+        {% if previas %}
+        <div class="mt-3 pt-3 border-t border-slate-100 space-y-1">
+          <div class="text-xs text-slate-400">Postulaciones anteriores</div>
+          {% for o in previas %}
+          <a href="/postulantes/{{ o._id }}" class="flex justify-between gap-2 text-xs hover:underline">
+            <span>{{ o.created_at | format_fecha }}</span>
+            <span class="badge badge-{{ etapas_postulante.get(o.etapa, ('', 'gray'))[1] }}">{{ etapas_postulante.get(o.etapa, (o.etapa,))[0] }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
 
       <!-- Convertir a socio -->
-      {% if prospecto.estado in ('postulante', 'interesado') %}
+      {% if abierta %}
+      <p class="text-xs text-slate-500 px-1">El alta como socio se hace desde su postulación, cuando esté «Aprobado».</p>
+      {% elif prospecto.estado == 'interesado' %}
       <div class="bg-white rounded-2xl border border-green-200 p-5">
         <h2 class="font-semibold text-green-800 text-sm mb-3 flex items-center gap-2">
           <i class="fa-solid fa-user-check text-slate-500"></i> Convertir a socio
         </h2>
-        <p class="text-xs text-slate-500 mb-3">Crea un nuevo socio en el padrón con los datos de este prospecto.</p>
+        <p class="text-xs text-slate-500 mb-3">Crea un nuevo socio en el padrón sin pasar por Postulantes.</p>
         <form method="post" action="/publico/{{ prospecto._id }}/convertir"
               data-confirm="¿Convertir este prospecto en socio? Esta acción no se puede deshacer.">
           <div class="mb-3">

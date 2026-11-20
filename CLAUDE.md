@@ -32,6 +32,7 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 24. [IA Tareas](#ia-tareas)
 25. [Alianzas](#alianzas)
 26. [Ponentes](#ponentes)
+27. [Postulantes](#postulantes)
 
 ---
 
@@ -59,6 +60,9 @@ python migrate_faqs_admision.py
 
 # Asigna cuenta y clave por Message-ID a la cola de correos (idempotente; ver sección 11)
 python migrate_correos_cuentas.py
+
+# Abre postulaciones de lo que ya había en Público y registra consultas pasadas (idempotente; --probar solo cuenta)
+python migrate_postulantes.py --probar
 
 # Búsqueda de ponentes y alianzas: se hace en Claude Code con /buscar-ponentes y /buscar-alianzas
 python investigacion.py contexto ponentes "Pilar 2"      # lo que usa el comando; ver sección 25
@@ -442,6 +446,7 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `pendientes_col` | `pendientes` | `webapp/db.py` | Tareas internas del equipo admin |
 | `config_col` | `config` | `config/catalogos.py` | Catálogos editables, organización y período de trabajo (ver R10) |
 | `publico_col` | `publico` | `webapp/db.py` | CRM de prospectos/público general |
+| `postulantes_col` | `postulantes` | `webapp/db.py` | Procesos de admisión: una postulación por proceso, FK `prospecto_id` → `publico` (ver sección 27) |
 | `alianzas_col` | `alianzas` | `webapp/db.py` | Instituciones para posibles alianzas (ver sección 25) |
 | `alianzas_corridas_col` | `alianzas_corridas` | `webapp/db.py` | Historial de importaciones de búsquedas de alianzas |
 | `ponentes_col` | `ponentes` | `webapp/db.py` | Directorio de ponentes, internos y de otras instituciones (ver sección 26) |
@@ -597,7 +602,7 @@ Comprobantes de pago emitidos por IPIDET (boletas/facturas) — documentos tribu
 
 ```
 numero           string    "B001-000123" — número del comprobante
-tipo             string    "boleta" | "factura" | "recibo"
+tipo             string    "boleta" | "factura" | "recibo" | "nota_credito" (ver «Notas de crédito» en sección 19)
 fecha_emision    string    "YYYY-MM-DD" — fecha del documento tributario
 fecha_pago       string    "YYYY-MM-DD" — fecha en que se recibió el pago (puede diferir de fecha_emision)
 fecha_carga      string    "YYYY-MM-DD" — fecha en que se registró en la plataforma
@@ -616,7 +621,11 @@ items            [{        líneas de detalle del comprobante
                    tipo_pago:    string | null   "principal" | "cuota" | "parcial"
                    cuota_numero: int | null      número de cuota si tipo_pago == "cuota"
                    codigo_sunat: string | null   código SUNAT del producto
+                   nc_id:        string | null   nota de crédito que ya decidió el pago de esta línea:
+                                                 la sincronización la salta (también al arrancar)
                  }]
+notas_credito       [{id, numero, monto, fecha, motivo_codigo}]   notas vigentes que lo modifican
+monto_acreditado    float     suma de esas notas;  anulado_por_nc bool  si cubren todo el monto
 estado              string    "emitido" | "anulado" | "pre_registrado"
                               "pre_registrado" = borrador sin número SUNAT (se completa al importar XML)
 destinatario_id     string    member_id del receptor (solo boleta, para pre-registro con DNI)
@@ -631,6 +640,7 @@ created_at          datetime
 - Propaga `fecha_pago` del comprobante al campo `fecha_pago` del payment vinculado. Si `fecha_pago` está vacío, usa `fecha_emision` como fallback.
 - Se llama automáticamente al crear (`/comprobantes/add`, `/comprobantes/import-xml`) y al editar (`/comprobantes/{id}/update`).
 - **No hay botón "Sincronizar" en la UI** — el sync es siempre automático.
+- Al arrancar, la web resincroniza todos los comprobantes (`backfill_resync_comprobantes_with_payment_id`). Por eso una línea con `nc_id` se salta siempre, y una nota de crédito nunca sincroniza.
 
 ### 7.6 Colección `companies`
 
@@ -888,7 +898,9 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `campana_detalle.html` | `/comunicaciones/campanas/{id}` | Detalle + envío por lotes de una campaña |
 | `comprobantes_preparar.html` | `/comprobantes/preparar` | Pre-registro y completado de comprobantes SUNAT |
 | `publico.html` | `/publico` | CRM de prospectos: tabla con filtros en encabezados |
-| `publico_detalle.html` | `/publico/{id}` | Detalle de prospecto: tags, historial, postulación, conversión |
+| `publico_detalle.html` | `/publico/{id}` | Detalle de prospecto: tags, historial, su postulación, conversión |
+| `postulantes.html` | `/postulantes` | Postulantes: embudo por etapa, seguimiento, filtros, exportar |
+| `postulante_detalle.html` | `/postulantes/{id}` | Ficha del postulante: etapas, requisitos, notas, correos, alta como socio |
 | `redes_dashboard.html` | `/redes` | Dashboard de redes sociales: métricas por cuenta |
 | `redes_posts.html` | `/redes/posts` | Posts publicados con filtros |
 | `redes_cronograma.html` | `/redes/cronograma` | Calendario de publicaciones planificadas |
@@ -1548,7 +1560,7 @@ nuevo → interesado → postulante → convertido
 
 **Carga masiva:** `GET /publico/template-excel` (plantilla con hoja de instrucciones y listas de estados y títulos sacadas de la base) → `POST /publico/importar`. Columnas en `_COLUMNAS_PUBLICO` de `app.py`; el importador reconoce encabezados con tildes, sinónimos (`_ALIAS_COLUMNA_PUBLICO`) y el archivo de `GET /publico/export`, que usa las mismas columnas. Los botones de la cabecera (`header_actions`) están fuera de todo `x-data`: abren los modales con `onclick="window.dispatchEvent(...)"`, no con `@click`.
 
-**Desde la cola de correos:** quien escribe y no es socio se agrega con «Agregar a Público» (`/inbox/{id}/publico` → `db.guardar_prospecto_desde_correo`), con fuente `correo`, los datos que el agente leyó en la firma (`correos.contacto`) y el estado sugerido por categoría (`catalogos.ESTADO_PUBLICO_POR_CATEGORIA`: admisión → postulante). Si la ficha ya existe por email solo completa campos vacíos y suma etiquetas. La ficha muestra «Correos que nos escribió». No aparece para correos automáticos, internos ni de proveedores.
+**Desde la cola de correos:** el agente registra solo en Público a quien escribe una consulta (`catalogos.CATEGORIAS_PUBLICO_AUTO`: evento, admisión, consulta general) y no es socio ni posible socio (`agente_correo.matricular`, tras analizar cada correo; se apaga con `matricular_publico` en `/inbox/configuracion`). A una ficha existente solo le completa datos y suma etiquetas: nunca le cambia el estado. Si el correo es de admisión, además abre su postulación (sección 27). El resto se agrega a mano con «Agregar a Público» (`/inbox/{id}/publico` → `db.guardar_prospecto_desde_correo`), con fuente `correo`, los datos que el agente leyó en la firma (`correos.contacto`) y el estado sugerido por categoría (`catalogos.ESTADO_PUBLICO_POR_CATEGORIA`: admisión → postulante). Si la ficha ya existe por email solo completa campos vacíos y suma etiquetas. La ficha muestra «Correos que nos escribió». No aparece para correos automáticos, internos ni de proveedores.
 
 ### Colección `publico`
 
@@ -1672,7 +1684,17 @@ create_cronograma_item(plataforma, titulo, descripcion, ...) → str
 
 ### Correlativo automático
 
-`get_ultimo_correlativo_info(serie)` / `get_ultimo_correlativo_emitido(serie)` — busca el último número emitido para una serie (B001, F001, etc.) en la colección `comprobantes`. `GET /api/sunat/siguiente-correlativo` devuelve el siguiente disponible.
+`get_ultimo_correlativo_info(serie)` / `get_ultimo_correlativo_emitido(serie)` — busca el último número emitido para una serie (B001, F001, etc.) en la colección `comprobantes`. `GET /api/sunat/siguiente-correlativo` devuelve el siguiente disponible. Las notas de crédito llevan numeración aparte (`get_ultimo_correlativo_emitido_nc`, series BC01 / FC01).
+
+### Notas de crédito
+
+Una nota es un comprobante con `tipo: "nota_credito"` y FK `doc_ref_id` al comprobante que modifica (`doc_ref_numero`, `doc_ref_tipo`), con `motivo_codigo` (catálogo 09 de SUNAT, `catalogos.MOTIVOS_NOTA_CREDITO`), `motivo`, `monto_total`, `lineas_ref` (posiciones de las líneas del original que afecta; null = todas), `efecto_pago`, `pagos_afectados[]`, `origen` (manual | sunat | xml) y, si salió por APISPERU, los campos `sunat_*`. Sus `items` son solo descriptivos (sin `payment_id`).
+
+- **Efecto en la cobranza (`catalogos.EFECTOS_NOTA_CREDITO`), siempre lo elige el equipo:** `devolucion` (el pago vuelve a «debe», sin fecha ni comprobante), `reemplazo` (sigue pagado, sin comprobante, para emitir el correcto) o `ninguno`. Se aplica solo a los pagos de las líneas elegidas, por FK (R8), con `_desvincular_pagos`, y marca esas líneas del original con `nc_id`.
+- **Altas:** `POST /comprobantes/{id}/nota-credito` con `modo` «manual» (emitida en el portal SOL, se registra con su número) o «sunat» (la plataforma la emite por APISPERU; solo si el original salió por aquí). `registrar_nota_credito` valida motivo, monto ≤ saldo y número único.
+- **XML:** `xml_parser` reconoce `CreditNote` (y rechaza `DebitNote`). La nota importada queda con efecto por definir («Definir efecto» → `POST /comprobantes/{id}/nota-credito/efecto`, una sola vez); si su comprobante aún no está, se une sola al importarlo (`vincular_notas_pendientes`). Los duplicados se comparan por número **y** tipo: en la serie E001 una nota y una factura pueden tener el mismo número.
+- **Quitar una nota** (`anular_nota_credito`) recalcula el original pero no restaura pagos: eso se corrige en Cobranzas.
+- **Baja de factura** (`/comprobantes/{id}/sunat/anular`): solo facturas; conserva el XML y devuelve los pagos a «debe». Una boleta se anula con nota de crédito motivo 01.
 
 ---
 
@@ -1810,3 +1832,22 @@ Colección `alianzas`: `nombre`, `clave` (única), `siglas`, `tipo`, `ambito`, `
 - **Datos, no código (R10):** público, temas y máximo por búsqueda están en `config.ponentes_config`; las etapas, en `catalogos.ESTADOS_PONENTE`.
 
 Colección `ponentes`: `nombre`, `clave` (única), `cargo`, `institucion`, `pais`, `ambito`, `temas[]`, `por_que_relevante`, `trayectoria`, `charlas_posibles[]`, `canal_contacto`, `linkedin`, `perfil_url`, `es_funcionario_publico`, `consideraciones`, `relevancia`, `prestigio`, `viabilidad`, `puntaje`, `fuentes[]`, `sugerencias[{evento_id, evento_titulo, motivo, fecha}]`, `novedades[]`, `origen` (`busqueda`, `evento`, `manual`), `estado`, `responsable`, `fecha_seguimiento`, `notas`.
+
+---
+
+## 27. Postulantes {#postulantes}
+
+`/postulantes` sigue el proceso de admisión de quienes quieren asociarse. **No son socios y no se mezclan con el padrón:** viven en la colección `postulantes`, unidos por `prospecto_id` a su ficha en Público (la única con sus datos personales). `crear_postulacion` rechaza a quien tiene un correo de socio, y el socio solo se crea con «Dar de alta como socio» (`alta_postulante_como_socio`), que exige la etapa «Aprobado».
+
+- **Etapas** (`catalogos.ETAPAS_POSTULANTE`, lógica): consulta → documentos → evaluación → aprobado → socio; cierres: desistió y no admitido (piden motivo). «socio» nunca se elige a mano. Una persona tiene como máximo una postulación abierta; si vuelve tras cerrarse, se abre otra.
+- **Requisitos:** catálogo editable `requisitos_admision` en `/configuracion` (R10); en cada ficha se marcan (`requisitos.{id}`).
+- **Seguimiento:** responsable, próximo paso y fecha. El menú muestra cuántas están sin responsable o con el seguimiento vencido (`catalogos.get_postulantes_por_atender`).
+- **Entradas:** correo de admisión (automático, `agente_correo.matricular`), «Pasar a Postulantes» en la cola o en Público, estado «postulante» en Público o en el Excel de importación, y «Nuevo postulante».
+- **Público refleja la postulación** (`_sync_estado_publico`): abierta → «postulante»; alta → «convertido»; cerrada → «interesado». El antiguo campo `publico.postulacion` ya no se usa (`migrate_postulantes.py` lo pasa a la colección).
+- **Línea de tiempo:** `historial` y `notas` de la postulación más los correos de la persona en la cola (`agente_db.correos_de_remitente`).
+- La ruta `/postulantes` usa el permiso `members`, como el padrón.
+
+Colección `postulantes`: `prospecto_id`, `etapa`, `etapa_desde`, `tipo_socio`, `origen` (`catalogos.ORIGENES_POSTULANTE`), `responsable`, `proxima_accion`, `fecha_seguimiento`, `requisitos{id: {hecho, fecha, usuario}}`, `notas[{texto, usuario, fecha}]`, `correo_ids[]`, `historial[{fecha, accion, usuario, detalle}]`, `member_id`, `motivo_cierre`, `created_at`, `updated_at`.
+
+**Ojo en templates:** `base.html` define `p` (permisos) a nivel de plantilla; no uses `p` como variable de una página (la ficha usa `pos` y `pe`).
+

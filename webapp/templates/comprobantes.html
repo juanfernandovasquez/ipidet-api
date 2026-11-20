@@ -53,6 +53,15 @@
     <div class="text-xl font-bold text-red-700">{{ stats.credito_vencido | soles(0) }}</div>
     <div class="text-[11px] text-red-400 mt-0.5">{{ stats.credito_n_vencidos }} factura(s)</div>
   </div>
+  {% if stats.notas_credito %}
+  <a href="/comprobantes?tipo=nota_credito" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-slate-300">
+    <div class="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Notas de crédito</div>
+    <div class="text-2xl font-bold text-slate-800">{{ stats.notas_credito }}</div>
+    <div class="text-[11px] mt-0.5 {{ 'text-amber-600' if stats.notas_sin_efecto else 'text-slate-400' }}">
+      {% if stats.notas_sin_efecto %}{{ stats.notas_sin_efecto }} por definir su efecto{% else %}−{{ stats.notas_credito_monto | soles(0) }}{% endif %}
+    </div>
+  </a>
+  {% endif %}
   {% if stats.pre_registrados %}
   <div class="bg-amber-50 rounded-xl border border-amber-200 p-4">
     <div class="text-[10px] text-amber-600 uppercase tracking-wide mb-1">Pre-registrados</div>
@@ -77,6 +86,7 @@
         <option value="boleta"  {% if tipo == 'boleta'  %}selected{% endif %}>Boleta</option>
         <option value="factura" {% if tipo == 'factura' %}selected{% endif %}>Factura</option>
         <option value="recibo"  {% if tipo == 'recibo'  %}selected{% endif %}>Recibo</option>
+        <option value="nota_credito" {% if tipo == 'nota_credito' %}selected{% endif %}>Nota de crédito</option>
         <option value="credito" {% if tipo == 'credito' %}selected{% endif %}>Solo crédito</option>
       </select>
     </div>
@@ -129,8 +139,63 @@
 
       {% for c in comprobantes %}
 
+      {# ── Fila NOTA DE CRÉDITO ─────────────────────────────────────────────── #}
+      {% if c._tipo_doc == 'comprobante' and c.tipo == 'nota_credito' %}
+      <tbody>
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="px-3 py-3 text-center text-slate-300"><i class="fa-solid fa-file-circle-minus text-[11px]"></i></td>
+        <td class="px-3 py-3 font-mono text-slate-800 text-sm font-semibold">{{ c.numero or '—' }}</td>
+        <td class="px-3 py-3"><span class="badge badge-red whitespace-nowrap">Nota de crédito</span></td>
+        <td class="px-3 py-3 text-xs text-slate-500 whitespace-nowrap">
+          Modifica
+          <a href="/comprobantes?search={{ c.doc_ref_numero | urlencode }}" class="font-mono text-blue-600 hover:underline">{{ c.doc_ref_numero or '—' }}</a>
+        </td>
+        <td class="px-3 py-3 text-slate-500 text-xs font-mono">{{ c.fecha_emision | format_fecha }}</td>
+        <td class="px-3 py-3 text-xs text-slate-300">—</td>
+        <td class="px-3 py-3 text-slate-600 text-sm">{{ c.empresa or '—' }}</td>
+        <td class="px-3 py-3 text-sm text-slate-700">
+          <div>{{ motivos_nc.get(c.motivo_codigo, c.motivo_codigo or '—') }}</div>
+          {% if c.motivo and c.motivo | upper != motivos_nc.get(c.motivo_codigo, '') | upper %}<div class="text-[11px] text-slate-400 truncate max-w-56" title="{{ c.motivo }}">{{ c.motivo }}</div>{% endif %}
+          {% set si = c.socios_info %}{% if si %}<div class="text-[11px] text-slate-500">{% for s in si[:2] %}{{ s.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}{% if si | length > 2 %}, +{{ si | length - 2 }}{% endif %}</div>{% endif %}
+        </td>
+        <td class="px-3 py-3 text-right font-semibold text-red-700 whitespace-nowrap">−{{ c.monto_total | soles }}</td>
+        <td class="px-3 py-3">
+          {% if c.efecto_pago == 'devolucion' %}<span class="badge badge-red" title="{{ efectos_nc.devolucion[1] }}">Pago devuelto</span>
+          {% elif c.efecto_pago == 'reemplazo' %}<span class="badge badge-amber" title="{{ efectos_nc.reemplazo[1] }}">Pago sin comprobante</span>
+          {% elif c.efecto_pago == 'ninguno' %}<span class="badge badge-gray">Sin cambio en cobranza</span>
+          {% elif not c.doc_ref_id %}<span class="badge badge-amber" title="Importa el XML de {{ c.doc_ref_numero }}: la nota se une sola">Falta {{ c.doc_ref_numero or 'el comprobante' }}</span>
+          {% else %}
+          <button type="button" class="badge badge-amber hover:brightness-95 whitespace-nowrap"
+                  onclick="window.dispatchEvent(new CustomEvent('nc-abrir', {detail: {id: '{{ c._id }}'}}))">
+            <i class="fa-solid fa-hand-pointer text-[9px] mr-1"></i>Definir efecto
+          </button>
+          {% endif %}
+          {% if c.pagos_afectados %}<div class="text-[10px] text-slate-400 mt-0.5">{{ c.pagos_afectados | length }} pago(s) cambiados</div>{% endif %}
+        </td>
+        <td class="px-3 py-3">
+          {% if c.sunat_estado == 'emitido' %}<span class="badge badge-green"><i class="fa-solid fa-stamp text-[9px] mr-1"></i>Emitido</span>
+          {% else %}<span class="text-[11px] text-slate-400">Portal SUNAT</span>{% endif %}
+        </td>
+        <td class="px-3 py-3 text-right">
+          <div class="flex items-center justify-end gap-1">
+            {% if c.sunat_estado == 'emitido' %}
+            <a href="/comprobantes/{{ c._id }}/sunat/xml" title="Descargar XML SUNAT"
+               class="inline-flex items-center gap-1 text-xs font-medium text-sky-600 hover:text-sky-800 hover:bg-sky-50 px-2 py-1 rounded-lg">
+              <i class="fa-solid fa-file-code"></i><span>XML</span>
+            </a>
+            {% endif %}
+            <button type="button" title="Quitar la nota de la plataforma"
+                    class="text-slate-300 hover:text-red-500 transition-colors p-1"
+                    onclick="(async () => { if (!await confirmar('¿Quitar la nota de crédito {{ c.numero }} de la plataforma? Los pagos que cambió no se restauran: corrígelos en Cobranzas. Si ya la emitiste en SUNAT, sigue vigente allá.')) return; const r = await fetch('/comprobantes/{{ c._id }}/delete', {method: 'POST'}); if (r.ok) location.reload(); })()">
+              <i class="fa-solid fa-trash-can text-xs"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+      </tbody>
+
       {# ── Fila COMPROBANTE (boleta / factura / recibo) ─────────────────────── #}
-      {% if c._tipo_doc == 'comprobante' %}
+      {% elif c._tipo_doc == 'comprobante' %}
       {% set comp_data = {"id": c._id|string, "numero": c.numero or "", "tipo": c.tipo or "boleta", "fecha_emision": c.fecha_emision or "", "fecha_pago": c.fecha_pago or "", "fecha_carga": c.fecha_carga or "", "empresa": c.empresa or "", "concepto": c.concepto or "", "medio_pago": c.medio_pago or "", "fecha_vencimiento": c.fecha_vencimiento or "", "estado_credito": c.estado_credito or "", "items": c.lineas, "socios_info": c.socios_info or []} %}
       <tbody x-data="{
         sincronizando: false,
@@ -223,8 +288,15 @@
           <span class="inline-flex items-center gap-1 text-xs font-medium bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full">
             <i class="fa-solid fa-hourglass-half text-[9px]"></i> Pendiente
           </span>
-          {% else %}
+          {% elif not c.notas_credito %}
           <span class="text-xs text-slate-300">—</span>
+          {% endif %}
+          {% if c.notas_credito %}
+          <div class="{{ 'mt-1' if c.fecha_vencimiento or c.estado == 'pre_registrado' else '' }}"
+               title="{% for n in c.notas_credito %}{{ n.numero }}: −{{ n.monto | soles }}{% if not loop.last %} · {% endif %}{% endfor %}">
+            {% if c.anulado_por_nc %}<span class="badge badge-red whitespace-nowrap">Anulado con NC</span>
+            {% else %}<span class="badge badge-amber whitespace-nowrap">NC −{{ c.monto_acreditado | soles }}</span>{% endif %}
+          </div>
           {% endif %}
         </td>
         <td class="px-3 py-3">
@@ -271,12 +343,12 @@
               <i class="fa-solid fa-file-code"></i>
               <span>XML</span>
             </a>
-            {% if c.tipo in ('boleta', 'factura') %}
+            {% if c.tipo == 'factura' and c.estado == 'emitido' and not c.notas_credito %}
             <button onclick="window.dispatchEvent(new CustomEvent('sunat-anular',{detail:'{{ c._id | string }}'}));event.stopPropagation()"
-                    title="Anular en SUNAT"
+                    title="Comunicación de baja en SUNAT (hasta 7 días desde la emisión, si no se entregó al cliente)"
                     class="inline-flex items-center gap-1 text-xs font-medium text-red-400 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
               <i class="fa-solid fa-ban"></i>
-              <span>Anular</span>
+              <span>Baja</span>
             </button>
             {% endif %}
             {% elif c.estado != 'anulado' and c.tipo in ('boleta', 'factura') %}
@@ -285,6 +357,15 @@
                     class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 px-2 py-1 rounded-lg transition-colors disabled:opacity-40">
               <i class="fa-solid" :class="emitandoSunat ? 'fa-circle-notch fa-spin' : 'fa-stamp'"></i>
               <span>SUNAT</span>
+            </button>
+            {% endif %}
+            {% if c.tipo in ('boleta', 'factura') and c.estado == 'emitido' and not c.anulado_por_nc %}
+            <button type="button"
+                    onclick="window.dispatchEvent(new CustomEvent('nc-abrir', {detail: {id: '{{ c._id }}'}}))"
+                    title="Nota de crédito: anular, corregir o descontar este comprobante"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors">
+              <i class="fa-solid fa-file-circle-minus"></i>
+              <span>NC</span>
             </button>
             {% endif %}
             <button onclick="window.dispatchEvent(new CustomEvent('comp-enviar', {detail: '{{ c._id }}'}))"
@@ -869,10 +950,11 @@
          tipoBadge(tipo) {
            if (tipo === 'factura') return 'bg-violet-100 text-violet-700 border border-violet-200';
            if (tipo === 'boleta')  return 'bg-sky-100 text-sky-700 border border-sky-200';
+           if (tipo === 'nota_credito') return 'badge badge-red';
            return 'bg-slate-100 text-slate-600 border border-slate-200';
          },
          tipoLabel(tipo) {
-           return tipo === 'factura' ? 'Factura' : tipo === 'boleta' ? 'Boleta' : 'Recibo';
+           return {factura: 'Factura', boleta: 'Boleta', nota_credito: 'Nota de crédito', nota_debito: 'Nota de débito'}[tipo] || 'Recibo';
          },
          async parseXML(file) {
            const text = await file.text();
@@ -883,8 +965,13 @@
            const g = (el, tag, ns) => { const n = el ? el.getElementsByTagNameNS(ns, tag)[0] : null; return n ? n.textContent.trim() : ''; };
            const numero   = g(doc, 'ID', CBS);
            const tipoCode = g(doc, 'InvoiceTypeCode', CBS);
-           const tipoMap  = { '01': 'factura', '03': 'boleta', '07': 'recibo', '08': 'recibo' };
-           const tipo     = tipoMap[tipoCode] || (numero.toUpperCase().startsWith('F') ? 'factura' : 'boleta');
+           const tipoMap  = { '01': 'factura', '03': 'boleta' };
+           // Las notas no traen InvoiceTypeCode y su serie no dice qué son: se mira el elemento raíz.
+           const raiz     = doc.documentElement.localName;
+           const tipo     = raiz === 'CreditNote' ? 'nota_credito' : raiz === 'DebitNote' ? 'nota_debito'
+                          : (tipoMap[tipoCode] || (numero.toUpperCase().startsWith('F') ? 'factura' : 'boleta'));
+           const refEl    = doc.getElementsByTagNameNS(CAC, 'InvoiceDocumentReference')[0];
+           const refNumero = g(refEl, 'ID', CBS);
            const fecha    = g(doc, 'IssueDate', CBS);
            const custEl   = doc.getElementsByTagNameNS(CAC, 'AccountingCustomerParty')[0];
            const partyEl  = custEl ? custEl.getElementsByTagNameNS(CAC, 'Party')[0] : null;
@@ -913,7 +1000,7 @@
            }
            // fallback: si no hay líneas pero sí monto total, crear un item vacío
            if (xmlItems.length === 0) xmlItems.push({ desc: '', codigoSunat: '', monto, memberId: null });
-           return { filename: file.name, numero, tipo, fecha, ruc, receptor, esEmpresa, monto, xmlItems };
+           return { filename: file.name, numero, tipo, fecha, ruc, receptor, esEmpresa, monto, xmlItems, refNumero };
          },
          itemFromXml(xi) {
            const prod = xi.codigoSunat
@@ -942,7 +1029,7 @@
                const p = await this.parseXML(f);
                p.items    = (p.xmlItems || []).map(xi => this.itemFromXml(xi));
                if (p.items.length === 0) p.items = [this.itemFromXml({desc:'',codigoSunat:'',monto:0,memberId:null})];
-               p.expanded = p.items.some(it => it.xmlCode || it.xmlDesc || it.sid);
+               p.expanded = p.tipo !== 'nota_credito' && p.items.some(it => it.xmlCode || it.xmlDesc || it.sid);
                this.previews.push(p);
              }
              catch(e) { this.previews.push({ filename: f.name, error: e.message, items: [], expanded: false }); }
@@ -1167,7 +1254,10 @@
                       x-text="p.monto != null ? 'S/ ' + p.monto.toFixed(2) : '—'"></td>
                   <!-- Toggle socios -->
                   <td class="px-3 py-2 text-center">
-                    <template x-if="!p.error">
+                    <template x-if="!p.error && p.tipo === 'nota_credito'">
+                      <span class="text-[10px] text-slate-500 whitespace-nowrap" x-text="'Modifica ' + (p.refNumero || '—')"></span>
+                    </template>
+                    <template x-if="!p.error && p.tipo !== 'nota_credito'">
                       <button type="button" @click="p.expanded = !p.expanded"
                               :class="p.items.length > 0
                                 ? 'bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200'
@@ -1186,7 +1276,7 @@
                   </td>
                 </tr>
                 <!-- Fila expandida: vincular socios -->
-                <tr x-show="p.expanded" x-cloak class="border-t border-blue-100">
+                <tr x-show="p.expanded && p.tipo !== 'nota_credito'" x-cloak class="border-t border-blue-100">
                   <td colspan="7" class="px-0 py-0">
                     <div class="bg-blue-50/40 px-4 py-3 border-b border-blue-100">
                       <div class="flex items-center justify-between mb-2.5">
@@ -1408,6 +1498,12 @@
                       <span x-show="r.status === 'completado'"
                             class="inline-flex items-center gap-1 text-[10px] font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
                         <i class="fa-solid fa-link text-[8px]"></i> Pre-reg. completado
+                      </span>
+                      <span x-show="r.status === 'nota_credito'"
+                            class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full"
+                            :title="r.sin_vincular ? 'Falta importar ' + r.ref_numero + ': la nota se une sola' : 'Define su efecto en la cobranza desde la lista'">
+                        <i class="fa-solid fa-file-circle-minus text-[8px]"></i>
+                        <span x-text="r.sin_vincular ? 'NC · falta ' + (r.ref_numero || 'el original') : 'NC de ' + r.ref_numero + ' · define su efecto'"></span>
                       </span>
                       <span x-show="r.status === 'duplicado'"
                             class="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
@@ -2568,20 +2664,20 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
 <div x-data="{
   abierto: false,
   compId: '',
-  motivo: 'ANULACION DE LA OPERACION',
+  motivo: 'ERROR EN EMISION',
   correlativo: '1',
   anulando: false,
   resultado: null,
   abrir(id) {
     this.compId = id;
-    this.motivo = 'ANULACION DE LA OPERACION';
+    this.motivo = 'ERROR EN EMISION';
     this.correlativo = '1';
     this.anulando = false;
     this.resultado = null;
     this.abierto = true;
   },
   async confirmar() {
-    if (!await confirmar('¿Confirmar anulación en SUNAT? Esta acción es irreversible.')) return;
+    if (!await confirmar('¿Enviar la comunicación de baja a SUNAT? Esta acción es irreversible.')) return;
     this.anulando = true;
     try {
       const r = await fetch('/comprobantes/' + this.compId + '/sunat/anular', {
@@ -2612,7 +2708,7 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
         <i class="fa-solid fa-ban text-white text-sm"></i>
       </div>
       <div class="flex-1">
-        <p class="font-semibold text-slate-800 text-sm">Anular en SUNAT</p>
+        <p class="font-semibold text-slate-800 text-sm">Dar de baja la factura en SUNAT</p>
         <p class="text-xs text-red-500">Esta acción es irreversible ante SUNAT</p>
       </div>
       <button @click="cerrar()" class="text-slate-400 hover:text-slate-600 p-1">
@@ -2626,20 +2722,20 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
       <template x-if="!resultado">
         <div class="space-y-4">
           <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">Motivo de anulación</label>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Motivo de la baja</label>
             <input type="text" x-model="motivo" maxlength="100"
                    class="input w-full text-sm"
-                   placeholder="ANULACION DE LA OPERACION">
+                   placeholder="ERROR EN EMISION">
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-600 mb-1">N° correlativo del documento de anulación</label>
+            <label class="block text-xs font-medium text-slate-600 mb-1">N° correlativo de la comunicación de baja</label>
             <input type="number" x-model="correlativo" min="1"
                    class="input w-28 text-sm font-mono">
-            <p class="text-[11px] text-slate-400 mt-1">Para boletas: correlativo de la Nota de Crédito (serie BBxx). Para facturas: correlativo de la comunicación de baja.</p>
+            <p class="text-[11px] text-slate-400 mt-1">Solo dentro de los 7 días siguientes a la emisión y si la factura no se entregó al cliente. Si no, usa una nota de crédito.</p>
           </div>
           <div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-700 flex items-start gap-2">
             <i class="fa-solid fa-triangle-exclamation mt-0.5 flex-shrink-0"></i>
-            <span>La anulación se comunicará a SUNAT. El comprobante quedará marcado como anulado y no podrá reactivarse.</span>
+            <span>La baja se comunicará a SUNAT. La factura quedará anulada y sus pagos volverán a «debe», como al anularla en la plataforma.</span>
           </div>
         </div>
       </template>
@@ -2649,7 +2745,7 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
           <div class="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
             <i class="fa-solid fa-circle-check text-emerald-600 text-2xl"></i>
           </div>
-          <p class="font-semibold text-slate-800">Anulación enviada a SUNAT</p>
+          <p class="font-semibold text-slate-800">Baja enviada a SUNAT</p>
           <p class="text-xs text-slate-400">Recargando la página…</p>
         </div>
       </template>
@@ -2675,10 +2771,297 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
               :disabled="anulando"
               class="flex-[2] inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-40">
         <i class="fa-solid" :class="anulando ? 'fa-circle-notch fa-spin' : 'fa-ban'"></i>
-        <span x-text="anulando ? 'Anulando en SUNAT…' : 'Confirmar anulación'"></span>
+        <span x-text="anulando ? 'Enviando a SUNAT…' : 'Enviar la baja'"></span>
       </button>
     </div>
 
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL GLOBAL — NOTA DE CRÉDITO
+     nc-abrir {id}: id de un comprobante (nueva nota) o de una nota (definir su efecto)
+     ══════════════════════════════════════════════════════════ -->
+<script>
+function notaCreditoModal() {
+  const sol = n => 'S/ ' + Number(n || 0).toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const ANULAN = ['01', '02', '06'];
+  return {
+    abierto: false, cargando: false, guardando: false, confirmando: false, error: '', hecho: null,
+    modo: 'nueva', original: null, nota: null, sunat: null,
+    motivos: {}, efectos: {}, sugeridos: {},
+    form: {}, montoTocado: false, efectoTocado: false,
+    sol, fechaPe: v => window.fechaPe ? window.fechaPe(v) : v,
+
+    async abrir(d) {
+      Object.assign(this, {abierto: true, cargando: true, error: '', hecho: null, original: null, nota: null,
+                           sunat: null, montoTocado: false, efectoTocado: false});
+      try {
+        const r = await fetch('/api/comprobantes/' + d.id + '/nota-credito');
+        if (!r.ok) throw new Error('No se pudo cargar el comprobante');
+        const j = await r.json();
+        Object.assign(this, {original: j.original, nota: j.nota, sunat: j.sunat,
+                             motivos: j.motivos || {}, efectos: j.efectos || {}, sugeridos: j.sugeridos || {}});
+        this.modo = j.nota ? 'efecto' : 'nueva';
+        const todas = (j.original ? j.original.lineas : []).map(l => l.idx);
+        this.form = {emision: j.sunat ? 'sunat' : 'manual', numero: '', fecha_emision: j.hoy || '',
+                     motivo_codigo: d.motivo || '', motivo: '', monto: '', efecto: '', lineas: todas};
+        if (j.nota && j.original) {
+          // Nota importada: total → todas las líneas; parcial → las de sus socios.
+          const total = j.nota.monto_total >= j.original.monto_total - 0.009;
+          const socios = (j.nota.items || []).map(i => i.member_id).filter(Boolean);
+          this.form.lineas = total ? todas : j.original.lineas.filter(l => socios.includes(l.member_id)).map(l => l.idx);
+          this.form.efecto = this.sugeridos[j.nota.motivo_codigo] || '';
+        }
+        if (this.form.motivo_codigo) this.elegirMotivo();
+        else if (this.original) this.form.monto = this.original.saldo.toFixed(2);
+      } catch (e) { this.error = e.message; }
+      this.cargando = false;
+    },
+    // El clic en «Aceptar» de la confirmación cae fuera del modal: mientras se confirma, no se cierra.
+    cerrar() {
+      if (this.guardando || this.confirmando) return;
+      this.abierto = false;
+      if (this.hecho) location.reload();
+    },
+
+    get lineas() { return this.original ? this.original.lineas : []; },
+    get elegidas() { return this.lineas.filter(l => this.form.lineas.includes(l.idx)); },
+    get vinculadas() { return this.elegidas.filter(l => l.vinculado).length; },
+    get anula() { return ANULAN.includes(this.form.motivo_codigo); },
+    montoSugerido() {
+      const suma = this.elegidas.reduce((s, l) => s + l.monto, 0);
+      const todas = this.form.lineas.length === this.lineas.length;
+      return Math.min(todas || !this.lineas.length ? this.original.saldo : suma, this.original.saldo);
+    },
+    toggleLinea(idx) {
+      const i = this.form.lineas.indexOf(idx);
+      if (i >= 0) this.form.lineas.splice(i, 1); else this.form.lineas.push(idx);
+      if (this.modo === 'nueva' && !this.montoTocado) this.form.monto = this.montoSugerido().toFixed(2);
+    },
+    elegirMotivo() {
+      if (!this.efectoTocado) this.form.efecto = this.sugeridos[this.form.motivo_codigo] || '';
+      if (this.modo !== 'nueva') return;
+      this.form.motivo = (this.motivos[this.form.motivo_codigo] || '').toUpperCase();
+      if (this.anula) {
+        this.form.lineas = this.lineas.map(l => l.idx);
+        this.form.monto = this.original.saldo.toFixed(2);
+        this.montoTocado = false;
+      }
+    },
+    get monto() { return parseFloat(this.form.monto) || 0; },
+    get problema() {
+      if (!this.original) return 'Falta el comprobante';
+      if (this.modo === 'nueva') {
+        if (this.form.emision === 'manual' && !this.form.numero.trim()) return 'Escribe el número de la nota';
+        if (!this.form.motivo_codigo) return 'Elige el motivo';
+        if (this.monto <= 0) return 'El monto debe ser mayor a cero';
+        if (this.monto > this.original.saldo + 0.009) return 'El monto supera lo que queda por acreditar (' + sol(this.original.saldo) + ')';
+      }
+      if (!this.form.efecto) return 'Elige qué pasa con la cobranza';
+      if (this.form.efecto !== 'ninguno' && this.lineas.length && !this.form.lineas.length) return 'Elige qué líneas afecta';
+      return '';
+    },
+    async guardar() {
+      if (this.problema) return;
+      const sunat = this.modo === 'nueva' && this.form.emision === 'sunat';
+      const texto = this.modo === 'efecto'
+        ? '¿Aplicar este efecto en la cobranza? Solo se puede hacer una vez.'
+        : sunat ? '¿Emitir la nota de crédito en SUNAT por ' + sol(this.monto) + '? Una vez aceptada no se puede anular.'
+                : '¿Registrar la nota de crédito ' + this.form.numero.trim().toUpperCase() + ' por ' + sol(this.monto) + '?';
+      this.confirmando = true;
+      const ok = await confirmar(texto);
+      setTimeout(() => { this.confirmando = false; }, 0);   // después de que termine ese mismo clic
+      if (!ok) return;
+      this.guardando = true; this.error = '';
+      try {
+        const url = this.modo === 'efecto'
+          ? '/comprobantes/' + this.nota.id + '/nota-credito/efecto'
+          : '/comprobantes/' + this.original.id + '/nota-credito';
+        const body = this.modo === 'efecto'
+          ? {efecto: this.form.efecto, lineas: this.form.lineas}
+          : {modo: this.form.emision, numero: this.form.numero, fecha_emision: this.form.fecha_emision,
+             motivo_codigo: this.form.motivo_codigo, motivo: this.form.motivo, monto: this.monto,
+             efecto: this.form.efecto, lineas: this.form.lineas};
+        const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'No se pudo guardar');
+        this.hecho = {numero: j.numero || (this.nota && this.nota.numero), pagos: j.pagos || [], aviso: j.aviso || ''};
+      } catch (e) { this.error = e.message; }
+      this.guardando = false;
+    },
+    accionPago(a) {
+      return {devolucion: 'vuelve a «debe»', reemplazo: 'queda sin comprobante', anular: 'vuelve a «debe»'}[a] || a;
+    },
+  };
+}
+</script>
+<div x-data="notaCreditoModal()" @nc-abrir.window="abrir($event.detail)" x-show="abierto" x-cloak
+     @keydown.escape.window="abierto && cerrar()"
+     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+  <div @click.outside="cerrar()" class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+
+    <div class="flex items-center gap-3 px-6 py-4 border-b border-slate-200">
+      <i class="fa-solid fa-file-circle-minus text-slate-500"></i>
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-slate-800" x-text="modo === 'efecto' ? 'Nota de crédito ' + (nota ? nota.numero : '') : 'Nueva nota de crédito'"></p>
+        <p class="text-xs text-slate-500" x-show="original">
+          Modifica la <span x-text="original && original.tipo"></span>
+          <span class="font-mono" x-text="original && original.numero"></span>
+          · <span x-text="original && sol(original.monto_total)"></span>
+          <span x-show="original && original.saldo < original.monto_total" x-text="original ? '· queda por acreditar ' + sol(original.saldo) : ''"></span>
+        </p>
+      </div>
+      <button type="button" @click="cerrar()" class="text-slate-400 hover:text-slate-600 p-1" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div class="overflow-y-auto px-6 py-5 space-y-6 flex-1">
+      <div x-show="cargando" class="text-sm text-slate-400"><i class="fa-solid fa-circle-notch fa-spin mr-1"></i> Cargando…</div>
+
+      <!-- Resultado -->
+      <template x-if="hecho">
+        <div class="space-y-3">
+          <div class="flex items-center gap-2 text-green-700 font-medium">
+            <i class="fa-solid fa-circle-check"></i>
+            <span x-text="modo === 'efecto' ? 'Efecto aplicado.' : 'Nota de crédito ' + hecho.numero + ' registrada.'"></span>
+          </div>
+          <p x-show="hecho.aviso" class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2" x-text="hecho.aviso"></p>
+          <p class="text-sm text-slate-600" x-text="hecho.pagos.length ? 'Pagos que cambiaron:' : 'Ningún pago cambió.'"></p>
+          <ul class="text-sm text-slate-700 space-y-1">
+            <template x-for="p in hecho.pagos" :key="p.payment_id + (p.cuota_numero || '')">
+              <li><span class="font-mono" x-text="p.member_id"></span>
+                  <span x-text="p.tipo_pago === 'cuota' ? '· cuota ' + p.cuota_numero : (p.tipo_pago === 'parcial' ? '· pago parcial' : '')"></span>
+                  — <span x-text="accionPago(p.accion)"></span></li>
+            </template>
+          </ul>
+          <p x-show="hecho.pagos.some(p => p.tipo_pago === 'parcial')" class="text-xs text-amber-700">
+            Los pagos parciales solo se desvinculan: si se devolvió dinero, corrige el parcial en Cobranzas.
+          </p>
+        </div>
+      </template>
+
+      <!-- Nota importada sin su comprobante -->
+      <template x-if="!cargando && !hecho && nota && !original">
+        <p class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          El comprobante <span class="font-mono" x-text="nota.doc_ref_numero"></span> que modifica esta nota no está en la plataforma.
+          Importa su XML: la nota se une sola y luego podrás definir su efecto.
+        </p>
+      </template>
+
+      <template x-if="!cargando && !hecho && original">
+        <div class="space-y-6">
+
+          <!-- 1. La nota -->
+          <section class="space-y-3">
+            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">1. La nota</h4>
+            <template x-if="modo === 'efecto'">
+              <div class="text-sm text-slate-700 bg-slate-50 rounded-xl px-4 py-3 space-y-0.5">
+                <div><span class="font-mono font-semibold" x-text="nota.numero"></span> · <span x-text="fechaPe(nota.fecha_emision)"></span></div>
+                <div x-text="motivos[nota.motivo_codigo] || nota.motivo"></div>
+                <div class="font-semibold text-red-700" x-text="'−' + sol(nota.monto_total)"></div>
+              </div>
+            </template>
+            <template x-if="modo === 'nueva'">
+              <div class="space-y-3">
+                <div x-show="sunat" class="space-y-2">
+                  <label class="flex items-start gap-2 text-sm cursor-pointer">
+                    <input type="radio" value="sunat" x-model="form.emision" class="mt-1">
+                    <span>Emitirla en SUNAT desde la plataforma
+                      <span class="block text-xs text-slate-500">Saldrá como <span class="font-mono" x-text="sunat && sunat.numero"></span>, igual que se emitió el comprobante.</span></span>
+                  </label>
+                  <label class="flex items-start gap-2 text-sm cursor-pointer">
+                    <input type="radio" value="manual" x-model="form.emision" class="mt-1">
+                    <span>Ya la emití en el portal de SUNAT: solo registrarla</span>
+                  </label>
+                </div>
+                <p x-show="!sunat" class="text-xs text-slate-500">
+                  Este comprobante no salió por la plataforma: emite la nota en el portal de SUNAT y regístrala aquí con su número.
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div x-show="form.emision === 'manual'">
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Número de la nota *</label>
+                    <input type="text" x-model="form.numero" class="input w-full text-sm font-mono uppercase" placeholder="E001-00012">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Fecha de emisión</label>
+                    <input type="date" x-model="form.fecha_emision" class="input w-full text-sm">
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Motivo (catálogo SUNAT) *</label>
+                    <select x-model="form.motivo_codigo" @change="elegirMotivo()" class="input w-full text-sm">
+                      <option value="">Elegir…</option>
+                      <template x-for="(label, cod) in motivos" :key="cod">
+                        <option :value="cod" x-text="cod + ' · ' + label" :selected="cod === form.motivo_codigo"></option>
+                      </template>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">Monto *</label>
+                    <input type="number" step="0.01" min="0.01" x-model="form.monto" @input="montoTocado = true"
+                           class="input w-full text-sm text-right">
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Descripción del motivo</label>
+                  <input type="text" x-model="form.motivo" maxlength="250" class="input w-full text-sm">
+                </div>
+              </div>
+            </template>
+          </section>
+
+          <!-- 2. Líneas -->
+          <section class="space-y-2" x-show="lineas.length">
+            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">2. Qué líneas del comprobante afecta</h4>
+            <div class="border border-slate-200 rounded-xl divide-y divide-slate-100">
+              <template x-for="l in lineas" :key="l.idx">
+                <label class="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50">
+                  <input type="checkbox" :checked="form.lineas.includes(l.idx)" @change="toggleLinea(l.idx)"
+                         :disabled="modo === 'nueva' && anula">
+                  <span class="flex-1 min-w-0">
+                    <span class="block truncate" x-text="(l.nombre || l.member_id || 'Sin socio') + ' · ' + (l.producto_nombre || '—')"></span>
+                    <span class="block text-[11px] text-slate-400"
+                          x-text="l.vinculado ? 'Pago ' + (l.periodo || '') + (l.tipo_pago === 'cuota' ? ' · cuota ' + l.cuota_numero : '') + ' · ' + (l.estado_pago || '') : 'Sin pago vinculado'"></span>
+                  </span>
+                  <span class="font-mono text-slate-600" x-text="sol(l.monto)"></span>
+                </label>
+              </template>
+            </div>
+            <p x-show="modo === 'nueva' && anula" class="text-[11px] text-slate-400">Este motivo anula el comprobante completo: afecta todas las líneas.</p>
+          </section>
+
+          <!-- 3. Efecto -->
+          <section class="space-y-2">
+            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wide"
+                x-text="(lineas.length ? '3' : '2') + '. Qué pasa con la cobranza *'"></h4>
+            <template x-for="(e, clave) in efectos" :key="clave">
+              <label class="flex items-start gap-3 border rounded-xl px-3 py-2.5 cursor-pointer"
+                     :class="form.efecto === clave ? 'border-brand-700 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'">
+                <input type="radio" :value="clave" x-model="form.efecto" @change="efectoTocado = true" class="mt-1">
+                <span class="text-sm"><span class="font-medium text-slate-800" x-text="e[0]"></span>
+                  <span class="block text-xs text-slate-500" x-text="e[1]"></span></span>
+              </label>
+            </template>
+            <p x-show="form.efecto && form.efecto !== 'ninguno' && form.lineas.length && !vinculadas"
+               class="text-xs text-amber-700">Ninguna de las líneas elegidas tiene un pago vinculado: no cambiará ninguna cobranza.</p>
+          </section>
+        </div>
+      </template>
+
+      <p x-show="error" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2" x-text="error"></p>
+    </div>
+
+    <div class="px-6 py-4 border-t border-slate-200 flex items-center justify-between gap-3">
+      <button type="button" @click="cerrar()" :disabled="guardando" class="btn-ghost" x-text="hecho ? 'Cerrar' : 'Cancelar'"></button>
+      <div class="flex items-center gap-3" x-show="!hecho && original && !cargando">
+        <span class="text-xs text-slate-500 hidden sm:inline" x-show="problema" x-text="problema"></span>
+        <button type="button" @click="guardar()" :disabled="guardando || problema !== ''" class="btn-primary disabled:opacity-50">
+          <i class="fa-solid" :class="guardando ? 'fa-circle-notch fa-spin' : (modo === 'nueva' && form.emision === 'sunat' ? 'fa-stamp' : 'fa-check')"></i>
+          <span x-text="modo === 'efecto' ? 'Aplicar efecto' : (form.emision === 'sunat' ? 'Emitir en SUNAT' : 'Registrar nota')"></span>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

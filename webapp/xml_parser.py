@@ -1,6 +1,7 @@
 """
 Parser de facturas electrónicas SUNAT (UBL 2.1).
-Soporta: Factura (01), Boleta (03), Nota de Crédito (07), Nota de Débito (08).
+Soporta: Factura (01), Boleta (03) y Nota de Crédito (07). La Nota de Débito (08) se reconoce
+como «nota_debito» para rechazarla con un mensaje claro: aún no se registra en la plataforma.
 """
 import re
 import xml.etree.ElementTree as ET
@@ -13,7 +14,7 @@ _NS = {
     'ext': 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2',
 }
 
-_TIPO_MAP = {'01': 'factura', '03': 'boleta', '07': 'recibo', '08': 'recibo'}
+_TIPO_MAP = {'01': 'factura', '03': 'boleta'}
 
 
 def _txt(el, path: str) -> str:
@@ -53,7 +54,21 @@ def parse_sunat_xml(content: bytes) -> dict:
     numero     = _txt(root, 'cbc:ID')
     fecha      = _txt(root, 'cbc:IssueDate')
     tipo_code  = _txt(root, 'cbc:InvoiceTypeCode')
-    tipo       = _TIPO_MAP.get(tipo_code) or _tipo_from_numero(numero)
+    # Una nota no trae InvoiceTypeCode y su serie (FC01, BC01, E001…) no dice qué es: se mira el tag raíz.
+    if raw_tag == 'CreditNote':
+        tipo = 'nota_credito'
+    elif raw_tag == 'DebitNote':
+        tipo = 'nota_debito'
+    else:
+        tipo = _TIPO_MAP.get(tipo_code) or _tipo_from_numero(numero)
+
+    # Documento que modifica la nota y motivo (catálogo 09 de SUNAT)
+    ref = root.find('cac:BillingReference/cac:InvoiceDocumentReference', _NS)
+    ref_numero    = _txt(ref, 'cbc:ID')
+    ref_tipo      = _TIPO_MAP.get(_txt(ref, 'cbc:DocumentTypeCode'), '')
+    discrepancia  = root.find('cac:DiscrepancyResponse', _NS)
+    motivo_codigo = _txt(discrepancia, 'cbc:ResponseCode')
+    motivo        = _txt(discrepancia, 'cbc:Description')
 
     # Emisor (IPIDET)
     emisor = root.find('cac:AccountingSupplierParty/cac:Party', _NS)
@@ -114,4 +129,8 @@ def parse_sunat_xml(content: bytes) -> dict:
         'items':         items,
         'emisor_ruc':    emisor_ruc,
         'emisor_nombre': emisor_nombre,
+        'ref_numero':    ref_numero,
+        'ref_tipo':      ref_tipo,
+        'motivo_codigo': motivo_codigo,
+        'motivo':        motivo,
     }

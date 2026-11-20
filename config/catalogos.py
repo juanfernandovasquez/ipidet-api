@@ -60,6 +60,8 @@ CATALOGOS: dict[str, dict] = {
                               "ayuda": "Tareas que se marcan en el detalle de cada evento."},
     "tipos_institucion":    {"titulo": "Tipos de institución",     "formato": "valor_label",
                              "ayuda": "Clasificación de las instituciones en Alianzas. La búsqueda semanal solo usa estos tipos."},
+    "requisitos_admision":  {"titulo": "Requisitos de admisión",   "formato": "id_label",
+                             "ayuda": "Lo que se marca en la ficha de cada postulante (documentos, entrevista, pago de ingreso…)."},
 }
 
 # Etapas del seguimiento de una alianza: es lógica del sistema, no un dato editable.
@@ -97,6 +99,52 @@ FUENTES_PUBLICO = {"manual": "Manual", "excel": "Excel", "zoom": "Zoom", "correo
                    "portal": "Portal", "evento": "Evento", "referido": "Referido"}
 # Etapa que se sugiere al agregar a Público a quien escribió, según de qué trata su correo.
 ESTADO_PUBLICO_POR_CATEGORIA = {"admision": "postulante", "evento": "interesado", "consulta_general": "interesado"}
+# Correos cuyo remitente (si no es socio) entra solo a Público. «admision» además abre su postulación.
+CATEGORIAS_PUBLICO_AUTO = ("admision", "evento", "consulta_general")
+
+# Proceso de admisión (sección Postulantes). Las etapas son lógica del sistema; los requisitos que
+# se marcan en cada ficha son un catálogo editable («requisitos_admision»).
+#   clave: (etiqueta, color de badge, qué significa)
+ETAPAS_POSTULANTE: dict[str, tuple[str, str, str]] = {
+    "consulta":   ("Consultó",             "blue",   "Pidió información para asociarse"),
+    "documentos": ("Reuniendo requisitos", "amber",  "Está enviando documentos o completando requisitos"),
+    "evaluacion": ("En evaluación",        "purple", "Expediente completo: lo revisa IPIDET"),
+    "aprobado":   ("Aprobado",             "green",  "Admitido: falta darlo de alta como socio"),
+    "socio":      ("Ya es socio",          "green",  "Se dio de alta en el padrón"),
+    "desistio":   ("Desistió",             "gray",   "Dejó el proceso o no volvió a responder"),
+    "rechazado":  ("No admitido",          "red",    "IPIDET no aprobó la postulación"),
+}
+ETAPAS_POSTULANTE_ABIERTAS = ("consulta", "documentos", "evaluacion", "aprobado")
+# «socio» solo se alcanza con «Dar de alta como socio»; nunca se elige a mano.
+ETAPAS_POSTULANTE_CIERRE = ("desistio", "rechazado")
+ORIGENES_POSTULANTE = {"correo": "Correo", "publico": "Desde Público", "manual": "Agregado a mano",
+                       "excel": "Importación Excel", "migracion": "Postulación anterior"}
+
+# Notas de crédito. Los motivos son el catálogo 09 de SUNAT (norma tributaria, no dato del negocio).
+MOTIVOS_NOTA_CREDITO = {
+    "01": "Anulación de la operación",
+    "02": "Anulación por error en el RUC",
+    "03": "Corrección por error en la descripción",
+    "04": "Descuento global",
+    "05": "Descuento por ítem",
+    "06": "Devolución total",
+    "07": "Devolución por ítem",
+    "08": "Bonificación",
+    "09": "Disminución en el valor",
+    "10": "Otros conceptos",
+    "13": "Ajustes de montos y/o fechas de pago",
+}
+# Qué pasa con los pagos vinculados a las líneas que la nota afecta. Lo elige siempre el equipo.
+EFECTOS_NOTA_CREDITO = {
+    "devolucion": ("Se devolvió el dinero",
+                   "El pago vuelve a «debe», sin fecha de pago y sin comprobante."),
+    "reemplazo":  ("Se emitirá un comprobante nuevo",
+                   "El pago sigue pagado, pero queda sin comprobante para emitirle el correcto."),
+    "ninguno":    ("No cambia la cobranza",
+                   "Descuentos o ajustes que no tocan los pagos."),
+}
+# Sugerencia inicial del efecto según el motivo. «01» no tiene: puede ser devolución o reemplazo.
+EFECTO_NC_SUGERIDO = {"02": "reemplazo", "03": "reemplazo", "06": "devolucion", "07": "devolucion"}
 
 # Valores si la colección aún no los tiene; se editan en /alianzas y /ponentes.
 _ALIANZAS_DEFECTO = {"propuestas_por_corrida": 5, "perfil": "", "criterios": ""}
@@ -168,6 +216,8 @@ _AGENTE_DEFECTO = {
     "remitentes_ignorar": [],
     "remitentes_permitidos": [],
     "categorias_cuenta_2": CATEGORIAS_CUENTA_2_DEFECTO,
+    # Quien escribe una consulta y no es socio entra solo a Público; si quiere asociarse, a Postulantes.
+    "matricular_publico": True,
     # USD por millón de tokens (tarifa de Haiku 5.5); solo para estimar el costo que se muestra.
     "precio_entrada": 0.10,
     "precio_salida": 0.50,
@@ -297,6 +347,16 @@ def set_ponentes_config(campos: dict) -> None:
 
 def get_ponentes_por_revisar() -> int:
     return _cached("ponentes_por_revisar", lambda: db.ponentes.count_documents({"estado": "nuevo"}))
+
+
+def get_postulantes_por_atender() -> int:
+    """Postulaciones abiertas sin responsable o con el seguimiento vencido (o para hoy)."""
+    from datetime import date
+    hoy = date.today().isoformat()
+    return _cached("postulantes_por_atender", lambda: db.postulantes.count_documents({
+        "etapa": {"$in": list(ETAPAS_POSTULANTE_ABIERTAS)},
+        "$or": [{"responsable": {"$in": [None, ""]}}, {"fecha_seguimiento": {"$nin": [None, ""], "$lte": hoy}}],
+    }))
 
 
 # ── Agente de correos ──────────────────────────────────────────────────────────

@@ -85,6 +85,12 @@ def _oid(val: str):
     except Exception:
         raise HTTPException(status_code=404, detail="ID inválido")
 
+def _oid_valido(val) -> bool:
+    from bson import ObjectId as _ObjId
+    return _ObjId.is_valid(str(val or ""))
+
+from datetime import date as _date_cls, datetime, timezone  # noqa: E402
+
 MAX_BULK_RECIPIENTS = 1000
 
 from fastapi.staticfiles import StaticFiles as _StaticFiles
@@ -223,6 +229,7 @@ def _ctx(request: Request, **kwargs):
         "inbox_count": inbox_count,
         "alianzas_por_revisar": catalogos.get_alianzas_por_revisar(),
         "ponentes_por_revisar": catalogos.get_ponentes_por_revisar(),
+        "postulantes_por_atender": catalogos.get_postulantes_por_atender(),
         **kwargs,
     }
 
@@ -2332,6 +2339,8 @@ async def comprobantes_list(
         sort_dir       = sort_dir,
         page           = page,
         pages          = pages,
+        motivos_nc     = catalogos.MOTIVOS_NOTA_CREDITO,
+        efectos_nc     = catalogos.EFECTOS_NOTA_CREDITO,
     ))
 
 
@@ -2538,6 +2547,48 @@ async def comprobante_complete(comp_id: str, request: Request):
     return {"ok": True, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
 
 
+def _importar_nota_credito_xml(fname: str, data: dict, content: bytes) -> dict:
+    """Registra una nota de crédito importada. Su efecto en la cobranza queda por definir:
+    lo elige el equipo desde la lista (nunca se cambia un pago al importar)."""
+    numero = data["numero"].upper()
+    base = {"filename": fname, "numero": numero, "tipo": "nota_credito", "monto": data["monto_total"],
+            "empresa": data["razon_social"], "ref_numero": data.get("ref_numero", "")}
+    if pdb.comprobantes_col.find_one({"tipo": "nota_credito", "numero": numero, "estado": {"$ne": "anulado"}}):
+        return {**base, "status": "duplicado"}
+    motivo_codigo = data.get("motivo_codigo") or "10"
+    if motivo_codigo not in catalogos.MOTIVOS_NOTA_CREDITO:
+        motivo_codigo = "10"
+    ref_q = {"numero": data.get("ref_numero") or "-", "tipo": data.get("ref_tipo") or {"$in": ["boleta", "factura"]},
+             "estado": "emitido"}
+    original = pdb.comprobantes_col.find_one(ref_q)
+    xml_raw = content.decode("utf-8", errors="replace")
+    if original:
+        try:
+            nc_id, _ = pdb.registrar_nota_credito(
+                str(original["_id"]), numero=numero, fecha_emision=data["fecha_emision"],
+                motivo_codigo=motivo_codigo, motivo=data.get("motivo", ""), monto=data["monto_total"],
+                lineas_idx=None, efecto="", origen="xml", items_xml=data["items"], xml_raw=xml_raw,
+                validar_saldo=False,
+            )
+        except ValueError as e:
+            return {**base, "status": "error", "msg": str(e)}
+        return {**base, "status": "nota_credito", "id": nc_id, "sin_vincular": False}
+    # El comprobante que modifica aún no está: se guarda la nota y se une sola cuando se importe.
+    nc_id = str(pdb.comprobantes_col.insert_one({
+        "numero": numero, "tipo": "nota_credito", "fecha_emision": data["fecha_emision"],
+        "fecha_carga": _date_cls.today().isoformat(), "monto_total": data["monto_total"],
+        "producto_nombre": catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo],
+        "concepto": data.get("motivo") or catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo],
+        "motivo_codigo": motivo_codigo, "motivo": data.get("motivo", ""),
+        "doc_ref_id": None, "doc_ref_numero": data.get("ref_numero", ""), "doc_ref_tipo": data.get("ref_tipo", ""),
+        "empresa": data["razon_social"], "ruc_empresa": data["ruc_empresa"], "socios": [],
+        "items": [{k: it.get(k) for k in ("member_id", "producto_nombre", "monto", "codigo_sunat")} for it in data["items"]],
+        "estado": "emitido", "origen": "xml", "efecto_pago": "", "pagos_afectados": [],
+        "xml_raw": xml_raw, "created_at": datetime.now(timezone.utc),
+    }).inserted_id)
+    return {**base, "status": "nota_credito", "id": nc_id, "sin_vincular": True}
+
+
 @app.post("/comprobantes/import-xml")
 async def comprobantes_import_xml(
     files: List[UploadFile] = File(...),
@@ -2572,9 +2623,17 @@ async def comprobantes_import_xml(
         if not numero:
             results.append({"filename": fname, "status": "error", "msg": "No se encontró número de comprobante"})
             continue
+        if data["tipo"] == "nota_debito":
+            results.append({"filename": fname, "numero": numero, "status": "error",
+                            "msg": "Las notas de débito aún no se registran en la plataforma"})
+            continue
+        if data["tipo"] == "nota_credito":
+            results.append(_importar_nota_credito_xml(fname, data, content))
+            continue
 
-        # Deduplicar por número de comprobante
-        if pdb.comprobantes_col.find_one({"numero": numero, "estado": {"$ne": "pre_registrado"}}):
+        # Deduplicar por número y tipo: una nota de crédito puede compartir serie y número con una factura.
+        if pdb.comprobantes_col.find_one({"numero": numero, "tipo": {"$ne": "nota_credito"},
+                                          "estado": {"$ne": "pre_registrado"}}):
             results.append({"filename": fname, "numero": numero, "status": "duplicado",
                             "tipo": data["tipo"], "empresa": data["razon_social"], "monto": data["monto_total"]})
             continue
@@ -2624,6 +2683,7 @@ async def comprobantes_import_xml(
                 monto_total   = xml_monto,
                 ruc           = ruc if ruc and len(ruc) == 11 else None,
             )
+            pdb.vincular_notas_pendientes(pre_comp_id, numero)
             items = list(pre_match.get("items") or data["items"])
             if not items:
                 items = data["items"]
@@ -2717,6 +2777,7 @@ async def comprobantes_import_xml(
             ruc             = ruc or "",
             xml_raw         = content.decode("utf-8", errors="replace"),
         )
+        pdb.vincular_notas_pendientes(comp_id, numero)
 
         cruce = pdb.sync_comprobante_to_payments(
             items          = items,
@@ -2751,8 +2812,16 @@ async def comprobantes_import_xml(
 
 @app.post("/comprobantes/{comprobante_id}/update")
 async def comprobante_update(comprobante_id: str, request: Request):
+    actual = pdb.comprobantes_col.find_one({"_id": _oid(comprobante_id)}, {"tipo": 1})
+    if actual and actual.get("tipo") == "nota_credito":
+        return JSONResponse({"ok": False, "error": "Una nota de crédito no se edita: anúlala y regístrala de nuevo."},
+                            status_code=400)
     data  = await request.json()
     items = data.get("items", [])
+    # Las líneas que una nota de crédito ya anuló o corrigió conservan su marca al editar.
+    previos = (pdb.comprobantes_col.find_one({"_id": _oid(comprobante_id)}, {"items": 1}) or {}).get("items") or []
+    marcas = {(it.get("payment_id"), it.get("tipo_pago"), it.get("cuota_numero")): it["nc_id"]
+              for it in previos if it.get("nc_id") and it.get("payment_id")}
     empresa = data.get("empresa", "").strip()
     fecha_vencimiento = data.get("fecha_vencimiento", "").strip()
 
@@ -2770,6 +2839,10 @@ async def comprobante_update(comprobante_id: str, request: Request):
     }
     if items:
         _resolve_payment_ids(items)
+        for it in items:
+            clave = (it.get("payment_id"), it.get("tipo_pago"), it.get("cuota_numero"))
+            if clave in marcas:
+                it["nc_id"] = marcas[clave]
         fields["items"] = items
         fields["socios"] = list({it["member_id"] for it in items if it.get("member_id")})
         prod_names = list({it.get("producto_nombre", "") for it in items if it.get("producto_nombre")})
@@ -2811,7 +2884,7 @@ async def comprobante_sync(comprobante_id: str):
     if not comp:
         raise HTTPException(status_code=404, detail="Comprobante no encontrado")
     items = list(comp.get("items") or [])
-    if not items:
+    if comp.get("tipo") == "nota_credito" or not items:
         return {"ok": True, "cruce_ok": 0, "cruce_alerts": 0, "cruce_items": [],
                 "msg": "Este comprobante no tiene líneas de detalle vinculadas"}
 
@@ -3056,7 +3129,8 @@ async def sunat_download_xml(comp_id: str, request: Request):
 async def sunat_anular(comp_id: str, request: Request):
     if not request.session.get("user_email"):
         raise HTTPException(401, "No autenticado")
-    from webapp.sunat_client import anular_boleta, anular_factura, check_configured
+    """Comunicación de baja de una factura. Una boleta se anula con nota de crédito (ver abajo)."""
+    from webapp.sunat_client import anular_factura, check_configured
 
     if not check_configured():
         return {"ok": False, "error": "Integración SUNAT no configurada. Agrega APISPERU_TOKEN e IPIDET_RUC en .env"}
@@ -3066,24 +3140,158 @@ async def sunat_anular(comp_id: str, request: Request):
         raise HTTPException(404, "Comprobante no encontrado")
     if comp.get("sunat_estado") != "emitido":
         return {"ok": False, "error": "Solo se pueden anular comprobantes ya emitidos a SUNAT"}
+    if comp.get("tipo") != "factura":
+        return {"ok": False, "error": "Una boleta se anula con una nota de crédito (motivo 01)."}
 
     data = await request.json()
-    motivo = (data.get("motivo") or "ANULACION DE LA OPERACION").strip().upper()
-    correlativo_nc = str(data.get("correlativo") or "1")
-
-    tipo = comp.get("tipo", "boleta")
-    if tipo == "boleta":
-        resultado = anular_boleta(comp, correlativo_nc, motivo)
-    elif tipo == "factura":
-        resultado = anular_factura(comp, correlativo_nc, motivo)
-    else:
-        return {"ok": False, "error": "Tipo de comprobante no soportado para anulación"}
-
+    motivo = (data.get("motivo") or "ERROR EN EMISION").strip().upper()
+    correlativo_baja = str(data.get("correlativo") or "1")
+    resultado = anular_factura(comp, correlativo_baja, motivo)
     if resultado["ok"]:
-        pdb.update_sunat_estado(comp_id, estado="anulado_sunat")
-        pdb.update_comprobante(comp_id, {"estado": "anulado"})
-
+        # Solo cambia el estado SUNAT: el XML y el CDR de la factura se conservan.
+        pdb.update_comprobante(comp_id, {"sunat_estado": "anulado_sunat"})
+        pdb.delete_comprobante(comp_id)   # estado «anulado» y los pagos vuelven a «debe», como al anular
     return resultado
+
+
+# ── Notas de crédito ──────────────────────────────────────────────────────────
+
+def _lineas_de(data: dict) -> list | None:
+    lineas = data.get("lineas")
+    if lineas is None:
+        return None
+    try:
+        return [int(i) for i in lineas]
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Líneas no válidas")
+
+
+@app.get("/api/comprobantes/{comp_id}/nota-credito")
+async def api_nota_credito_info(comp_id: str, request: Request):
+    """Datos para el formulario de nota de crédito. Acepta el id del comprobante o de una nota
+    (en ese caso devuelve la nota y su original, para definir el efecto pendiente)."""
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    nota = None
+    doc = pdb.get_comprobante_by_id(comp_id) if _oid_valido(comp_id) else None
+    if not doc:
+        raise HTTPException(404, "Comprobante no encontrado")
+    if doc.get("tipo") == "nota_credito":
+        nota = {k: doc.get(k) for k in ("numero", "fecha_emision", "motivo_codigo", "motivo", "monto_total",
+                                        "efecto_pago", "doc_ref_numero", "lineas_ref")}
+        nota["id"] = doc["_id"]
+        nota["sin_vincular"] = not doc.get("doc_ref_id")
+        nota["items"] = doc.get("items") or []
+        if not doc.get("doc_ref_id"):
+            return {"nota": nota, "original": None}
+        comp_id = doc["doc_ref_id"]
+    original = pdb.info_para_nota_credito(comp_id)
+    if not original:
+        raise HTTPException(404, "Comprobante no encontrado")
+    sunat = None
+    if original["sunat_emitido"] and not nota:
+        from webapp.sunat_client import serie_nota_credito
+        serie = serie_nota_credito(original["numero"].split("-", 1)[0])
+        ultimo = pdb.get_ultimo_correlativo_emitido_nc(serie)
+        sunat = {"serie": serie, "numero": f"{serie}-{(ultimo or 0) + 1:05d}"}
+    return {
+        "original": original, "nota": nota, "sunat": sunat,
+        "motivos": catalogos.MOTIVOS_NOTA_CREDITO,
+        "efectos": catalogos.EFECTOS_NOTA_CREDITO,
+        "sugeridos": catalogos.EFECTO_NC_SUGERIDO,
+        "hoy": _date_cls.today().isoformat(),
+    }
+
+
+@app.post("/comprobantes/{comp_id}/nota-credito")
+async def comprobante_nota_credito(comp_id: str, request: Request):
+    """Registra una nota de crédito sobre el comprobante.
+    modo «manual»: ya se emitió en SUNAT (portal SOL); se registra con su número.
+    modo «sunat»: la plataforma la emite por APISPERU (solo si el original salió por aquí)."""
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    data = await request.json()
+    original = pdb.get_comprobante_by_id(comp_id) if _oid_valido(comp_id) else None
+    if not original:
+        raise HTTPException(404, "Comprobante no encontrado")
+    modo = data.get("modo") or "manual"
+    motivo_codigo = str(data.get("motivo_codigo") or "")
+    motivo = (data.get("motivo") or "").strip()
+    monto = _safe_float(data.get("monto"), 0)
+    efecto = data.get("efecto") or ""
+    if not efecto:
+        return {"ok": False, "error": "Elige qué pasa con la cobranza"}
+    lineas = _lineas_de(data)
+    fecha = (data.get("fecha_emision") or "").strip() or _date_cls.today().isoformat()
+    sunat_campos = None
+    numero = (data.get("numero") or "").strip().upper()
+
+    if modo == "sunat":
+        from webapp.sunat_client import emitir_nota_credito, serie_nota_credito, check_configured
+        from config.settings import SUNAT_ENVIRONMENT
+        if not check_configured():
+            return {"ok": False, "error": "Integración SUNAT no configurada."}
+        if original.get("sunat_estado") != "emitido":
+            return {"ok": False, "error": "Este comprobante no se emitió desde la plataforma. "
+                                         "Emite la nota en el portal de SUNAT y regístrala con su número."}
+        # Valida antes de enviar a SUNAT: lo que SUNAT acepta ya no se puede deshacer.
+        info = pdb.info_para_nota_credito(comp_id)
+        if motivo_codigo not in catalogos.MOTIVOS_NOTA_CREDITO:
+            return {"ok": False, "error": "Elige el motivo de la nota de crédito"}
+        if monto <= 0 or monto > info["saldo"] + 0.009:
+            return {"ok": False, "error": f"El monto debe ser mayor a cero y no superar S/ {info['saldo']:.2f}"}
+        serie = serie_nota_credito(original["numero"].split("-", 1)[0])
+        numero = f"{serie}-{(pdb.get_ultimo_correlativo_emitido_nc(serie) or 0) + 1:05d}"
+        elegidas = [original["items"][i] for i in (lineas if lineas is not None else range(len(original.get("items") or [])))
+                    if i < len(original.get("items") or [])]
+        member = pdb.get_member((original.get("socios") or [None])[0]) if original.get("tipo") == "boleta" and original.get("socios") else None
+        empresa = None
+        if original.get("tipo") == "factura" and original.get("empresa_id") and _oid_valido(original["empresa_id"]):
+            empresa = pdb.companies_col.find_one({"_id": _oid(original["empresa_id"])})
+        resultado = emitir_nota_credito(original, {
+            "numero": numero, "fecha_emision": fecha, "motivo_codigo": motivo_codigo,
+            "motivo": motivo or catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo], "monto": monto, "items": elegidas,
+        }, member, empresa)
+        if not resultado.get("ok"):
+            return {"ok": False, "error": "SUNAT no aceptó la nota: " + (resultado.get("error") or "")}
+        sunat_campos = {
+            "sunat_estado": "emitido", "sunat_xml": resultado.get("xml", ""), "sunat_hash": resultado.get("hash", ""),
+            "sunat_cdr_code": resultado.get("cdr_code", ""), "sunat_cdr_desc": resultado.get("cdr_description", ""),
+            "sunat_accepted": resultado.get("accepted", False), "sunat_error": "",
+            "sunat_emitido_at": datetime.now(timezone.utc), "sunat_ambiente": SUNAT_ENVIRONMENT,
+        }
+
+    try:
+        nc_id, tocados = pdb.registrar_nota_credito(
+            comp_id, numero=numero, fecha_emision=fecha, motivo_codigo=motivo_codigo, motivo=motivo,
+            monto=monto, lineas_idx=lineas, efecto=efecto, origen=modo, sunat=sunat_campos,
+            validar_saldo=modo != "sunat",
+        )
+    except ValueError as e:
+        if sunat_campos:
+            # SUNAT ya la aceptó: no se puede perder. Se registra sin validar y se avisa.
+            nc_id, tocados = pdb.registrar_nota_credito(
+                comp_id, numero=numero, fecha_emision=fecha, motivo_codigo=motivo_codigo, motivo=motivo,
+                monto=monto, lineas_idx=lineas, efecto="", origen=modo, sunat=sunat_campos, validar_saldo=False)
+            return {"ok": True, "id": nc_id, "numero": numero, "pagos": [],
+                    "aviso": f"SUNAT aceptó la nota, pero no se aplicó su efecto: {e}"}
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "id": nc_id, "numero": numero, "pagos": tocados}
+
+
+@app.post("/comprobantes/{nc_id}/nota-credito/efecto")
+async def nota_credito_efecto(nc_id: str, request: Request):
+    """Define qué pasa con la cobranza en una nota que quedó pendiente (importada por XML)."""
+    if not request.session.get("user_email"):
+        raise HTTPException(401, "No autenticado")
+    if not _oid_valido(nc_id):
+        raise HTTPException(404, "Nota no encontrada")
+    data = await request.json()
+    try:
+        tocados = pdb.aplicar_efecto_nota_credito(nc_id, data.get("efecto") or "", _lineas_de(data))
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "pagos": tocados}
 
 
 # ── Campañas por lotes ────────────────────────────────────────────────────────
@@ -4746,6 +4954,8 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
                                   "estado": p.get("estado") or "nuevo", "tags": p.get("tags") or []}
                   for p in pdb.publico_col.find({"_id": {"$in": ids_prospectos}},
                                                 {"nombre": 1, "apellido": 1, "estado": 1, "tags": 1})} if ids_prospectos else {}
+    # Postulación de cada persona (la más reciente), para verla y abrirla desde la cola.
+    postulaciones = pdb.postulaciones_por_prospecto(list(prospectos))
     for c in correos:
         # Solo personas: nada de avisos automáticos, proveedores ni el propio equipo.
         if (not c.get("member_id") and not c.get("prospecto_id") and not c.get("filtrado_sin_ia")
@@ -4763,6 +4973,8 @@ async def inbox_page(request: Request, vista: str = "atender", categoria: str = 
         agente_cfg=catalogos.get_agente_config(), agente_estado=agente_db.get_estado(),
         admin_forward=agente_correo.ADMIN_FORWARD_EMAIL, cuentas_agente=cuentas_agente, cuenta=cuenta,
         prospectos=prospectos, estados_publico=catalogos.ESTADOS_PUBLICO, faqs_actuales=faqs_actuales,
+        postulaciones=postulaciones, etapas_postulante=catalogos.ETAPAS_POSTULANTE,
+        abiertas_postulante=catalogos.ETAPAS_POSTULANTE_ABIERTAS,
         archivos=archivos, ext_adjunto=sorted(_EXT_ADJUNTO), ext_imagen=sorted(_EXT_IMAGEN),
         etiquetas_publico=[t["tag"] for t in pdb.get_all_tags()] if correos else [],
         titulos_publico=sorted(set(pdb.get_member_titulos()) | set(pdb.get_publico_titulos())) if correos else [],
@@ -4773,40 +4985,8 @@ _CATEGORIAS_SIN_PUBLICO = ("automatico", "interno", "proveedor")
 
 
 def _publico_sugerido(c: dict, eventos: dict) -> dict:
-    """Datos para agregar a Público a quien escribió: lo que el agente leyó en el correo o su firma.
-
-    Los correos analizados antes de que el agente extrajera el contacto usan el nombre visible.
-    """
-    contacto = c.get("contacto") or {}
-    nombre, apellido = contacto.get("nombre", ""), contacto.get("apellido", "")
-    if not nombre and not apellido:
-        visible = (c.get("de_nombre") or "").strip().strip('"')
-        if visible and "@" not in visible:
-            partes = visible.split()
-            nombre, apellido = " ".join(partes[:1]), " ".join(partes[1:])
-    # Se usa el vocabulario del padrón; «Contadora» o «Abogada» se reconocen como «Contador», «Abogado».
-    titulos = {_sin_tildes_simple(t)[:-1]: t for t in pdb.get_member_titulos() if len(t) > 4}
-    profesion = contacto.get("profesion", "")
-    clave_profesion = _sin_tildes_simple(profesion)[:-1]
-    etiquetas = []
-    if c.get("evento_id") and eventos.get(c["evento_id"]):
-        etiquetas.append(eventos[c["evento_id"]])
-    return {
-        "nombre": nombre.title() if nombre.isupper() else nombre,
-        "apellido": apellido.title() if apellido.isupper() else apellido,
-        "celular": contacto.get("celular", ""), "empresa": contacto.get("empresa", ""),
-        "ciudad": contacto.get("ciudad", ""),
-        "titulo": titulos.get(clave_profesion, profesion) if len(profesion) > 4 else profesion,
-        "notas": f"Cargo: {contacto['cargo']}" if contacto.get("cargo") else "",
-        "estado": catalogos.ESTADO_PUBLICO_POR_CATEGORIA.get(c.get("categoria"), "nuevo"),
-        "tags": etiquetas,
-    }
-
-
-def _sin_tildes_simple(texto: str) -> str:
-    import unicodedata
-    return "".join(ch for ch in unicodedata.normalize("NFD", (texto or "").strip().lower())
-                   if unicodedata.category(ch) != "Mn")
+    """Datos para agregar a Público a quien escribió (lo que el agente leyó en el correo o su firma)."""
+    return agente_correo.datos_para_publico(c, eventos.get(c.get("evento_id") or "", ""))
 
 
 @app.get("/inbox/configuracion", response_class=HTMLResponse)
@@ -4882,6 +5062,8 @@ async def inbox_configuracion_guardar(request: Request):
         "precio_cache_lectura": numero("precio_cache_lectura", 0, 100),
         "precio_cache_escritura": numero("precio_cache_escritura", 0, 100),
     }
+    if form.get("matricular_publico_presente"):
+        campos["matricular_publico"] = form.get("matricular_publico") == "1"
     if form.get("categorias_cuenta_2_presente"):
         campos["categorias_cuenta_2"] = [k for k in form.getlist("categorias_cuenta_2")
                                          if k in catalogos.CATEGORIAS_CORREO]
@@ -5010,6 +5192,9 @@ async def inbox_publico(request: Request, correo_id: str):
         return _volver(request, error="No se encontró el correo")
     if doc.get("member_id"):
         return _volver(request, correo_id, error="Quien escribió ya es socio: su ficha está en el padrón")
+    socio = pdb._socio_con_email(doc.get("de_email", ""))
+    if socio:   # Público y Postulantes no se mezclan con el padrón: se revisa antes de escribir nada
+        return _volver(request, correo_id, error=f"Su correo ya es del socio {socio.get('member_id')}: no se agrega a Público")
     form = await request.form()
     etiquetas = [t for t in form.getlist("tags") if isinstance(t, str)]
     try:
@@ -5017,13 +5202,45 @@ async def inbox_publico(request: Request, correo_id: str):
             doc.get("de_email", ""),
             {k: str(form.get(k) or "") for k in ("nombre", "apellido", "celular", "titulo", "empresa", "ciudad", "notas")},
             str(form.get("estado") or ""), etiquetas,
-            fuente_detalle=f"Correo: {doc.get('asunto') or ''}".strip(),
+            fuente_detalle=f"«{doc.get('asunto') or 'sin asunto'}»",
             prospecto_id=doc.get("prospecto_id") or "",
         )
     except ValueError as e:
         return _volver(request, correo_id, error=str(e))
     agente_db.vincular_prospecto(doc.get("de_email", ""), prospecto_id, _usuario(request))
+    if str(form.get("estado") or "") == "postulante":
+        try:
+            pdb.crear_postulacion(prospecto_id, origen="correo", usuario=_usuario(request), correo_id=correo_id,
+                                  detalle=f"Correo: {doc.get('asunto') or ''}".strip())
+        except ValueError as e:
+            return _volver(request, correo_id, error=str(e))
     return _volver(request, correo_id, ok="Agregado a Público" if creado else "Ficha en Público actualizada")
+
+
+@app.post("/inbox/{correo_id}/postulante")
+async def inbox_postulante(request: Request, correo_id: str):
+    """Registra en Postulantes a quien escribió (y en Público si aún no estaba)."""
+    doc = agente_db.get_correo(correo_id)
+    if not doc:
+        return _volver(request, error="No se encontró el correo")
+    if doc.get("member_id"):
+        return _volver(request, correo_id, error="Quien escribió ya es socio")
+    socio = pdb._socio_con_email(doc.get("de_email", ""))
+    if socio:   # se revisa antes de crear su ficha en Público
+        return _volver(request, correo_id, error=f"Su correo ya es del socio {socio.get('member_id')}: no se registra como postulante")
+    try:
+        prospecto_id = doc.get("prospecto_id") or ""
+        if not prospecto_id:
+            datos = agente_correo.datos_para_publico(doc)
+            prospecto_id, _ = pdb.guardar_prospecto_desde_correo(
+                doc.get("de_email", ""), datos, "postulante", datos["tags"],
+                fuente_detalle=f"«{doc.get('asunto') or 'sin asunto'}»")
+            agente_db.vincular_prospecto(doc.get("de_email", ""), prospecto_id, _usuario(request))
+        pid, creada = pdb.crear_postulacion(prospecto_id, origen="correo", usuario=_usuario(request),
+                                            correo_id=correo_id, detalle=f"Correo: {doc.get('asunto') or ''}".strip())
+    except ValueError as e:
+        return _volver(request, correo_id, error=str(e))
+    return _volver(request, correo_id, ok="Registrado en Postulantes" if creada else "Ya estaba en Postulantes")
 
 
 # Lo que acepta Brevo como adjunto (rechaza el envío completo si llega otro tipo).
@@ -5483,8 +5700,13 @@ async def publico_detalle(request: Request, prospecto_id: str):
         return RedirectResponse("/publico", status_code=303)
     titulos  = pdb.get_member_titulos()
     all_tags = pdb.get_all_tags()
+    postulaciones = [_cl for _cl in pdb._clean(list(pdb.postulantes_col.find(
+        {"prospecto_id": prospecto_id}, {"etapa": 1, "created_at": 1, "tipo_socio": 1, "motivo_cierre": 1}
+    ).sort("created_at", -1)))]
     return templates.TemplateResponse(request, "publico_detalle.html", _ctx(request,
-        prospecto=p, titulos=titulos, all_tags=all_tags,
+        prospecto=p, titulos=titulos, all_tags=all_tags, postulaciones=postulaciones,
+        etapas_postulante=catalogos.ETAPAS_POSTULANTE,
+        abiertas_postulante=catalogos.ETAPAS_POSTULANTE_ABIERTAS,
         correos_recibidos=agente_db.correos_de_remitente(p.get("email", "")),
         categorias_correo=catalogos.CATEGORIAS_CORREO, estados_correo=catalogos.ESTADOS_CORREO,
     ))
@@ -5547,27 +5769,30 @@ async def publico_update(
 
 @app.post("/publico/{prospecto_id}/estado")
 async def publico_estado(request: Request, prospecto_id: str, estado: str = Form(...)):
+    if estado not in catalogos.ESTADOS_PUBLICO or estado == "convertido":
+        return RedirectResponse(f"/publico/{prospecto_id}?error=" + _quote("Estado no válido"), status_code=303)
+    if estado == "postulante":
+        # «Postulante» en Público es tener una postulación abierta: se abre aquí.
+        try:
+            pid, _ = pdb.crear_postulacion(prospecto_id, origen="publico", usuario=_usuario(request))
+        except ValueError as e:
+            return RedirectResponse(f"/publico/{prospecto_id}?error=" + _quote(str(e)), status_code=303)
+        return RedirectResponse(f"/postulantes/{pid}?ok=" + _quote("Postulación abierta"), status_code=303)
     pdb.update_prospecto(prospecto_id, {"estado": estado})
     return RedirectResponse(f"/publico/{prospecto_id}?ok=estado", status_code=303)
 
 
-@app.post("/publico/{prospecto_id}/postulacion")
-async def publico_postulacion(
-    request:       Request,
-    prospecto_id:  str,
-    tipo_postulacion: str = Form("ordinario"),
-    notas_postulacion: str = Form(""),
-):
-    from datetime import date as _date
-    pdb.update_prospecto(prospecto_id, {
-        "estado": "postulante",
-        "postulacion": {
-            "tipo":  tipo_postulacion,
-            "notas": notas_postulacion,
-            "fecha": _date.today().isoformat(),
-        },
-    })
-    return RedirectResponse(f"/publico/{prospecto_id}?ok=postulacion", status_code=303)
+@app.post("/publico/{prospecto_id}/postular")
+async def publico_postular(request: Request, prospecto_id: str,
+                           tipo_socio: str = Form(""), nota: str = Form("")):
+    """Abre la postulación de esta persona (o lleva a la que ya tiene abierta)."""
+    try:
+        pid, creada = pdb.crear_postulacion(prospecto_id, origen="publico", usuario=_usuario(request),
+                                            tipo_socio=tipo_socio, nota=nota)
+    except ValueError as e:
+        return RedirectResponse(f"/publico/{prospecto_id}?error=" + _quote(str(e)), status_code=303)
+    msg = "Postulación abierta" if creada else "Ya tenía una postulación abierta"
+    return RedirectResponse(f"/postulantes/{pid}?ok=" + _quote(msg), status_code=303)
 
 
 @app.post("/publico/{prospecto_id}/convertir")
@@ -5579,7 +5804,7 @@ async def publico_convertir(
     try:
         member_id = pdb.convert_prospecto_to_member(prospecto_id, periodo_actual=periodo_actual or None)
     except Exception as exc:
-        return RedirectResponse(f"/publico/{prospecto_id}?error={str(exc)}", status_code=303)
+        return RedirectResponse(f"/publico/{prospecto_id}?error=" + _quote(str(exc)), status_code=303)
     return RedirectResponse(f"/members/{member_id}?ok=convertido", status_code=303)
 
 
@@ -5587,6 +5812,161 @@ async def publico_convertir(
 async def publico_delete(request: Request, prospecto_id: str):
     pdb.delete_prospecto(prospecto_id)
     return RedirectResponse("/publico?ok=eliminado", status_code=303)
+
+
+# ── Postulantes (proceso de admisión) ─────────────────────────────────────────
+# Personas de Público que quieren asociarse. No son socios: el padrón solo cambia con «Dar de alta».
+
+def _usuarios_equipo() -> list[str]:
+    emails = {u.get("email") for u in auth.users_col.find({"active": {"$ne": False}}, {"email": 1}) if u.get("email")}
+    return sorted(emails | set(pdb.get_responsables_postulantes()))
+
+
+def _filtros_postulantes(search, etapa, tipo_socio, responsable, seguimiento, origen) -> dict:
+    return {"search": search, "etapa": etapa, "tipo_socio": tipo_socio, "responsable": responsable,
+            "seguimiento": seguimiento, "origen": origen}
+
+
+@app.get("/postulantes", response_class=HTMLResponse)
+async def postulantes_list(request: Request, search: str = "", etapa: str = "abiertas", tipo_socio: str = "",
+                           responsable: str = "", seguimiento: str = "", origen: str = "", page: int = 1):
+    docs, total, conteo = pdb.get_postulantes(search=search, etapa=etapa, tipo_socio=tipo_socio,
+                                              responsable=responsable, seguimiento=seguimiento,
+                                              origen=origen, page=page)
+    return templates.TemplateResponse(request, "postulantes.html", _ctx(request,
+        postulantes=docs, total=total, conteo=conteo, page=page, pages=max(1, (total + 49) // 50),
+        stats=pdb.get_postulantes_stats(), etapas=catalogos.ETAPAS_POSTULANTE,
+        abiertas=catalogos.ETAPAS_POSTULANTE_ABIERTAS, origenes=catalogos.ORIGENES_POSTULANTE,
+        usuarios=_usuarios_equipo(), tiene_requisitos=bool(catalogos.get_catalogo("requisitos_admision")),
+        f=_filtros_postulantes(search, etapa, tipo_socio, responsable, seguimiento, origen),
+    ))
+
+
+@app.get("/postulantes/export")
+async def postulantes_export(search: str = "", etapa: str = "abiertas", tipo_socio: str = "",
+                             responsable: str = "", seguimiento: str = "", origen: str = ""):
+    docs, _, _ = pdb.get_postulantes(search=search, etapa=etapa, tipo_socio=tipo_socio, responsable=responsable,
+                                     seguimiento=seguimiento, origen=origen, page=1, per_page=10000)
+    tipos = {t["valor"]: t["label"] for t in catalogos.get_catalogo("tipos_socio") if t.get("valor")}
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Postulantes"
+    _encabezado_excel(ws, ["Apellido", "Nombre", "Email", "Celular", "Título", "Empresa", "Ciudad", "Etapa",
+                           "Días en la etapa", "Tipo de socio", "Requisitos", "Responsable", "Próxima acción",
+                           "Seguimiento", "Origen", "Desde"],
+                      [18, 16, 28, 14, 16, 22, 12, 18, 10, 14, 10, 24, 30, 12, 16, 12])
+    for d in docs:
+        pe = d["persona"]
+        ws.append([pe["apellido"], pe["nombre"], pe["email"], pe["celular"], pe["titulo"], pe["empresa"],
+                   pe["ciudad"], catalogos.ETAPAS_POSTULANTE.get(d.get("etapa"), (d.get("etapa"),))[0],
+                   d.get("dias_en_etapa"), tipos.get(d.get("tipo_socio"), d.get("tipo_socio") or ""),
+                   f"{d['req_hechos']}/{d['req_total']}" if d["req_total"] else "",
+                   d.get("responsable") or "", d.get("proxima_accion") or "", d.get("fecha_seguimiento") or "",
+                   catalogos.ORIGENES_POSTULANTE.get(d.get("origen"), d.get("origen") or ""),
+                   _celda_texto(d.get("created_at"))])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f"attachment; filename=postulantes_{_date_cls.today().isoformat()}.xlsx"})
+
+
+@app.post("/postulantes/nuevo")
+async def postulantes_nuevo(request: Request, email: str = Form(...), nombre: str = Form(""),
+                            apellido: str = Form(""), celular: str = Form(""), tipo_socio: str = Form(""),
+                            nota: str = Form("")):
+    """Registra a alguien que quiere asociarse: lo crea en Público si no está y abre su postulación."""
+    email = (email or "").strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return RedirectResponse("/postulantes?error=" + _quote("Email no válido"), status_code=303)
+    if pdb._socio_con_email(email):
+        return RedirectResponse("/postulantes?error=" + _quote("Ese correo ya es de un socio: no se registra como postulante"),
+                                status_code=303)
+    try:
+        prospecto_id = pdb.create_prospecto(nombre=nombre.strip() or email.split("@")[0], apellido=apellido,
+                                            email=email, celular=celular, fuente="manual")
+        pid, creada = pdb.crear_postulacion(prospecto_id, origen="manual", usuario=_usuario(request),
+                                            tipo_socio=tipo_socio, nota=nota)
+    except ValueError as e:
+        return RedirectResponse("/postulantes?error=" + _quote(str(e)), status_code=303)
+    msg = "Postulante registrado" if creada else "Ya tenía una postulación abierta"
+    return RedirectResponse(f"/postulantes/{pid}?ok=" + _quote(msg), status_code=303)
+
+
+def _linea_tiempo(d: dict) -> list[dict]:
+    """Historial de la postulación + notas + correos que escribió, del más reciente al más antiguo."""
+    def _fecha(v):
+        if isinstance(v, datetime):
+            return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+        try:
+            return datetime.fromisoformat(str(v)).replace(tzinfo=timezone.utc) if v else None
+        except ValueError:
+            return None
+    items = [{"fecha": _fecha(h.get("fecha")), "tipo": "historial", "titulo": h.get("accion", ""),
+              "detalle": h.get("detalle", ""), "usuario": h.get("usuario", "")} for h in d.get("historial") or []]
+    items += [{"fecha": _fecha(n.get("fecha")), "tipo": "nota", "titulo": "nota", "detalle": n.get("texto", ""),
+               "usuario": n.get("usuario", "")} for n in d.get("notas") or []]
+    for c in agente_db.correos_de_remitente(d["persona"]["email"], limite=30):
+        items.append({"fecha": _fecha(c.get("fecha")), "tipo": "correo", "titulo": c.get("asunto") or "(sin asunto)",
+                      "detalle": c.get("resumen") or "", "estado": c.get("estado", ""), "categoria": c.get("categoria", ""),
+                      "id": str(c["_id"])})
+    minimo = datetime.min.replace(tzinfo=timezone.utc)
+    return sorted(items, key=lambda i: i["fecha"] or minimo, reverse=True)
+
+
+@app.get("/postulantes/{postulante_id}", response_class=HTMLResponse)
+async def postulante_detalle(request: Request, postulante_id: str):
+    d = pdb.get_postulante(postulante_id)
+    if not d:
+        return RedirectResponse("/postulantes?error=" + _quote("Postulación no encontrada"), status_code=303)
+    return templates.TemplateResponse(request, "postulante_detalle.html", _ctx(request,
+        pos=d, pe=d["persona"], linea=_linea_tiempo(d), etapas=catalogos.ETAPAS_POSTULANTE,
+        abiertas=catalogos.ETAPAS_POSTULANTE_ABIERTAS, cierre=catalogos.ETAPAS_POSTULANTE_CIERRE,
+        origenes=catalogos.ORIGENES_POSTULANTE, requisitos=catalogos.get_catalogo("requisitos_admision"),
+        usuarios=_usuarios_equipo(), categorias_correo=catalogos.CATEGORIAS_CORREO,
+        estados_correo=catalogos.ESTADOS_CORREO, hoy=_date_cls.today().isoformat(),
+    ))
+
+
+@app.post("/postulantes/{postulante_id}/actualizar")
+async def postulante_actualizar(request: Request, postulante_id: str):
+    form = await request.form()
+    campos = {k: str(form.get(k)) for k in ("etapa", "motivo_cierre", "tipo_socio", "responsable",
+                                            "proxima_accion", "fecha_seguimiento") if k in form}
+    try:
+        pdb.actualizar_postulante(postulante_id, campos, _usuario(request))
+    except ValueError as e:
+        return RedirectResponse(f"/postulantes/{postulante_id}?error=" + _quote(str(e)), status_code=303)
+    return RedirectResponse(f"/postulantes/{postulante_id}", status_code=303)
+
+
+@app.post("/postulantes/{postulante_id}/requisito")
+async def postulante_requisito(request: Request, postulante_id: str):
+    data = await request.json()
+    try:
+        pdb.marcar_requisito_postulante(postulante_id, str(data.get("id") or ""), bool(data.get("hecho")),
+                                        _usuario(request))
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    return {"ok": True}
+
+
+@app.post("/postulantes/{postulante_id}/nota")
+async def postulante_nota(request: Request, postulante_id: str, texto: str = Form("")):
+    try:
+        pdb.agregar_nota_postulante(postulante_id, texto, _usuario(request))
+    except ValueError as e:
+        return RedirectResponse(f"/postulantes/{postulante_id}?error=" + _quote(str(e)), status_code=303)
+    return RedirectResponse(f"/postulantes/{postulante_id}?ok=" + _quote("Nota agregada"), status_code=303)
+
+
+@app.post("/postulantes/{postulante_id}/alta")
+async def postulante_alta(request: Request, postulante_id: str, periodo_actual: str = Form("")):
+    try:
+        mid = pdb.alta_postulante_como_socio(postulante_id, periodo_actual or None, _usuario(request))
+    except ValueError as e:
+        return RedirectResponse(f"/postulantes/{postulante_id}?error=" + _quote(str(e)), status_code=303)
+    return RedirectResponse(f"/members/{mid}?ok=" + _quote("Postulante dado de alta como socio"), status_code=303)
 
 
 @app.post("/api/publico/preview")

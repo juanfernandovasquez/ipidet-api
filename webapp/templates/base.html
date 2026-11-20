@@ -91,6 +91,7 @@
       {% if is_admin or 'members' in p %}
       {{ nav('/members', 'fa-solid fa-users', 'Socios', ruta.startswith('/members')) }}
       {{ nav('/publico', 'fa-solid fa-address-book', 'Público', ruta.startswith('/publico')) }}
+      {{ nav('/postulantes', 'fa-solid fa-user-clock', 'Postulantes', ruta.startswith('/postulantes'), postulantes_por_atender | default(0)) }}
       {% endif %}
       {% if is_admin or 'empresas' in p %}
       {{ nav('/empresas', 'fa-solid fa-building', 'Empresas', ruta.startswith('/empresas')) }}
