@@ -139,14 +139,23 @@ async def _ejecutar_programados():
             destinatarios   = envio.get("destinatarios", [])
             imagenes_inline = envio.get("imagenes_inline", [])
 
+            from webapp import variables_correo as vcorreo
+            periodo = ((envio.get("filtros") or {}).get("periodo") or "").strip() or None
+            valores = vcorreo.contexto([d.get("member_id", "") for d in destinatarios], periodo)
+            # Quien pagó desde que se programó ya no recibe un aviso de deuda.
+            ya_pagaron = {d.get("email") for d in vcorreo.sin_deuda(destinatarios, valores, asunto, cuerpo)}
+            if ya_pagaron:
+                logger.info("Programados: %s sin deuda, no se les envía", len(ya_pagaron))
+
             mensajes = []
             inline_atts: list = []
             for d in destinatarios:
                 email  = d.get("email", "")
                 nombre = d.get("nombre", "")
-                if not email:
+                if not email or email in ya_pagaron:
                     continue
-                cuerpo_p    = cuerpo.replace("{{nombre}}", nombre)
+                v           = valores.get(d.get("member_id", ""))
+                cuerpo_p    = vcorreo.sustituir(cuerpo, d, v)
                 cuerpo_html = mailer._render_body(cuerpo_p)
                 full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
                 if imagenes_inline and not inline_atts:
@@ -164,7 +173,7 @@ async def _ejecutar_programados():
                             "content_id": cid,
                         })
                 html = mailer._base_html(full_html, disclaimer=disclaimer)
-                asunto_p = asunto.replace("{{nombre}}", nombre)
+                asunto_p = vcorreo.sustituir(asunto, d, v)
                 mensajes.append({"to": email, "nombre": nombre, "subject": asunto_p, "html_body": html})
 
             logo_att = [mailer.LOGO_INLINE_ATT] if mailer.LOGO_INLINE_ATT else []

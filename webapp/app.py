@@ -18,6 +18,7 @@ import webapp.auth as auth
 import webapp.mailer as mailer
 import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
+import webapp.variables_correo as vcorreo
 from datetime import timedelta as _timedelta
 from urllib.parse import quote as _quote
 from config import catalogos
@@ -3310,6 +3311,13 @@ async def campana_crear(request: Request):
         return JSONResponse({"error": "Asunto y cuerpo son obligatorios."}, status_code=422)
     if not destinatarios:
         return JSONResponse({"error": "Sin destinatarios."}, status_code=422)
+    if fuente == "socios":
+        _, error = _revisar_envio_socios(asunto, cuerpo, destinatarios, _periodo_de_filtros(filtros))
+    else:
+        error = ("El mensaje todavía tiene un [COMPLETAR: …]. Reemplázalo por el dato antes de enviar."
+                 if vcorreo.falta_completar(asunto, cuerpo) else "")
+    if error:
+        return JSONResponse({"error": error}, status_code=422)
     campana_id = pdb.create_campana(asunto, cuerpo, fuente, filtros, destinatarios, disclaimer)
     return {"ok": True, "id": campana_id}
 
@@ -3348,13 +3356,37 @@ async def campana_enviar_lote(request: Request, campana_id: str):
     ahora_iso  = datetime.now(timezone.utc).isoformat()
     enviados_ok = 0
     fallidos_n  = 0
+    es_socios  = (campana.get("fuente") or "socios") == "socios"
+    if es_socios:  # la campaña guarda el member_id en «id»
+        pendientes = [{**d, "member_id": d.get("id", "")} for d in pendientes]
+    valores    = (vcorreo.contexto([d["member_id"] for d in pendientes],
+                                   _periodo_de_filtros(campana.get("filtros")))
+                  if es_socios else {})
+    # Quien pagó desde que se armó la campaña ya no recibe un aviso de deuda.
+    ya_pagaron = ({d.get("email") for d in vcorreo.sin_deuda(pendientes, valores, campana["asunto"], campana["cuerpo"])}
+                  if es_socios else set())
 
     for d in pendientes:
         email    = d.get("email", "")
+        if email in ya_pagaron:
+            fallidos_n += 1
+            pdb.campanas_col.update_one(
+                {"_id": ObjectId(campana_id)},
+                {"$set": {"destinatarios.$[el].estado": "fallido",
+                          "destinatarios.$[el].error": "No se envió: ya no tiene deuda en el período"},
+                 "$inc": {"fallidos": 1}},
+                array_filters=[{"el.email": email, "el.estado": "pendiente"}],
+            )
+            continue
         nombre   = d.get("nombre", "") or "asociado/a"
         apellido = d.get("apellido", "")
-        asunto_p = campana["asunto"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
-        cuerpo_p = campana["cuerpo"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
+        if es_socios:
+            v = valores.get(d["member_id"])
+            asunto_p = vcorreo.sustituir(campana["asunto"], d, v)
+            cuerpo_p = vcorreo.sustituir(campana["cuerpo"], d, v)
+        else:
+            asunto_p = campana["asunto"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
+            cuerpo_p = campana["cuerpo"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
         html_body = mailer._base_html(
             f'<div style="color:#475569;line-height:1.7">{mailer._render_body(cuerpo_p)}</div>',
             disclaimer=campana.get("disclaimer", True),
@@ -3479,6 +3511,7 @@ async def comunicaciones(
         pre_member=pre_member,
         pre_destinatarios=pre_destinatarios,
         from_members=from_members,
+        variables_correo=vcorreo.VARIABLES,
     ))
 
 
@@ -3602,27 +3635,32 @@ def _process_inline_images(html: str, imagenesInline: list) -> tuple[str, list]:
     return html, inline_atts
 
 
-def _sustituir(tmpl: str, d: dict) -> str:
-    nombre_completo = d.get("nombre", "")
-    partes          = nombre_completo.split()
-    nombres_solo    = " ".join(partes[1:]) if len(partes) > 1 else nombre_completo
-    apellidos_solo  = partes[0] if partes else ""
-    titulo          = d.get("titulo", "")
-    vals = {
-        "nombre":           nombre_completo  or "Estimado/a asociado/a",
-        "nombres":          nombres_solo     or "",
-        "apellidos":        apellidos_solo   or "",
-        "apellido":         apellidos_solo   or "",
-        "titulo":           titulo           or "",
-        "ubicacion":        d.get("ubicacion", "")   or "",
-        "member_id":        d.get("member_id", "")   or "",
-        "numero_registro":  d.get("member_id", "")   or "",
-        "estado_pago":      d.get("estado_pago", "") or "",
-    }
-    for k, v in vals.items():
-        tmpl = tmpl.replace("{{" + k + "}}", v)
-    tmpl = re.sub(r'\{\{[^}]+\}\}', '', tmpl)
-    return tmpl
+def _periodo_de_filtros(filtros: dict | None) -> str | None:
+    return ((filtros or {}).get("periodo") or "").strip() or None
+
+
+def _revisar_envio_socios(asunto: str, cuerpo: str, destinatarios: list, periodo: str | None):
+    """(valores por socio, error). Bloquea [COMPLETAR] pendientes y avisos de deuda a quien no debe."""
+    if vcorreo.falta_completar(asunto, cuerpo):
+        return {}, "El mensaje todavía tiene un [COMPLETAR: …]. Reemplázalo por el dato antes de enviar."
+    valores = vcorreo.contexto([d.get("member_id", "") for d in destinatarios], periodo)
+    malos = vcorreo.sin_deuda(destinatarios, valores, asunto, cuerpo)
+    if malos:
+        per = periodo or catalogos.get_periodo_actual()
+        nombres = ", ".join(d.get("nombre", "") for d in malos[:5]) + (f" y {len(malos) - 5} más" if len(malos) > 5 else "")
+        que = f"la cuota {per}" if "monto" in vcorreo.usadas(asunto, cuerpo) else "nada"
+        return valores, (f"El mensaje habla de una deuda, pero {len(malos)} destinatario(s) no deben {que}: "
+                         f"{nombres}. Quítalos o filtra por estado «Debe».")
+    return valores, ""
+
+
+def _valores_muestra(data: dict) -> tuple[dict, dict]:
+    """Destinatario y valores para la vista previa y la prueba: el primer seleccionado, o etiquetas."""
+    periodo = _periodo_de_filtros(data)
+    d = data.get("muestra") or {}
+    if d.get("member_id"):
+        return d, vcorreo.contexto([d["member_id"]], periodo).get(d["member_id"], {})
+    return {"nombre": "«nombre»"}, vcorreo.muestra(periodo)
 
 
 @app.post("/api/comunicaciones/enviar")
@@ -3643,6 +3681,9 @@ async def comunicaciones_enviar(request: Request):
             {"error": f"Demasiados destinatarios ({len(destinatarios)}). Máximo {MAX_BULK_RECIPIENTS} por envío. Usa filtros más específicos."},
             status_code=400,
         )
+    valores, error = _revisar_envio_socios(asunto, cuerpo, destinatarios, _periodo_de_filtros(filtros))
+    if error:
+        return JSONResponse({"error": error}, status_code=422)
 
     disclaimer            = data.get("disclaimer", True)
     plantilla_corporativa = data.get("plantilla_corporativa", True)
@@ -3674,8 +3715,9 @@ async def comunicaciones_enviar(request: Request):
     for d in destinatarios:
         if not d.get("email"):
             continue
-        asunto_p    = _sustituir(asunto, d)
-        cuerpo_p    = _sustituir(cuerpo, d)
+        v           = valores.get(d.get("member_id", ""))
+        asunto_p    = vcorreo.sustituir(asunto, d, v)
+        cuerpo_p    = vcorreo.sustituir(cuerpo, d, v)
         cuerpo_html = mailer._render_body(cuerpo_p)
         full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
         if imagenesInline:
@@ -3744,10 +3786,8 @@ async def comunicaciones_preview_html(request: Request):
     cuerpo                = (data.get("cuerpo") or "").strip()
     disclaimer            = data.get("disclaimer", True)
     plantilla_corporativa = data.get("plantilla_corporativa", True)
-    muestra = {"nombre": "Juan Pérez", "nombres": "Juan", "apellidos": "Pérez",
-               "titulo": "Contador", "ubicacion": "Lima", "member_id": "IPIDET-0001",
-               "numero_registro": "IPIDET-0001", "estado_pago": "pagado"}
-    cuerpo_p    = _sustituir(cuerpo, muestra)
+    d, v = _valores_muestra(data)
+    cuerpo_p    = vcorreo.sustituir(cuerpo, d, v)
     cuerpo_html = mailer._render_body(cuerpo_p)
     inner = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
     html  = mailer._base_html(inner, disclaimer=disclaimer) if plantilla_corporativa else f"""<!DOCTYPE html><html><body style="margin:0;padding:0;font-family:Arial,sans-serif">{inner}</body></html>"""
@@ -3768,11 +3808,9 @@ async def comunicaciones_enviar_prueba(request: Request):
     if not email_prueba or not asunto or not cuerpo:
         return JSONResponse({"error": "Faltan campos obligatorios."}, status_code=400)
 
-    muestra = {"nombre": "Juan Pérez", "nombres": "Juan", "apellidos": "Pérez",
-               "titulo": "Contador", "ubicacion": "Lima", "member_id": "IPIDET-0001",
-               "numero_registro": "IPIDET-0001", "estado_pago": "pagado"}
-    cuerpo_p = _sustituir(cuerpo, muestra)
-    asunto   = _sustituir(asunto, muestra)
+    d, v = _valores_muestra(data)
+    cuerpo_p = vcorreo.sustituir(cuerpo, d, v)
+    asunto   = vcorreo.sustituir(asunto, d, v)
     cuerpo_html = mailer._render_body(cuerpo_p)
     banner = (
         '<div style="background:#f59e0b;color:#fff;text-align:center;'
@@ -3828,6 +3866,9 @@ async def comunicaciones_programar(request: Request):
 
     if not asunto or not cuerpo or not fecha_envio or not destinatarios:
         return JSONResponse({"error": "Faltan campos obligatorios."}, status_code=400)
+    _, error = _revisar_envio_socios(asunto, cuerpo, destinatarios, _periodo_de_filtros(filtros))
+    if error:
+        return JSONResponse({"error": error}, status_code=422)
 
     imagenesInline = data.get("imagenesInline", [])
     envio_id = pdb.create_envio_programado(

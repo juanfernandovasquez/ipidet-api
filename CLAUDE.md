@@ -64,6 +64,9 @@ python migrate_correos_cuentas.py
 # Abre postulaciones de lo que ya había en Público y registra consultas pasadas (idempotente; --probar solo cuenta)
 python migrate_postulantes.py --probar
 
+# Carga las plantillas de cobranza de Comunicaciones (idempotente; no pisa las editadas; ver sección 22)
+python migrate_plantillas_cobranza.py --probar
+
 # Búsqueda de ponentes y alianzas: se hace en Claude Code con /buscar-ponentes y /buscar-alianzas
 python investigacion.py contexto ponentes "Pilar 2"      # lo que usa el comando; ver sección 25
 ```
@@ -1770,6 +1773,15 @@ _seed_plantillas()                         # seed inicial en startup
 ```
 
 Rutas: `GET/POST /api/plantillas`, `POST /api/plantillas/{id}/update`, `POST /api/plantillas/{id}/delete`.
+
+### Variables de las comunicaciones a socios (`webapp/variables_correo.py`)
+
+Un solo lugar para las `{{variables}}` del envío directo, las campañas por lotes y los envíos programados. Los valores salen de la base al enviar (R10): `nombre_corto`, `tratamiento`, `nombres`, `apellidos`, `numero_registro`, `periodo` (el del filtro), `monto` (lo que debe de ese período), `periodos_adeudados`, `deuda_total`, `medios_pago` (catálogo), `org_email`, `org_telefono`, `org_web`, `firmante`, `firmante_cargo`. La lista (`VARIABLES`) se muestra en la pantalla para insertarlas. La deuda se calcula con `saldo_de_pago()`: precio del producto (FK `producto_id`), lo que falta de un parcial o las cuotas pendientes de un fraccionamiento.
+
+- **No se avisa una deuda a quien no la tiene:** si el mensaje usa `monto`, `periodos_adeudados` o `deuda_total`, el envío y la programación se rechazan cuando algún destinatario no debe (`sin_deuda`). En campañas y programados, quien pagó después queda sin envío.
+- **`[COMPLETAR: …]`** (por ejemplo la fecha límite) bloquea el envío hasta reemplazarlo; la prueba sí sale.
+- La vista previa y la prueba usan los datos reales de un destinatario seleccionado.
+- **Plantillas de cobranza** (`migrate_plantillas_cobranza.py`, marcadas con `origen: plantillas_cobranza`): cuota del nuevo período, recordatorio, cuota vencida, último aviso por pérdida de la condición de asociado, deuda de varios períodos y agradecimiento. Piden escribir a `{{org_email}}`, no «responder este correo», porque el pie puede decir que no se responda.
 
 ---
 

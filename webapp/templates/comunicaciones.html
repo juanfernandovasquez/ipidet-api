@@ -743,7 +743,27 @@
             </div>
           </div>
         </div>
-        <p class="text-xs text-slate-400 mb-1">
+        <p x-show="faltaCompletar" x-cloak class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+          <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+          Reemplaza cada <strong>[COMPLETAR: …]</strong> por el dato: mientras quede uno, no se puede enviar.
+        </p>
+        <details class="mb-2" x-show="filtros.modo !== 'publico'">
+          <summary class="text-xs text-slate-500 cursor-pointer select-none hover:text-slate-700">
+            <i class="fa-solid fa-code text-slate-400 mr-1"></i>
+            Datos de cada socio: haz clic en uno para insertarlo donde está el cursor
+          </summary>
+          <div class="mt-2 flex flex-wrap gap-1.5">
+            {% for var, ayuda in variables_correo %}
+            <button type="button" @mousedown.prevent @click="insertarVariable('{{ var }}')" title="{{ ayuda }}"
+                    class="text-[11px] font-mono px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600 hover:border-blue-300 hover:text-blue-700">{{ '{{' ~ var ~ '}}' }}</button>
+            {% endfor %}
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1.5">
+            Salen de la base al enviar. Monto y períodos se calculan con el período del filtro; si el mensaje los usa,
+            no se envía a quien no debe. La vista previa usa los datos de un destinatario seleccionado.
+          </p>
+        </details>
+        <p class="text-xs text-slate-400 mb-1" x-show="filtros.modo === 'publico'">
           Usa <code class="bg-slate-100 px-1 rounded font-mono">{{ '{{nombre}}' }}</code> para personalizar con el nombre de cada destinatario.
         </p>
         <p class="text-xs text-slate-400 mb-4">
@@ -1963,7 +1983,8 @@ function comunicaciones() {
       const r = await fetch('/api/comunicaciones/preview-html', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cuerpo: this.cuerpo, disclaimer: this.disclaimer, plantilla_corporativa: this.plantillaCorporativa }),
+        body: JSON.stringify({ cuerpo: this.cuerpo, disclaimer: this.disclaimer, plantilla_corporativa: this.plantillaCorporativa,
+                               ...this._muestraVars() }),
       });
       const data = await r.json();
       this.showPreviewModal = true;
@@ -1981,7 +2002,23 @@ function comunicaciones() {
       if (!this.asunto.trim()) { this.errorMsg = 'El asunto es obligatorio.'; return; }
       if (!this.cuerpo.trim()) { this.errorMsg = 'El mensaje no puede estar vacío.'; return; }
       if (!this.seleccionados.length) { this.errorMsg = 'Selecciona al menos un destinatario.'; return; }
+      if (this.faltaCompletar) { this.errorMsg = 'El mensaje todavía tiene un [COMPLETAR: …]. Reemplázalo por el dato antes de enviar.'; return; }
       this.confirmando = true;
+    },
+
+    get faltaCompletar() {
+      return /\[COMPLETAR/i.test(this.asunto + ' ' + this.cuerpo);
+    },
+
+    // La vista previa y la prueba usan los datos reales de un destinatario seleccionado (de preferencia, uno que deba).
+    _muestraVars() {
+      const conId = this.filtros.modo === 'publico' ? [] : this.seleccionados.filter(x => x.member_id);
+      const d = conId.find(x => ['debe', 'pendiente', 'parcial', 'fraccionamiento'].includes(x.estado_pago)) || conId[0];
+      return { periodo: this._periodoParaFiltro(), muestra: d ? { member_id: d.member_id, nombre: d.nombre } : null };
+    },
+
+    insertarVariable(nombre) {
+      this.insertAtCursor('{{' + nombre + '}}');
     },
 
     async enviar() {
@@ -2240,6 +2277,7 @@ function comunicaciones() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email_prueba:          this.emailPrueba,
+            ...this._muestraVars(),
             asunto:                this.asunto,
             cuerpo:                this.cuerpo,
             disclaimer:            this.disclaimer,
