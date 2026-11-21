@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 from datetime import datetime, timedelta
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -145,7 +146,7 @@ def _find_member_doc(primary_email: str, wp_user_id: int = None) -> dict | None:
         if m:
             return m
     return pdb.members_col.find_one(
-        {"emails.email": {"$regex": f"^{primary_email}$", "$options": "i"}}
+        {"emails.email": {"$regex": f"^{re.escape(primary_email)}$", "$options": "i"}}
     )
 
 

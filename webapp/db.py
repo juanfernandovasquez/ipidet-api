@@ -1209,6 +1209,26 @@ def decode_codigo_cuota(codigo: str) -> dict | None:
     }
 
 
+def correr_backfill_si_toca(nombre: str, funcion, horas: int = 24):
+    """Ejecuta un backfill como máximo una vez cada `horas`. Render despierta la web muchas veces al
+    día y estos procesos reescriben cobranzas completas: no tiene sentido repetirlos en cada arranque."""
+    ahora = datetime.now(timezone.utc)
+    clave = f"backfill:{nombre}"
+    try:
+        doc = _db.config.find_one({"_id": clave}) or {}
+        ultima = doc.get("ultima")
+        if ultima and ultima.tzinfo is None:
+            ultima = ultima.replace(tzinfo=timezone.utc)
+        if ultima and ahora - ultima < _timedelta(hours=horas):
+            return None
+        resultado = funcion()
+        _db.config.update_one({"_id": clave}, {"$set": {"ultima": ahora, "resultado": str(resultado)[:500]}}, upsert=True)
+        return resultado
+    except Exception as e:  # noqa: BLE001
+        print(f"[db] Backfill {nombre} falló: {e}")
+        return None
+
+
 def backfill_cuotas_codigo() -> int:
     """Idempotent: fill missing codigo_cuota on existing cuota subdocuments."""
     count = 0
@@ -2763,7 +2783,7 @@ def get_member_by_email_exact(email: str) -> dict | None:
     """Busca un socio cuyo array emails[] contenga este email (case-insensitive)."""
     email = email.strip().lower()
     member = members_col.find_one(
-        {"emails.email": {"$regex": f"^{email}$", "$options": "i"}},
+        {"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}},
         {"member_id": 1, "nombres": 1, "apellidos": 1, "estado": 1, "emails": 1},
     )
     return _clean(member) if member else None
@@ -2851,7 +2871,7 @@ def vincular_wc_order(order_id: int, member_id: str, wc_email: str, periodo: str
 def get_wc_payment_by_email(email: str, periodo: str | None) -> dict | None:
     """Busca socio por email. Si hay período, intenta traer también el pago; si no, devuelve solo el socio."""
     member = members_col.find_one(
-        {"emails.email": {"$regex": f"^{email}$", "$options": "i"}},
+        {"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}},
         {"member_id": 1, "nombres": 1, "apellidos": 1},
     )
     if not member:
@@ -3798,7 +3818,10 @@ def _sync_productos_codigo_sunat():
             productos_col.update_one({"_id": prod["_id"]}, {"$set": {"codigo_sunat": codigo}})
 
 
-_sync_productos_codigo_sunat()
+try:
+    _sync_productos_codigo_sunat()
+except Exception as _e:  # sin conexión al importar: no debe impedir que la web arranque
+    print(f"[db] Aviso: no se pudo completar codigo_sunat de productos: {_e}")
 
 
 def get_productos(tipo: str = "", solo_activos: bool = False) -> list:
@@ -4959,7 +4982,7 @@ def get_comprobantes_por_empresa(empresa: str) -> list:
 
     q: dict = {"estado": {"$ne": "anulado"}}
     # Build a scoped query to avoid full-collection scan
-    name_patterns = [{"empresa": {"$regex": v, "$options": "i"}} for v in variants]
+    name_patterns = [{"empresa": {"$regex": _re.escape(v), "$options": "i"}} for v in variants]
     if ruc:
         name_patterns.append({"ruc_empresa": ruc})
     q["$or"] = name_patterns
@@ -6211,8 +6234,8 @@ def get_redes_posts(plataforma: str = "", tipo: str = "", search: str = "",
         q["tipo"] = tipo
     if search:
         q["$or"] = [
-            {"titulo":     {"$regex": search, "$options": "i"}},
-            {"descripcion":{"$regex": search, "$options": "i"}},
+            {"titulo":     {"$regex": _re.escape(search), "$options": "i"}},
+            {"descripcion":{"$regex": _re.escape(search), "$options": "i"}},
         ]
     total = redes_posts_col.count_documents(q)
     skip = (page - 1) * per_page
@@ -6265,8 +6288,8 @@ def get_cronograma(plataforma: str = "", estado: str = "", search: str = "",
         q["estado"] = estado
     if search:
         q["$or"] = [
-            {"titulo":     {"$regex": search, "$options": "i"}},
-            {"descripcion":{"$regex": search, "$options": "i"}},
+            {"titulo":     {"$regex": _re.escape(search), "$options": "i"}},
+            {"descripcion":{"$regex": _re.escape(search), "$options": "i"}},
         ]
     if fecha_desde or fecha_hasta:
         fq: dict = {}
@@ -6315,44 +6338,54 @@ def delete_cronograma_item(item_id: str) -> None:
 # ── Índices MongoDB ───────────────────────────────────────────────────────────
 
 def _ensure_indexes() -> None:
-    """Crea índices en startup. Idempotente — seguro llamar múltiples veces."""
-    from pymongo import ASCENDING, DESCENDING
-    # members
-    members_col.create_index([("member_id", ASCENDING)], unique=True, background=True)
-    members_col.create_index([("emails.email", ASCENDING)], background=True)
-    members_col.create_index([("apellidos", ASCENDING)], background=True)
-    members_col.create_index([("estado", ASCENDING)], background=True)
-    # payments
-    payments_col.create_index([("member_id", ASCENDING), ("periodo", ASCENDING)],
-                               unique=True, background=True)
-    payments_col.create_index([("estado", ASCENDING)], background=True)
-    payments_col.create_index([("empresa_id", ASCENDING)], background=True)
-    payments_col.create_index([("comprobante_id", ASCENDING)], background=True)
-    # comprobantes
-    comprobantes_col.create_index([("numero", ASCENDING)], background=True)
-    comprobantes_col.create_index([("fecha_emision", DESCENDING)], background=True)
-    comprobantes_col.create_index([("empresa_id", ASCENDING)], background=True)
-    # publico
-    publico_col.create_index([("email", ASCENDING)], unique=True, background=True)
-    publico_col.create_index([("estado", ASCENDING)], background=True)
-    # redes sociales
-    redes_metricas_col.create_index([("cuenta_id", ASCENDING), ("fecha", ASCENDING)],
-                                     unique=True, background=True)
-    redes_posts_col.create_index([("plataforma", ASCENDING)], background=True)
-    redes_posts_col.create_index([("fecha_publicacion", DESCENDING)], background=True)
-    redes_cronograma_col.create_index([("fecha_planificada", ASCENDING)], background=True)
-    redes_cronograma_col.create_index([("estado", ASCENDING)], background=True)
-    # faqs
-    faqs_col.create_index([("active", ASCENDING)], background=True)
-    # eventos
-    eventos_col.create_index([("fecha", DESCENDING)], background=True)
-    # comunicaciones
-    comunicaciones_col.create_index([("fecha_envio", DESCENDING)], background=True)
+    """Crea índices en startup. Idempotente. Cada uno por separado: si uno falla (por ejemplo, un
+    único con datos duplicados), los demás se crean igual y el fallo queda en el log."""
+    from pymongo import ASCENDING as A, DESCENDING as D
+    indices = [
+        (members_col, [("member_id", A)], {"unique": True}),
+        (members_col, [("emails.email", A)], {}),
+        (members_col, [("apellidos", A)], {}),
+        (members_col, [("estado", A)], {}),
+        (members_col, [("dni", A)], {"sparse": True}),                 # XML de boletas, búsqueda
+        (payments_col, [("member_id", A), ("periodo", A)], {"unique": True}),
+        (payments_col, [("periodo", A), ("estado", A)], {}),           # Cobranzas y conteos por período
+        (payments_col, [("estado", A)], {}),
+        (payments_col, [("empresa_id", A)], {}),
+        (payments_col, [("comprobante_id", A)], {}),
+        (comprobantes_col, [("numero", A)], {}),
+        (comprobantes_col, [("fecha_emision", D)], {}),
+        (comprobantes_col, [("empresa_id", A)], {}),
+        (comprobantes_col, [("items.payment_id", A)], {}),             # ficha del socio (pago → comprobantes)
+        (comprobantes_col, [("estado", A), ("tipo", A)], {}),          # borradores (pre_registrado)
+        (publico_col, [("email", A)], {"unique": True}),
+        (publico_col, [("estado", A)], {}),
+        (publico_col, [("created_at", D)], {}),
+        (publico_col, [("tags", A)], {}),
+        (publico_col, [("zoom_eventos.evento_id", A)], {}),            # segmentos por evento
+        (postulantes_col, [("prospecto_id", A)], {}),
+        (postulantes_col, [("etapa", A)], {}),
+        (redes_metricas_col, [("cuenta_id", A), ("fecha", A)], {"unique": True}),
+        (redes_posts_col, [("plataforma", A)], {}),
+        (redes_posts_col, [("fecha_publicacion", D)], {}),
+        (redes_cronograma_col, [("fecha_planificada", A)], {}),
+        (redes_cronograma_col, [("estado", A)], {}),
+        (faqs_col, [("active", A)], {}),
+        (eventos_col, [("fecha", D)], {}),
+        (eventos_col, [("inscritos.member_id", A)], {}),               # eventos de un socio
+        (eventos_col, [("zoom_registrants.member_id", A)], {}),
+        (comunicaciones_col, [("fecha_envio", D)], {}),
+        (_db.consejo_directivo, [("member_id", A)], {}),
+    ]
+    for col, claves, opciones in indices:
+        try:
+            col.create_index(claves, background=True, **opciones)
+        except Exception as e:  # noqa: BLE001
+            print(f"[db] Aviso: no se pudo crear el índice {col.name}.{claves}: {e}")
 
 
 try:
     _ensure_indexes()
-except Exception as _idx_err:
+except Exception as _idx_err:  # sin conexión al arrancar: se reintenta en el próximo inicio
     print(f"[db] Warning: no se pudieron crear índices: {_idx_err}")
 
 

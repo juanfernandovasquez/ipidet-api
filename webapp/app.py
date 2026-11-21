@@ -249,10 +249,14 @@ async def _startup():
     asyncio.create_task(scheduler.run_scheduler())
     asyncio.create_task(scheduler.run_programados_scheduler())
     asyncio.create_task(scheduler.run_agente_correo_scheduler())
-    asyncio.get_running_loop().run_in_executor(None, pdb.backfill_comprobantes_payment_ids)
-    asyncio.get_running_loop().run_in_executor(None, pdb.backfill_resync_comprobantes_with_payment_id)
-    asyncio.get_running_loop().run_in_executor(None, pdb.backfill_payments_fecha_pago)
-    asyncio.get_running_loop().run_in_executor(None, pdb.backfill_cuotas_codigo)
+    # Backfills de datos históricos: como máximo una vez al día (Render despierta la web muchas veces).
+    def _backfills():
+        for nombre, fn in (("comprobantes_payment_ids", pdb.backfill_comprobantes_payment_ids),
+                           ("resync_comprobantes", pdb.backfill_resync_comprobantes_with_payment_id),
+                           ("payments_fecha_pago", pdb.backfill_payments_fecha_pago),
+                           ("cuotas_codigo", pdb.backfill_cuotas_codigo)):
+            pdb.correr_backfill_si_toca(nombre, fn)
+    asyncio.get_running_loop().run_in_executor(None, _backfills)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────

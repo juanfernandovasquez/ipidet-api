@@ -644,7 +644,7 @@ created_at          datetime
 - Propaga `fecha_pago` del comprobante al campo `fecha_pago` del payment vinculado. Si `fecha_pago` está vacío, usa `fecha_emision` como fallback.
 - Se llama automáticamente al crear (`/comprobantes/add`, `/comprobantes/import-xml`) y al editar (`/comprobantes/{id}/update`).
 - **No hay botón "Sincronizar" en la UI** — el sync es siempre automático.
-- Al arrancar, la web resincroniza todos los comprobantes (`backfill_resync_comprobantes_with_payment_id`). Por eso una línea con `nc_id` se salta siempre, y una nota de crédito nunca sincroniza.
+- Al arrancar, la web resincroniza todos los comprobantes (`backfill_resync_comprobantes_with_payment_id`), como máximo una vez al día (`db.correr_backfill_si_toca`, marca en `config.backfill:<nombre>`). Por eso una línea con `nc_id` se salta siempre, y una nota de crédito nunca sincroniza.
 
 ### 7.6 Colección `companies`
 
@@ -1550,6 +1550,8 @@ Normalización que aplica:
 - **`migrate_fks.py` para datos históricos:** Backfill idempotente de todos los campos FK en documentos pre-existentes. Corre solo cuando hay datos sin migrar; no toca estados ni montos.
 - **`sync_credito_to_cobranzas`:** Se llama automáticamente desde `create_factura_credito` y `update_factura_credito_estado`. Sincroniza el estado de `payments` de los socios vinculados a la factura de crédito.
 - **`certifi` en Atlas:** → ver R6.
+- **Índices:** `db._ensure_indexes()` crea cada índice por separado al arrancar; si uno falla (por ejemplo el único de `publico.email` con duplicados), el aviso queda en el log y los demás se crean igual. Toda consulta nueva frecuente necesita su índice ahí.
+- **Expresiones regulares con datos de usuario:** siempre `re.escape(...)` (emails del portal, búsquedas). Sin escapar, un punto coincide con cualquier carácter y un «(» da error 500.
 - **Paginación por defecto:** `per_page=50` en `get_members`; `page_size=50` implícito en la mayoría de endpoints paginados. El parámetro se llama `page` (1-indexed).
 - **Catálogos editables:** medios de pago, bancos, tipos de socio y de empresa, checklists de eventos, cargos del consejo y tratamiento por título están en la colección `config` y se editan en `/configuracion`. Un catálogo con `inicial` en `CATALOGOS` usa esos valores solo mientras no exista su documento (así uno nuevo funciona sin migración). → ver R10.
 - **Período de trabajo:** `catalogos.get_periodo_actual()` usa el valor fijado en `/configuracion`; si no hay, el año en curso cuando ya tiene cobros y, si no, el último período con cobros. Así el cambio de año ocurre al generar los cobros del año nuevo.

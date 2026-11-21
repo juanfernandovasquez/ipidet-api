@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from bson import ObjectId
 from config import catalogos
@@ -22,7 +23,7 @@ productos_col = _db.productos
 
 def get_member_by_email(email: str) -> dict | None:
     email = email.strip().lower()
-    member = members_col.find_one({"emails.email": {"$regex": f"^{email}$", "$options": "i"}})
+    member = members_col.find_one({"emails.email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}})
     if not member:
         return None
 
@@ -99,7 +100,7 @@ def apply_woocommerce_order(email: str, order: dict) -> dict:
     """
     email = email.strip().lower()
     member = members_col.find_one(
-        {"emails.email": {"$regex": f"^{email}$", "$options": "i"}},
+        {"emails.email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}},
         {"member_id": 1}
     )
     if not member:
