@@ -199,12 +199,104 @@ def _filtro_previo(msg: dict, cfg: dict) -> tuple[str, str] | None:
     return None
 
 
+# ── Rebotes: avisos de no entrega que llegan a los buzones de Gmail ───────────
+_Q_AVISOS_REBOTE = {"$or": [
+    {"de_email": {"$regex": r"^(mailer-daemon|postmaster|mail-?daemon)@", "$options": "i"}},
+    {"asunto": {"$regex": r"^(undeliverable|undelivered|no se puede entregar|delivery status notification|"
+                          r"mail delivery failed|returned mail|failure notice|delivery failure|"
+                          r"no entregado|entrega fallida|mensaje no entregado)", "$options": "i"}},
+]}
+
+
+def aplicar_rebote(rebote: dict) -> dict:
+    """Marca en socios y Público cada dirección que el aviso da por fallida (ver db.registrar_rebote).
+    Los avisos de demora no tocan nada: el servidor todavía reintenta."""
+    propias = direcciones_propias()
+    original = (rebote or {}).get("original_de") or ""
+    if original and original not in propias:
+        return {"omitido": f"El correo devuelto no salió de IPIDET ({original})", "resultados": []}
+    from webapp import db as pdb
+    resultados = []
+    for d in (rebote or {}).get("destinatarios") or []:
+        if d.get("tipo") not in ("hard", "soft") or d.get("email") in propias:
+            resultados.append({**d, "socios": [], "publico": []})
+            continue
+        r = pdb.registrar_rebote(d["email"], d["tipo"], d.get("motivo") or d.get("status") or "", origen="gmail")
+        resultados.append({**d, **r})
+    return {"resultados": resultados}
+
+
+def resumen_rebote(res: dict) -> str:
+    if res.get("omitido"):
+        return f"Aviso de no entrega ignorado: {res['omitido']}"
+    partes = []
+    for r in res.get("resultados") or []:
+        if r.get("tipo") == "delayed":
+            partes.append(f"{r['email']}: entrega demorada (el servidor sigue intentando)")
+            continue
+        que = "no existe o no recibe correos" if r.get("tipo") == "hard" else "buzón lleno"
+        destinos = []
+        for s in r.get("socios") or []:
+            if r.get("tipo") != "hard":
+                destinos.append(f"socio {s['member_id']}: anotado")
+            elif s.get("nuevo_principal") and s.get("era_principal"):
+                destinos.append(f"socio {s['member_id']}: inhabilitado; ahora usa {s['nuevo_principal']}")
+            elif s.get("era_principal"):
+                destinos.append(f"socio {s['member_id']}: inhabilitado; no le queda otro email")
+            else:
+                destinos.append(f"socio {s['member_id']}: email alternativo inhabilitado")
+        if r.get("publico"):
+            destinos.append("Público: " + ("ya no recibe comunicaciones" if r.get("tipo") == "hard" else "anotado"))
+        partes.append(f"{r['email']} {que} → " + ("; ".join(destinos) if destinos else "no está en la base"))
+    return "Rebote. " + " | ".join(partes) if partes else "Aviso de no entrega sin direcciones legibles"
+
+
+def _registrar_aviso_rebote(correo_id: str, rebote: dict) -> None:
+    res = aplicar_rebote(rebote)
+    resumen = resumen_rebote(res)
+    agente_db.guardar_analisis(correo_id, {
+        "categoria": "automatico", "prioridad": "baja", "prioridad_orden": 2, "requiere_respuesta": False,
+        "accion": "ignorar", "resumen": resumen, "motivo": resumen, "filtrado_sin_ia": True,
+    }, "ignorado", detalle=resumen)
+    agente_db.actualizar(correo_id, {"rebote": res, "rebote_revisado": True})
+
+
+def revisar_rebotes_anteriores(limite: int = 20) -> dict:
+    """Relee de Gmail los avisos de no entrega que ya estaban en la cola y los aplica (por tandas)."""
+    q = {**_Q_AVISOS_REBOTE, "rebote_revisado": {"$ne": True}}
+    procesados, aplicados, errores = 0, [], []
+    for doc in agente_db.correos_col.find(q, {"cuenta": 1, "gm_msgid": 1, "asunto": 1}).sort("fecha", 1).limit(limite):
+        cid = str(doc["_id"])
+        try:
+            raw = _gmail(doc.get("cuenta")).original(doc.get("gm_msgid") or "")
+        except Exception as e:
+            errores.append(str(e))
+            break  # sin conexión o cuenta sin configurar: se reintenta luego
+        procesados += 1
+        rebote = parsear(raw).get("rebote") if raw else None
+        if not rebote:
+            agente_db.actualizar(cid, {"rebote_revisado": True,
+                                       "rebote": {"omitido": "No está en Gmail" if not raw else "Sin direcciones fallidas"}})
+            continue
+        _registrar_aviso_rebote(cid, rebote)
+        aplicados.append(resumen_rebote(agente_db.get_correo(cid).get("rebote") or {}))
+    return {"procesados": procesados, "pendientes": agente_db.correos_col.count_documents(q),
+            "resumenes": aplicados, "error": errores[0] if errores else ""}
+
+
 def procesar_mensaje(gmail: GmailClient, msg: dict, cfg: dict, cache: dict) -> str | None:
     if msg.get("de_email") in direcciones_propias():
         return None
     correo_id = agente_db.registrar_recibido(msg)
     if not correo_id:
         return None  # ya estaba en la cola
+
+    if msg.get("rebote"):  # aviso de no entrega: se marca el email y no se responde
+        try:
+            _registrar_aviso_rebote(correo_id, msg["rebote"])
+            return "sin_respuesta"
+        except Exception:  # sigue como cualquier correo automático; «Revisar avisos» lo reintenta
+            logger.exception("Agente de correos: no se pudo aplicar el rebote %s", correo_id)
 
     filtrado = _filtro_previo(msg, cfg)
     if filtrado:

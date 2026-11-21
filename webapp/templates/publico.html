@@ -277,6 +277,7 @@
                   {{ p.apellido }} {{ p.nombre }}
                 </a>
                 <div class="min-[1700px]:hidden font-mono text-xs text-slate-500 mt-0.5 max-w-[240px] truncate" title="{{ p.email }}">{{ p.email }}</div>
+                {% if p.get('email_estado') == 'rebotado' %}<span class="min-[1700px]:hidden badge badge-red mt-0.5">Email rebotado</span>{% endif %}
                 {% set ptags = p.tags or [] %}
                 {% if ptags %}
                 <div class="flex flex-wrap gap-0.5 mt-1">
@@ -290,7 +291,8 @@
                 </div>
                 {% endif %}
               </td>
-              <td class="px-4 py-3 text-slate-600 font-mono text-xs hidden min-[1700px]:table-cell">{{ p.email }}</td>
+              <td class="px-4 py-3 text-slate-600 font-mono text-xs hidden min-[1700px]:table-cell">{{ p.email }}
+                {% if p.get('email_estado') == 'rebotado' %}<span class="badge badge-red ml-1 font-sans" title="{{ p.get('bounce_reason') or '' }}">Rebotó</span>{% endif %}</td>
               <td class="px-4 py-3 text-slate-600 text-xs">
                 {% if p.titulo %}<span class="font-medium text-slate-700">{{ p.titulo }}</span>{% endif %}
                 {% if p.titulo and p.empresa %} · {% endif %}

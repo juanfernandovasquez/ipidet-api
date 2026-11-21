@@ -52,7 +52,11 @@
             </div>
             <div>
               <dt class="text-xs font-medium text-slate-400 mb-0.5">Email</dt>
-              <dd class="font-mono text-slate-700 text-xs">{{ prospecto.email }}</dd>
+              <dd class="font-mono text-xs {{ 'line-through text-slate-400' if prospecto.get('email_estado') == 'rebotado' else 'text-slate-700' }}">{{ prospecto.email }}</dd>
+              {% if prospecto.get('email_estado') == 'rebotado' %}
+              <dd class="mt-1"><a href="/comunicaciones/rebotes" class="badge badge-red" title="{{ prospecto.get('bounce_reason') or '' }}">
+                Rebotó: no recibe comunicaciones</a></dd>
+              {% endif %}
             </div>
             <div>
               <dt class="text-xs font-medium text-slate-400 mb-0.5">Celular</dt>

@@ -1466,7 +1466,15 @@ Flujo server-to-server: WordPress llama a FastAPI para verificar si un email es 
 
 ## 13. Comunicaciones masivas (Brevo) {#brevo}
 
-`webapp/mailer.py` envía emails via Brevo. Los bounces (hard y soft) llegan via webhook a `POST /webhook/brevo/bounce` y se registran en `members.emails[].estado = "rebotado"`. La vista `/comunicaciones/rebotes` muestra el historial.
+`webapp/mailer.py` envía emails via Brevo.
+
+### Rebotes (`/comunicaciones/rebotes`)
+
+Dos fuentes, un solo camino (`db.registrar_rebote(email, tipo, motivo, origen)`):
+- **Gmail:** los avisos de no entrega (DSN) que llegan a los buzones de la cola. `gmail.client.detectar_rebote` lee el informe estructurado (`message/delivery-status`, o `X-Failed-Recipients`), nunca texto escrito por una persona. `failed` → `hard`, salvo buzón lleno (x.2.2) → `soft`; `delayed` no cambia nada. Solo se aplica si el correo devuelto salió de una dirección de IPIDET. `agente_correo.procesar_mensaje` lo aplica al llegar y guarda `correos.rebote`. Los avisos que ya estaban en la cola se procesan con «Revisar avisos» (`POST /comunicaciones/rebotes/revisar-cola`, por tandas; relee de Gmail, así que solo funciona donde están las dos cuentas, es decir, en Render).
+- **Brevo** (envíos masivos): webhook `POST /webhook/brevo/bounce`; requiere `BREVO_WEBHOOK_TOKEN`.
+
+Efecto de un `hard`: en socios el email queda `estado: "rebotado"` y, si era el principal, pasa a principal el siguiente habilitado (`_maybe_promote_secondary`). En Público la ficha queda con `email_estado: "rebotado"` y sale de los envíos (`/api/publico/preview` y `/api/publico/enviar-comunicacion`). Un `soft` solo se anota. Campos: `bounce_type`, `bounce_at`, `bounce_reason`, `bounce_origen` (gmail | brevo) y `bounce_count`. «Restaurar» (`/comunicaciones/rebotes/restaurar`) deshace un falso positivo sin cambiar el principal. La pantalla separa socios y Público y cuenta los socios sin ningún email válido.
 
 El agente de email consulta solo emails con `estado: "habilitado"`. Los rebotes de Brevo marcan el email automáticamente.
 

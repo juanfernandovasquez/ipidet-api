@@ -474,41 +474,106 @@ def rename_email(member_id: str, old_email: str, new_email: str):
     )
 
 
+def _rx_email(email: str) -> dict:
+    return {"$regex": f"^{_re.escape(email.strip())}$", "$options": "i"}
+
+
+def registrar_rebote(email: str, tipo: str, motivo: str = "", origen: str = "") -> dict:
+    """Un correo no se pudo entregar a `email` (aviso de Gmail o webhook de Brevo).
+
+    hard → el email del socio queda «rebotado» (no recibe comunicaciones) y, si era el principal, pasa a
+    principal el siguiente habilitado; en Público la ficha queda con `email_estado: rebotado`.
+    soft (buzón lleno) → solo se anota. Devuelve qué se tocó, para mostrarlo y poder deshacerlo."""
+    email = (email or "").strip().lower()
+    res: dict = {"email": email, "tipo": tipo, "socios": [], "publico": []}
+    if not email or tipo not in ("hard", "soft"):
+        return res
+    ahora = datetime.now(timezone.utc).isoformat()
+    for m in members_col.find({"emails.email": _rx_email(email)}, {"member_id": 1, "emails": 1}):
+        actual = next((e for e in m.get("emails") or [] if (e.get("email") or "").lower() == email), {})
+        cambios = {"emails.$.bounce_type": tipo if not (tipo == "soft" and actual.get("bounce_type") == "hard") else "hard",
+                   "emails.$.bounce_at": ahora, "emails.$.bounce_reason": motivo[:300],
+                   "emails.$.bounce_origen": origen}
+        if tipo == "hard":
+            cambios["emails.$.estado"] = "rebotado"
+        members_col.update_one({"member_id": m["member_id"], "emails.email": actual.get("email", email)},
+                               {"$set": cambios, "$inc": {"emails.$.bounce_count": 1}})
+        era_principal = bool(actual.get("principal"))
+        nuevo = ""
+        if tipo == "hard":
+            _maybe_promote_secondary(m["member_id"])
+            doc = members_col.find_one({"member_id": m["member_id"]}, {"emails": 1}) or {}
+            p = next((e for e in doc.get("emails") or [] if e.get("principal")), {})
+            nuevo = p.get("email", "") if p.get("estado") == "habilitado" and p.get("email", "").lower() != email else ""
+        res["socios"].append({"member_id": m["member_id"], "era_principal": era_principal, "nuevo_principal": nuevo})
+    for p in publico_col.find({"email": _rx_email(email)}, {"_id": 1, "email_estado": 1}):
+        cambios = {"bounce_type": "hard" if tipo == "hard" or p.get("email_estado") == "rebotado" else "soft",
+                   "bounce_at": ahora, "bounce_reason": motivo[:300], "bounce_origen": origen}
+        if tipo == "hard":
+            cambios["email_estado"] = "rebotado"
+        publico_col.update_one({"_id": p["_id"]}, {"$set": cambios, "$inc": {"bounce_count": 1}})
+        res["publico"].append(str(p["_id"]))
+    return res
+
+
 def mark_email_bounce(email: str, bounce_type: str = "hard", reason: str = ""):
-    """Registra un rebote en el email del socio. hard → inhabilita, soft → solo marca."""
-    email = email.strip().lower()
-    update = {"$set": {
-        "emails.$.bounce_type":   bounce_type,
-        "emails.$.bounce_at":     datetime.now(timezone.utc).isoformat(),
-        "emails.$.bounce_reason": reason,
-    }}
-    if bounce_type == "hard":
-        update["$set"]["emails.$.estado"] = "inhabilitado"
-    members_col.update_one({"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}}, update)
-    if bounce_type == "hard":
-        member = members_col.find_one(
-            {"emails.email": {"$regex": f"^{_re.escape(email)}$", "$options": "i"}}, {"member_id": 1}
-        )
-        if member:
-            _maybe_promote_secondary(member["member_id"])
+    """Compatibilidad: rebote informado por Brevo."""
+    return registrar_rebote(email, bounce_type, reason, origen="brevo")
 
 
-def get_bounced_emails():
-    """Devuelve todos los emails con rebote registrado."""
-    pipeline = [
-        {"$unwind": "$emails"},
-        {"$match": {"emails.bounce_type": {"$exists": True}}},
-        {"$project": {
-            "member_id":    1, "nombres": 1, "apellidos": 1,
-            "email":        "$emails.email",
-            "bounce_type":  "$emails.bounce_type",
-            "bounce_at":    "$emails.bounce_at",
-            "bounce_reason":"$emails.bounce_reason",
-            "estado":       "$emails.estado",
-        }},
-        {"$sort": {"bounce_at": -1}},
-    ]
-    return _clean(list(members_col.aggregate(pipeline)))
+def restaurar_email_rebotado(email: str, member_id: str = "", prospecto_id: str = "") -> None:
+    """Deshace un rebote (falso positivo): el email vuelve a recibir. No cambia cuál es el principal."""
+    email = (email or "").strip().lower()
+    quitar = {"bounce_type": "", "bounce_at": "", "bounce_reason": "", "bounce_origen": "", "bounce_count": ""}
+    if member_id:
+        members_col.update_one(
+            {"member_id": member_id, "emails.email": _rx_email(email)},
+            {"$set": {"emails.$.estado": "habilitado"},
+             "$unset": {f"emails.$.{k}": "" for k in quitar}})
+    if prospecto_id and ObjectId.is_valid(prospecto_id):
+        publico_col.update_one({"_id": ObjectId(prospecto_id)},
+                               {"$unset": {"email_estado": "", **quitar}})
+
+
+def emails_publico_rebotados(emails: list[str]) -> set[str]:
+    lista = [e.strip().lower() for e in emails if e]
+    return {(p.get("email") or "").lower() for p in publico_col.find(
+        {"email": {"$in": lista}, "email_estado": "rebotado"}, {"email": 1})}
+
+
+def get_bounced_emails() -> dict:
+    """Rebotes registrados en socios y en Público, más recientes primero.
+
+    Para cada socio dice si le queda un email que funcione (o hay que pedirle uno nuevo)."""
+    socios = []
+    for m in members_col.find({"emails.bounce_type": {"$exists": True}},
+                              {"member_id": 1, "nombres": 1, "apellidos": 1, "estado": 1, "emails": 1}):
+        emails = m.get("emails") or []
+        principal = next((e for e in emails if e.get("principal")), {})
+        valido = principal.get("email", "") if principal.get("estado") == "habilitado" else ""
+        for e in emails:
+            if not e.get("bounce_type"):
+                continue
+            socios.append({
+                "member_id": m["member_id"], "nombres": m.get("nombres", ""), "apellidos": m.get("apellidos", ""),
+                "estado_socio": m.get("estado", ""), "email": e.get("email", ""), "estado": e.get("estado", ""),
+                "bounce_type": e.get("bounce_type"), "bounce_at": e.get("bounce_at", ""),
+                "bounce_reason": e.get("bounce_reason", ""), "bounce_origen": e.get("bounce_origen", ""),
+                "bounce_count": e.get("bounce_count", 1), "principal_valido": valido,
+                "otros_validos": [x.get("email") for x in emails
+                                  if x.get("estado") == "habilitado" and x.get("email") != valido],
+            })
+    publico = [{
+        "_id": str(p["_id"]), "nombre": f"{p.get('nombre', '')} {p.get('apellido', '')}".strip(),
+        "email": p.get("email", ""), "estado": p.get("estado", ""), "email_estado": p.get("email_estado", ""),
+        "bounce_type": p.get("bounce_type"), "bounce_at": p.get("bounce_at", ""),
+        "bounce_reason": p.get("bounce_reason", ""), "bounce_origen": p.get("bounce_origen", ""),
+        "bounce_count": p.get("bounce_count", 1),
+    } for p in publico_col.find({"bounce_type": {"$exists": True}})]
+    socios.sort(key=lambda r: str(r["bounce_at"]), reverse=True)
+    publico.sort(key=lambda r: str(r["bounce_at"]), reverse=True)
+    return {"socios": socios, "publico": publico,
+            "sin_email_valido": len({r["member_id"] for r in socios if not r["principal_valido"]})}
 
 
 def update_member_notes(member_id: str, notas: str):

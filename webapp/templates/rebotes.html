@@ -3,105 +3,219 @@
 {% block heading %}Emails rebotados{% endblock %}
 
 {% block content %}
-<div>
+{% include "_aviso_query.html" %}
+{% set socios = rebotes.socios %}
+{% set publico = rebotes.publico %}
+{% macro tipo_badge(r) %}
+  {% if r.bounce_type == 'hard' %}
+  <span class="badge badge-red" title="La dirección no existe o no recibe correos">No existe</span>
+  {% else %}
+  <span class="badge badge-amber" title="Buzón lleno: la dirección existe">Buzón lleno</span>
+  {% endif %}
+{% endmacro %}
+{% macro origen(r) %}
+  <span class="text-xs text-slate-400">{{ {'gmail': 'Gmail', 'brevo': 'Brevo'}.get(r.bounce_origen, 'Brevo') }}</span>
+{% endmacro %}
 
-  <details class="bg-white border border-slate-200 rounded-xl px-4 py-3 mb-5 text-sm text-slate-600">
+<div x-data="rebotesPage()" class="space-y-5">
+
+  <details class="bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-600">
     <summary class="cursor-pointer font-medium text-slate-700">¿Cómo funciona?</summary>
-    <p class="mt-2">Cada vez que Brevo detecta un rebote (hard o soft) en un email enviado,
-      notifica a IPIDET vía webhook. Los rebotes <em>hard</em> se inhabilitan automáticamente;
-      los <em>soft</em> quedan marcados para revisión. Para activar el webhook en Brevo:
-      <strong>Transactional → Settings → Webhooks → Add</strong>, URL:
-      <code class="bg-amber-100 px-1 rounded">https://[tu-dominio]/webhook/brevo/bounce</code>,
-      eventos: <em>hard_bounce, soft_bounce, invalid_email, blocked</em>.</p>
+    <ul class="mt-2 space-y-1.5 list-disc pl-5">
+      <li><strong>Gmail:</strong> cuando un correo enviado desde los buzones de IPIDET no se puede entregar, Gmail
+        manda un aviso al buzón. La cola de correos lo lee sola: si la dirección no existe, la inhabilita y, si era
+        el email principal del socio, pasa a principal su email alternativo. En Público, la ficha deja de recibir
+        comunicaciones. Un aviso de «demora» no cambia nada: el servidor todavía está reintentando.</li>
+      <li><strong>Brevo</strong> (comunicaciones masivas): sus rebotes llegan por webhook.
+        {% if brevo_webhook %}<span class="badge badge-green">Configurado</span>
+        {% else %}<span class="badge badge-amber">Falta configurar</span> Define <code>BREVO_WEBHOOK_TOKEN</code> en Render
+        y en Brevo agrega el webhook <code>https://[dominio]/webhook/brevo/bounce</code> con los eventos
+        hard_bounce, soft_bounce, invalid_email y blocked.{% endif %}</li>
+      <li>«Buzón lleno» solo se anota: la dirección existe. Si algo se marcó por error, usa <strong>Restaurar</strong>.</li>
+    </ul>
   </details>
 
-  {% if not rebotes %}
-  <div class="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400">
-    <i class="fa-solid fa-envelope-circle-check text-4xl mb-3 block text-slate-300"></i>
-    <p class="text-sm">No hay rebotes registrados aún.</p>
-    <p class="text-xs mt-1">Los rebotes aparecerán aquí cuando Brevo los notifique.</p>
-  </div>
-  {% else %}
-  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-      <h2 class="text-sm font-semibold text-slate-700">
-        Emails con rebote
-        <span class="ml-2 text-xs font-normal text-slate-400">({{ rebotes | length }})</span>
-      </h2>
-      <span class="text-xs text-slate-400">Ordenados por fecha de rebote, más reciente primero</span>
+  {# Avisos que ya estaban en la cola antes de esta función #}
+  {% if avisos_pendientes %}
+  <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900 flex flex-wrap items-center gap-3">
+    <i class="fa-solid fa-envelope-open-text"></i>
+    <div class="flex-1 min-w-[16rem]">
+      <span x-show="!revisando && !terminado">Hay <strong>{{ avisos_pendientes }}</strong> aviso(s) de no entrega en la cola de correos sin revisar.</span>
+      <span x-show="revisando" x-cloak>Revisando avisos en Gmail… quedan <strong x-text="pendientes"></strong>.</span>
+      <span x-show="terminado" x-cloak>Listo: se revisaron <strong x-text="procesados"></strong> aviso(s). Recarga para ver los cambios.</span>
+      <span x-show="error" x-cloak class="block text-red-700" x-text="error"></span>
     </div>
+    <button type="button" class="btn-primary text-sm" x-show="!terminado" :disabled="revisando" @click="revisar()">
+      <i class="fa-solid fa-rotate" :class="revisando && 'animate-spin'"></i> Revisar avisos
+    </button>
+    <a href="/comunicaciones/rebotes" class="btn-ghost text-sm" x-show="terminado" x-cloak>Recargar</a>
+    <ul x-show="resumenes.length" x-cloak class="basis-full text-xs text-amber-800 space-y-0.5 max-h-40 overflow-y-auto">
+      <template x-for="r in resumenes"><li x-text="r"></li></template>
+    </ul>
+  </div>
+  {% endif %}
+
+  {# Resumen #}
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <button type="button" @click="tab = 'socios'; soloSinEmail = false" class="text-left bg-white rounded-xl border border-slate-200 px-4 py-3 hover:border-blue-300">
+      <div class="text-2xl font-semibold text-slate-800">{{ socios | length }}</div>
+      <div class="text-xs text-slate-500">emails de socios rebotados</div>
+    </button>
+    <button type="button" @click="tab = 'socios'; soloSinEmail = true" class="text-left bg-white rounded-xl border border-slate-200 px-4 py-3 hover:border-red-300">
+      <div class="text-2xl font-semibold {{ 'text-red-600' if rebotes.sin_email_valido else 'text-slate-800' }}">{{ rebotes.sin_email_valido }}</div>
+      <div class="text-xs text-slate-500">socios sin ningún email que funcione: hay que pedirles uno nuevo</div>
+    </button>
+    <button type="button" @click="tab = 'publico'" class="text-left bg-white rounded-xl border border-slate-200 px-4 py-3 hover:border-blue-300">
+      <div class="text-2xl font-semibold text-slate-800">{{ publico | length }}</div>
+      <div class="text-xs text-slate-500">personas de Público con email rebotado</div>
+    </button>
+  </div>
+
+  <div class="flex items-center gap-2 border-b border-slate-200">
+    <button type="button" @click="tab = 'socios'" class="px-3 py-2 text-sm font-medium -mb-px border-b-2"
+            :class="tab === 'socios' ? 'border-brand-700 text-brand-800' : 'border-transparent text-slate-500 hover:text-slate-700'">
+      Socios ({{ socios | length }})</button>
+    <button type="button" @click="tab = 'publico'" class="px-3 py-2 text-sm font-medium -mb-px border-b-2"
+            :class="tab === 'publico' ? 'border-brand-700 text-brand-800' : 'border-transparent text-slate-500 hover:text-slate-700'">
+      Público ({{ publico | length }})</button>
+    <label x-show="tab === 'socios'" class="ml-auto flex items-center gap-2 text-xs text-slate-600 select-none">
+      <input type="checkbox" x-model="soloSinEmail" class="accent-brand-700"> Solo sin email válido
+    </label>
+  </div>
+
+  {# ── Socios ── #}
+  <div x-show="tab === 'socios'" class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    {% if socios %}
     <table class="w-full text-sm">
       <thead>
-        <tr class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 font-semibold">
-          <th class="px-4 py-2.5 text-left">Socio</th>
-          <th class="px-4 py-2.5 text-left">Email</th>
-          <th class="px-4 py-2.5 text-center">Tipo</th>
-          <th class="px-4 py-2.5 text-left">Razón</th>
-          <th class="px-4 py-2.5 text-left">Fecha</th>
-          <th class="px-4 py-2.5 text-center">Estado</th>
+        <tr class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 font-semibold text-left">
+          <th class="px-4 py-2.5">Socio</th>
+          <th class="px-4 py-2.5">Email que rebotó</th>
+          <th class="px-4 py-2.5">Motivo</th>
+          <th class="px-4 py-2.5">Ahora recibe en</th>
           <th class="px-4 py-2.5"></th>
         </tr>
       </thead>
       <tbody>
-        {% for r in rebotes %}
-        <tr class="border-b border-slate-100 hover:bg-slate-50 last:border-0">
+        {% for r in socios %}
+        <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 align-top"
+            x-show="!soloSinEmail || {{ 'true' if not r.principal_valido else 'false' }}">
           <td class="px-4 py-3">
-            <a href="/members/{{ r.member_id }}"
-               class="text-blue-600 hover:underline font-medium">
-              {{ r.apellidos }}, {{ r.nombres }}
-            </a>
-            <div class="text-xs text-slate-500 font-mono whitespace-nowrap">{{ r.member_id }}</div>
+            <a href="/members/{{ r.member_id }}" class="text-blue-600 hover:underline font-medium">{{ r.apellidos }}, {{ r.nombres }}</a>
+            <div class="text-xs text-slate-500 font-mono whitespace-nowrap">{{ r.member_id }}
+              {% if r.estado_socio and r.estado_socio != 'activo' %}<span class="badge badge-gray ml-1">{{ r.estado_socio }}</span>{% endif %}</div>
           </td>
-          <td class="px-4 py-3 font-mono text-xs text-slate-700">{{ r.email }}</td>
-          <td class="px-4 py-3 text-center">
-            {% if r.bounce_type == 'hard' %}
-            <span class="inline-flex items-center gap-1 text-xs font-medium bg-red-50 text-red-700 px-2 py-0.5 rounded-full">
-              <i class="fa-solid fa-circle-xmark text-[10px]"></i> Hard
-            </span>
-            {% else %}
-            <span class="inline-flex items-center gap-1 text-xs font-medium bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">
-              <i class="fa-solid fa-triangle-exclamation text-[10px]"></i> Soft
-            </span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-3 text-xs text-slate-500 max-w-xs">
-            {{ r.bounce_reason or '—' }}
-          </td>
-          <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-            {{ r.bounce_at | format_fecha }}
-          </td>
-          <td class="px-4 py-3 text-center">
-            {% if r.estado == 'inhabilitado' %}
-            <span class="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">Inhabilitado</span>
-            {% else %}
-            <span class="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Habilitado</span>
-            {% endif %}
-          </td>
-          <td class="px-4 py-3 text-right">
-            <div class="flex items-center justify-end gap-3">
-              {% if r.estado != 'inhabilitado' %}
-              <form method="post" action="/comunicaciones/rebotes/inhabilitar"
-                    data-confirm="¿Inhabilitar {{ r.email }}?">
-                <input type="hidden" name="member_id" value="{{ r.member_id }}">
-                <input type="hidden" name="email" value="{{ r.email }}">
-                <button type="submit"
-                        class="text-xs font-medium text-red-600 hover:text-red-800 hover:underline">
-                  Inhabilitar
-                </button>
-              </form>
-              {% endif %}
-              <a href="/members/{{ r.member_id }}"
-                 class="text-xs text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap">
-                Ver socio →
-              </a>
+          <td class="px-4 py-3">
+            <div class="font-mono text-xs text-slate-700 {{ 'line-through text-slate-400' if r.estado != 'habilitado' }}">{{ r.email }}</div>
+            <div class="mt-1 flex flex-wrap items-center gap-1.5">{{ tipo_badge(r) }} {{ origen(r) }}
+              <span class="text-xs text-slate-400">{{ r.bounce_at | format_fecha }}</span>
+              {% if r.bounce_count and r.bounce_count > 1 %}<span class="text-xs text-slate-400">· {{ r.bounce_count }} veces</span>{% endif %}
             </div>
+          </td>
+          <td class="px-4 py-3 text-xs text-slate-500 max-w-xs break-words">{{ r.bounce_reason or '—' }}</td>
+          <td class="px-4 py-3 text-xs">
+            {% if r.principal_valido %}
+              <span class="font-mono text-slate-700">{{ r.principal_valido }}</span>
+              {% if r.principal_valido != r.email %}<div class="text-slate-400">principal</div>{% endif %}
+            {% else %}
+              <span class="badge badge-red">Sin email válido</span>
+              {% if r.otros_validos %}<div class="text-slate-400 mt-1">Tiene: {{ r.otros_validos | join(', ') }}</div>{% endif %}
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">
+            {% if r.estado != 'habilitado' %}
+            <form method="post" action="/comunicaciones/rebotes/restaurar" class="inline"
+                  data-confirm="¿{{ r.email }} sí funciona? Volverá a recibir correos (no cambia cuál es su email principal).">
+              <input type="hidden" name="member_id" value="{{ r.member_id }}">
+              <input type="hidden" name="email" value="{{ r.email }}">
+              <button type="submit" class="text-xs text-slate-500 hover:text-blue-700 hover:underline">Restaurar</button>
+            </form>
+            {% else %}
+            <form method="post" action="/comunicaciones/rebotes/inhabilitar" class="inline" data-confirm="¿Inhabilitar {{ r.email }}?">
+              <input type="hidden" name="member_id" value="{{ r.member_id }}">
+              <input type="hidden" name="email" value="{{ r.email }}">
+              <button type="submit" class="text-xs font-medium text-red-600 hover:underline">Inhabilitar</button>
+            </form>
+            {% endif %}
+            <a href="/members/{{ r.member_id }}" class="text-xs text-blue-600 hover:underline ml-3">Ver socio →</a>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% else %}
+    <p class="py-12 text-center text-sm text-slate-400"><i class="fa-solid fa-envelope-circle-check text-3xl block mb-2 text-slate-300"></i>No hay rebotes de socios.</p>
+    {% endif %}
   </div>
-  {% endif %}
 
+  {# ── Público ── #}
+  <div x-show="tab === 'publico'" x-cloak class="bg-white rounded-xl border border-slate-200 overflow-x-auto">
+    {% if publico %}
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 font-semibold text-left">
+          <th class="px-4 py-2.5">Persona</th>
+          <th class="px-4 py-2.5">Email que rebotó</th>
+          <th class="px-4 py-2.5">Motivo</th>
+          <th class="px-4 py-2.5"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in publico %}
+        <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50 align-top">
+          <td class="px-4 py-3">
+            <a href="/publico/{{ r._id }}" class="text-blue-600 hover:underline font-medium">{{ r.nombre or r.email }}</a>
+            {% if r.estado %}<div class="text-xs text-slate-400">{{ r.estado }}</div>{% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <div class="font-mono text-xs text-slate-700 {{ 'line-through text-slate-400' if r.email_estado == 'rebotado' }}">{{ r.email }}</div>
+            <div class="mt-1 flex flex-wrap items-center gap-1.5">{{ tipo_badge(r) }} {{ origen(r) }}
+              <span class="text-xs text-slate-400">{{ r.bounce_at | format_fecha }}</span></div>
+          </td>
+          <td class="px-4 py-3 text-xs text-slate-500 max-w-xs break-words">{{ r.bounce_reason or '—' }}</td>
+          <td class="px-4 py-3 text-right whitespace-nowrap">
+            <form method="post" action="/comunicaciones/rebotes/restaurar" class="inline"
+                  data-confirm="¿{{ r.email }} sí funciona? Volverá a recibir comunicaciones.">
+              <input type="hidden" name="prospecto_id" value="{{ r._id }}">
+              <input type="hidden" name="email" value="{{ r.email }}">
+              <button type="submit" class="text-xs text-slate-500 hover:text-blue-700 hover:underline">Restaurar</button>
+            </form>
+            <a href="/publico/{{ r._id }}" class="text-xs text-blue-600 hover:underline ml-3">Ver ficha →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="py-12 text-center text-sm text-slate-400"><i class="fa-solid fa-envelope-circle-check text-3xl block mb-2 text-slate-300"></i>No hay rebotes en Público.</p>
+    {% endif %}
+  </div>
 </div>
+
+<script>
+function rebotesPage() {
+  return {
+    tab: 'socios', soloSinEmail: false,
+    revisando: false, terminado: false, pendientes: {{ avisos_pendientes }}, procesados: 0, resumenes: [], error: '',
+    async revisar() {
+      this.revisando = true; this.error = '';
+      try {
+        while (true) {
+          const r = await fetch('/comunicaciones/rebotes/revisar-cola', { method: 'POST' });
+          const d = await r.json();
+          this.procesados += d.procesados || 0;
+          this.pendientes = d.pendientes;
+          this.resumenes.push(...(d.resumenes || []));
+          if (d.error) { this.error = d.error; break; }
+          if (!d.pendientes || !d.procesados) break;
+        }
+        this.terminado = !this.error;
+      } catch (e) {
+        this.error = 'No se pudo completar la revisión: ' + e;
+      }
+      this.revisando = false;
+    },
+  };
+}
+</script>
 {% endblock %}

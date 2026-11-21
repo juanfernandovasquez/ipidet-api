@@ -356,6 +356,69 @@ def detectar_automatico(msg: dict) -> str:
     return ""
 
 
+_RE_EMAIL = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
+_REMITENTE_REBOTE = re.compile(r"^(mailer-daemon|postmaster|mail-?daemon)@", re.I)
+
+
+def _campo(bloque, nombre: str) -> str:
+    return " ".join(str(bloque.get(nombre) or "").split())
+
+
+def detectar_rebote(m) -> dict | None:
+    """Aviso de no entrega (DSN, RFC 3464) → {"destinatarios": [{email, accion, status, tipo, motivo}]}.
+
+    tipo «hard»: no se pudo entregar y el servidor dejó de intentar (dirección o dominio inexistente,
+    rechazo): conviene inhabilitarla. «soft»: buzón lleno (x.2.2): la dirección existe.
+    «delayed»: el servidor todavía reintenta; no es un rebote. Solo se lee lo que el servidor de
+    correo reporta: nunca el texto libre de una persona."""
+    de = parseaddr(_decodificar(m.get("From")))[1].lower()
+    es_reporte = m.get_content_type() == "multipart/report"
+    if not (es_reporte or _REMITENTE_REBOTE.match(de)):
+        return None
+    destinatarios: list[dict] = []
+    for parte in m.walk():
+        if parte.get_content_type() != "message/delivery-status":
+            continue
+        bloques = parte.get_payload()
+        if not isinstance(bloques, list):
+            # Algunos servidores lo envían como texto: se separa en bloques por líneas en blanco.
+            texto = parte.get_payload(decode=True) or b""
+            bloques = [email_lib.message_from_string(b) for b in
+                       texto.decode("utf-8", "replace").replace("\r\n", "\n").split("\n\n") if b.strip()]
+        for b in bloques[1:] if len(bloques) > 1 else bloques:  # el primero es del mensaje, no del destinatario
+            dest = _campo(b, "Final-Recipient") or _campo(b, "Original-Recipient")
+            correo = (_RE_EMAIL.findall(dest) or [""])[0].lower().rstrip(".")
+            accion = _campo(b, "Action").lower()
+            status = (_campo(b, "Status").split() or [""])[0]
+            if not correo or not accion:
+                continue
+            # «failed» = el servidor se rindió (incluido un 4.x tras días de reintentos). Solo el buzón
+            # lleno (x.2.2) es pasajero: la dirección existe.
+            tipo = ("delayed" if accion == "delayed" else
+                    "soft" if accion == "failed" and status[1:].startswith(".2.2") else
+                    "hard" if accion == "failed" else "")
+            if tipo:
+                destinatarios.append({"email": correo, "accion": accion, "status": status, "tipo": tipo,
+                                      "motivo": _campo(b, "Diagnostic-Code")[:300]})
+    # Remitente del correo que no se entregó (va adjunto al aviso): permite confirmar que era nuestro.
+    original_de = ""
+    for parte in m.walk():
+        if parte.get_content_type() in ("message/rfc822", "text/rfc822-headers"):
+            carga = parte.get_payload()
+            orig = carga[0] if isinstance(carga, list) and carga else (
+                email_lib.message_from_bytes(parte.get_payload(decode=True) or b"")
+                if parte.get_content_type() == "text/rfc822-headers" else None)
+            if orig is not None:
+                original_de = parseaddr(_decodificar(orig.get("From")))[1].lower()
+                break
+    if not destinatarios and m.get("X-Failed-Recipients"):
+        # Sin informe estructurado: Gmail igual indica a quién no llegó.
+        for correo in _RE_EMAIL.findall(_decodificar(m.get("X-Failed-Recipients"))):
+            destinatarios.append({"email": correo.lower(), "accion": "failed", "status": "",
+                                  "tipo": "hard", "motivo": _decodificar(m.get("Subject"))[:300]})
+    return {"destinatarios": destinatarios, "original_de": original_de} if destinatarios else None
+
+
 def parsear(raw: bytes) -> dict:
     m = email_lib.message_from_bytes(raw)
     de = _decodificar(m.get("From"))
@@ -414,4 +477,10 @@ def parsear(raw: bytes) -> dict:
     }
     if cabeceras.get("x-autoreply"):
         msg["cabeceras"]["auto-submitted"] = "auto-replied"
+    try:
+        rebote = detectar_rebote(m)
+    except Exception:
+        rebote = None
+    if rebote:
+        msg["rebote"] = rebote
     return msg

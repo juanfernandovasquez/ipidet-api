@@ -4604,8 +4604,20 @@ async def producto_delete(producto_id: str):
 
 @app.get("/comunicaciones/rebotes", response_class=HTMLResponse)
 async def comunicaciones_rebotes(request: Request):
+    from webapp import agente_correo as _ac
     rebotes = pdb.get_bounced_emails()
-    return templates.TemplateResponse(request, "rebotes.html", _ctx(request, rebotes=rebotes))
+    avisos_pendientes = agente_db.correos_col.count_documents(
+        {**_ac._Q_AVISOS_REBOTE, "rebote_revisado": {"$ne": True}})
+    return templates.TemplateResponse(request, "rebotes.html", _ctx(
+        request, rebotes=rebotes, avisos_pendientes=avisos_pendientes,
+        brevo_webhook=bool(BREVO_WEBHOOK_TOKEN)))
+
+
+@app.post("/comunicaciones/rebotes/revisar-cola")
+async def rebotes_revisar_cola():
+    """Una tanda de avisos de no entrega ya guardados en la cola: los relee de Gmail y los aplica."""
+    from webapp import agente_correo as _ac
+    return await asyncio.to_thread(_ac.revisar_rebotes_anteriores, 15)
 
 
 @app.post("/comunicaciones/rebotes/inhabilitar")
@@ -4614,8 +4626,16 @@ async def rebote_inhabilitar(request: Request):
     member_id = form.get("member_id", "")
     email     = form.get("email", "")
     if member_id and email:
-        pdb.update_email_status(member_id, email, "inhabilitado")
+        pdb.update_email_status(member_id, email, "rebotado")
     return RedirectResponse("/comunicaciones/rebotes", status_code=303)
+
+
+@app.post("/comunicaciones/rebotes/restaurar")
+async def rebote_restaurar(email: str = Form(...), member_id: str = Form(""), prospecto_id: str = Form("")):
+    """Falso positivo: el email vuelve a recibir comunicaciones."""
+    pdb.restaurar_email_rebotado(email, member_id=member_id, prospecto_id=prospecto_id)
+    return RedirectResponse("/comunicaciones/rebotes?ok=" + _quote(f"{email} vuelve a recibir correos"),
+                            status_code=303)
 
 
 # ── Portal de socios ──────────────────────────────────────────────────────────
@@ -6060,8 +6080,10 @@ async def api_publico_preview(request: Request):
     result = [{"_id": str(d.get("_id", "")),
                "nombre": d.get("nombre", ""),
                "apellido": d.get("apellido", ""),
-               "email": d.get("email", "")} for d in docs if d.get("email")]
-    return {"total": len(result), "destinatarios": result}
+               "email": d.get("email", "")} for d in docs
+              if d.get("email") and d.get("email_estado") != "rebotado"]
+    return {"total": len(result), "destinatarios": result,
+            "rebotados": sum(1 for d in docs if d.get("email_estado") == "rebotado")}
 
 
 @app.post("/api/publico/enviar-comunicacion")
@@ -6085,6 +6107,9 @@ async def api_publico_enviar(request: Request):
             {"error": f"Máximo {MAX_BULK_RECIPIENTS} destinatarios por envío."},
             status_code=400,
         )
+    # Los emails que rebotaron no se vuelven a usar (aunque vengan en la lista del navegador).
+    rebotados = pdb.emails_publico_rebotados([d.get("email", "") for d in destinatarios])
+    destinatarios = [d for d in destinatarios if (d.get("email") or "").lower() not in rebotados]
 
     mensajes = []
     for d in destinatarios:

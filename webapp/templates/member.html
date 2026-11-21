@@ -184,15 +184,18 @@
             <div class="flex items-center gap-3">
               <i class="fa-solid {% if em.estado == 'habilitado' %}fa-circle-check text-green-500{% else %}fa-circle-xmark text-slate-400{% endif %}"></i>
               <div>
-                <div class="text-sm font-medium {% if em.estado == 'inhabilitado' %}line-through text-slate-400{% else %}text-slate-800{% endif %}">{{ em.email }}</div>
+                <div class="text-sm font-medium {% if em.estado in ('inhabilitado', 'rebotado') %}line-through text-slate-400{% else %}text-slate-800{% endif %}">{{ em.email }}</div>
                 <div class="text-xs text-slate-400">
                   {{ "Principal" if em.get('principal') else "Secundario" }} ·
-                  {% if em.estado == 'habilitado' %}<span class="text-green-600">Habilitado</span>{% else %}<span class="text-red-500">Inhabilitado</span>{% endif %}
+                  {% if em.estado == 'habilitado' %}<span class="text-green-600">Habilitado</span>
+                  {% elif em.estado == 'rebotado' %}<span class="text-red-500">Rebotó: no recibe correos</span>
+                  {% else %}<span class="text-red-500">Inhabilitado</span>{% endif %}
                   {% if em.get('bounce_type') %}
-                    · <span class="{% if em.bounce_type == 'hard' %}text-red-600 font-medium{% else %}text-amber-600{% endif %}">
+                    · <a href="/comunicaciones/rebotes" class="{% if em.bounce_type == 'hard' %}text-red-600 font-medium{% else %}text-amber-600{% endif %} hover:underline"
+                         title="{{ em.get('bounce_reason') or '' }}">
                       <i class="fa-solid fa-triangle-exclamation text-[10px]"></i>
-                      Rebote {{ em.bounce_type }}{% if em.get('bounce_at') %} {{ em.bounce_at[:10] }}{% endif %}
-                    </span>
+                      {{ 'No existe' if em.bounce_type == 'hard' else 'Buzón lleno' }}{% if em.get('bounce_at') %} · {{ em.bounce_at | format_fecha }}{% endif %}
+                    </a>
                   {% endif %}
                 </div>
               </div>
