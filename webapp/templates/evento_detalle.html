@@ -9,6 +9,7 @@
 {% endblock %}
 
 {% block content %}
+{% include "_aviso_query.html" %}
 
 <!-- Encabezado del evento -->
 <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5" x-data="{ editando: false }">
@@ -157,6 +158,19 @@
   </div>
 </div>
 <form id="ev-delete-form" method="post" action="/eventos/{{ evento._id }}/delete" class="hidden"></form>
+
+{# Publicación en ipidet.org (web_publica): sin marcar, sale si tiene flyer #}
+{% set _en_web = evento.publicar_web if evento.publicar_web is defined and evento.publicar_web is not none else (evento.flyer_url | default('') != '') %}
+<form method="post" action="/eventos/{{ evento._id }}/publicar-web"
+      class="bg-white rounded-xl border border-slate-200 px-5 py-3 mb-5 flex flex-wrap items-center justify-between gap-3">
+  <div class="text-sm text-slate-700">
+    <i class="fa-solid fa-globe text-slate-400 mr-1.5"></i>
+    {% if _en_web %}<span class="badge badge-green mr-1">Se muestra en ipidet.org</span>{% else %}<span class="badge badge-gray mr-1">No se muestra en ipidet.org</span>{% endif %}
+    <span class="text-xs text-slate-500">{% if evento.publicar_web is not defined or evento.publicar_web is none %}Automático: los eventos con flyer salen en la web.{% endif %}</span>
+  </div>
+  <input type="hidden" name="publicar" value="{{ '' if _en_web else '1' }}">
+  <button class="btn-ghost text-xs">{{ 'Quitar de la web' if _en_web else 'Mostrar en la web' }}</button>
+</form>
 
 <!-- ═══════════════════════════════════════════════════════════
      SECCIÓN — RESPUESTAS DEL AGENTE DE CORREOS

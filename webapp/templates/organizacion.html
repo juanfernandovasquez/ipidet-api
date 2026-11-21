@@ -53,6 +53,10 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Hasta <span class="text-slate-400">(opcional)</span></label>
         <input type="date" name="hasta" class="input w-full text-sm">
       </div>
+      <div class="md:col-span-5">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Foto para ipidet.org <span class="text-slate-400">(opcional: enlace https a la foto publicada)</span></label>
+        <input type="url" name="foto_url" class="input w-full text-sm" placeholder="https://ipidet.org/wp-content/uploads/…">
+      </div>
       <div class="flex gap-2">
         <button type="submit" class="btn-primary text-sm" :disabled="!sel">Guardar</button>
         <button type="button" class="btn-ghost text-sm" @click="nuevo = false">Cancelar</button>
@@ -80,10 +84,22 @@
               <span class="badge badge-blue ml-1" title="Firma las constancias">Firmante</span>{% endif %}
             </td>
             <td class="py-2.5 pr-4">
+              <div class="flex items-start gap-2.5">
+              {% if d.foto_url %}<img src="{{ d.foto_url }}" alt="" class="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200">
+              {% else %}<span class="w-9 h-9 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0" title="Sin foto para la web"><i class="fa-solid fa-user text-xs"></i></span>{% endif %}
+              <div class="min-w-0">
               <a href="/members/{{ d.member_id }}" class="text-blue-700 hover:underline font-medium">{{ d.nombre }}</a>
               <div class="text-xs text-slate-500">{{ d.titulo }}{% if d.titulo and d.centro_trabajo %} · {% endif %}{{ d.centro_trabajo }}</div>
               {% if not d.existe_socio %}<span class="badge badge-red">No está en el padrón</span>
               {% elif d.estado_socio and d.estado_socio != 'activo' %}<span class="badge badge-amber">Socio {{ d.estado_socio }}</span>{% endif %}
+              <details class="mt-1">
+                <summary class="text-xs text-blue-600 cursor-pointer">{{ 'Cambiar foto de la web' if d.foto_url else 'Agregar foto para la web' }}</summary>
+                <form method="post" action="/organizacion/consejo/{{ d._id }}/foto" class="flex gap-1 mt-1">
+                  <input type="url" name="foto_url" value="{{ d.foto_url or '' }}" class="input text-xs flex-1 min-w-0" placeholder="https://…">
+                  <button class="btn-ghost text-xs">Guardar</button>
+                </form>
+              </details>
+              </div></div>
             </td>
             <td class="py-2.5 pr-4 text-xs text-slate-600">
               {% if d.email %}<div><i class="fa-regular fa-envelope text-slate-400 mr-1"></i>{{ d.email }}</div>{% endif %}

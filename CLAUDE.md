@@ -34,6 +34,7 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 26. [Ponentes](#ponentes)
 27. [Postulantes](#postulantes)
 28. [IPIDET y consejo directivo](#organizacion)
+29. [Sitio público y mockups](#web)
 
 ---
 
@@ -1895,3 +1896,15 @@ Colección `postulantes`: `prospecto_id`, `etapa`, `etapa_desde`, `tipo_socio`, 
 - **Contacto y redes** (`CAMPOS_ORGANIZACION`): email, web, teléfono, ciudad, firmante, LinkedIn, Instagram, Facebook, YouTube. `set_organizacion` guarda solo los campos que recibe.
 - **Logo y firma**: bytes en `config.organizacion_logo` / `organizacion_firma` (`catalogos.get_imagen_org`). Si no hay, se usan `static/logo.png` y `mockup_assets/firma_presidenta.png`. El logo es público (`/org/logo`, va en correos); la firma solo con sesión (`/organizacion/firma`). Los usan `constancia.py`, `pdf_builder.py` y `mailer.logo_inline_att()`.
 - **Consejo directivo**: colección `consejo_directivo` (`member_id`, `cargo`, `desde`, `hasta`, `notas`). Unida al padrón por `member_id` (R8): nombre, título, contacto y estado de pago del período salen de `members` y `payments` al mostrar. Vigente = `desde ≤ hoy` y sin `hasta` o `hasta ≥ hoy`. Cerrar un cargo (`/terminar`) lo pasa a «Gestiones anteriores»; eliminar es solo para errores. «Firmante» copia nombre y cargo al firmante de constancias. Los cargos son el catálogo `cargos_consejo`. La ficha del socio muestra sus cargos (`organizacion.cargos_de_socio`).
+
+---
+
+## 29. Sitio público y mockups {#web}
+
+**API pública** (`webapp/web_publica.py`, prefijo público `/api/web/`, CORS para ipidet.org con y sin www):
+- `GET /api/web/sitio` (caché 5 min): contacto y redes de la organización, consejo vigente (nombre, cargo, `foto_url`), eventos publicables, cuotas del período de trabajo, alianzas en estado «aliada» y cifras (socios activos, eventos realizados). **Nunca** devuelve correos, teléfonos, DNI ni datos de pagos.
+- Evento publicable: no cancelado, de los últimos ~18 meses o próximo, y `publicar_web: true` **o** con flyer (si `publicar_web: false`, nunca). Se cambia en la ficha del evento («Mostrar/Quitar de la web», `POST /eventos/{id}/publicar-web`). El link de Zoom nunca sale; el de inscripción solo si el evento es futuro.
+- `POST /api/web/contacto` y `/api/web/suscribir`: campo trampa `web`, email válido, autorización (`acepta`) en contacto y máximo 5 envíos por IP por hora (en memoria). Contacto → ficha en Público (fuente `portal`, etiqueta `web-contacto`, marcada como socio si lo es), un Pendiente y aviso por Telegram. Boletín → Público con etiqueta `boletin`.
+- La foto de cada directivo para la web es un enlace https (`consejo_directivo.foto_url`), editable en `/organizacion`.
+
+**Mockups** (`mockup_*.html` en la raíz): se generan con `python mockup_assets/generar_mockups.py` (cabecera, menú móvil, pie e iconos iguales en las 6). Estilos en `mockup_assets/sitio.css`, interacción en `sitio.js` (sin Tailwind ni Font Awesome externos) y contenido de respaldo real en `datos.js` (tomado de ipidet.org). Si la API responde, `sitio.js` reemplaza consejo, eventos, contacto, cuotas, aliadas y cifras; abiertos desde el disco usan el respaldo. Las fotos del consejo están en `mockup_assets/consejo/`. No editar los HTML a mano: se pisan al regenerar.

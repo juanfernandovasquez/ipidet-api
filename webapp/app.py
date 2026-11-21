@@ -101,17 +101,22 @@ from webapp.vendor import router as _vendor_router  # Alpine, Tailwind, etc. des
 app.include_router(_vendor_router)
 from webapp import organizacion as _org  # sección IPIDET: datos, logo, firma, consejo
 app.include_router(_org.router)
+from webapp.web_publica import router as _web_router  # API pública para ipidet.org
+app.include_router(_web_router)
 
 # CORS: solo permite llamadas desde el servidor WordPress (server-to-server)
+_ORIGEN_WEB = WC_STORE_URL.rstrip("/")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[WC_STORE_URL.rstrip("/")],
+    # La web (con y sin www) llama a /api/web/* y WordPress al portal.
+    allow_origins=sorted({_ORIGEN_WEB, _ORIGEN_WEB.replace("://www.", "://"),
+                          _ORIGEN_WEB.replace("://www.", "://").replace("://", "://www.")}),
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type", "X-WC-Webhook-Signature"],
 )
 
 _PUBLIC_PATHS = {"/login", "/logout"}
-_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/", "/correo-img/", "/vendor/", "/org/")
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/api/web/", "/static/", "/correo-img/", "/vendor/", "/org/")
 
 class _AuthMiddleware:
     """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
@@ -4067,6 +4072,13 @@ async def evento_update(
                       link_zoom=link_zoom, link_grabacion=link_grabacion,
                       precio=precio, fecha_limite_inscripcion=fecha_limite_inscripcion)
     return RedirectResponse(f"/eventos/{evento_id}", status_code=303)
+
+
+@app.post("/eventos/{evento_id}/publicar-web")
+async def evento_publicar_web(evento_id: str, publicar: str = Form("")):
+    """Si el evento sale en ipidet.org. Sin marcar, sale solo si tiene flyer (ver web_publica)."""
+    pdb.eventos_col.update_one({"_id": _oid(evento_id)}, {"$set": {"publicar_web": publicar == "1"}})
+    return RedirectResponse(f"/eventos/{evento_id}?ok=" + _quote("Publicación en la web actualizada."), status_code=303)
 
 
 @app.post("/eventos/{evento_id}/agente")

@@ -154,7 +154,8 @@ async def firma_privada():
 
 # ── Consejo directivo ──────────────────────────────────────────────────────────
 
-def _fila_desde_form(member_id: str, cargo: str, desde: str, hasta: str, notas: str) -> dict | str:
+def _fila_desde_form(member_id: str, cargo: str, desde: str, hasta: str, notas: str,
+                     foto_url: str = "") -> dict | str:
     member_id = (member_id or "").strip().upper()
     if not db.members.find_one({"member_id": member_id}, {"_id": 1}):
         return f"No existe el socio {member_id or '(vacío)'}: elígelo del buscador."
@@ -164,14 +165,18 @@ def _fila_desde_form(member_id: str, cargo: str, desde: str, hasta: str, notas: 
     desde, hasta = (desde or "").strip(), (hasta or "").strip()
     if hasta and desde and hasta < desde:
         return "La fecha de fin es anterior a la de inicio."
+    foto_url = (foto_url or "").strip()
+    if foto_url and not foto_url.startswith("https://"):
+        return "La foto debe ser un enlace https:// (por ejemplo, la foto publicada en ipidet.org)."
     return {"member_id": member_id, "cargo": cargo[:80], "desde": desde or _hoy(), "hasta": hasta,
-            "notas": (notas or "").strip()[:500]}
+            "notas": (notas or "").strip()[:500], "foto_url": foto_url[:500]}
 
 
 @router.post("/organizacion/consejo/nuevo")
 async def consejo_nuevo(request: Request, member_id: str = Form(""), cargo: str = Form(""),
-                        desde: str = Form(""), hasta: str = Form(""), notas: str = Form("")):
-    fila = _fila_desde_form(member_id, cargo, desde, hasta, notas)
+                        desde: str = Form(""), hasta: str = Form(""), notas: str = Form(""),
+                        foto_url: str = Form("")):
+    fila = _fila_desde_form(member_id, cargo, desde, hasta, notas, foto_url)
     if isinstance(fila, str):
         return _volver(error=fila)
     ahora = datetime.now(timezone.utc)
@@ -182,12 +187,23 @@ async def consejo_nuevo(request: Request, member_id: str = Form(""), cargo: str 
 
 @router.post("/organizacion/consejo/{fila_id}/update")
 async def consejo_update(fila_id: str, member_id: str = Form(""), cargo: str = Form(""),
-                         desde: str = Form(""), hasta: str = Form(""), notas: str = Form("")):
-    fila = _fila_desde_form(member_id, cargo, desde, hasta, notas)
+                         desde: str = Form(""), hasta: str = Form(""), notas: str = Form(""),
+                         foto_url: str = Form("")):
+    fila = _fila_desde_form(member_id, cargo, desde, hasta, notas, foto_url)
     if isinstance(fila, str):
         return _volver(error=fila)
     consejo_col.update_one({"_id": _oid(fila_id)}, {"$set": {**fila, "updated_at": datetime.now(timezone.utc)}})
     return _volver(ok="Cargo actualizado.")
+
+
+@router.post("/organizacion/consejo/{fila_id}/foto")
+async def consejo_foto(fila_id: str, foto_url: str = Form("")):
+    """Foto que muestra ipidet.org (enlace https). Vacío la quita."""
+    foto_url = foto_url.strip()
+    if foto_url and not foto_url.startswith("https://"):
+        return _volver(error="La foto debe ser un enlace https://.")
+    consejo_col.update_one({"_id": _oid(fila_id)}, {"$set": {"foto_url": foto_url[:500], "updated_at": datetime.now(timezone.utc)}})
+    return _volver(ok="Foto actualizada.")
 
 
 @router.post("/organizacion/consejo/{fila_id}/terminar")
