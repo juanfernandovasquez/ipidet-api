@@ -95,6 +95,11 @@
           <span><strong>Registrar en Público a quien nos consulta</strong><br>
             <span class="text-slate-500">Quien escribe por un evento, admisión u otra consulta y no es socio queda en <a href="/publico" class="text-blue-600 hover:underline">Público</a> para su seguimiento. Si quiere asociarse, también en <a href="/postulantes" class="text-blue-600 hover:underline">Postulantes</a>. Nunca cambia el estado que el equipo ya le puso.</span></span>
         </label>
+        <label class="flex items-start gap-2 text-sm text-slate-700 mt-3">
+          <input type="checkbox" name="datos_socio_en_borradores" value="1" {% if cfg.datos_socio_en_borradores is not defined or cfg.datos_socio_en_borradores %}checked{% endif %} class="mt-0.5">
+          <span><strong>Usar la cuenta del socio en los borradores</strong><br>
+            <span class="text-slate-500">Si un socio pregunta por sus pagos, el agente lee (sin modificar nada) sus períodos, saldos, cuotas y si tiene comprobante, para proponer la respuesta. Solo de quien escribe, solo si Gmail confirma que el correo viene de su dirección, y esas respuestas nunca salen solas: siempre las revisa el equipo.</span></span>
+        </label>
       </div>
       <div x-data="{ activo: {{ 'true' if cfg.activo else 'false' }} }" class="space-y-3">
       <label class="flex items-start gap-2 text-sm text-slate-700">

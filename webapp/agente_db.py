@@ -135,6 +135,7 @@ def registrar_recibido(msg: dict) -> str | None:
         "de_nombre": msg.get("de_nombre", ""),
         "de_email": msg.get("de_email", ""),
         "reply_to": msg.get("reply_to", ""),
+        "remitente_verificado": bool(msg.get("remitente_verificado")),
         "para": msg.get("para", []),
         "cc": msg.get("cc", []),
         "asunto": msg.get("asunto", ""),

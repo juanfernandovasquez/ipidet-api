@@ -2674,31 +2674,9 @@ async def comprobantes_import_xml(
         xml_tipo = data["tipo"]
         xml_monto = data["monto_total"]
 
-        # Buscar pre-comprobante coincidente por RUC (factura) o DNI (boleta)
-        pre_match = None
-        if xml_ruc:
-            if len(xml_ruc) == 11 and xml_ruc.isdigit():
-                # Factura: matching por ruc_empresa
-                pre_match = pdb.comprobantes_col.find_one({
-                    "estado":       "pre_registrado",
-                    "tipo":         xml_tipo,
-                    "ruc_empresa":  xml_ruc,
-                })
-            elif len(xml_ruc) == 8 and xml_ruc.isdigit():
-                # Boleta: matching por destinatario_dni
-                pre_match = pdb.comprobantes_col.find_one({
-                    "estado":           "pre_registrado",
-                    "tipo":             xml_tipo,
-                    "destinatario_dni": xml_ruc,
-                })
-                # Fallback: matching por socios (cuando el borrador no guardó destinatario_dni)
-                if not pre_match:
-                    xml_members = [it["member_id"] for it in data["items"] if it.get("member_id")]
-                    if xml_members:
-                        pre_match = pdb.comprobantes_col.find_one(
-                            {"estado": "pre_registrado", "tipo": xml_tipo, "socios": {"$in": xml_members}},
-                            sort=[("created_at", -1)],
-                        )
+        # Borrador de «Preparar» que este XML completa. Si no se encuentra, se crearía un comprobante
+        # nuevo y el borrador quedaría al lado: dos registros del mismo documento.
+        pre_match = pdb.buscar_borrador_para_xml(data)
 
         empresa_nombre = data["razon_social"]
         ruc = xml_ruc
@@ -5156,6 +5134,7 @@ async def inbox_configuracion_guardar(request: Request):
     }
     if form.get("matricular_publico_presente"):
         campos["matricular_publico"] = form.get("matricular_publico") == "1"
+        campos["datos_socio_en_borradores"] = form.get("datos_socio_en_borradores") == "1"
     if form.get("categorias_cuenta_2_presente"):
         campos["categorias_cuenta_2"] = [k for k in form.getlist("categorias_cuenta_2")
                                          if k in catalogos.CATEGORIAS_CORREO]

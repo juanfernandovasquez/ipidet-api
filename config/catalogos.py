@@ -221,6 +221,8 @@ _AGENTE_DEFECTO = {
     "categorias_cuenta_2": CATEGORIAS_CUENTA_2_DEFECTO,
     # Quien escribe una consulta y no es socio entra solo a Público; si quiere asociarse, a Postulantes.
     "matricular_publico": True,
+    # El agente puede LEER la cuenta del socio que escribe (verificado) para el borrador; nunca escribe.
+    "datos_socio_en_borradores": True,
     # USD por millón de tokens (tarifa de Haiku 5.5); solo para estimar el costo que se muestra.
     "precio_entrada": 0.10,
     "precio_salida": 0.50,

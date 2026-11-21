@@ -13,6 +13,7 @@ Los eventos sin «usar en el agente» no se incluyen en ningún nivel: están a 
 `remitente(...)` arma lo que se sabe de quien escribe (siempre es contexto de apoyo).
 """
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -20,6 +21,8 @@ from config import catalogos
 from config.mongo_client import db
 from gmail.client import html_a_texto, sin_citas
 from webapp import agente_db
+
+logger = logging.getLogger(__name__)
 
 _LIMA = timezone(timedelta(hours=-5))
 _DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
@@ -159,11 +162,42 @@ def conocimiento() -> tuple[str, dict[str, dict]]:
 
 # ── Remitente ──────────────────────────────────────────────────────────────────
 
+def cuenta_del_socio(member_id: str) -> dict:
+    """Resumen de SOLO LECTURA del estado de cuenta de un socio, para el borrador del agente.
+
+    Lo mínimo para responder «¿estoy al día?»: estado de cada período de cobro, saldo, cuotas
+    pendientes y si tiene comprobante. Nada de DNI, teléfonos, otros correos ni datos de terceros.
+    Esta función solo lee: el agente nunca escribe en members ni en payments."""
+    from webapp import db as pdb, variables_correo as vc
+    socio = pdb.members_col.find_one({"member_id": member_id}, {"estado": 1, "tipo_socio": 1}) or {}
+    periodos = set(catalogos.get_periodos_cobro()) | {catalogos.get_periodo_actual()}
+    cache: dict = {}
+    pagos = []
+    for p in pdb.payments_col.find({"member_id": member_id, "periodo": {"$in": sorted(periodos)}}).sort("periodo", -1):
+        estado = p.get("estado") or ""
+        fila = {"periodo": p.get("periodo"),
+                "estado": catalogos.ESTADOS_PAGO.get(estado, (estado,))[0],
+                "saldo_pendiente_soles": vc.saldo_de_pago(p, cache) if estado in vc.ESTADOS_CON_DEUDA else 0,
+                "tiene_comprobante": bool(p.get("comprobante_id") or p.get("num_comprobante"))}
+        pendientes = [{"cuota": c.get("numero"), "monto_soles": c.get("monto"), "vence": c.get("fecha_venc")}
+                      for c in p.get("cuotas") or [] if c.get("estado") != "pagado"]
+        if pendientes:
+            fila["cuotas_pendientes"] = pendientes
+        pagos.append(fila)
+    return {"aviso": "Datos de la cuenta de quien escribe (verificado por su email). Solo para el borrador: "
+                     "el equipo lo revisa antes de enviar.",
+            "estado_del_socio": socio.get("estado") or "", "tipo_socio": socio.get("tipo_socio") or "",
+            "pagos_por_periodo": pagos,
+            "medios_de_pago": catalogos.get_catalogo("medios_pago")}
+
+
 def remitente(correo: dict, hilo: list[dict]) -> tuple[dict, dict]:
     """(contexto para Claude, vínculos para la plataforma: member_id / prospecto_id).
 
-    Claude no recibe datos de socios ni de cobranzas: solo sabe si el remitente es socio, para el
-    trato. Los vínculos (socio, ficha en Público) son para que el equipo los vea en la cola.
+    Si quien escribe es socio por su email exacto, Gmail verificó que el correo viene de ese dominio
+    y la configuración lo permite (`datos_socio_en_borradores`), Claude recibe el resumen de solo
+    lectura de SU cuenta (cuenta_del_socio). Nunca de otra persona, ni por coincidencia de nombre.
+    Lo que use de ahí queda en borrador: el envío automático lo bloquea el código.
     """
     email = correo.get("de_email", "")
     vinculos: dict = {}
@@ -172,6 +206,17 @@ def remitente(correo: dict, hilo: list[dict]) -> tuple[dict, dict]:
                       "es_socio_de_ipidet": bool(socio)}
     if socio:
         vinculos["member_id"] = socio["member_id"]
+        if catalogos.get_agente_config().get("datos_socio_en_borradores", True):
+            if correo.get("remitente_verificado"):
+                try:
+                    contexto["cuenta_del_remitente"] = cuenta_del_socio(socio["member_id"])
+                    vinculos["uso_cuenta_socio"] = True
+                except Exception:
+                    logger.exception("No se pudo leer la cuenta del socio %s", socio["member_id"])
+            else:
+                contexto["cuenta_del_remitente"] = (
+                    "No disponible: no se pudo verificar que el correo venga de su dirección. "
+                    "No afirmes nada sobre su cuenta.")
     else:
         posible = agente_db.buscar_socio_por_nombre(correo.get("de_nombre", ""))
         if posible:

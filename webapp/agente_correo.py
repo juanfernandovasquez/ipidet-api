@@ -370,6 +370,8 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
                                          "fuentes_usadas", "solo_fuentes_autorizadas", "datos_sensibles",
                                          "puede_enviarse_sin_revision", "confianza", "resumen", "motivo",
                                          "datos_faltantes")},
+        # Usó la cuenta del socio (solo lectura): siempre sensible y nunca sale sola.
+        "uso_cuenta_del_remitente": bool(vinculos.get("uso_cuenta_socio") and analisis.get("uso_cuenta_del_remitente")),
         "fuentes_titulos": {f: fuentes[f]["titulo"] for f in analisis.get("fuentes_usadas") or [] if f in fuentes},
         "prioridad_orden": _PRIORIDAD_ORDEN.get(analisis.get("prioridad"), 1),
         "respuesta_borrador": respuesta,
@@ -385,6 +387,8 @@ def _analizar(gmail: GmailClient, doc: dict, adjuntos: list[dict], cfg: dict, ca
         "analizado_at": datetime.now(timezone.utc),
         "error": None,
     }
+    if campos["uso_cuenta_del_remitente"]:
+        campos["datos_sensibles"] = True
     if not doc.get("cuenta_respuesta_manual"):
         campos["cuenta_respuesta"] = elegir_cuenta_respuesta(cfg, analisis.get("categoria"), cuenta_de(doc))
     motivos: list[str] = []
@@ -509,6 +513,8 @@ def _motivos_para_no_enviar_solo(cfg: dict, doc: dict, fuentes: dict) -> list[st
         motivos.append("Usa información que no está en FAQs ni eventos autorizados")
     if doc.get("datos_sensibles"):
         motivos.append("Toca datos personales, dinero o temas internos")
+    if doc.get("uso_cuenta_del_remitente"):
+        motivos.append("Usa datos de la cuenta del socio: siempre lo revisa el equipo")
     if not doc.get("puede_enviarse_sin_revision"):
         motivos.append("El agente indicó que necesita revisión")
     if float(doc.get("confianza") or 0) < float(cfg.get("umbral_auto") or 0.9):
@@ -589,7 +595,9 @@ def reprocesar(correo_id: str, gmail: GmailClient | None = None, cache: dict | N
         try:
             raw = gmail.original(doc["gm_msgid"])
             if raw:
-                adjuntos = parsear(raw)["adjuntos"]
+                leido = parsear(raw)
+                adjuntos = leido["adjuntos"]
+                agente_db.actualizar(correo_id, {"remitente_verificado": leido["remitente_verificado"]})
         except Exception as e:
             logger.warning("No se pudieron releer los adjuntos: %s", e)
     agente_db.actualizar(correo_id, {"estado": "procesando"}, accion="reanálisis")
@@ -1010,6 +1018,8 @@ def avisar_telegram(doc: dict | None) -> None:
     avisos = []
     if doc.get("datos_sensibles"):
         avisos.append("⚠️ Toca información sensible: revísalo antes de aprobar.")
+    if doc.get("uso_cuenta_del_remitente"):
+        avisos.append("💳 Usa datos de la cuenta del socio (montos y estados): compáralos con Cobranzas antes de aprobar.")
     if doc.get("datos_faltantes"):
         avisos.append("✍️ Falta completar: " + "; ".join(doc["datos_faltantes"])[:300])
     mat = doc.get("matriculado") or {}

@@ -433,6 +433,25 @@ def detectar_rebote(m) -> dict | None:
     return {"destinatarios": destinatarios, "original_de": original_de} if destinatarios else None
 
 
+def remitente_autenticado(m, correo: str) -> bool:
+    """True si Gmail comprobó que el correo viene del dominio del remitente (DMARC, DKIM o SPF).
+
+    Solo cuenta la cabecera Authentication-Results de más arriba, la que agrega Gmail al recibir
+    (mx.google.com): las de más abajo puede escribirlas cualquiera. Sin esto, el agente no recibe
+    datos de la cuenta del socio: el «De:» de un correo se puede falsificar."""
+    dominio = correo.rsplit("@", 1)[-1].lower() if "@" in correo else ""
+    resultados = m.get_all("Authentication-Results") or []
+    if not dominio or not resultados:
+        return False
+    ar = " ".join(str(resultados[0]).split()).lower()
+    if not ar.startswith("mx.google.com"):
+        return False
+    d = re.escape(dominio) + r"(?=[\s;)]|$)"  # el dominio exacto: «estudio.pe.evil.com» no vale
+    return bool(re.search(rf"dmarc=pass[^;]*header\.from={d}", ar)
+                or re.search(rf"dkim=pass[^;]*header\.(?:i=[^;\s]*@|d=){d}", ar)
+                or re.search(rf"spf=pass[^;]*smtp\.mailfrom=(?:[^;\s]*@)?{d}", ar))
+
+
 def parsear(raw: bytes) -> dict:
     m = email_lib.message_from_bytes(raw)
     de = _decodificar(m.get("From"))
@@ -488,6 +507,7 @@ def parsear(raw: bytes) -> dict:
         "cuerpo": cuerpo,
         "adjuntos": adjuntos,
         "cabeceras": {k: v for k, v in cabeceras.items() if v},
+        "remitente_verificado": remitente_autenticado(m, correo.strip().lower()),
     }
     if cabeceras.get("x-autoreply"):
         msg["cabeceras"]["auto-submitted"] = "auto-replied"

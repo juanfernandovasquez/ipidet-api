@@ -4098,6 +4098,43 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
     return str(result.inserted_id)
 
 
+def _nombre_clave(texto: str) -> frozenset:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode().upper()
+    return frozenset(p for p in _re.split(r"[^A-Z0-9]+", t) if len(p) > 1)
+
+
+def buscar_borrador_para_xml(data: dict) -> dict | None:
+    """Borrador (pre_registrado) del mismo tipo que corresponde a un XML importado.
+
+    Factura: por RUC del cliente (en el borrador o en su empresa). Boleta: por DNI del borrador, por
+    el socio que tiene ese DNI en el padrón, por los socios del XML o, al final, por el nombre del
+    cliente. Si hay varios, gana el de igual monto y luego el más reciente."""
+    tipo, doc, monto = data.get("tipo"), (data.get("ruc_empresa") or "").strip(), data.get("monto_total") or 0
+    base = {"estado": "pre_registrado", "tipo": tipo}
+    condiciones: list[dict] = []
+    if len(doc) == 11 and doc.isdigit():
+        condiciones.append({"ruc_empresa": doc})
+        ids = [str(c["_id"]) for c in companies_col.find({"ruc": doc}, {"_id": 1})]
+        if ids:
+            condiciones.append({"empresa_id": {"$in": ids}})
+    elif len(doc) == 8 and doc.isdigit():
+        condiciones.append({"destinatario_dni": doc})
+        socios = [m["member_id"] for m in members_col.find({"dni": doc}, {"member_id": 1})]
+        socios += [it["member_id"] for it in data.get("items") or [] if it.get("member_id")]
+        if socios:
+            condiciones += [{"destinatario_id": {"$in": socios}}, {"socios": {"$in": socios}}]
+    candidatos = list(comprobantes_col.find({**base, "$or": condiciones}).sort("created_at", -1)) if condiciones else []
+    if not candidatos and len(doc) == 8 and data.get("razon_social"):
+        clave = _nombre_clave(data["razon_social"])
+        candidatos = [c for c in comprobantes_col.find(base).sort("created_at", -1)
+                      if clave and _nombre_clave(c.get("destinatario_nombre") or "") == clave]
+    if not candidatos:
+        return None
+    mismo_monto = [c for c in candidatos if abs(float(c.get("monto_total") or 0) - float(monto)) < 0.01]
+    return (mismo_monto or candidatos)[0]
+
+
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
