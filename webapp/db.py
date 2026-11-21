@@ -5486,17 +5486,34 @@ CAMPOS_IMPORT_PUBLICO = ("nombre", "apellido", "email", "celular", "titulo", "em
 _EMAIL_RX = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def socios_por_email(emails: list[str]) -> dict[str, str]:
+    """{email: member_id} de los emails que pertenecen a un socio (cualquiera de sus emails)."""
+    lista = list({(e or "").strip().lower() for e in emails if e})
+    res: dict[str, str] = {}
+    for i in range(0, len(lista), 500):
+        parte = set(lista[i:i + 500])
+        for m in members_col.find({"emails.email": {"$in": list(parte)}}, {"member_id": 1, "emails.email": 1}):
+            for e in m.get("emails") or []:
+                correo = (e.get("email") or "").strip().lower()
+                if correo in parte:
+                    res[correo] = m["member_id"]
+    return res
+
+
 def import_prospectos_bulk(rows: list) -> dict:
     """Carga masiva de Público, por email. Cada fila: dict con CAMPOS_IMPORT_PUBLICO y `_fila`.
 
     Un email nuevo se inserta (fuente «excel»). Si ya existe, solo se completan los campos que
     la ficha tiene vacíos y las etiquetas se suman: una celda en blanco nunca borra un dato, y lo
     que el equipo cargó a mano no se pisa. El estado se aplica si es válido (nunca «convertido»).
-    Devuelve {insertados, actualizados, sin_cambios, errores, detalle_errores: [(fila, motivo)]}.
+    Un email de socio no entra a Público: se informa en `socios` [(fila, member_id)].
+    Devuelve {insertados, actualizados, sin_cambios, errores, detalle_errores: [(fila, motivo)], socios}.
     """
     from config import catalogos
     insertados = actualizados = sin_cambios = 0
     detalle: list[tuple[int, str]] = []
+    socios: list[tuple[int, str]] = []
+    de_socio = socios_por_email([str(r.get("email") or "") for r in rows])
     vistos: set[str] = set()
     for row in rows:
         fila = row.get("_fila", 0)
@@ -5511,6 +5528,9 @@ def import_prospectos_bulk(rows: list) -> dict:
             detalle.append((fila, f"email repetido en el archivo ({email})"))
             continue
         vistos.add(email)
+        if email in de_socio:
+            socios.append((fila, de_socio[email]))
+            continue
         try:
             tags = list(dict.fromkeys(t.strip() for t in str(row.get("tags") or "").split(",") if t.strip()))
             datos = {k: str(row.get(k) or "").strip() for k in
@@ -5557,7 +5577,7 @@ def import_prospectos_bulk(rows: list) -> dict:
         except Exception as exc:
             detalle.append((fila, f"no se pudo guardar ({type(exc).__name__})"))
     return {"insertados": insertados, "actualizados": actualizados, "sin_cambios": sin_cambios,
-            "errores": len(detalle), "detalle_errores": detalle}
+            "errores": len(detalle), "detalle_errores": detalle, "socios": socios}
 
 
 # ── Postulantes (proceso de admisión) ─────────────────────────────────────────
