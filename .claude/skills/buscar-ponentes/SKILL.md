@@ -1,7 +1,7 @@
 ---
 name: buscar-ponentes
-description: Busca en la web posibles ponentes de otras instituciones para los eventos de IPIDET y los carga en la sección Ponentes de la plataforma. Úsalo cuando pidan buscar ponentes, expositores o speakers, para un evento concreto o para los temas prioritarios.
-argument-hint: "[evento: ID o parte del título; vacío = temas prioritarios]"
+description: Busca en la web posibles ponentes nacionales e internacionales de otras instituciones para los eventos de IPIDET y los carga en la sección Ponentes de la plataforma. Úsalo cuando pidan buscar ponentes, expositores o speakers, para un evento concreto o para los temas prioritarios.
+argument-hint: "[evento: ID o parte del título; vacío = temas prioritarios] [solo nacionales | solo internacionales]"
 ---
 
 # Buscar ponentes para IPIDET
@@ -31,8 +31,16 @@ Encuentra hasta `maximo_ponentes` personas reales con trayectoria verificable. H
 - La modalidad depende del evento (`evento.modalidad`). Si es virtual o no está definida, sirve gente de cualquier país, y conviene anotar la diferencia horaria con Lima. Si es presencial, prioriza a quienes estén en Lima o en el Perú.
 - **Incluye** a funcionarios públicos y a profesionales de grandes firmas: no los excluyas. Marca `es_funcionario_publico` cuando corresponda; el equipo decidirá.
 
+**Dos frentes, nacional e internacional.** Haz dos rondas de búsqueda separadas y cumple `mezcla`:
+- **Nacional** (`ambito: "nacional"`): quienes trabajan en el Perú. Al menos `mezcla.minimo_nacionales`. Mira universidades, entidades públicas, tribunales y órganos especializados, gremios, colegios profesionales, firmas y estudios peruanos.
+- **Internacional** (`ambito: "regional"` si es de América Latina, `"internacional"` si es de otra región o de un organismo multilateral): al menos `mezcla.minimo_internacionales`. Empieza por `paises_prioritarios`; si está vacío, América Latina y España. Mira universidades, administraciones tributarias, institutos y asociaciones del tema, organismos multilaterales y firmas con práctica en ese país.
+- Revisa primero `instituciones_de_referencia`, si las hay, sin limitarte a ellas.
+- Usa `cobertura_actual_por_ambito` para equilibrar: si un ámbito tiene pocos registrados, completa primero ese.
+- Si el pedido dice «solo nacionales» o «solo internacionales», busca solo ese frente y llega a `maximo_ponentes` con él.
+- Si en un frente no encuentras candidatos sólidos, trae menos y explícalo en el informe: no rellenes con perfiles débiles.
+
 **A quién buscar:**
-- Prioriza profesionales de **otras instituciones**: universidades, organismos internacionales, institutos y asociaciones fiscales, firmas, empresas y entidades públicas, del Perú y del extranjero, sobre todo de América Latina y España.
+- Prioriza profesionales de **otras instituciones**: universidades, organismos internacionales, institutos y asociaciones fiscales, firmas, empresas y entidades públicas.
 - Deben poder exponer en español, salvo que su aporte justifique otro idioma; si es así, dilo en `consideraciones`.
 - Busca a quienes ya exponen, enseñan o publican sobre el tema, no solo a quienes tienen un cargo alto.
 - No repitas a `ya_registrados` ni a `descartados_no_proponer`, salvo una novedad reciente y verificable que explicarás en `novedad`.
@@ -86,4 +94,4 @@ Cuando el resultado esté bien, ejecuta el mismo comando sin `--probar`. Omite `
 
 ## 5. Informe
 
-Resume al usuario, en español y sin tecnicismos: a quién encontraste, de qué institución viene cada uno y por qué encaja, quiénes se descartaron y por qué, y que ya puede revisarlos en la sección Ponentes de la plataforma.
+Resume al usuario, en español y sin tecnicismos, separado en **nacionales** e **internacionales** (con el país de cada uno): a quién encontraste, de qué institución viene cada uno y por qué encaja, quiénes se descartaron y por qué, y que ya puede revisarlos en la sección Ponentes de la plataforma.

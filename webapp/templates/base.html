@@ -86,7 +86,7 @@
       {% endif %}
       {{ nav('/inbox', 'fa-solid fa-inbox', 'Cola de emails', ruta.startswith('/inbox'), inbox_count | default(0)) }}
 
-      {% if is_admin or 'members' in p or 'empresas' in p %}
+      {% if is_admin or 'members' in p or 'billing' in p %}
       <div class="sidebar-section">Personas</div>
       {% endif %}
       {% if is_admin or 'members' in p %}
@@ -94,7 +94,7 @@
       {{ nav('/publico', 'fa-solid fa-address-book', 'Público', ruta.startswith('/publico')) }}
       {{ nav('/postulantes', 'fa-solid fa-user-clock', 'Postulantes', ruta.startswith('/postulantes'), postulantes_por_atender | default(0)) }}
       {% endif %}
-      {% if is_admin or 'empresas' in p %}
+      {% if is_admin or 'billing' in p %}
       {{ nav('/empresas', 'fa-solid fa-building', 'Empresas', ruta.startswith('/empresas')) }}
       {% endif %}
 
@@ -141,6 +141,9 @@
       {% endif %}
 
       <div class="sidebar-section">Gestión</div>
+      {% if is_admin or 'billing' in p %}
+      {{ nav('/organizacion', 'fa-solid fa-landmark', 'IPIDET y consejo', ruta.startswith('/organizacion')) }}
+      {% endif %}
       {% if is_admin or 'alianzas' in p %}
       {{ nav('/alianzas', 'fa-solid fa-handshake', 'Alianzas', ruta.startswith('/alianzas'), alianzas_por_revisar | default(0)) }}
       {% endif %}

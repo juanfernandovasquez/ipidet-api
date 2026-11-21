@@ -78,16 +78,21 @@ def _headers() -> dict:
 
 
 def _ipidet_company() -> dict:
+    """Emisor: sección IPIDET de la plataforma, o las variables de Render si allí está vacío.
+    El RUC siempre es el de Render (IPIDET_RUC): está atado al token de APISPERU."""
+    from config import catalogos
+    f = catalogos.get_datos_fiscales()
     return {
         "ruc": IPIDET_RUC,
-        "razonSocial": IPIDET_RAZON_SOCIAL,
-        "nombreComercial": IPIDET_NOMBRE_COMERCIAL or IPIDET_RAZON_SOCIAL,
+        "razonSocial": f["razon_social"],
+        "nombreComercial": f["nombre_comercial"],
         "address": {
-            "direccion": IPIDET_DIRECCION,
-            "provincia": "LIMA",
-            "departamento": "LIMA",
-            "distrito": "LIMA",
-            "ubigueo": IPIDET_UBIGUEO or "150101",
+            "direccion": f["direccion_fiscal"],
+            # Sin dato cargado, lo que siempre se envió: sede en Lima.
+            "provincia": (f["provincia"] or "LIMA").upper(),
+            "departamento": (f["departamento"] or "LIMA").upper(),
+            "distrito": (f["distrito"] or "LIMA").upper(),
+            "ubigueo": f["ubigeo"] or "150101",
         },
     }
 

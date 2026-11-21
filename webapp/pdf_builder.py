@@ -5,12 +5,11 @@ from io import BytesIO
 from pathlib import Path
 
 from config import catalogos
-from config.settings import (
-    IPIDET_RUC,
-    IPIDET_RAZON_SOCIAL,
-    IPIDET_NOMBRE_COMERCIAL,
-    IPIDET_DIRECCION,
-)
+
+
+def _emisor() -> dict:
+    """Datos del emisor: sección IPIDET de la plataforma, o las variables de Render (catalogos)."""
+    return catalogos.get_datos_fiscales()
 
 _TIPO_LABELS = {
     "boleta":  "BOLETA DE VENTA ELECTRÓNICA",
@@ -101,7 +100,7 @@ def _qr_content(comp: dict, socios_info: list) -> str:
         if not nro_doc_rec:
             nro_doc_rec = comp.get("destinatario_dni", "") or ""
 
-    return f"{IPIDET_RUC}|{tipo_num}|{numero}|0.00|{total}|{fecha}|{tipo_doc_rec}|{nro_doc_rec}|{hash4}"
+    return f"{_emisor()['ruc']}|{tipo_num}|{numero}|0.00|{total}|{fecha}|{tipo_doc_rec}|{nro_doc_rec}|{hash4}"
 
 
 def _build_qr_png(content: str) -> bytes | None:
@@ -129,8 +128,13 @@ def build_comprobante_pdf(
     socios_info: list,
     logo_path: str | None = None,
 ) -> bytes:
-    if logo_path is None and _LOGO_PATH.exists():
-        logo_path = str(_LOGO_PATH)
+    emisor = _emisor()
+    if logo_path is None:
+        cargado = catalogos.get_imagen_org("logo")   # logo subido en la sección IPIDET
+        if cargado:
+            logo_path = BytesIO(cargado[0])
+        elif _LOGO_PATH.exists():
+            logo_path = str(_LOGO_PATH)
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)
@@ -174,7 +178,7 @@ def build_comprobante_pdf(
         pdf.set_xy(LM, header_top)
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*_COLOR_PRIMARY)
-        _cell_nl(pdf, col_l, 8, _safe(IPIDET_NOMBRE_COMERCIAL or "IPIDET"))
+        _cell_nl(pdf, col_l, 8, _safe(emisor["nombre_comercial"] or "IPIDET"))
         logo_h = 8
 
     # ── Datos emisor debajo del logo ──────────────────────────────────────
@@ -199,10 +203,10 @@ def build_comprobante_pdf(
         if line:
             pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, line)
 
-    _emit_text(_safe(IPIDET_RAZON_SOCIAL or ""))
-    pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(f"RUC: {IPIDET_RUC or '-'}"))
-    if IPIDET_DIRECCION:
-        _emit_text(_safe(IPIDET_DIRECCION))
+    _emit_text(_safe(emisor["razon_social"] or ""))
+    pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(f"RUC: {emisor['ruc'] or '-'}"))
+    if emisor["direccion_fiscal"]:
+        _emit_text(_safe(emisor["direccion_fiscal"]))
     pdf.set_x(LM); _cell_nl(pdf, col_l, 4.5, _safe(catalogos.get_organizacion()["email"]))
 
     left_bottom = pdf.get_y()
@@ -411,7 +415,7 @@ def build_comprobante_pdf(
     pdf.cell(txt_w, 4, _safe(nota), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_x(LM)
     pdf.cell(txt_w, 4,
-             _safe(f"RUC: {IPIDET_RUC}  -  {IPIDET_NOMBRE_COMERCIAL}  -  {catalogos.get_organizacion()['email']}"),
+             _safe(f"RUC: {_emisor()['ruc']}  -  {_emisor()['nombre_comercial']}  -  {catalogos.get_organizacion()['email']}"),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # QR a la derecha, alineado con el inicio del pie

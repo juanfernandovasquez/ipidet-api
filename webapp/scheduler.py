@@ -176,7 +176,7 @@ async def _ejecutar_programados():
                 asunto_p = vcorreo.sustituir(asunto, d, v)
                 mensajes.append({"to": email, "nombre": nombre, "subject": asunto_p, "html_body": html})
 
-            logo_att = [mailer.LOGO_INLINE_ATT] if mailer.LOGO_INLINE_ATT else []
+            logo_att = [mailer.logo_inline_att()] if mailer.logo_inline_att() else []
             all_atts = logo_att + (inline_atts or [])
             enviados, fallidos, _, fallidos_detalle = await mailer.send_bulk(
                 mensajes, attachments=all_atts or None

@@ -65,6 +65,13 @@
             <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 {{ _ecls }}">
               <i class="fa-solid fa-circle text-[5px]"></i> {{ _elbl }}
             </span>
+            {# Cargos en el consejo directivo (sección IPIDET) #}
+            {% for c in cargos_consejo or [] %}
+            <a href="/organizacion" class="badge {{ 'badge-blue' if c.vigente else 'badge-gray' }}"
+               title="{{ c.desde | format_fecha }} – {{ (c.hasta | format_fecha) if c.hasta else 'a la fecha' }}">
+              <i class="fa-solid fa-landmark mr-1"></i>{{ c.cargo }}{% if not c.vigente %} (anterior){% endif %}
+            </a>
+            {% endfor %}
             {# Tipo socio badge #}
             {% set _tcls = {
               "ordinario": "bg-blue-50 text-blue-700 ring-blue-200",

@@ -33,6 +33,7 @@ Proyecto de automatización para la administración de IPIDET (asociación profe
 25. [Alianzas](#alianzas)
 26. [Ponentes](#ponentes)
 27. [Postulantes](#postulantes)
+28. [IPIDET y consejo directivo](#organizacion)
 
 ---
 
@@ -911,6 +912,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `inbox_configuracion.html` | `/inbox/configuracion` | Agente de correos: activación, modo, conocimiento extra, remitentes, Telegram, costo |
 | `alianzas.html` | `/alianzas` | Buscador de instituciones, sustento y seguimiento de alianzas |
 | `ponentes.html` | `/ponentes` | Directorio y búsqueda de ponentes; seguimiento y vínculo con eventos |
+| `organizacion.html` | `/organizacion` | Sección IPIDET: datos fiscales, contacto, logo, firma y consejo directivo (sección 28) |
 | `login.html` | `/login` | Login de la plataforma |
 | `users.html` | `/admin/users` | Gestión de usuarios (solo admin) |
 
@@ -1510,7 +1512,7 @@ Toda la plataforma requiere login (excepto `/login`, `/webhook/*`). Las sesiones
 
 **Secciones con control de acceso:** `dashboard`, `members`, `billing`, `fraccionamientos`, `finanzas`, `faqs`, `marketing`, `comunicaciones`, `eventos`, `pendientes`, `redes`, `alianzas`.
 
-Las rutas `/`, `/api/*`, `/webhook/*` y `/comprobantes` son accesibles a cualquier usuario autenticado. `/inbox` requiere el permiso `comunicaciones`.
+Las rutas `/`, `/api/*`, `/webhook/*` y `/comprobantes` son accesibles a cualquier usuario autenticado. `/inbox` requiere el permiso `comunicaciones`. `/publico` y `/postulantes` usan `members`; `/empresas`, `/productos`, `/configuracion` y `/organizacion`, `billing`; `/wc-orders` y `/sync-usuarios`, `finanzas` (`auth._PATH_MAP`). Toda ruta nueva con datos debe entrar a ese mapa.
 
 El admin inicial se crea automáticamente al startup si `users_col` está vacía y están definidos `ADMIN_EMAIL` y `ADMIN_PASSWORD` en el entorno.
 
@@ -1852,6 +1854,7 @@ Colección `alianzas`: `nombre`, `clave` (única), `siglas`, `tipo`, `ambito`, `
 - **Eventos:** cada expositor guarda `ponente_id`. Al agregar un expositor en un evento se crea o reutiliza su ficha (`registrar_ponente_desde_evento`), y al confirmarlo la ficha pasa a «Confirmado». La ficha muestra en qué eventos expuso y cuánta gente asistió, con datos de `zoom_registrants`.
 - **Cruces con socios:** se calculan al mostrar la lista: «Posible socio» si el nombre coincide, y socios que trabajan en su institución. La institución se compara por su núcleo, sin forma legal, más el nombre comercial y la razón social de `/empresas` (`db._socios_de_institucion`). Para que una firma con varias formas de escribirse coincida, como «PwC» y «PricewaterhouseCoopers», su razón social debe estar cargada en `/empresas`. Son coincidencias de texto: hay que confirmarlas.
 - **Prioridad de la IA:** se muestra como alta, media o baja; el número no sirve para comparar búsquedas.
+- **Nacionales e internacionales:** cada búsqueda cumple `minimo_nacionales` y `minimo_internacionales` (`config.ponentes_config`), mira primero `paises_prioritarios` e `instituciones_referencia` (editables en «Qué busca la IA») y equilibra con la cobertura actual por `ambito` (nacional = Perú, regional = América Latina, internacional = resto u organismos). `/buscar-ponentes … solo internacionales` busca un solo frente.
 - **Datos, no código (R10):** público, temas y máximo por búsqueda están en `config.ponentes_config`; las etapas, en `catalogos.ESTADOS_PONENTE`.
 
 Colección `ponentes`: `nombre`, `clave` (única), `cargo`, `institucion`, `pais`, `ambito`, `temas[]`, `por_que_relevante`, `trayectoria`, `charlas_posibles[]`, `canal_contacto`, `linkedin`, `perfil_url`, `es_funcionario_publico`, `consideraciones`, `relevancia`, `prestigio`, `viabilidad`, `puntaje`, `fuentes[]`, `sugerencias[{evento_id, evento_titulo, motivo, fecha}]`, `novedades[]`, `origen` (`busqueda`, `evento`, `manual`), `estado`, `responsable`, `fecha_seguimiento`, `notas`.
@@ -1874,3 +1877,13 @@ Colección `postulantes`: `prospecto_id`, `etapa`, `etapa_desde`, `tipo_socio`, 
 
 **Ojo en templates:** `base.html` define `p` (permisos) a nivel de plantilla; no uses `p` como variable de una página (la ficha usa `pos` y `pe`).
 
+---
+
+## 28. IPIDET y consejo directivo {#organizacion}
+
+`/organizacion` (módulo `webapp/organizacion.py`, permiso `billing`) reúne los datos de la institución:
+
+- **Datos fiscales** (`catalogos.CAMPOS_FISCALES`: RUC, razón social, nombre comercial, dirección fiscal, distrito, provincia, departamento, ubigeo) en `config.organizacion`. `catalogos.get_datos_fiscales()` es la única fuente del emisor para el PDF (`pdf_builder`) y SUNAT (`sunat_client._ipidet_company`): base de datos y, si está vacío, las variables `IPIDET_*` de Render. **El RUC siempre es el de Render** porque está atado al token de APISPERU; si el de la base difiere, la página lo avisa.
+- **Contacto y redes** (`CAMPOS_ORGANIZACION`): email, web, teléfono, ciudad, firmante, LinkedIn, Instagram, Facebook, YouTube. `set_organizacion` guarda solo los campos que recibe.
+- **Logo y firma**: bytes en `config.organizacion_logo` / `organizacion_firma` (`catalogos.get_imagen_org`). Si no hay, se usan `static/logo.png` y `mockup_assets/firma_presidenta.png`. El logo es público (`/org/logo`, va en correos); la firma solo con sesión (`/organizacion/firma`). Los usan `constancia.py`, `pdf_builder.py` y `mailer.logo_inline_att()`.
+- **Consejo directivo**: colección `consejo_directivo` (`member_id`, `cargo`, `desde`, `hasta`, `notas`). Unida al padrón por `member_id` (R8): nombre, título, contacto y estado de pago del período salen de `members` y `payments` al mostrar. Vigente = `desde ≤ hoy` y sin `hasta` o `hasta ≥ hoy`. Cerrar un cargo (`/terminar`) lo pasa a «Gestiones anteriores»; eliminar es solo para errores. «Firmante» copia nombre y cargo al firmante de constancias. Los cargos son el catálogo `cargos_consejo`. La ficha del socio muestra sus cargos (`organizacion.cargos_de_socio`).

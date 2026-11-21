@@ -212,11 +212,26 @@
         <textarea name="politica" rows="4" class="input w-full mt-1">{{ cfg.politica or '' }}</textarea>
       </label>
       <p class="text-xs text-slate-500">La IA también recibe los eventos próximos, la asistencia de los anteriores y las instituciones de Alianzas. Nunca recibe datos de socios.</p>
+      <label class="block text-xs font-medium text-slate-600">Países donde buscar fuera del Perú
+        <input type="text" name="paises_prioritarios" value="{{ cfg.paises_prioritarios or '' }}" class="input w-full mt-1"
+               placeholder="Por ejemplo: España, Argentina, Colombia, México, Chile">
+      </label>
+      <label class="block text-xs font-medium text-slate-600">Instituciones de referencia (nacionales e internacionales)
+        <textarea name="instituciones_referencia" rows="3" class="input w-full mt-1"
+                  placeholder="Universidades, organismos, asociaciones o firmas donde conviene buscar primero, una por línea">{{ cfg.instituciones_referencia or '' }}</textarea>
+      </label>
       <div class="flex flex-wrap items-end gap-4">
         <label class="block text-xs font-medium text-slate-600">Máximo de ponentes por búsqueda
           <input type="number" min="1" max="15" name="propuestas_por_corrida" value="{{ cfg.propuestas_por_corrida }}" class="input w-24 mt-1">
         </label>
+        <label class="block text-xs font-medium text-slate-600">Mínimo del Perú
+          <input type="number" min="0" max="15" name="minimo_nacionales" value="{{ cfg.minimo_nacionales }}" class="input w-24 mt-1">
+        </label>
+        <label class="block text-xs font-medium text-slate-600">Mínimo del extranjero
+          <input type="number" min="0" max="15" name="minimo_internacionales" value="{{ cfg.minimo_internacionales }}" class="input w-24 mt-1">
+        </label>
       </div>
+      <p class="text-xs text-slate-500">Cada búsqueda trae al menos esa cantidad de expositores del Perú y del extranjero (América Latina, España u organismos internacionales), siempre que encuentre candidatos sólidos.</p>
       <button type="submit" class="btn-primary">Guardar</button>
     </form>
   </details>

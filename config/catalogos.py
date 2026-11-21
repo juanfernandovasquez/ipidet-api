@@ -10,7 +10,8 @@ agente de email y el scheduler sin dependencias circulares ni efectos al importa
 
 Colección `config`:
   {_id: "<catálogo>", valores: [...]}
-  {_id: "organizacion", email, web, telefono, ciudad, firmante_nombre, firmante_cargo}
+  {_id: "organizacion", <CAMPOS_ORGANIZACION>, <CAMPOS_FISCALES>}   # sección /organizacion
+  {_id: "organizacion_logo" | "organizacion_firma", datos: bytes, tipo, actualizado}
   {_id: "periodo_actual", valor: "2026"}   # opcional; sin él se deriva de los datos
 """
 import re
@@ -18,7 +19,8 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from config.mongo_client import db
-from config.settings import BREVO_FROM_EMAIL, WC_STORE_URL
+from config.settings import (BREVO_FROM_EMAIL, WC_STORE_URL, IPIDET_RUC, IPIDET_RAZON_SOCIAL,
+                             IPIDET_NOMBRE_COMERCIAL, IPIDET_DIRECCION, IPIDET_UBIGUEO)
 
 _config = db.config
 
@@ -65,6 +67,8 @@ CATALOGOS: dict[str, dict] = {
                              "ayuda": "Clasificación de las instituciones en Alianzas. La búsqueda semanal solo usa estos tipos."},
     "requisitos_admision":  {"titulo": "Requisitos de admisión",   "formato": "id_label",
                              "ayuda": "Lo que se marca en la ficha de cada postulante (documentos, entrevista, pago de ingreso…)."},
+    "cargos_consejo":       {"titulo": "Cargos del consejo directivo", "formato": "texto",
+                             "ayuda": "Cargos que se eligen en la sección IPIDET → Consejo directivo, en el orden en que se muestran."},
 }
 
 # Etapas del seguimiento de una alianza: es lógica del sistema, no un dato editable.
@@ -151,7 +155,11 @@ EFECTO_NC_SUGERIDO = {"02": "reemplazo", "03": "reemplazo", "06": "devolucion", 
 
 # Valores si la colección aún no los tiene; se editan en /alianzas y /ponentes.
 _ALIANZAS_DEFECTO = {"propuestas_por_corrida": 5, "perfil": "", "criterios": ""}
-_PONENTES_DEFECTO = {"propuestas_por_corrida": 5, "publico": "", "temas": ""}
+_PONENTES_DEFECTO = {"propuestas_por_corrida": 6, "publico": "", "temas": "",
+                     # Mezcla de cada búsqueda: cuántos del Perú y cuántos de fuera (América Latina u otros).
+                     "minimo_nacionales": 2, "minimo_internacionales": 2,
+                     # Dónde buscar afuera y qué instituciones mirar primero: datos que edita el equipo.
+                     "paises_prioritarios": "", "instituciones_referencia": ""}
 
 # ── Agente de correos (/inbox) ─────────────────────────────────────────────────
 # Categorías y estados son lógica del agente: el prompt, los filtros y la regla de
@@ -237,6 +245,22 @@ CAMPOS_ORGANIZACION = {
     "ciudad":          "Ciudad (pie de constancia)",
     "firmante_nombre": "Firmante de constancias",
     "firmante_cargo":  "Cargo del firmante",
+    "linkedin":        "LinkedIn",
+    "instagram":       "Instagram",
+    "facebook":        "Facebook",
+    "youtube":         "YouTube",
+}
+# Datos del emisor de comprobantes. Sin valor en la base se usan las variables de Render (IPIDET_*).
+# El RUC de Render manda: está atado al token de APISPERU.
+CAMPOS_FISCALES = {
+    "ruc":              "RUC",
+    "razon_social":     "Razón social",
+    "nombre_comercial": "Nombre comercial",
+    "direccion_fiscal": "Dirección fiscal",
+    "distrito":         "Distrito",
+    "provincia":        "Provincia",
+    "departamento":     "Departamento",
+    "ubigeo":           "Ubigeo",
 }
 
 # ── Caché breve: _ctx() lee esto en cada request y Atlas no está al lado ───────
@@ -317,8 +341,52 @@ def get_organizacion() -> dict:
 
 
 def set_organizacion(campos: dict) -> None:
-    limpio = {c: str(campos.get(c) or "").strip() for c in CAMPOS_ORGANIZACION}
-    _config.replace_one({"_id": "organizacion"}, {"_id": "organizacion", **limpio}, upsert=True)
+    """Guarda solo los campos que llegan (contacto y/o fiscales): no borra los demás."""
+    permitidos = {**CAMPOS_ORGANIZACION, **CAMPOS_FISCALES}
+    limpio = {c: str(v or "").strip()[:300] for c, v in campos.items() if c in permitidos}
+    if limpio:
+        _config.update_one({"_id": "organizacion"}, {"$set": limpio}, upsert=True)
+    invalidar()
+
+
+def get_datos_fiscales() -> dict:
+    """Emisor de boletas y facturas (PDF y SUNAT): base de datos, si no las variables de Render."""
+    def _load():
+        doc = _config.find_one({"_id": "organizacion"}) or {}
+        razon = doc.get("razon_social") or IPIDET_RAZON_SOCIAL
+        return {
+            "ruc":              IPIDET_RUC or doc.get("ruc") or "",
+            "ruc_en_base":      doc.get("ruc") or "",
+            "ruc_de_render":    IPIDET_RUC or "",
+            "razon_social":     razon,
+            "nombre_comercial": doc.get("nombre_comercial") or IPIDET_NOMBRE_COMERCIAL or razon,
+            "direccion_fiscal": doc.get("direccion_fiscal") or IPIDET_DIRECCION,
+            "distrito":         doc.get("distrito") or "",
+            "provincia":        doc.get("provincia") or "",
+            "departamento":     doc.get("departamento") or "",
+            "ubigeo":           doc.get("ubigeo") or IPIDET_UBIGUEO or "",
+        }
+    return _cached("datos_fiscales", _load)
+
+
+_IMAGENES_ORG = {"logo": "organizacion_logo", "firma": "organizacion_firma"}
+
+
+def get_imagen_org(clave: str) -> tuple[bytes, str] | None:
+    """Logo o firma cargados en /organizacion: (bytes, tipo MIME), o None si no hay."""
+    def _load():
+        doc = _config.find_one({"_id": _IMAGENES_ORG[clave]})
+        return (bytes(doc["datos"]), doc.get("tipo") or "image/png") if doc and doc.get("datos") else None
+    return _cached(f"imagen_{clave}", _load)
+
+
+def set_imagen_org(clave: str, datos: bytes | None, tipo: str = "") -> None:
+    if datos:
+        _config.replace_one({"_id": _IMAGENES_ORG[clave]},
+                            {"_id": _IMAGENES_ORG[clave], "datos": datos, "tipo": tipo,
+                             "actualizado": datetime.now(timezone.utc)}, upsert=True)
+    else:
+        _config.delete_one({"_id": _IMAGENES_ORG[clave]})
     invalidar()
 
 

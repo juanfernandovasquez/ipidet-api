@@ -37,28 +37,15 @@
     <p x-show="error" x-cloak class="text-xs text-red-600 mt-2" x-text="error"></p>
   </section>
 
-  <!-- Organización -->
-  <section class="bg-white rounded-xl border border-slate-200 p-5 min-w-0"
-           x-data="organizacionEditor()"
-           data-org='{{ org | tojson }}'
-           x-init="campos = JSON.parse($el.dataset.org)">
-    <h2 class="text-sm font-semibold text-slate-700 mb-1">
-      <i class="fa-solid fa-building text-slate-400 mr-1.5"></i> Datos de la organización
-    </h2>
-    <p class="text-xs text-slate-500 mb-3">Aparecen en correos, comprobantes y constancias.</p>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-      {% for campo, etiqueta in campos_org.items() %}
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1" for="org-{{ campo }}">{{ etiqueta }}</label>
-        <input id="org-{{ campo }}" type="text" x-model="campos.{{ campo }}" class="input w-full text-sm">
-      </div>
-      {% endfor %}
+  <!-- Organización: se edita en la sección IPIDET -->
+  <section class="bg-white rounded-xl border border-slate-200 p-5 min-w-0 flex flex-col justify-between">
+    <div>
+      <h2 class="text-sm font-semibold text-slate-700 mb-1">
+        <i class="fa-solid fa-landmark text-slate-400 mr-1.5"></i> Datos de IPIDET
+      </h2>
+      <p class="text-xs text-slate-500 mb-3">RUC, razón social, dirección fiscal, contacto, redes, logo, firma y consejo directivo se editan en su propia sección.</p>
     </div>
-    <button type="button" @click="guardar()" class="btn-primary text-sm">
-      <span x-show="!guardado"><i class="fa-solid fa-floppy-disk mr-1.5"></i>Guardar</span>
-      <span x-show="guardado" x-cloak><i class="fa-solid fa-check mr-1.5"></i>Guardado</span>
-    </button>
-    <p x-show="error" x-cloak class="text-xs text-red-600 mt-2" x-text="error"></p>
+    <a href="/organizacion" class="btn-primary text-sm self-start"><i class="fa-solid fa-arrow-right mr-1.5"></i>Ir a IPIDET y consejo</a>
   </section>
 
   <!-- Catálogos -->

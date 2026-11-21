@@ -46,7 +46,15 @@ def contexto(evento: dict | None = None) -> dict:
         "publico": cfg.get("publico", ""),
         "temas_prioritarios": cfg.get("temas", ""),
         "politica_de_ponentes": cfg.get("politica", ""),
-        "maximo_ponentes": cfg.get("propuestas_por_corrida", 5),
+        "maximo_ponentes": cfg.get("propuestas_por_corrida", 6),
+        "mezcla": {"minimo_nacionales": cfg.get("minimo_nacionales", 2),
+                   "minimo_internacionales": cfg.get("minimo_internacionales", 2),
+                   "nota": "nacional = trabaja en el Perú; regional = América Latina; internacional = resto del mundo "
+                           "u organismos multilaterales. regional e internacional cuentan como internacionales."},
+        "paises_prioritarios": cfg.get("paises_prioritarios", ""),
+        "instituciones_de_referencia": cfg.get("instituciones_referencia", ""),
+        "cobertura_actual_por_ambito": {a["_id"] or "sin_ambito": a["n"] for a in pdb.ponentes_col.aggregate([
+            {"$match": {"estado": {"$ne": "descartado"}}}, {"$group": {"_id": "$ambito", "n": {"$sum": 1}}}])},
         "ambitos": list(catalogos.AMBITOS_ALIANZA),
         "eventos_proximos": [f"{e['fecha']}: {e['titulo']}" for e in datos["proximos"]],
         "asistencia_de_eventos_anteriores": [f"{e['titulo']}: {e['asistentes']} de {e['inscritos']} inscritos asistieron"

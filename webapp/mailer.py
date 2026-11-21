@@ -52,6 +52,20 @@ LOGO_INLINE_ATT: dict = {
 } if _LOGO_B64 else {}
 
 
+def logo_inline_att() -> dict:
+    """Logo de los correos: el cargado en la sección IPIDET o, si no hay, el de static/logo.png."""
+    try:
+        from config import catalogos
+        cargado = catalogos.get_imagen_org("logo")
+    except Exception:
+        cargado = None
+    if cargado:
+        ext = "jpg" if "jpeg" in cargado[1] else "png"
+        return {"filename": f"logo_ipidet.{ext}", "data_b64": _b64.b64encode(cargado[0]).decode(),
+                "mime": cargado[1], "content_id": "ipidet-logo"}
+    return LOGO_INLINE_ATT
+
+
 def _send_sync(
     to: str | list[str],
     subject: str,

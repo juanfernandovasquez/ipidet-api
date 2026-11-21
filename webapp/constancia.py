@@ -12,6 +12,15 @@ from config import catalogos
 _LOGO_PATH  = os.path.join(os.path.dirname(__file__), "..", "mockup_assets", "logo.png")
 _FIRMA_PATH = os.path.join(os.path.dirname(__file__), "..", "mockup_assets", "firma_presidenta.png")
 
+
+def _imagen(clave: str, archivo: str):
+    """Lo cargado en la sección IPIDET (logo o firma del firmante); si no hay, el archivo de siempre."""
+    import io
+    cargado = catalogos.get_imagen_org(clave)
+    if cargado:
+        return io.BytesIO(cargado[0])
+    return archivo if os.path.exists(archivo) else None
+
 _MESES = {
     1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
     5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
@@ -42,9 +51,10 @@ def generar_constancia_pdf(
 
     # ── Logo ──────────────────────────────────────────────────────────────
     logo_w = 52
-    if os.path.exists(_LOGO_PATH):
+    logo = _imagen("logo", _LOGO_PATH)
+    if logo:
         logo_x = (210 - logo_w) / 2
-        pdf.image(_LOGO_PATH, x=logo_x, y=25, w=logo_w)
+        pdf.image(logo, x=logo_x, y=25, w=logo_w)
     pdf.ln(42)
 
     # ── Título ─────────────────────────────────────────────────────────────
@@ -100,9 +110,10 @@ def generar_constancia_pdf(
     # ── Firma ────────────────────────────────────────────────────────────────
     firma_w = 60   # ancho de la imagen de firma en mm
     firma_x = (210 - firma_w) / 2
-    if os.path.exists(_FIRMA_PATH):
-        pdf.image(_FIRMA_PATH, x=firma_x, y=pdf.get_y(), w=firma_w)
-        firma_h = firma_w * (167 / 291)  # altura proporcional (291×167 px originales)
+    firma = _imagen("firma", _FIRMA_PATH)
+    if firma:
+        info = pdf.image(firma, x=firma_x, y=pdf.get_y(), w=firma_w)
+        firma_h = getattr(info, "rendered_height", 0) or firma_w * (167 / 291)  # alto real de la imagen
         pdf.set_y(pdf.get_y() + firma_h)
     # Línea bajo la firma (o sola si no hay imagen)
     pdf.set_draw_color(30, 30, 30)

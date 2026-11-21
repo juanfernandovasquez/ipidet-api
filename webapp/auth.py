@@ -27,6 +27,12 @@ ALL_SECTIONS = [s[0] for s in SECCIONES]
 _PATH_MAP = [
     ("/members",          "members"),
     ("/postulantes",      "members"),   # admisión: lo ve quien ve el padrón
+    ("/publico",          "members"),   # el menú ya lo mostraba solo con este permiso
+    ("/empresas",         "billing"),
+    ("/productos",        "billing"),
+    ("/organizacion",     "billing"),   # datos de IPIDET y consejo directivo
+    ("/wc-orders",        "finanzas"),
+    ("/sync-usuarios",    "finanzas"),
     ("/billing",          "billing"),
     ("/fraccionamientos", "fraccionamientos"),
     ("/configuracion",    "billing"),

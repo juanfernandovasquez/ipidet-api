@@ -99,6 +99,8 @@ app = FastAPI(title="IPIDET Admin")
 
 from webapp.vendor import router as _vendor_router  # Alpine, Tailwind, etc. desde nuestro dominio
 app.include_router(_vendor_router)
+from webapp import organizacion as _org  # sección IPIDET: datos, logo, firma, consejo
+app.include_router(_org.router)
 
 # CORS: solo permite llamadas desde el servidor WordPress (server-to-server)
 app.add_middleware(
@@ -109,7 +111,7 @@ app.add_middleware(
 )
 
 _PUBLIC_PATHS = {"/login", "/logout"}
-_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/", "/correo-img/", "/vendor/")
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/", "/correo-img/", "/vendor/", "/org/")
 
 class _AuthMiddleware:
     """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
@@ -455,6 +457,7 @@ async def member_detail(request: Request, member_id: str):
         member=doc,
         detalle_pagos=pdb.detalle_comprobantes_de_pagos(doc.get("payments") or []),
         eventos_socio=pdb.eventos_de_socio(doc.get("member_id") or member_id),
+        cargos_consejo=_org.cargos_de_socio(doc.get("member_id") or member_id),
         nombres_producto=productos,
         titulos=pdb.get_member_titulos(),
         ubicaciones=pdb.get_member_ubicaciones(),
@@ -3742,7 +3745,7 @@ async def comunicaciones_enviar(request: Request):
             msg["cc"] = d["emails_cc"]
         mensajes.append(msg)
 
-    logo_att = [mailer.LOGO_INLINE_ATT] if plantilla_corporativa and mailer.LOGO_INLINE_ATT else []
+    logo_att = [mailer.logo_inline_att()] if plantilla_corporativa and mailer.logo_inline_att() else []
     all_attachments = logo_att + list(attachments_raw) + (inline_atts if imagenesInline else [])
     enviados, fallidos, errores, fallidos_detalle = await mailer.send_bulk(
         mensajes, attachments=all_attachments or None
@@ -3847,7 +3850,7 @@ async def comunicaciones_enviar_prueba(request: Request):
          "mime": a["mime"], "content_id": a["content_id"]}
         for a in inline_atts
     ]
-    logo_att = [mailer.LOGO_INLINE_ATT] if plantilla_corporativa and mailer.LOGO_INLINE_ATT else []
+    logo_att = [mailer.logo_inline_att()] if plantilla_corporativa and mailer.logo_inline_att() else []
     all_atts = logo_att + regular_atts + inline_atts_api
     try:
         await mailer.send_email(
@@ -4225,7 +4228,7 @@ async def evento_enviar_prueba(request: Request, evento_id: str):
     if plantilla_corporativa:
         inner    = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
         full_html = mailer._base_html(inner, disclaimer=disclaimer)
-        logo_att  = [mailer.LOGO_INLINE_ATT] if mailer.LOGO_INLINE_ATT else []
+        logo_att  = [mailer.logo_inline_att()] if mailer.logo_inline_att() else []
     else:
         full_html = cuerpo_html
         logo_att  = []
@@ -6422,10 +6425,17 @@ async def ponentes_nuevo(nombre: str = Form(...), cargo: str = Form(""), institu
 
 @app.post("/ponentes/configuracion")
 async def ponentes_configuracion(publico: str = Form(""), temas: str = Form(""), politica: str = Form(""),
-                                 propuestas_por_corrida: int = Form(5)):
+                                 propuestas_por_corrida: int = Form(6), minimo_nacionales: int = Form(2),
+                                 minimo_internacionales: int = Form(2), paises_prioritarios: str = Form(""),
+                                 instituciones_referencia: str = Form("")):
+    maximo = min(max(1, propuestas_por_corrida), 15)
+    nac = min(max(0, minimo_nacionales), maximo)
     catalogos.set_ponentes_config({
         "publico": publico.strip(), "temas": temas.strip(), "politica": politica.strip(),
-        "propuestas_por_corrida": min(max(1, propuestas_por_corrida), 15),
+        "propuestas_por_corrida": maximo, "minimo_nacionales": nac,
+        "minimo_internacionales": min(max(0, minimo_internacionales), maximo - nac),
+        "paises_prioritarios": paises_prioritarios.strip()[:500],
+        "instituciones_referencia": instituciones_referencia.strip()[:2000],
     })
     return RedirectResponse("/ponentes", status_code=303)
 
