@@ -46,7 +46,8 @@
       });
     });
   </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+  {# Alpine 3.14.9 servido desde nuestro dominio (webapp/vendor.py): sin él no funciona ningún botón #}
+  <script defer src="/vendor/alpine.js"></script>
 </head>
 {% macro nav(href, icono, nombre, activo, contador=0) %}
 <a href="{{ href }}" data-nombre="{{ nombre }}" class="sidebar-link {{ 'active' if activo }}" {% if activo %}aria-current="page"{% endif %}>

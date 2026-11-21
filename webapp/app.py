@@ -97,6 +97,9 @@ MAX_BULK_RECIPIENTS = 1000
 from fastapi.staticfiles import StaticFiles as _StaticFiles
 app = FastAPI(title="IPIDET Admin")
 
+from webapp.vendor import router as _vendor_router  # Alpine, Tailwind, etc. desde nuestro dominio
+app.include_router(_vendor_router)
+
 # CORS: solo permite llamadas desde el servidor WordPress (server-to-server)
 app.add_middleware(
     CORSMiddleware,
@@ -106,7 +109,7 @@ app.add_middleware(
 )
 
 _PUBLIC_PATHS = {"/login", "/logout"}
-_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/", "/correo-img/")
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/static/", "/correo-img/", "/vendor/")
 
 class _AuthMiddleware:
     """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
