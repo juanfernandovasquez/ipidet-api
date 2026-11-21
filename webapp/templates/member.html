@@ -305,6 +305,41 @@
       {% endif %}
     </div>
 
+    <!-- ── Eventos: inscripciones por la plataforma o por Zoom (db.eventos_de_socio) ── -->
+    <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-semibold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-calendar-check text-slate-500"></i> Eventos
+        </h2>
+        {% if eventos_socio %}
+        <span class="text-xs text-slate-500">
+          Asistió a {{ eventos_socio | selectattr('asistio') | list | length }} de {{ eventos_socio | length }}
+        </span>
+        {% endif %}
+      </div>
+      {% if eventos_socio %}
+      <div class="divide-y divide-slate-100">
+        {% for ev in eventos_socio %}
+        <div class="py-2 flex items-center justify-between gap-3 text-sm">
+          <div class="min-w-0">
+            <a href="/eventos/{{ ev.evento_id }}" class="font-medium text-slate-700 hover:text-blue-700 block truncate">{{ ev.titulo }}</a>
+            <div class="text-xs text-slate-400">{{ ev.fecha | format_fecha }} · inscrito por {{ ev.via }}</div>
+          </div>
+          {% if ev.asistio %}
+          <span class="badge badge-green shrink-0">Asistió{% if ev.duracion_min %} · {{ ev.duracion_min }} min{% endif %}</span>
+          {% elif ev.asistio is none %}
+          <span class="badge badge-gray shrink-0">Sin registro</span>
+          {% else %}
+          <span class="badge badge-amber shrink-0">No asistió</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-slate-400 text-sm text-center py-4">Sin inscripciones a eventos. Las de Zoom aparecen al sincronizar el evento.</p>
+      {% endif %}
+    </div>
+
   </div>
 
   <!-- ══ Columna derecha: Historial de pagos ══ -->

@@ -454,6 +454,7 @@ async def member_detail(request: Request, member_id: str):
         request,
         member=doc,
         detalle_pagos=pdb.detalle_comprobantes_de_pagos(doc.get("payments") or []),
+        eventos_socio=pdb.eventos_de_socio(doc.get("member_id") or member_id),
         nombres_producto=productos,
         titulos=pdb.get_member_titulos(),
         ubicaciones=pdb.get_member_ubicaciones(),
@@ -5641,7 +5642,7 @@ async def publico_template_excel():
         "Llena una fila por persona en la hoja «Público», a partir de la fila 2. No cambies los encabezados.",
         "Solo el email es obligatorio. Las filas sin email o con un email no válido se informan y no se cargan.",
         "Si el email ya está en Público, solo se completan los datos que su ficha tiene vacíos y se suman las etiquetas: no se borra ni se pisa nada.",
-        "Si el email es de un socio (cualquiera de sus correos), no se agrega a Público: al terminar se muestra qué socios eran.",
+        "Si el email es de un socio (cualquiera de sus correos), queda marcado como socio y unido a su ficha, igual que los asistentes de Zoom. Al terminar se muestra qué socios eran. Para ver solo a los no socios, usa el filtro «Solo prospectos».",
         "También puedes importar un archivo descargado con «Exportar»: las columnas que no están aquí se ignoran.",
         "Máximo 5000 filas por archivo.",
     ):
@@ -5776,9 +5777,6 @@ async def publico_nuevo(
     tags:            str = Form(""),
 ):
     tags_list = [t.strip() for t in tags.split(",") if t.strip()]
-    socio = pdb.socios_por_email([email]).get(email.lower().strip())
-    if socio:  # Público es para quien no es socio: se avisa y no se crea la ficha
-        return RedirectResponse("/publico?" + urlencode({"error": "es_socio", "socio": socio}), status_code=303)
     try:
         pid = pdb.create_prospecto(
             nombre=nombre, apellido=apellido, email=email.lower().strip(),
@@ -5788,6 +5786,11 @@ async def publico_nuevo(
         )
     except Exception:
         return RedirectResponse("/publico?error=duplicado", status_code=303)
+    socio = pdb.socios_por_email([email]).get(email.lower().strip())
+    if socio:  # queda marcado como socio, igual que lo que llega de Zoom
+        pdb.update_prospecto(pid, {"es_socio": True, "member_id": socio})
+        return RedirectResponse(f"/publico/{pid}?" + urlencode(
+            {"ok": f"Guardado. Ese email es del socio {socio}: quedó marcado como socio."}), status_code=303)
     return RedirectResponse(f"/publico/{pid}?ok=creado", status_code=303)
 
 

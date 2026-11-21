@@ -45,20 +45,14 @@
       <strong>{{ qp.get('actualizados', 0) }}</strong> completados,
       <strong>{{ qp.get('sin_cambios', 0) }}</strong> sin cambios,
       <strong>{{ n_err }}</strong> con errores{% if qp.get('socios', '0') | int %},
-      <strong>{{ qp.get('socios') }}</strong> ya son socios{% endif %}.
+      de ellos <strong>{{ qp.get('socios') }}</strong> son socios{% endif %}.
     </div>
-    {% if qp.get('socios', '0') | int %}<div class="mt-1 text-xs">Ya son socios, no se agregaron a Público: {{ qp.get('socios_detalle') }}.</div>{% endif %}
+    {% if qp.get('socios', '0') | int %}<div class="mt-1 text-xs">Quedaron marcados como socios y unidos a su ficha: {{ qp.get('socios_detalle') }}.</div>{% endif %}
     {% if qp.get('detalle') %}<div class="mt-1 text-xs">No se cargaron: {{ qp.get('detalle') }}.</div>{% endif %}
   </div>
   {% elif qp.get('ok') == 'eliminado' %}
   <div class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
     <i class="fa-solid fa-circle-check mr-1.5 text-amber-500"></i> Prospecto desactivado.
-  </div>
-  {% elif qp.get('error') == 'es_socio' %}
-  <div class="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-    <i class="fa-solid fa-id-card mr-1.5 text-amber-500"></i>
-    Ese email es de un socio, así que no se agregó a Público.
-    <a href="/members/{{ qp.get('socio') }}" class="font-medium underline">Ver socio {{ qp.get('socio') }}</a>
   </div>
   {% elif qp.get('error') %}
   {% set errores_import = {

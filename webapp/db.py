@@ -3320,6 +3320,30 @@ def desinscribir_socio(evento_id: str, member_id: str):
     )
 
 
+def eventos_de_socio(member_id: str) -> list[dict]:
+    """Eventos a los que se inscribió el socio: por la plataforma (inscritos) o por Zoom (zoom_registrants,
+    unido por email o DNI al sincronizar). Más reciente primero."""
+    res = []
+    for ev in eventos_col.find(
+        {"$or": [{"inscritos.member_id": member_id}, {"zoom_registrants.member_id": member_id}]},
+        {"titulo": 1, "fecha": 1, "modalidad": 1, "estado": 1,
+         "inscritos.member_id": 1, "inscritos.asistio": 1,
+         "zoom_registrants.member_id": 1, "zoom_registrants.asistio": 1, "zoom_registrants.duracion_min": 1},
+    ):
+        ins = next((i for i in ev.get("inscritos") or [] if i.get("member_id") == member_id), None)
+        zoom = [z for z in ev.get("zoom_registrants") or [] if z.get("member_id") == member_id]
+        asistio = any(z.get("asistio") for z in zoom) or bool(ins and ins.get("asistio"))
+        sin_dato = not zoom and (not ins or ins.get("asistio") is None)
+        res.append({
+            "evento_id": str(ev["_id"]), "titulo": ev.get("titulo") or "", "fecha": ev.get("fecha") or "",
+            "estado": ev.get("estado") or "", "via": "Zoom" if zoom else "Plataforma",
+            "asistio": None if sin_dato else asistio,
+            "duracion_min": sum(z.get("duracion_min") or 0 for z in zoom) or None,
+        })
+    res.sort(key=lambda e: e["fecha"], reverse=True)
+    return res
+
+
 def marcar_asistencia(evento_id: str, member_id: str, asistio: bool | None):
     eventos_col.update_one(
         {"_id": ObjectId(evento_id), "inscritos.member_id": member_id},
@@ -5506,7 +5530,8 @@ def import_prospectos_bulk(rows: list) -> dict:
     Un email nuevo se inserta (fuente «excel»). Si ya existe, solo se completan los campos que
     la ficha tiene vacíos y las etiquetas se suman: una celda en blanco nunca borra un dato, y lo
     que el equipo cargó a mano no se pisa. El estado se aplica si es válido (nunca «convertido»).
-    Un email de socio no entra a Público: se informa en `socios` [(fila, member_id)].
+    Un email de socio entra marcado como socio (es_socio + member_id, igual que Zoom), sin estado de
+    postulante: se informa en `socios` [(fila, member_id)].
     Devuelve {insertados, actualizados, sin_cambios, errores, detalle_errores: [(fila, motivo)], socios}.
     """
     from config import catalogos
@@ -5528,15 +5553,17 @@ def import_prospectos_bulk(rows: list) -> dict:
             detalle.append((fila, f"email repetido en el archivo ({email})"))
             continue
         vistos.add(email)
-        if email in de_socio:
-            socios.append((fila, de_socio[email]))
-            continue
+        socio = de_socio.get(email)
+        if socio:
+            socios.append((fila, socio))
         try:
             tags = list(dict.fromkeys(t.strip() for t in str(row.get("tags") or "").split(",") if t.strip()))
             datos = {k: str(row.get(k) or "").strip() for k in
                      ("nombre", "apellido", "celular", "titulo", "empresa", "ciudad", "notas", "fuente_detalle")}
             estado = str(row.get("estado") or "").strip().lower()
             if estado and (estado not in catalogos.ESTADOS_PUBLICO or estado == "convertido"):
+                estado = ""
+            if socio and estado == "postulante":  # un socio no postula
                 estado = ""
             ahora = datetime.now(timezone.utc)
             existente = publico_col.find_one({"email": email})
@@ -5548,6 +5575,8 @@ def import_prospectos_bulk(rows: list) -> dict:
                     cambios["tags"] = list(dict.fromkeys(tags_previos + tags))
                 if estado and estado != existente.get("estado") and existente.get("estado") != "convertido":
                     cambios["estado"] = estado
+                if socio and (not existente.get("es_socio") or existente.get("member_id") != socio):
+                    cambios.update(es_socio=True, member_id=socio)
                 if cambios:
                     cambios["updated_at"] = ahora
                     publico_col.update_one({"_id": existente["_id"]}, {"$set": cambios})
@@ -5562,8 +5591,8 @@ def import_prospectos_bulk(rows: list) -> dict:
                     "tags":           tags,
                     "fuente":         "excel",
                     "estado":         estado or "nuevo",
-                    "es_socio":       False,
-                    "member_id":      None,
+                    "es_socio":       bool(socio),
+                    "member_id":      socio,
                     "comunicaciones": [],
                     "created_at":     ahora,
                     "updated_at":     ahora,
