@@ -4206,6 +4206,36 @@ def buscar_borrador_para_xml(data: dict) -> dict | None:
     return (mismo_monto or candidatos)[0]
 
 
+def borradores_ya_emitidos() -> list[dict]:
+    """Borradores de «Preparar» que parecen ya emitidos: hay un comprobante del mismo tipo y monto,
+    creado después, para el mismo socio, la misma empresa (RUC) o el mismo nombre de cliente.
+    Pasaba cuando el XML no encontraba su borrador y creaba otro comprobante (dos registros)."""
+    res = []
+    for b in comprobantes_col.find({"estado": "pre_registrado"}).sort("created_at", -1).limit(300):
+        socios = [s for s in (b.get("socios") or []) + [b.get("destinatario_id")] if s]
+        ors: list[dict] = []
+        if socios:
+            ors.append({"socios": {"$in": socios}})
+        if b.get("ruc_empresa"):
+            ors.append({"ruc_empresa": b["ruc_empresa"]})
+        if b.get("empresa_id"):
+            ors.append({"empresa_id": b["empresa_id"]})
+        base = {"estado": {"$nin": ["pre_registrado", "anulado"]}, "tipo": b.get("tipo"),
+                "monto_total": b.get("monto_total")}
+        if b.get("created_at"):
+            base["created_at"] = {"$gte": b["created_at"]}
+        otro = comprobantes_col.find_one({**base, "$or": ors}, {"numero": 1}) if ors else None
+        if not otro and b.get("destinatario_nombre"):
+            clave = _nombre_clave(b["destinatario_nombre"])
+            otro = next((c for c in comprobantes_col.find(base, {"numero": 1, "xml_raw": 1}).limit(200)
+                         if clave and clave <= _nombre_clave(c.get("xml_raw", "")[:20000])), None)
+        if otro:
+            res.append({"id": str(b["_id"]), "cliente": b.get("destinatario_nombre") or b.get("empresa") or "",
+                        "tipo": b.get("tipo"), "monto": b.get("monto_total"), "creado": b.get("created_at"),
+                        "emitido_id": str(otro["_id"]), "emitido_numero": otro.get("numero", "")})
+    return res
+
+
 def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",

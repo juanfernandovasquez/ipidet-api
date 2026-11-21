@@ -13,6 +13,26 @@
 {% endblock %}
 
 {% block content %}
+{% include "_aviso_query.html" %}
+{# Borradores que ya se emitieron con otro registro (pasaba al importar el XML): para limpiarlos #}
+{% if borradores_duplicados %}
+<div class="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+  <p class="font-medium mb-1"><i class="fa-solid fa-copy mr-1.5"></i>{{ borradores_duplicados | length }} borrador(es) parecen ya emitidos con otro comprobante</p>
+  <p class="text-xs mb-2">Mismo tipo y monto, y el mismo socio, empresa o cliente. Revisa cada uno y descártalo si es el mismo documento: el comprobante emitido no se toca.</p>
+  <div class="divide-y divide-amber-200">
+    {% for b in borradores_duplicados %}
+    <div class="flex flex-wrap items-center justify-between gap-2 py-1.5">
+      <span>Borrador {{ b.tipo }} · {{ b.cliente or 'sin cliente' }} · {{ b.monto | soles }}
+        <span class="text-amber-700">→ ya emitido como <strong class="font-mono">{{ b.emitido_numero }}</strong></span></span>
+      <form method="post" action="/comprobantes/{{ b.id }}/descartar-borrador"
+            data-confirm="¿Descartar este borrador? El comprobante {{ b.emitido_numero }} queda como está.">
+        <button class="btn-ghost text-xs"><i class="fa-solid fa-trash mr-1"></i>Descartar borrador</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 {% macro sort_th(label, field, align='left') %}
   {% set next_dir = 'asc' if (sort_by == field and sort_dir == 'desc') else 'desc' if (sort_by == field and sort_dir == 'asc') else 'asc' %}
   <th class="text-{{ align }} px-3 py-3 text-xs font-semibold uppercase tracking-wide whitespace-nowrap">

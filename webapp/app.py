@@ -2360,6 +2360,7 @@ async def comprobantes_list(
     pages = max(1, (total + 49) // 50)
     return templates.TemplateResponse(request, "comprobantes.html", _ctx(
         request,
+        borradores_duplicados = pdb.borradores_ya_emitidos(),
         comprobantes   = docs,
         total          = total,
         stats          = stats,
@@ -2882,6 +2883,17 @@ async def comprobante_update(comprobante_id: str, request: Request):
         )
 
     return {"ok": True}
+
+
+@app.post("/comprobantes/{comprobante_id}/descartar-borrador")
+async def comprobante_descartar_borrador(comprobante_id: str):
+    """Quita un borrador que ya fue emitido con otro registro. Solo actúa sobre borradores: un
+    comprobante emitido no se toca por esta vía."""
+    b = pdb.comprobantes_col.find_one({"_id": _oid(comprobante_id)}, {"estado": 1})
+    if not b or b.get("estado") != "pre_registrado":
+        return RedirectResponse("/comprobantes?error=" + _quote("Solo se pueden descartar borradores."), status_code=303)
+    pdb.delete_comprobante(comprobante_id)
+    return RedirectResponse("/comprobantes?ok=" + _quote("Borrador descartado."), status_code=303)
 
 
 @app.post("/comprobantes/{comprobante_id}/delete")
