@@ -1578,6 +1578,12 @@ nuevo → interesado → postulante → convertido
 
 **Desde la cola de correos:** el agente registra solo en Público a quien escribe una consulta (`catalogos.CATEGORIAS_PUBLICO_AUTO`: evento, admisión, consulta general) y no es socio ni posible socio (`agente_correo.matricular`, tras analizar cada correo; se apaga con `matricular_publico` en `/inbox/configuracion`). A una ficha existente solo le completa datos y suma etiquetas: nunca le cambia el estado. Si el correo es de admisión, además abre su postulación (sección 27). El resto se agrega a mano con «Agregar a Público» (`/inbox/{id}/publico` → `db.guardar_prospecto_desde_correo`), con fuente `correo`, los datos que el agente leyó en la firma (`correos.contacto`) y el estado sugerido por categoría (`catalogos.ESTADO_PUBLICO_POR_CATEGORIA`: admisión → postulante). Si la ficha ya existe por email solo completa campos vacíos y suma etiquetas. La ficha muestra «Correos que nos escribió». No aparece para correos automáticos, internos ni de proveedores.
 
+### Segmentación comercial
+
+`db.INTERES_PUBLICO` y `db.interes_prospecto(doc)` clasifican a cada persona por lo que hizo, calculado al consultar (sin campos extra): **caliente** = postulante, asistió a 2+ eventos o asistió a uno en los últimos 90 días; **tibio** = se inscribió a algún evento o está «interesado»; **frío** = el resto. `_build_prospectos_query` acepta además `interes`, `asistencias_min` y `actividad` («30»/«90»/«180» días con evento, «sin_180»). Público los muestra como filtros y por persona («2/3 eventos», último evento), con «Escribir a este segmento» que abre Comunicaciones con el mismo filtro.
+
+**Comunicaciones:** en modo Público, por defecto **no incluye a quien ya es socio** (`es_socio=false`) y filtra por evento (asistieron / inscritos / no asistieron / no estuvieron), interés, asistencias y actividad; acepta esos filtros por URL (`?modo=publico&zoom_evento_id=…`). Para socios, `get_comunicacion_destinatarios(evento_id, evento_relacion)` filtra por su relación con un evento (`db.socios_de_evento`: inscritos de la plataforma y Zoom por `member_id`). La ficha del evento tiene «Seguimiento comercial» (`db.seguimiento_comercial_evento`) con un enlace por grupo.
+
 ### Colección `publico`
 
 ```
