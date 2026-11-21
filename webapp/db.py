@@ -2502,8 +2502,13 @@ def get_comunicacion_destinatarios(
     excluir_centro_trabajo: str = "",
     excluir_keywords: str = "",
     excluir_ids: list[str] | None = None,
+    evento_id: str = "",
+    evento_relacion: str = "",
 ) -> list:
-    """Socios activos con email habilitado que coincidan con los filtros."""
+    """Socios activos con email habilitado que coincidan con los filtros.
+
+    evento_id + evento_relacion (asistio | inscrito | no_asistio | no_inscrito): según su relación con
+    ese evento, por la plataforma (inscritos) o por Zoom (zoom_registrants unido por member_id)."""
     periodo = _periodo_o_actual(periodo)
     q: dict = {
         "estado": "activo",
@@ -2569,6 +2574,14 @@ def get_comunicacion_destinatarios(
     if excluir_ids:
         excluir_set = set(excluir_ids)
         members = [m for m in members if m["member_id"] not in excluir_set]
+
+    if evento_id and evento_relacion in ("asistio", "inscrito", "no_asistio", "no_inscrito"):
+        inscritos, asistieron = socios_de_evento(evento_id)
+        regla = {"asistio": lambda mid: mid in asistieron,
+                 "inscrito": lambda mid: mid in inscritos,
+                 "no_asistio": lambda mid: mid in inscritos and mid not in asistieron,
+                 "no_inscrito": lambda mid: mid not in inscritos}[evento_relacion]
+        members = [m for m in members if regla(m["member_id"])]
 
     member_ids = [m["member_id"] for m in members]
     pay_map = {}
@@ -3318,6 +3331,41 @@ def desinscribir_socio(evento_id: str, member_id: str):
         {"_id": ObjectId(evento_id)},
         {"$pull": {"inscritos": {"member_id": member_id}}},
     )
+
+
+def socios_de_evento(evento_id: str) -> tuple[set[str], set[str]]:
+    """(socios inscritos, socios que asistieron) a un evento, por la plataforma o por Zoom."""
+    if not ObjectId.is_valid(evento_id or ""):
+        return set(), set()
+    ev = eventos_col.find_one({"_id": ObjectId(evento_id)},
+                              {"inscritos.member_id": 1, "inscritos.asistio": 1,
+                               "zoom_registrants.member_id": 1, "zoom_registrants.asistio": 1}) or {}
+    filas = [*(ev.get("inscritos") or []), *(ev.get("zoom_registrants") or [])]
+    inscritos = {f["member_id"] for f in filas if f.get("member_id")}
+    asistieron = {f["member_id"] for f in filas if f.get("member_id") and f.get("asistio")}
+    return inscritos, asistieron
+
+
+def seguimiento_comercial_evento(evento_id: str) -> dict:
+    """Números para el seguimiento después de un evento: socios y no socios que asistieron o no, y
+    cuántos no socios asistentes ya tienen una postulación abierta."""
+    if not ObjectId.is_valid(evento_id or ""):
+        return {}
+    ev = eventos_col.find_one({"_id": ObjectId(evento_id)}, {"zoom_registrants.email": 1, "zoom_registrants.asistio": 1,
+                                                             "zoom_registrants.es_socio": 1}) or {}
+    regs = ev.get("zoom_registrants") or []
+    inscritos, asistieron = socios_de_evento(evento_id)
+    no_socios = [r for r in regs if not r.get("es_socio") and r.get("email")]
+    asist_ns = {r["email"].lower() for r in no_socios if r.get("asistio")}
+    ids = [str(p["_id"]) for p in publico_col.find({"email": {"$in": list(asist_ns)}}, {"_id": 1})]
+    con_postulacion = postulantes_col.count_documents({"prospecto_id": {"$in": ids},
+                                                       "etapa": {"$in": ["consulta", "documentos", "evaluacion", "aprobado"]}}) if ids else 0
+    return {
+        "socios_asistieron": len(asistieron), "socios_no_asistieron": len(inscritos - asistieron),
+        "no_socios_asistieron": len(asist_ns),
+        "no_socios_no_asistieron": len({r["email"].lower() for r in no_socios if not r.get("asistio")} - asist_ns),
+        "no_socios_postulando": con_postulacion,
+    }
 
 
 def eventos_de_socio(member_id: str) -> list[dict]:
@@ -5227,12 +5275,76 @@ def get_all_tags() -> list:
     return [{"tag": d["_id"], "count": d["count"]} for d in publico_col.aggregate(pipeline)]
 
 
+# ── Segmentación comercial de Público ──────────────────────────────────────────
+# Interés según lo que la persona hizo con IPIDET (eventos y su etapa). Es una regla del sistema,
+# se calcula al consultar: no hay que mantener campos aparte.
+#   caliente: postulante, o asistió a 2 o más eventos, o asistió a uno en los últimos 90 días
+#   tibio:    se inscribió a algún evento o está «interesado»
+#   frío:     el resto
+INTERES_PUBLICO = {"caliente": ("Caliente", "red"), "tibio": ("Tibio", "amber"), "frio": ("Frío", "blue")}
+_DIAS_RECIENTE = 90
+
+
+def _desde_dias(dias: int) -> str:
+    return (datetime.now(timezone.utc) - _timedelta(days=dias)).strftime("%Y-%m-%d")
+
+
+def _q_asistencias_min(n: int) -> dict:
+    return {"$expr": {"$gte": [{"$size": {"$filter": {"input": {"$ifNull": ["$zoom_eventos", []]}, "as": "z",
+                                                      "cond": {"$eq": ["$$z.asistio", True]}}}}, n]}}
+
+
+def _q_interes(nivel: str) -> dict:
+    caliente = [{"estado": "postulante"}, _q_asistencias_min(2),
+                {"zoom_eventos": {"$elemMatch": {"asistio": True, "evento_fecha": {"$gte": _desde_dias(_DIAS_RECIENTE)}}}}]
+    tibio = [{"zoom_eventos.0": {"$exists": True}}, {"estado": "interesado"}]
+    if nivel == "caliente":
+        return {"$or": caliente}
+    if nivel == "tibio":
+        return {"$and": [{"$nor": caliente}, {"$or": tibio}]}
+    if nivel == "frio":
+        return {"$nor": caliente + tibio}
+    return {}
+
+
+def interes_prospecto(d: dict) -> dict:
+    """Lo mismo que _q_interes, para una ficha ya leída: {nivel, etiqueta, color, inscritos, asistidos, ultimo}."""
+    ev = d.get("zoom_eventos") or []
+    asistidos = [z for z in ev if z.get("asistio")]
+    ultimo = max((z.get("evento_fecha") or "" for z in ev), default="")
+    reciente = any((z.get("evento_fecha") or "") >= _desde_dias(_DIAS_RECIENTE) for z in asistidos)
+    if d.get("estado") == "postulante" or len(asistidos) >= 2 or reciente:
+        nivel = "caliente"
+    elif ev or d.get("estado") == "interesado":
+        nivel = "tibio"
+    else:
+        nivel = "frio"
+    etiqueta, color = INTERES_PUBLICO[nivel]
+    return {"nivel": nivel, "etiqueta": etiqueta, "color": color, "inscritos": len(ev),
+            "asistidos": len(asistidos), "ultimo": ultimo}
+
+
 def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = "",
                              titulo: str = "", empresa: str = "", fuente: str = "",
                              tags: list = None, es_socio: str = "",
-                             zoom_evento_ids: list = None, zoom_asistio: str = "") -> dict:
-    """Helper interno — construye la query de prospectos con todos los filtros."""
+                             zoom_evento_ids: list = None, zoom_asistio: str = "",
+                             asistencias_min: int = 0, actividad: str = "", interes: str = "") -> dict:
+    """Helper interno — construye la query de prospectos con todos los filtros.
+
+    asistencias_min: asistió al menos a N eventos. actividad: "30"/"90"/"180" = tuvo un evento en esos
+    días; "sin_180" = ninguno en 180 días. interes: caliente / tibio / frio (INTERES_PUBLICO)."""
     query: dict = {}
+    extra: list[dict] = []
+    if asistencias_min and int(asistencias_min) > 0:
+        extra.append(_q_asistencias_min(int(asistencias_min)))
+    if actividad in ("30", "90", "180"):
+        extra.append({"zoom_eventos.evento_fecha": {"$gte": _desde_dias(int(actividad))}})
+    elif actividad == "sin_180":
+        extra.append({"zoom_eventos.evento_fecha": {"$not": {"$gte": _desde_dias(180)}}})
+    if interes in INTERES_PUBLICO:
+        extra.append(_q_interes(interes))
+    if extra:
+        query["$and"] = extra
     if estado:
         query["estado"] = estado
     if ciudad:
@@ -5296,9 +5408,9 @@ def get_zoom_eventos_disponibles() -> list:
 def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
                    titulo: str = "", empresa: str = "", fuente: str = "",
                    tags: list = None, es_socio: str = "", zoom_evento_ids: list = None,
-                   zoom_asistio: str = "", page: int = 1) -> tuple:
+                   zoom_asistio: str = "", page: int = 1, **segmento) -> tuple:
     query = _build_prospectos_query(search, estado, ciudad, titulo, empresa, fuente,
-                                    tags, es_socio, zoom_evento_ids, zoom_asistio)
+                                    tags, es_socio, zoom_evento_ids, zoom_asistio, **segmento)
     per_page = 50
     skip = (page - 1) * per_page
     total = publico_col.count_documents(query)
@@ -5311,10 +5423,10 @@ def get_prospectos(search: str = "", estado: str = "", ciudad: str = "",
 def get_prospectos_all(search: str = "", estado: str = "", ciudad: str = "",
                         titulo: str = "", empresa: str = "", fuente: str = "",
                         tags: list = None, es_socio: str = "", zoom_evento_ids: list = None,
-                        zoom_asistio: str = "") -> list:
+                        zoom_asistio: str = "", **segmento) -> list:
     """Sin paginación — para envíos masivos y preview de campaña."""
     query = _build_prospectos_query(search, estado, ciudad, titulo, empresa, fuente,
-                                    tags, es_socio, zoom_evento_ids, zoom_asistio)
+                                    tags, es_socio, zoom_evento_ids, zoom_asistio, **segmento)
     docs = list(publico_col.find(query).sort("created_at", -1))
     for d in docs:
         d["_id"] = str(d["_id"])

@@ -1068,6 +1068,39 @@ window._eventoData = {
 </div>
 {% endif %}
 
+{# Seguimiento comercial: a quién escribir después del evento (db.seguimiento_comercial_evento) #}
+{% if seguimiento and (seguimiento.no_socios_asistieron or seguimiento.no_socios_no_asistieron or seguimiento.socios_asistieron or seguimiento.socios_no_asistieron) %}
+{% set eid = evento._id | string %}
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+  <h3 class="text-sm font-semibold text-slate-700 mb-1"><i class="fa-solid fa-bullseye mr-1.5 text-slate-500"></i>Seguimiento comercial</h3>
+  <p class="text-xs text-slate-500 mb-3">Cada fila abre Comunicaciones con ese grupo ya filtrado. Quien ya es socio no entra en los grupos de Público.</p>
+  <div class="divide-y divide-slate-100 text-sm">
+    {% for n, texto, ayuda, url in [
+      (seguimiento.no_socios_asistieron, 'No socios que asistieron', 'Invitarlos a asociarse' ~ ((' · ' ~ seguimiento.no_socios_postulando ~ ' ya están postulando') if seguimiento.no_socios_postulando else ''),
+        '/comunicaciones?modo=publico&es_socio=false&zoom_asistio=true&zoom_evento_id=' ~ eid),
+      (seguimiento.no_socios_no_asistieron, 'No socios inscritos que no asistieron', 'Enviarles la grabación o el próximo evento',
+        '/comunicaciones?modo=publico&es_socio=false&zoom_asistio=false&zoom_evento_id=' ~ eid),
+      (seguimiento.socios_asistieron, 'Socios que asistieron', 'Agradecer y pedir su opinión',
+        '/comunicaciones?evento_relacion=asistio&evento_id=' ~ eid),
+      (seguimiento.socios_no_asistieron, 'Socios inscritos que no asistieron', 'Compartir la grabación',
+        '/comunicaciones?evento_relacion=no_asistio&evento_id=' ~ eid),
+    ] if n %}
+    <div class="flex items-center justify-between gap-3 py-2">
+      <div class="min-w-0">
+        <span class="font-semibold text-slate-800">{{ n }}</span> <span class="text-slate-700">{{ texto }}</span>
+        <div class="text-xs text-slate-500">{{ ayuda }}</div>
+      </div>
+      <a href="{{ url }}" class="btn-ghost text-xs whitespace-nowrap"><i class="fa-solid fa-paper-plane mr-1"></i>Escribirles</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% if seguimiento.no_socios_asistieron %}
+  <a href="/publico?es_socio=false&zoom_asistio=true&zoom_evento_id={{ eid }}" class="inline-block mt-2 text-xs text-blue-600 hover:underline">
+    Ver a los no socios que asistieron en Público (para pasarlos a Postulantes) →</a>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Selector de webinar Zoom -->
 <div class="bg-white rounded-xl border border-slate-200 p-4 mb-4" x-data="zoomSync()">
   <div class="flex items-center justify-between mb-3">

@@ -68,7 +68,14 @@ CATALOGOS: dict[str, dict] = {
     "requisitos_admision":  {"titulo": "Requisitos de admisión",   "formato": "id_label",
                              "ayuda": "Lo que se marca en la ficha de cada postulante (documentos, entrevista, pago de ingreso…)."},
     "cargos_consejo":       {"titulo": "Cargos del consejo directivo", "formato": "texto",
-                             "ayuda": "Cargos que se eligen en la sección IPIDET → Consejo directivo, en el orden en que se muestran."},
+                             "ayuda": "Cargos que se eligen en la sección IPIDET → Consejo directivo, en el orden en que se muestran.",
+                             "inicial": ["Presidente(a)", "Vicepresidente(a)", "Secretario(a)", "Tesorero(a)",
+                                         "Vocal", "Director(a) académico(a)"]},
+    "tratamientos":         {"titulo": "Tratamiento por título",   "formato": "valor_label",
+                             "ayuda": "Abreviatura que va antes del apellido en los correos ({{tratamiento}}). Valor = título tal como está en el padrón; etiqueta = abreviatura.",
+                             "inicial": [{"valor": "Contador", "label": "C.P.C."}, {"valor": "Contadora", "label": "C.P.C."},
+                                         {"valor": "Abogado", "label": "Dr."}, {"valor": "Abogada", "label": "Dra."},
+                                         {"valor": "Economista", "label": "Econ."}]},
 }
 
 # Etapas del seguimiento de una alianza: es lógica del sistema, no un dato editable.
@@ -289,10 +296,21 @@ def _slug(texto: str) -> str:
 
 
 def get_catalogo(key: str) -> list:
+    """Valores del catálogo. Si nunca se guardó (no existe el documento), los «inicial» de su definición:
+    así un catálogo nuevo funciona desde el primer día y el equipo lo edita en /configuracion."""
     def _load():
         doc = _config.find_one({"_id": key})
-        return (doc or {}).get("valores") or []
+        if doc is None:
+            return list(CATALOGOS.get(key, {}).get("inicial") or [])
+        return doc.get("valores") or []
     return _cached(f"catalogo:{key}", _load)
+
+
+def get_tratamiento(titulo: str) -> str:
+    """«C.P.C.», «Dr.»… según el título del socio (catálogo «tratamientos»)."""
+    t = (titulo or "").strip().lower()
+    return next((v.get("label", "") for v in get_catalogo("tratamientos")
+                 if (v.get("valor") or "").strip().lower() == t), "") if t else ""
 
 
 def set_catalogo(key: str, valores: list) -> list:

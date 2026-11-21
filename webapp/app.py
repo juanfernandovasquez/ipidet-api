@@ -217,6 +217,8 @@ def _ctx(request: Request, **kwargs):
         "flash": request.session.pop("_flash", None),
         "status_labels": STATUS_LABELS,
         "fuentes_publico": catalogos.FUENTES_PUBLICO,
+        "estados_publico": catalogos.ESTADOS_PUBLICO,
+        "interes_publico": pdb.INTERES_PUBLICO,
         "medios_pago": pdb.get_medios_pago(),
         "bancos": pdb.get_bancos(),
         "periodos": catalogos.get_periodos(),
@@ -1333,13 +1335,7 @@ async def marketing_export(
 # ── Fraccionamientos ─────────────────────────────────────────────────────────
 
 def _tratamiento_titulo(titulo: str) -> str:
-    return {
-        "Contador":    "C.P.C.",
-        "Contadora":   "C.P.C.",
-        "Abogado":     "Dr.",
-        "Abogada":     "Dra.",
-        "Economista":  "Econ.",
-    }.get((titulo or "").strip(), "")
+    return catalogos.get_tratamiento(titulo)  # catálogo «tratamientos» (R10)
 
 
 def _build_recordatorio_email(frac: dict, today) -> dict:
@@ -3524,6 +3520,10 @@ async def comunicaciones(
         pre_destinatarios=pre_destinatarios,
         from_members=from_members,
         variables_correo=vcorreo.VARIABLES,
+        # Para segmentar por evento (socios por inscritos/Zoom; Público por zoom_eventos)
+        eventos_lista=[{"id": str(e["_id"]), "titulo": e.get("titulo", ""), "fecha": e.get("fecha", "")}
+                       for e in pdb.eventos_col.find({"estado": {"$ne": "cancelado"}}, {"titulo": 1, "fecha": 1})
+                                               .sort("fecha", -1).limit(80)],
     ))
 
 
@@ -3581,6 +3581,8 @@ async def comunicaciones_preview(request: Request):
     excluir_centro    = data.get("excluir_centro_trabajo", "")
     excluir_keywords  = data.get("excluir_keywords", "")
     excluir_ids       = data.get("excluir_ids", [])
+    evento_id         = data.get("evento_id", "")
+    evento_relacion   = data.get("evento_relacion", "")
     destinatarios = pdb.get_comunicacion_destinatarios(
         periodo=periodo, estados_pago=estados or None,
         empresa=empresa, ubicacion=ubicacion, titulo=titulo,
@@ -3592,6 +3594,7 @@ async def comunicaciones_preview(request: Request):
         excluir_centro_trabajo=excluir_centro,
         excluir_keywords=excluir_keywords,
         excluir_ids=excluir_ids or None,
+        evento_id=evento_id, evento_relacion=evento_relacion,
     )
     return {"total": len(destinatarios), "destinatarios": destinatarios}
 
@@ -4018,6 +4021,7 @@ async def evento_detalle(request: Request, evento_id: str):
     return templates.TemplateResponse(request, "evento_detalle.html", _ctx(request,
         evento=evento, stats=stats,
         ponentes_sugeridos=pdb.contar_sugeridos_evento(evento_id),
+        seguimiento=pdb.seguimiento_comercial_evento(evento_id),
         checklist_pre=catalogos.get_catalogo("checklist_evento_pre"),
         checklist_post=catalogos.get_catalogo("checklist_evento_post"),
     ))
@@ -5493,12 +5497,17 @@ async def publico_list(
     tags: List[str] = Query(default=[]), es_socio: str = "",
     zoom_evento_id: List[str] = Query(default=[]),
     zoom_asistio: str = "", page: int = 1,
+    interes: str = "", asistencias_min: str = "", actividad: str = "",
 ):
     docs, total = pdb.get_prospectos(search=search, estado=estado, ciudad=ciudad,
                                      titulo=titulo, empresa=empresa, fuente=fuente,
                                      tags=tags, es_socio=es_socio,
                                      zoom_evento_ids=zoom_evento_id,
-                                     zoom_asistio=zoom_asistio, page=page)
+                                     zoom_asistio=zoom_asistio, page=page,
+                                     interes=interes, asistencias_min=_safe_int(asistencias_min, 0),
+                                     actividad=actividad)
+    for d in docs:  # interés comercial y asistencias, calculados de sus eventos
+        d["interes"] = pdb.interes_prospecto(d)
     stats             = pdb.get_publico_stats()
     titulos_members   = set(pdb.get_member_titulos())
     titulos_publico   = set(pdb.get_publico_titulos())
@@ -5515,6 +5524,7 @@ async def publico_list(
         titulo=titulo, empresa=empresa, fuente=fuente,
         tags=tags, es_socio=es_socio,
         zoom_evento_ids=zoom_evento_id, zoom_asistio=zoom_asistio,
+        interes=interes, asistencias_min=asistencias_min, actividad=actividad,
     ))
 
 
@@ -6061,8 +6071,9 @@ async def api_publico_preview(request: Request):
     titulo         = data.get("titulo", "")
     empresa        = data.get("empresa", "")
     fuente         = data.get("fuente", "")
-    _raw_tags       = data.get("tags", [])
-    tags            = [_raw_tags] if isinstance(_raw_tags, str) and _raw_tags else (_raw_tags if isinstance(_raw_tags, list) else [])
+    # La pantalla de Comunicaciones manda «tag» (uno); Público manda «tags» (lista). Antes «tag» se ignoraba.
+    _raw_tags       = data.get("tags") or data.get("tag") or []
+    tags            = [t.strip() for t in _raw_tags.split(",") if t.strip()] if isinstance(_raw_tags, str) else (_raw_tags if isinstance(_raw_tags, list) else [])
     es_socio        = data.get("es_socio", "")
     _raw_zoom       = data.get("zoom_evento_id", [])
     zoom_evento_ids = [_raw_zoom] if isinstance(_raw_zoom, str) and _raw_zoom else (_raw_zoom if isinstance(_raw_zoom, list) else [])
@@ -6071,7 +6082,9 @@ async def api_publico_preview(request: Request):
                                   titulo=titulo, empresa=empresa, fuente=fuente,
                                   tags=tags, es_socio=es_socio,
                                   zoom_evento_ids=zoom_evento_ids,
-                                  zoom_asistio=zoom_asistio)
+                                  zoom_asistio=zoom_asistio,
+                                  asistencias_min=_safe_int(data.get("asistencias_min"), 0),
+                                  actividad=data.get("actividad", ""), interes=data.get("interes", ""))
     result = [{"_id": str(d.get("_id", "")),
                "nombre": d.get("nombre", ""),
                "apellido": d.get("apellido", ""),
@@ -6105,8 +6118,11 @@ async def api_publico_enviar(request: Request):
     # Los emails que rebotaron no se vuelven a usar (aunque vengan en la lista del navegador).
     rebotados = pdb.emails_publico_rebotados([d.get("email", "") for d in destinatarios])
     destinatarios = [d for d in destinatarios if (d.get("email") or "").lower() not in rebotados]
+    if not destinatarios:
+        return JSONResponse({"error": "Todos los destinatarios tienen el email rebotado."}, status_code=422)
 
     mensajes = []
+    inline_atts: list = []
     for d in destinatarios:
         if not d.get("email"):
             continue

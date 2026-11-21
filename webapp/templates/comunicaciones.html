@@ -150,11 +150,31 @@
         </div>
 
         <!-- Palabras clave (solo socios) -->
-        <div x-show="filtros.modo !== 'publico'" x-cloak class="mb-5">
+        <div x-show="filtros.modo !== 'publico'" x-cloak class="mb-4">
           <label class="block text-xs font-medium text-slate-600 mb-1">Palabras clave</label>
           <input x-model="filtros.keywords" type="text"
                  placeholder="Busca en nombre, apellido, centro de trabajo, notas…"
                  class="input w-full text-sm">
+        </div>
+
+        <!-- Evento (solo socios): inscritos por la plataforma o por Zoom -->
+        <div x-show="filtros.modo !== 'publico'" x-cloak class="mb-5 grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-medium text-slate-600 mb-1">Evento</label>
+            <select x-model="filtros.evento_id" class="input w-full text-sm">
+              <option value="">Sin filtrar por evento</option>
+              {% for e in eventos_lista %}<option value="{{ e.id }}">{{ e.fecha | format_fecha }} · {{ e.titulo }}</option>{% endfor %}
+            </select>
+          </div>
+          <div x-show="filtros.evento_id">
+            <label class="block text-xs font-medium text-slate-600 mb-1">Socios que…</label>
+            <select x-model="filtros.evento_relacion" class="input w-full text-sm">
+              <option value="asistio">Asistieron</option>
+              <option value="inscrito">Se inscribieron</option>
+              <option value="no_asistio">Se inscribieron y no asistieron</option>
+              <option value="no_inscrito">No se inscribieron</option>
+            </select>
+          </div>
         </div>
 
         <!-- Filtros Público -->
@@ -163,9 +183,7 @@
             <label class="block text-xs font-medium text-slate-600 mb-1">Estado del prospecto</label>
             <select x-model="filtrosPublico.estado" class="input w-full text-sm">
               <option value="">Todos los estados</option>
-              <option value="nuevo">Nuevo</option>
-              <option value="interesado">Interesado</option>
-              <option value="postulante">Postulante</option>
+              {% for k, v in estados_publico.items() if k != 'convertido' %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}
             </select>
           </div>
           <div>
@@ -185,16 +203,61 @@
             <label class="block text-xs font-medium text-slate-600 mb-1">Fuente</label>
             <select x-model="filtrosPublico.fuente" class="input w-full text-sm">
               <option value="">Todas las fuentes</option>
-              <option value="manual">Manual</option>
-              <option value="excel">Excel</option>
-              <option value="portal">Portal</option>
-              <option value="evento">Evento</option>
-              <option value="referido">Referido</option>
+              {% for k, v in fuentes_publico.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
             </select>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">Tag</label>
             <input x-model="filtrosPublico.tag" type="text" class="input w-full text-sm" placeholder="feria2026, lima…">
+          </div>
+          <div class="pt-3 border-t border-slate-100">
+            <p class="text-xs font-semibold text-slate-600 mb-2"><i class="fa-solid fa-bullseye text-slate-400 mr-1"></i> Seguimiento comercial</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Evento</label>
+                <select x-model="filtrosPublico.zoom_evento_id" class="input w-full text-sm">
+                  <option value="">Cualquier evento o ninguno</option>
+                  {% for e in eventos_lista %}<option value="{{ e.id }}">{{ e.fecha | format_fecha }} · {{ e.titulo }}</option>{% endfor %}
+                </select>
+              </div>
+              <div x-show="filtrosPublico.zoom_evento_id">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Personas que…</label>
+                <select x-model="filtrosPublico.zoom_asistio" class="input w-full text-sm">
+                  <option value="true">Asistieron</option>
+                  <option value="">Se inscribieron</option>
+                  <option value="false">Se inscribieron y no asistieron</option>
+                  <option value="excluir">No estuvieron en ese evento</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Interés</label>
+                <select x-model="filtrosPublico.interes" class="input w-full text-sm"
+                        title="Caliente: postulante, 2+ eventos o asistió hace menos de 90 días. Tibio: se inscribió a algo o está interesado.">
+                  <option value="">Todos</option>
+                  {% for k, v in interes_publico.items() %}<option value="{{ k }}">{{ v[0] }}</option>{% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Asistió al menos a</label>
+                <select x-model="filtrosPublico.asistencias_min" class="input w-full text-sm">
+                  <option value="">Sin mínimo</option>
+                  <option value="1">1 evento</option><option value="2">2 eventos</option><option value="3">3 o más eventos</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Actividad en eventos</label>
+                <select x-model="filtrosPublico.actividad" class="input w-full text-sm">
+                  <option value="">Cualquiera</option>
+                  <option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option>
+                  <option value="180">Últimos 180 días</option><option value="sin_180">Nada en 180 días</option>
+                </select>
+              </div>
+            </div>
+            <label class="flex items-center gap-2 text-xs text-slate-600 mt-3">
+              <input type="checkbox" :checked="filtrosPublico.es_socio !== 'false'"
+                     @change="filtrosPublico.es_socio = $event.target.checked ? '' : 'false'">
+              Incluir también a quienes ya son socios <span class="text-slate-400">(por defecto no: ya reciben las comunicaciones de socios)</span>
+            </label>
           </div>
         </div>
 
@@ -1513,6 +1576,8 @@ function comunicaciones() {
       titulo:        '',
       centro_trabajo: '',
       keywords:      '',
+      evento_id:     '',
+      evento_relacion: 'asistio',
     },
 
     exclusiones: {
@@ -1555,6 +1620,8 @@ function comunicaciones() {
 
     filtrosPublico: {
       estado: '', ciudad: '', titulo: '', fuente: '', tag: '',
+      zoom_evento_id: '', zoom_asistio: 'true', interes: '', asistencias_min: '', actividad: '',
+      es_socio: 'false',   // Público = quienes aún no son socios, salvo que se marque lo contrario
     },
 
     showGestorPlantillas:  false,
@@ -1649,6 +1716,16 @@ function comunicaciones() {
     async init() {
       this.cargarExcluidos();
       this.cargarCampaniasRecientes();
+      // Segmento que llega por enlace (por ejemplo, desde el seguimiento comercial de un evento)
+      const q = new URLSearchParams(location.search);
+      if (q.get('modo') === 'publico') {
+        this.filtros.modo = 'publico';
+        ['zoom_evento_id', 'zoom_asistio', 'interes', 'asistencias_min', 'actividad', 'estado', 'es_socio']
+          .forEach(k => { if (q.has(k)) this.filtrosPublico[k] = q.get(k); });
+      } else if (q.get('evento_id')) {
+        this.filtros.evento_id = q.get('evento_id');
+        if (q.get('evento_relacion')) this.filtros.evento_relacion = q.get('evento_relacion');
+      }
       await this.cargarPlantillas();
       {% if pre_member %}
       this.manuales.push({ ...{{ pre_member | tojson }}, selected: true });

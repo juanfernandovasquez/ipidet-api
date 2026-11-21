@@ -110,6 +110,22 @@
                class="input text-sm w-28"
                @input="clearTimeout(_t2); _t2=setTimeout(()=>$refs.filterForm.submit(),450)">
 
+        <!-- Segmentación comercial: interés y asistencia a eventos (db.INTERES_PUBLICO) -->
+        <select name="interes" @change="$refs.filterForm.submit()" class="input text-sm w-auto"
+                title="Caliente: postulante, 2+ eventos o asistió hace menos de 90 días. Tibio: se inscribió a algo o está interesado.">
+          <option value="">Interés: todos</option>
+          {% for k, v in interes_publico.items() %}<option value="{{ k }}" {% if interes == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+        </select>
+        <select name="asistencias_min" @change="$refs.filterForm.submit()" class="input text-sm w-auto">
+          <option value="">Asistencias: todas</option>
+          {% for n in ['1', '2', '3'] %}<option value="{{ n }}" {% if asistencias_min == n %}selected{% endif %}>Asistió a {{ n }}+ eventos</option>{% endfor %}
+        </select>
+        <select name="actividad" @change="$refs.filterForm.submit()" class="input text-sm w-auto">
+          <option value="">Actividad: cualquiera</option>
+          {% for v, l in [('30', 'Evento en 30 días'), ('90', 'Evento en 90 días'), ('180', 'Evento en 180 días'), ('sin_180', 'Nada en 180 días')] %}
+          <option value="{{ v }}" {% if actividad == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        </select>
+
         <!-- Tags y zoom preservados como hidden inputs para cuando otros filtros hagan submit -->
         {% for t in tags %}<input type="hidden" name="tags" value="{{ t }}">{% endfor %}
         {% if zoom_asistio %}<input type="hidden" name="zoom_asistio" value="{{ zoom_asistio }}">{% endif %}
@@ -118,8 +134,13 @@
         <span class="text-xs text-slate-400 ml-auto whitespace-nowrap">
           {{ total }} prospecto{% if total != 1 %}s{% endif %}
         </span>
-        {% set _has_filters = search or estado or ciudad or titulo or fuente or es_socio or zoom_asistio or zoom_evento_ids or tags %}
+        {% set _has_filters = search or estado or ciudad or titulo or fuente or es_socio or zoom_asistio or zoom_evento_ids or tags or interes or asistencias_min or actividad %}
         {% if _has_filters %}
+        {# El mismo segmento, listo para enviarle una comunicación #}
+        <a href="/comunicaciones?{{ {'modo': 'publico', 'zoom_evento_id': (zoom_evento_ids[0] if zoom_evento_ids else ''), 'zoom_asistio': zoom_asistio or ('' if zoom_evento_ids else 'true'), 'interes': interes, 'asistencias_min': asistencias_min, 'actividad': actividad, 'estado': estado, 'es_socio': es_socio or 'false'} | urlencode }}"
+           class="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 whitespace-nowrap" title="Abre Comunicaciones con este segmento">
+          <i class="fa-solid fa-paper-plane"></i> Escribir a este segmento
+        </a>
         <a href="/publico" class="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 whitespace-nowrap">
           <i class="fa-solid fa-xmark"></i> Limpiar
         </a>
@@ -284,6 +305,14 @@
                 </a>
                 <div class="min-[1700px]:hidden font-mono text-xs text-slate-500 mt-0.5 max-w-[240px] truncate" title="{{ p.email }}">{{ p.email }}</div>
                 {% if p.get('email_estado') == 'rebotado' %}<span class="min-[1700px]:hidden badge badge-red mt-0.5">Email rebotado</span>{% endif %}
+                {% set it = p.interes %}
+                {% if it %}
+                <div class="flex items-center gap-1.5 mt-1 text-[11px] font-normal text-slate-500">
+                  <span class="badge badge-{{ it.color }}">{{ it.etiqueta }}</span>
+                  {% if it.inscritos %}<span title="Eventos a los que asistió / en los que se inscribió">{{ it.asistidos }}/{{ it.inscritos }} eventos</span>{% endif %}
+                  {% if it.ultimo %}<span title="Último evento">· {{ it.ultimo | format_fecha }}</span>{% endif %}
+                </div>
+                {% endif %}
                 {% set ptags = p.tags or [] %}
                 {% if ptags %}
                 <div class="flex flex-wrap gap-0.5 mt-1">

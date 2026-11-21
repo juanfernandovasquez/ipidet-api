@@ -37,8 +37,6 @@ VARIABLES: list[tuple[str, str]] = [
 _VARS_DEUDA_PERIODO = ("monto",)
 _VARS_DEUDA_TOTAL = ("periodos_adeudados", "deuda_total")
 
-_TRATAMIENTO = {"contador": "C.P.C.", "contadora": "C.P.C.", "abogado": "Dr.", "abogada": "Dra.",
-                "economista": "Econ."}
 _RE_VAR = re.compile(r"\{\{\s*([a-z_]+)\s*\}\}")
 _PARTICULAS = {"de", "del", "la", "las", "los", "y", "san"}
 
@@ -127,7 +125,7 @@ def contexto(member_ids: list[str], periodo: str | None) -> dict[str, dict]:
             "nombres":            nombres,
             "apellidos":          apellidos,
             "nombre_corto":       " ".join(x for x in (nombres.split(" ")[0] if nombres else "", primer_apellido) if x),
-            "tratamiento":        _TRATAMIENTO.get((m.get("titulo") or "").strip().lower(), ""),
+            "tratamiento":        catalogos.get_tratamiento(m.get("titulo")),
             "numero_registro":    mid,
             "member_id":          mid,
             "monto":              _soles(d[periodo]) if d.get(periodo) else "",
