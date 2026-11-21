@@ -483,7 +483,8 @@ def registrar_rebote(email: str, tipo: str, motivo: str = "", origen: str = "") 
 
     hard → el email del socio queda «rebotado» (no recibe comunicaciones) y, si era el principal, pasa a
     principal el siguiente habilitado; en Público la ficha queda con `email_estado: rebotado`.
-    soft (buzón lleno) → solo se anota. Devuelve qué se tocó, para mostrarlo y poder deshacerlo."""
+    soft (buzón lleno) → el email sigue habilitado, pero si era el principal y el socio tiene otro
+    habilitado, ese otro pasa a principal. En Público solo se anota. Devuelve qué se tocó."""
     email = (email or "").strip().lower()
     res: dict = {"email": email, "tipo": tipo, "socios": [], "publico": []}
     if not email or tipo not in ("hard", "soft"):
@@ -500,8 +501,15 @@ def registrar_rebote(email: str, tipo: str, motivo: str = "", origen: str = "") 
                                {"$set": cambios, "$inc": {"emails.$.bounce_count": 1}})
         era_principal = bool(actual.get("principal"))
         nuevo = ""
-        if tipo == "hard":
-            _maybe_promote_secondary(m["member_id"])
+        if tipo == "soft" and era_principal:
+            # Buzón lleno: no se inhabilita (puede liberarse), pero se escribe al otro email si lo hay.
+            otro = next((e for e in m.get("emails") or [] if e.get("estado") == "habilitado"
+                         and (e.get("email") or "").lower() != email and e.get("bounce_type") != "soft"), None)
+            if otro:
+                set_email_principal(m["member_id"], otro["email"])
+        if tipo == "hard" or era_principal:
+            if tipo == "hard":
+                _maybe_promote_secondary(m["member_id"])
             doc = members_col.find_one({"member_id": m["member_id"]}, {"emails": 1}) or {}
             p = next((e for e in doc.get("emails") or [] if e.get("principal")), {})
             nuevo = p.get("email", "") if p.get("estado") == "habilitado" and p.get("email", "").lower() != email else ""

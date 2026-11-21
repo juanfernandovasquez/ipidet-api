@@ -242,6 +242,19 @@ class GmailClient:
                 return parte[1]
         return None
 
+    def originales(self, gm_msgids: list[str]) -> dict[str, bytes | None]:
+        """Como `original`, para varios mensajes con una sola conexión (Gmail limita los inicios de sesión)."""
+        res: dict[str, bytes | None] = {}
+        with self._imap(self.carpeta("\\All")) as conn:
+            for msgid in gm_msgids:
+                res[msgid] = None
+                uids = self._buscar_en_todos(conn, f"X-GM-MSGID {msgid}") if msgid else []
+                if not uids:
+                    continue
+                _, data = conn.uid("fetch", uids[-1], "(BODY.PEEK[])")
+                res[msgid] = next((p[1] for p in data or [] if isinstance(p, tuple)), None)
+        return res
+
     def respondido_despues(self, gm_thrid: str, desde: datetime, propias: set[str]) -> bool:
         """True si alguna de nuestras direcciones escribió en el hilo después de `desde`."""
         if not gm_thrid:
@@ -368,7 +381,7 @@ def detectar_rebote(m) -> dict | None:
     """Aviso de no entrega (DSN, RFC 3464) → {"destinatarios": [{email, accion, status, tipo, motivo}]}.
 
     tipo «hard»: no se pudo entregar y el servidor dejó de intentar (dirección o dominio inexistente,
-    rechazo): conviene inhabilitarla. «soft»: buzón lleno (x.2.2): la dirección existe.
+    rechazo): conviene inhabilitarla. «soft»: buzón lleno (x.2.2, fallido o demorado): la dirección existe.
     «delayed»: el servidor todavía reintenta; no es un rebote. Solo se lee lo que el servidor de
     correo reporta: nunca el texto libre de una persona."""
     de = parseaddr(_decodificar(m.get("From")))[1].lower()
@@ -392,10 +405,11 @@ def detectar_rebote(m) -> dict | None:
             status = (_campo(b, "Status").split() or [""])[0]
             if not correo or not accion:
                 continue
-            # «failed» = el servidor se rindió (incluido un 4.x tras días de reintentos). Solo el buzón
-            # lleno (x.2.2) es pasajero: la dirección existe.
-            tipo = ("delayed" if accion == "delayed" else
-                    "soft" if accion == "failed" and status[1:].startswith(".2.2") else
+            # «failed» = el servidor se rindió (incluido un 4.x tras días de reintentos). El buzón lleno
+            # (x.2.2) es «soft» aunque Gmail siga reintentando: la dirección existe pero hoy no recibe.
+            lleno = status[1:].startswith(".2.2")
+            tipo = ("soft" if lleno and accion in ("failed", "delayed") else
+                    "delayed" if accion == "delayed" else
                     "hard" if accion == "failed" else "")
             if tipo:
                 destinatarios.append({"email": correo, "accion": accion, "status": status, "tipo": tipo,

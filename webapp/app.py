@@ -4617,7 +4617,7 @@ async def comunicaciones_rebotes(request: Request):
 async def rebotes_revisar_cola():
     """Una tanda de avisos de no entrega ya guardados en la cola: los relee de Gmail y los aplica."""
     from webapp import agente_correo as _ac
-    return await asyncio.to_thread(_ac.revisar_rebotes_anteriores, 15)
+    return await asyncio.to_thread(_ac.revisar_rebotes_anteriores, 25)
 
 
 @app.post("/comunicaciones/rebotes/inhabilitar")

@@ -31,7 +31,10 @@
         {% else %}<span class="badge badge-amber">Falta configurar</span> Define <code>BREVO_WEBHOOK_TOKEN</code> en Render
         y en Brevo agrega el webhook <code>https://[dominio]/webhook/brevo/bounce</code> con los eventos
         hard_bounce, soft_bounce, invalid_email y blocked.{% endif %}</li>
-      <li>«Buzón lleno» solo se anota: la dirección existe. Si algo se marcó por error, usa <strong>Restaurar</strong>.</li>
+      <li>«Buzón lleno»: la dirección existe, así que sigue habilitada; pero si era la principal y el socio tiene
+        otro email, se le escribe al otro. Si algo se marcó por error, usa <strong>Restaurar</strong>.</li>
+      <li>Los avisos que no se pudieron leer al llegar se revisan solos en cada ciclo de la cola de correos.
+        «Revisar avisos» solo lo adelanta.</li>
     </ul>
   </details>
 
