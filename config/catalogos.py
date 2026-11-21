@@ -38,6 +38,9 @@ ESTADOS_PAGO: dict[str, tuple[str, str]] = {
     "por_cobrar":      ("Por cobrar",      "orange"),
 }
 
+# Estados en los que el socio todavía debe algo del período (filtros de cobranzas y avisos de deuda).
+ESTADOS_CON_DEUDA = ("debe", "pendiente", "parcial", "fraccionamiento")
+
 # Tipos de producto → qué cuota representan. También es lógica, no dato.
 TIPOS_CUOTA = ("cuota_anual", "cuota_provincia")
 

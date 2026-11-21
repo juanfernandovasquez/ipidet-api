@@ -366,6 +366,62 @@ def get_member(member_id: str) -> dict | None:
     return _clean(doc)
 
 
+def detalle_comprobantes_de_pagos(payments: list[dict]) -> dict[str, list[dict]]:
+    """Comprobantes de cada pago del socio, para la ficha: {payment_id: [entradas]}.
+
+    Solo por FK (R8): `comprobante_id` del pago, de sus cuotas y de sus parciales, más los comprobantes
+    cuyas líneas apuntan al pago (`items.payment_id`). Cada entrada dice de qué parte del pago es
+    (pago, cuota n, parcial n) y trae solo las líneas de ese pago."""
+    ids: set[str] = set()
+    for p in payments:
+        ids.update(x for x in [p.get("comprobante_id")]
+                   + [c.get("comprobante_id") for c in p.get("cuotas") or []]
+                   + [c.get("comprobante_id") for c in p.get("pagos_parciales") or []] if x)
+    pay_ids = [str(p["_id"]) for p in payments]
+    oids = [ObjectId(i) for i in ids if ObjectId.is_valid(i)]
+    comps = {str(c["_id"]): c for c in comprobantes_col.find(
+        {"$or": [{"_id": {"$in": oids}}, {"items.payment_id": {"$in": pay_ids}}]},
+        {"xml_raw": 0, "sunat_xml": 0})}
+    con_xml = {str(c["_id"]) for c in comprobantes_col.find(
+        {"_id": {"$in": [ObjectId(i) for i in comps]}, "sunat_xml": {"$nin": [None, ""]}}, {"_id": 1})}
+
+    def entrada(comp_id: str | None, parte: str, pid: str, extra: dict) -> dict:
+        c = comps.get(comp_id or "")
+        if not c:
+            return {"parte": parte, "comprobante": None, **extra}
+        lineas = [i for i in c.get("items") or [] if i.get("payment_id") == pid]
+        return {"parte": parte, **extra, "comprobante": {
+            **_clean({k: v for k, v in c.items() if k != "items"}),
+            "lineas": [_clean(i) for i in lineas],
+            "num_lineas": len(c.get("items") or []),
+            "tiene_xml": comp_id in con_xml,
+        }}
+
+    out: dict[str, list[dict]] = {}
+    for p in payments:
+        pid = str(p["_id"])
+        lista: list[dict] = []
+        vistos: set[str] = set()
+        if p.get("comprobante_id") or p.get("num_comprobante"):
+            lista.append(entrada(p.get("comprobante_id"), "Pago", pid, {
+                "num_texto": p.get("num_comprobante") or "", "fecha_pago": p.get("fecha_pago") or ""}))
+            vistos.add(p.get("comprobante_id") or "")
+        for etiqueta, clave in (("Cuota", "cuotas"), ("Pago parcial", "pagos_parciales")):
+            for c in p.get(clave) or []:
+                if not (c.get("comprobante_id") or c.get("num_comprobante")):
+                    continue
+                lista.append(entrada(c.get("comprobante_id"), f"{etiqueta} {c.get('numero', '')}".strip(), pid, {
+                    "num_texto": c.get("num_comprobante") or "", "fecha_pago": c.get("fecha_pago") or "",
+                    "monto_parte": c.get("monto")}))
+                vistos.add(c.get("comprobante_id") or "")
+        # Comprobantes que apuntan al pago desde sus líneas, aunque el pago no los tenga anotados.
+        for cid, c in comps.items():
+            if cid not in vistos and any(i.get("payment_id") == pid for i in c.get("items") or []):
+                lista.append(entrada(cid, "Pago", pid, {"num_texto": c.get("numero", ""), "fecha_pago": ""}))
+        out[pid] = lista
+    return out
+
+
 def update_email_status(member_id: str, email: str, nuevo_estado: str):
     members_col.update_one(
         {"member_id": member_id, "emails.email": email},
@@ -727,21 +783,69 @@ def get_payments(periodo: str | None = None, estado: str = "", empresa: str = ""
     return [_clean(d) for d in docs], total
 
 
+def _cumple_estado(pago: dict | None, filtro: str) -> bool:
+    """Filtro de estado de un período: un estado, «con_deuda» o «sin_registro»."""
+    if not filtro:
+        return True
+    if filtro == "sin_registro":
+        return pago is None
+    if pago is None:
+        return False
+    if filtro == "con_deuda":
+        return pago.get("estado") in catalogos.ESTADOS_CON_DEUDA
+    return pago.get("estado") == filtro
+
+
+def _tiene_comprobante(pago: dict) -> bool:
+    return bool(pago.get("comprobante_emitido") or pago.get("comprobante_id"))
+
+
+def _cumple_comprobante(pago: dict | None, filtro: str) -> bool:
+    """«pendiente» = pagado y sin comprobante (lo que hay que emitir); «emitido» = con comprobante."""
+    if not filtro:
+        return True
+    if pago is None:
+        return False
+    if filtro == "pendiente":
+        return pago.get("estado") == "pagado" and not _tiene_comprobante(pago)
+    return _tiene_comprobante(pago)
+
+
+def get_conteos_cobranza() -> dict[str, dict[str, int]]:
+    """Registros por estado en el período anterior y en el de trabajo (sin filtros), con «con_deuda»."""
+    periodo_actual = catalogos.get_periodo_actual()
+    periodos = [catalogos.get_periodo_anterior(periodo_actual), periodo_actual]
+    out: dict[str, dict[str, int]] = {per: {} for per in periodos}
+    for d in payments_col.aggregate([
+        {"$match": {"periodo": {"$in": periodos}}},
+        {"$group": {"_id": {"periodo": "$periodo", "estado": "$estado"}, "n": {"$sum": 1}}},
+    ]):
+        out[d["_id"]["periodo"]][d["_id"]["estado"]] = d["n"]
+    for per, conteo in out.items():
+        conteo["con_deuda"] = sum(n for e, n in conteo.items() if e in catalogos.ESTADOS_CON_DEUDA)
+        conteo["sin_comprobante"] = payments_col.count_documents({
+            "periodo": per, "estado": "pagado", "comprobante_emitido": {"$ne": True},
+            "comprobante_id": {"$in": [None, ""]}})
+    return out
+
+
 def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
-                         comprobante_emitido: str = "", page: int = 1, per_page: int = 50):
-    """Una fila por socio, con el pago del período de trabajo y el del anterior."""
+                         comprobante_emitido: str = "", page: int = 1, per_page: int = 50,
+                         estado_ant: str = "", comprobante_ant: str = "", estado_socio: str = ""):
+    """Una fila por socio, con el pago del período de trabajo y el del anterior.
+
+    Cada período se filtra por separado y los filtros se combinan (p. ej. debe el anterior y pagó el
+    actual). `estado` / `comprobante_emitido` son del período de trabajo; `estado_ant` /
+    `comprobante_ant`, del anterior. La empresa elige al socio si pagó por ella en alguno de los dos
+    períodos, pero la fila siempre muestra los dos pagos."""
     periodo_actual = catalogos.get_periodo_actual()
     periodo_anterior = catalogos.get_periodo_anterior(periodo_actual)
     YEARS = [periodo_anterior, periodo_actual]
 
-    # 1. Fetch payments de ambos períodos (empresa filter applied here)
-    pay_match: dict = {"periodo": {"$in": YEARS}}
-    if empresa:
-        pay_match.update(_build_empresa_filter(empresa))
+    # 1. Pagos de ambos períodos
+    all_pays = list(payments_col.find({"periodo": {"$in": YEARS}}))
 
-    all_pays = list(payments_col.find(pay_match))
-
-    # 2. Group by member_id
+    # 2. Agrupar por socio
     by_mid: dict = {}
     for p in all_pays:
         mid = p["member_id"]
@@ -750,22 +854,24 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
         clave = "pago_actual" if p["periodo"] == periodo_actual else "pago_anterior"
         by_mid[mid][clave] = p
 
-    # 3. Filtro de estado sobre el período de trabajo
-    if estado:
-        by_mid = {mid: v for mid, v in by_mid.items()
-                  if v["pago_actual"] and v["pago_actual"].get("estado") == estado}
+    # 3. Filtros por período (se combinan)
+    by_mid = {mid: v for mid, v in by_mid.items()
+              if _cumple_estado(v["pago_actual"], estado)
+              and _cumple_estado(v["pago_anterior"], estado_ant)
+              and _cumple_comprobante(v["pago_actual"], comprobante_emitido)
+              and _cumple_comprobante(v["pago_anterior"], comprobante_ant)}
 
-    # 4. Filtro de comprobante_emitido sobre el período de trabajo
-    if comprobante_emitido == "emitido":
-        by_mid = {mid: v for mid, v in by_mid.items()
-                  if v["pago_actual"] and v["pago_actual"].get("comprobante_emitido")}
-    elif comprobante_emitido == "pendiente":
-        by_mid = {mid: v for mid, v in by_mid.items()
-                  if v["pago_actual"] and not v["pago_actual"].get("comprobante_emitido")}
+    # 4. Empresa pagadora en cualquiera de los dos períodos
+    if empresa:
+        con_empresa = {p["member_id"] for p in payments_col.find(
+            {"periodo": {"$in": YEARS}, **_build_empresa_filter(empresa)}, {"member_id": 1})}
+        by_mid = {mid: v for mid, v in by_mid.items() if mid in con_empresa}
 
     # 5. Fetch member info, applying search filter
     member_ids = list(by_mid.keys())
     member_query: dict = {"member_id": {"$in": member_ids}}
+    if estado_socio:
+        member_query["estado"] = estado_socio
     if search:
         rx = {"$regex": _re.escape(search), "$options": "i"}
         member_query["$and"] = [
@@ -792,7 +898,7 @@ def get_payments_grouped(estado: str = "", empresa: str = "", search: str = "",
             {"member_id": 1}
         )}
         extra_members = {d["member_id"]: d for d in members_col.find(
-            {"member_id": {"$in": list(extra_mids)}}
+            {"member_id": {"$in": list(extra_mids)}, **({"estado": estado_socio} if estado_socio else {})}
         )}
         members_map.update(extra_members)
 
@@ -876,56 +982,6 @@ def get_payment_with_member(payment_id: str) -> dict | None:
     return _clean(p)
 
 
-def get_payments_export(periodo: str | None = None, estado: str = "", empresa: str = "", search: str = "") -> list:
-    periodo = _periodo_o_actual(periodo)
-    query: dict = {}
-    if periodo:
-        query["periodo"] = periodo
-    if estado:
-        query["estado"] = estado
-    if empresa:
-        query.update(_build_empresa_filter(empresa))
-    if search:
-        rx = {"$regex": _re.escape(search), "$options": "i"}
-        ids_members = {
-            m["member_id"] for m in members_col.find(
-                {"$or": [
-                    {"apellidos":      rx},
-                    {"nombres":        rx},
-                    {"member_id":      rx},
-                    {"centro_trabajo": rx},
-                    {"emails.email":   rx},
-                ]},
-                {"member_id": 1},
-            )
-        }
-        pay_q2: dict = {"$or": [{"empresa_pagadora": rx}, {"pagado_por": rx}]}
-        if periodo:
-            pay_q2["periodo"] = periodo
-        ids_payments = {
-            p["member_id"] for p in payments_col.find(pay_q2, {"member_id": 1})
-        }
-        all_ids = list(ids_members | ids_payments)
-        if not all_ids:
-            return []
-        query["member_id"] = {"$in": all_ids}
-
-    docs = list(payments_col.find(query).sort("member_id", 1))
-    member_ids = [d["member_id"] for d in docs]
-    member_map = {
-        m["member_id"]: m for m in
-        members_col.find({"member_id": {"$in": member_ids}})
-    }
-    for d in docs:
-        m = member_map.get(d["member_id"], {})
-        d["apellidos"]      = m.get("apellidos", "")
-        d["nombres"]        = m.get("nombres", "")
-        d["centro_trabajo"] = m.get("centro_trabajo", "")
-        d["email_principal"] = next(
-            (e["email"] for e in m.get("emails", []) if e.get("principal") and e.get("estado") == "habilitado"),
-            next((e["email"] for e in m.get("emails", []) if e.get("estado") == "habilitado"), ""),
-        )
-    return [_clean(d) for d in docs]
 
 
 def update_payment(payment_id: str, estado: str, empresa: str = None,

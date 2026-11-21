@@ -877,7 +877,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `_tabs_cobranzas.html` | — | Pestañas compartidas de cobranzas |
 | `dashboard.html` | `/` | Inicio: avance de cobranza, lo que requiere atención, próximos eventos |
 | `members.html` | `/members` | Padrón paginado con filtros |
-| `member.html` | `/members/{id}` | Detalle de socio: emails, comentarios, pagos |
+| `member.html` | `/members/{id}` | Detalle de socio: emails, comentarios, pagos. Cada período se despliega con el pago y sus comprobantes (`db.detalle_comprobantes_de_pagos`, solo por FK) |
 | `billing.html` | `/billing` | Cobranzas: tabla, edición inline, cuotas, parciales |
 | `fraccionamientos.html` | `/fraccionamientos` | Fraccionamientos agrupados por socio; períodos como sub-filas; modal de cuotas por período |
 | `comprobantes.html` | `/comprobantes` | Comprobantes emitidos (boletas/facturas) |
@@ -941,8 +941,8 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/billing` | Cobranzas paginadas; filtros: periodo, estado, empresa, search, comprobante_emitido |
-| `GET` | `/billing/export` | Descarga Excel con pagos filtrados |
+| `GET` | `/billing` | Una fila por socio con el período anterior y el de trabajo. Filtros combinables: `estado_ant` / `estado` (un estado, `con_deuda` o `sin_registro`), `comprobante_ant` / `comprobante_emitido` (`pendiente` = pagado sin comprobante, `emitido`), `empresa` (en cualquiera de los dos períodos), `estado_socio`, `search`. `periodo=<anterior>` manda `estado` a la columna anterior (enlaces de otras pantallas) |
+| `GET` | `/billing/export` | Excel con las mismas filas y filtros, columnas de los dos períodos |
 | `POST` | `/billing/generar-periodo` | Genera registros de pago para todos los socios activos de un período |
 | `POST` | `/billing/{id}/update` | Actualiza pago principal |
 | `POST` | `/billing/{id}/emitir-comprobante` | Marca el comprobante como emitido y registra número |
@@ -1189,7 +1189,10 @@ auto_set_wp_user_id(member_id, wp_user_id)
 generar_cobros_periodo(periodo: str) → dict  # {"creados": n, "existentes": n}
 get_payments(periodo=None, estado="", empresa="", search="",
              comprobante_emitido="", page=1) → (docs[], total)
-get_payments_export(...) → docs[]  # sin paginación
+get_payments_grouped(estado, empresa, search, comprobante_emitido, page, per_page,
+                     estado_ant, comprobante_ant, estado_socio) → (filas[], total)  # vista /billing y su Excel
+get_conteos_cobranza() → {periodo: {estado: n, con_deuda, sin_comprobante}}  # período anterior y de trabajo
+detalle_comprobantes_de_pagos(payments) → {payment_id: [entradas]}  # ficha del socio
 update_payment(payment_id: str, estado: str, empresa=None, fecha_pago=None,
                medio=None, pagado_por=None, num_comprobante=None,
                tipo_comprobante=None, link_constancia=None, banco_origen=None,

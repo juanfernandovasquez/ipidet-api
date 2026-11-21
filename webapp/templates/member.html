@@ -324,7 +324,13 @@
         {% set cuotas_pagadas_count = p.get('cuotas', []) | selectattr('estado', 'eq', 'pagado') | list | length %}
         {% set cuotas_total_count   = p.get('cuotas', []) | length %}
         {% set monto_pagado_sum     = p.get('pagos_parciales', []) | sum(attribute='monto') %}
-        <div class="flex items-center justify-between px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 gap-3">
+        {% set detalle = detalle_pagos.get(p._id | string, []) %}
+        <div x-data="{ abierto: false }" class="rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+        <div class="flex items-center justify-between px-3 py-2.5 gap-3 cursor-pointer hover:bg-slate-100 transition-colors"
+             role="button" tabindex="0" :aria-expanded="abierto ? 'true' : 'false'"
+             @click="if (!$event.target.closest('a')) abierto = !abierto"
+             @keydown.enter.prevent="abierto = !abierto" @keydown.space.prevent="abierto = !abierto"
+             title="Ver el detalle del pago y su comprobante">
           <span class="font-semibold text-slate-700 text-sm w-10 shrink-0">{{ p.periodo }}</span>
           <div class="flex-1 min-w-0">
             {% if p.estado == 'fraccionamiento' and cuotas_total_count > 0 %}
@@ -342,7 +348,132 @@
               <span class="ml-2 text-xs text-slate-400">{{ p.empresa_pagadora }}</span>
             {% endif %}
           </div>
-          <span class="text-xs text-slate-400 shrink-0">{{ p.get('fecha_pago') or '' }}</span>
+          <span class="text-xs text-slate-400 shrink-0">{{ p.fecha_pago | format_fecha if p.get('fecha_pago') else '' }}</span>
+          {% if detalle | selectattr('comprobante') | list %}
+            <i class="fa-solid fa-file-invoice text-slate-400 text-xs shrink-0" title="Tiene comprobante"></i>
+          {% endif %}
+          <i class="fa-solid fa-chevron-down text-slate-400 text-[10px] shrink-0 transition-transform" :class="abierto && 'rotate-180'"></i>
+        </div>
+
+        {# ── Desplegable: detalle del pago y de su comprobante ── #}
+        <div x-show="abierto" x-cloak x-transition.opacity class="border-t border-slate-200 bg-white px-4 py-3 space-y-3 text-sm">
+          {# Datos del pago #}
+          <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+            <div><dt class="text-slate-400">Concepto</dt>
+                 <dd class="text-slate-700">{{ nombres_producto.get(p.get('producto_id') or '', '') or ('Cuota ' ~ p.periodo) }}</dd></div>
+            <div><dt class="text-slate-400">Fecha de pago</dt>
+                 <dd class="text-slate-700">{{ p.fecha_pago | format_fecha if p.get('fecha_pago') else '—' }}</dd></div>
+            <div><dt class="text-slate-400">Medio de pago</dt>
+                 <dd class="text-slate-700">{{ p.get('medio_pago') or '—' }}{% if p.get('banco_origen') %} · {{ p.banco_origen }}{% endif %}</dd></div>
+            <div><dt class="text-slate-400">Pagado por</dt>
+                 <dd class="text-slate-700">{{ p.get('empresa_pagadora') or p.get('pagado_por') or '—' }}</dd></div>
+            {% if p.get('link_constancia') %}
+            <div class="col-span-2"><dt class="text-slate-400">Constancia</dt>
+                 <dd><a href="{{ p.link_constancia }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline">
+                   Ver constancia <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i></a></dd></div>
+            {% endif %}
+          </dl>
+
+          {# Comprobantes #}
+          {% for e in detalle %}
+          {% set c = e.comprobante %}
+          <div class="rounded-lg border border-slate-200 p-3 space-y-2">
+            {% if c %}
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="font-medium text-slate-800">
+                  <i class="fa-solid fa-file-invoice text-slate-400 mr-1"></i>
+                  {{ {'boleta': 'Boleta', 'factura': 'Factura', 'recibo': 'Recibo', 'nota_credito': 'Nota de crédito'}.get(c.tipo, c.tipo | capitalize) }}
+                  <span class="font-mono whitespace-nowrap">{{ c.numero or 'sin número' }}</span>
+                </div>
+                <div class="text-xs text-slate-400 mt-0.5">
+                  {{ e.parte }}{% if e.get('monto_parte') %} · {{ e.monto_parte | soles }}{% endif %}
+                  {% if c.get('fecha_emision') %} · emitido el {{ c.fecha_emision | format_fecha }}{% endif %}
+                </div>
+              </div>
+              {% if c.estado == 'anulado' %}
+                <span class="badge badge-red shrink-0">Anulado</span>
+              {% elif c.get('anulado_por_nc') %}
+                <span class="badge badge-red shrink-0">Anulado con nota de crédito</span>
+              {% elif c.estado == 'pre_registrado' %}
+                <span class="badge badge-amber shrink-0">Pre-registrado</span>
+              {% elif c.get('sunat_estado') == 'emitido' %}
+                <span class="badge badge-green shrink-0">Aceptado por SUNAT</span>
+              {% elif c.get('sunat_estado') == 'error' %}
+                <span class="badge badge-red shrink-0" title="{{ c.get('sunat_error') or '' }}">Error al emitir a SUNAT</span>
+              {% else %}
+                <span class="badge badge-gray shrink-0">Registrado</span>
+              {% endif %}
+            </div>
+
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+              <div><dt class="text-slate-400">Receptor</dt>
+                   <dd class="text-slate-700">
+                     {% if c.get('empresa') %}{{ c.empresa }}{% if c.get('ruc_empresa') %} · RUC {{ c.ruc_empresa }}{% endif %}
+                     {% else %}{{ c.get('destinatario_nombre') or member.apellidos ~ ', ' ~ member.nombres }}{% if c.get('destinatario_dni') %} · DNI {{ c.destinatario_dni }}{% endif %}{% endif %}
+                   </dd></div>
+              <div><dt class="text-slate-400">Total del comprobante</dt>
+                   <dd class="text-slate-700 font-medium">{{ c.monto_total | soles }}
+                     {% if c.get('num_lineas', 0) > 1 %}<span class="text-slate-400 font-normal">({{ c.num_lineas }} líneas)</span>{% endif %}</dd></div>
+              {% if c.get('fecha_pago') %}
+              <div><dt class="text-slate-400">Fecha de pago</dt><dd class="text-slate-700">{{ c.fecha_pago | format_fecha }}</dd></div>
+              {% endif %}
+              {% if c.get('medio_pago') %}
+              <div><dt class="text-slate-400">Medio de pago</dt><dd class="text-slate-700">{{ c.medio_pago }}</dd></div>
+              {% endif %}
+            </dl>
+
+            {% if c.lineas %}
+            <table class="w-full text-xs">
+              <thead><tr class="text-slate-400 text-left"><th class="font-normal pb-1">Detalle de este pago</th><th class="font-normal pb-1 text-right">Monto</th></tr></thead>
+              <tbody>
+                {% for l in c.lineas %}
+                <tr class="border-t border-slate-100">
+                  <td class="py-1 text-slate-700">{{ l.get('producto_nombre') or c.get('producto_nombre') or c.get('concepto') or '—' }}
+                    {% if l.get('cuota_numero') %}<span class="text-slate-400">· cuota {{ l.cuota_numero }}</span>{% endif %}</td>
+                  <td class="py-1 text-right text-slate-700">{{ (l.get('monto') or 0) | soles }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% elif c.get('concepto') or c.get('producto_nombre') %}
+            <p class="text-xs text-slate-500">{{ c.get('concepto') or c.get('producto_nombre') }}</p>
+            {% endif %}
+
+            {% if c.get('notas_credito') %}
+            <div class="text-xs bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-amber-800">
+              <i class="fa-solid fa-rotate-left mr-1"></i> Notas de crédito:
+              {% for n in c.notas_credito %}<span class="font-mono">{{ n.numero }}</span> ({{ n.monto | soles }}){% if not loop.last %}, {% endif %}{% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="flex flex-wrap gap-2 pt-1">
+              <a href="/comprobantes/{{ c._id }}/pdf" target="_blank" rel="noopener" class="btn-ghost text-xs px-2.5 py-1">
+                <i class="fa-solid fa-file-pdf mr-1"></i> Ver PDF</a>
+              {% if c.get('tiene_xml') %}
+              <a href="/comprobantes/{{ c._id }}/sunat/xml" class="btn-ghost text-xs px-2.5 py-1">
+                <i class="fa-solid fa-file-code mr-1"></i> XML SUNAT</a>
+              {% endif %}
+              <a href="/comprobantes?search={{ (c.numero or '') | urlencode }}" class="btn-ghost text-xs px-2.5 py-1">
+                <i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> Ver en Comprobantes</a>
+            </div>
+            {% else %}
+            <div class="flex items-start gap-2 text-xs text-amber-800">
+              <i class="fa-solid fa-link-slash mt-0.5"></i>
+              <div>
+                <strong>{{ e.parte }}:</strong> anotado como <span class="font-mono">{{ e.num_texto }}</span>, pero no está vinculado a un comprobante de la plataforma.
+                <a href="/comprobantes?search={{ e.num_texto | urlencode }}" class="text-blue-600 hover:underline ml-1">Buscarlo</a>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+          {% else %}
+          <p class="text-xs text-slate-400">
+            <i class="fa-solid fa-file-circle-xmark mr-1"></i> Este período no tiene comprobante registrado.
+            <a href="/billing?search={{ member.member_id }}" class="text-blue-600 hover:underline ml-1">Vincular en Cobranzas</a>
+          </p>
+          {% endfor %}
+        </div>
         </div>
         {% endfor %}
       </div>

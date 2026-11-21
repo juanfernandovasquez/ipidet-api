@@ -20,7 +20,7 @@ import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
 import webapp.variables_correo as vcorreo
 from datetime import timedelta as _timedelta
-from urllib.parse import quote as _quote
+from urllib.parse import quote as _quote, urlencode
 from config import catalogos
 from config.settings import SECRET_KEY, BREVO_WEBHOOK_TOKEN, PORTAL_API_BASE, WC_STORE_URL
 import threading as _threading
@@ -446,9 +446,12 @@ async def member_detail(request: Request, member_id: str):
     doc = pdb.get_member(member_id)
     if not doc:
         return RedirectResponse("/members")
+    productos = {str(x["_id"]): x.get("nombre", "") for x in pdb.productos_col.find({}, {"nombre": 1})}
     return templates.TemplateResponse(request, "member.html", _ctx(
         request,
         member=doc,
+        detalle_pagos=pdb.detalle_comprobantes_de_pagos(doc.get("payments") or []),
+        nombres_producto=productos,
         titulos=pdb.get_member_titulos(),
         ubicaciones=pdb.get_member_ubicaciones(),
     ))
@@ -806,49 +809,72 @@ async def emitir_comprobante(
                 pass  # no bloquear el flujo si el email falla
     return RedirectResponse(f"/billing/facturacion?periodo={periodo}&search={search}", status_code=303)
 
+_FILTROS_COBRANZA = ("search", "estado_ant", "estado", "comprobante_ant", "comprobante_emitido",
+                     "empresa", "estado_socio")
+
+
+def _filtros_cobranza(request: Request) -> dict:
+    """Filtros de /billing desde la URL. `periodo` (enlaces de Fraccionamientos y Facturación) decide a
+    qué columna va `estado`: si es el período anterior, filtra esa columna."""
+    q = request.query_params
+    f = {k: (q.get(k) or "").strip() for k in _FILTROS_COBRANZA}
+    periodo = (q.get("periodo") or "").strip()
+    if periodo and periodo == catalogos.get_periodo_anterior():
+        f["estado_ant"] = f["estado_ant"] or f["estado"]
+        f["estado"] = ""
+    return f
+
+
 @app.get("/billing", response_class=HTMLResponse)
-async def billing(
-    request: Request,
-    estado: str = "",
-    empresa: str = "",
-    search: str = "",
-    comprobante_emitido: str = "",
-    page: int = 1,
-):
-    rows, total = pdb.get_payments_grouped(estado, empresa, search, comprobante_emitido, page)
+async def billing(request: Request, page: int = 1):
+    f = _filtros_cobranza(request)
+    rows, total = pdb.get_payments_grouped(
+        f["estado"], f["empresa"], f["search"], f["comprobante_emitido"], page,
+        estado_ant=f["estado_ant"], comprobante_ant=f["comprobante_ant"], estado_socio=f["estado_socio"])
     productos_raw = pdb.get_productos(solo_activos=True)
     productos_list = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio")}
         for p in productos_raw
     ]
+    periodo_anterior = catalogos.get_periodo_anterior()
+    conteos = pdb.get_conteos_cobranza()
+    activos = {k: v for k, v in f.items() if v}
     return templates.TemplateResponse(request, "billing.html", _ctx(request,
         payments=rows, total=total,
-        estado=estado, empresa=empresa, search=search,
-        comprobante_emitido=comprobante_emitido,
+        f=f, filtros_activos=len([k for k in activos if k != "search"]),
+        filtros_qs=urlencode(activos),
+        # compatibilidad con el resto de la plantilla
+        estado=f["estado"], empresa=f["empresa"], search=f["search"],
+        comprobante_emitido=f["comprobante_emitido"],
         page=page, per_page=50,
         total_pages=max(1, (total + 49) // 50),
         productos_list=productos_list,
-        periodo_anterior=catalogos.get_periodo_anterior(),
-        conteos=pdb.get_resumen_inicio()["por_estado"],
+        periodo_anterior=periodo_anterior,
+        conteos_ant=conteos.get(periodo_anterior, {}),
+        conteos=conteos.get(catalogos.get_periodo_actual(), {}),
+        empresas_lista=[c.get("nombre") for c in pdb.get_all_companies() if c.get("nombre")],
     ))
 
 
 @app.get("/billing/export")
-async def billing_export(
-    periodo: str | None = None,
-    estado: str = "",
-    empresa: str = "",
-    search: str = "",
-):
-    periodo = _periodo(periodo)
-    docs = pdb.get_payments_export(periodo, estado, empresa, search)
+async def billing_export(request: Request):
+    """Excel con las mismas filas y filtros que la pantalla: una fila por socio, los dos períodos."""
+    f = _filtros_cobranza(request)
+    rows, _ = pdb.get_payments_grouped(
+        f["estado"], f["empresa"], f["search"], f["comprobante_emitido"], 1, per_page=100000,
+        estado_ant=f["estado_ant"], comprobante_ant=f["comprobante_ant"], estado_socio=f["estado_socio"])
+    periodo_actual = catalogos.get_periodo_actual()
+    periodo_anterior = catalogos.get_periodo_anterior(periodo_actual)
+    periodo = periodo_actual
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = f"Cobranzas {periodo}"
+    ws.title = f"Cobranzas {periodo_anterior}-{periodo_actual}"
 
-    headers = ["ID Socio", "Apellidos", "Nombres", "Centro de Trabajo", "Email",
-               "Período", "Estado", "Empresa", "Pagado por", "Fecha Pago", "Medio Pago", "Cuotas"]
+    por_periodo = ["Estado", "Empresa", "Pagado por", "Fecha pago", "Medio pago", "Comprobante", "Cuotas"]
+    headers = (["ID Socio", "Socio", "Estado del socio", "Centro de Trabajo", "Email"]
+               + [f"{h} {periodo_anterior}" for h in por_periodo]
+               + [f"{h} {periodo_actual}" for h in por_periodo])
     header_fill = PatternFill("solid", fgColor="1E3A5F")
     header_font = Font(bold=True, color="FFFFFF")
     for col, h in enumerate(headers, 1):
@@ -857,22 +883,21 @@ async def billing_export(
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center")
 
-    for row, d in enumerate(docs, 2):
-        cuotas = d.get("cuotas", [])
-        cuotas_pagadas = sum(1 for c in cuotas if c.get("estado") == "pagado")
-        cuotas_str = f"{cuotas_pagadas}/{len(cuotas)} pagadas" if cuotas else ""
-        ws.cell(row=row, column=1,  value=d.get("member_id", ""))
-        ws.cell(row=row, column=2,  value=d.get("apellidos", ""))
-        ws.cell(row=row, column=3,  value=d.get("nombres", ""))
-        ws.cell(row=row, column=4,  value=d.get("centro_trabajo", ""))
-        ws.cell(row=row, column=5,  value=d.get("email_principal", ""))
-        ws.cell(row=row, column=6,  value=d.get("periodo", ""))
-        ws.cell(row=row, column=7,  value=STATUS_ES.get(d.get("estado", ""), d.get("estado", "")))
-        ws.cell(row=row, column=8,  value=d.get("empresa_pagadora") or "")
-        ws.cell(row=row, column=9,  value=d.get("pagado_por") or "")
-        ws.cell(row=row, column=10, value=d.get("fecha_pago") or "")
-        ws.cell(row=row, column=11, value=d.get("medio_pago") or "")
-        ws.cell(row=row, column=12, value=cuotas_str)
+    def _celdas_pago(d: dict | None) -> list:
+        if not d:
+            return ["Sin registro", "", "", "", "", "", ""]
+        cuotas = d.get("cuotas") or []
+        pagadas = sum(1 for c in cuotas if c.get("estado") == "pagado")
+        return [STATUS_ES.get(d.get("estado", ""), d.get("estado", "")), d.get("empresa_pagadora") or "",
+                d.get("pagado_por") or "", d.get("fecha_pago") or "", d.get("medio_pago") or "",
+                d.get("num_comprobante") or "", f"{pagadas}/{len(cuotas)} pagadas" if cuotas else ""]
+
+    for row, r in enumerate(rows, 2):
+        valores = ([r.get("member_id", ""), r.get("nombre_completo", ""), r.get("estado_socio", ""),
+                    r.get("centro_trabajo", ""), r.get("email_principal", "")]
+                   + _celdas_pago(r.get("pago_anterior")) + _celdas_pago(r.get("pago_actual")))
+        for col, v in enumerate(valores, 1):
+            ws.cell(row=row, column=col, value=v)
 
     for col in ws.columns:
         max_len = max((len(str(c.value or "")) for c in col), default=10)
@@ -882,9 +907,11 @@ async def billing_export(
     wb.save(buf)
     buf.seek(0)
 
-    filename = f"cobranzas_{periodo}"
-    if estado:
-        filename += f"_{estado}"
+    filename = f"cobranzas_{periodo_anterior}-{periodo}"
+    if f["estado_ant"]:
+        filename += f"_{periodo_anterior}-{f['estado_ant']}"
+    if f["estado"]:
+        filename += f"_{periodo}-{f['estado']}"
     filename += ".xlsx"
 
     return StreamingResponse(

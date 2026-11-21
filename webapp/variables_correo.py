@@ -11,8 +11,7 @@ from bson import ObjectId
 from config import catalogos
 from webapp import db as pdb
 
-# Estados de payments en los que el socio todavía debe algo del período.
-ESTADOS_CON_DEUDA = ("debe", "pendiente", "parcial", "fraccionamiento")
+ESTADOS_CON_DEUDA = catalogos.ESTADOS_CON_DEUDA
 
 # (variable, qué pone) — se listan en la pantalla de Comunicaciones.
 VARIABLES: list[tuple[str, str]] = [
