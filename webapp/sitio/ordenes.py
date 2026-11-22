@@ -18,6 +18,7 @@ from pymongo.errors import DuplicateKeyError
 from config import catalogos
 from config.mongo_client import db
 from webapp import db as pdb
+from webapp import tributos
 from webapp import variables_correo
 from webapp.sitio import config, eventos, pagos
 
@@ -142,7 +143,11 @@ def inscribir(evento_id: str, persona: dict, usuario: str = "", del_equipo: bool
         if ev.get("cobro") not in eventos.COBROS:
             raise Invalido("Falta definir si el evento es gratuito o de pago.")
         monto = eventos.precio(ev, bool(mid))
+        # Foto del IGV al inscribirse: si el evento cambia después, esta venta no.
+        afect = eventos.afectacion(ev) if monto else ""
+        tasa = catalogos.get_facturacion()["tasa_igv"] if afect == tributos.GRAVADO else None
         orden, creada = _insertar({
+            "tipo_afectacion": afect, "tasa_igv": tasa,
             "tipo": "evento", "clave": clave, "evento_id": evento_id,
             "evento_fecha": ev.get("fecha", ""), "descripcion": ev.get("titulo", "Evento"),
             "cuenta_id": persona.get("id") or "", "email": persona["email"],
@@ -459,6 +464,10 @@ def preparar_comprobante(orden_id: str, usuario: str) -> str:
     ap = o.get("pago_aplicado") or {}
     if o["tipo"] == "evento":
         item["evento_id"] = o["evento_id"]   # nunca se cruza con cuotas
+        afect = o.get("tipo_afectacion") or eventos.afectacion(eventos.por_id(o["evento_id"]) or {})
+        item["tipo_afectacion"] = afect     # "" = el borrador queda «IGV por definir» y no se puede emitir
+        if o.get("tasa_igv"):
+            item["tasa_igv"] = o["tasa_igv"]
     else:
         item.update(payment_id=o["payment_id"], tipo_pago=ap.get("tipo_pago", "principal"))
         if ap.get("tipo_pago") == "cuota":

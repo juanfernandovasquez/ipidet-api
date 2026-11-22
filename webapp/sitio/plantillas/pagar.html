@@ -5,7 +5,7 @@
 {{ heroe('Pago', orden.descripcion, compacto=true) }}
 <section class="seccion"><div class="contenedor angosto">
   <div class="tarjeta total">
-    <span>Total<strong class="monto">{{ orden.monto | soles }}</strong></span>
+    <span>Total<strong class="monto">{{ orden.monto | soles }}</strong>{% if igv %}<small class="suave">Incluye IGV de {{ igv | soles }}</small>{% endif %}</span>
     <span class="estado {% if orden.estado != 'confirmada' %}estado--pendiente{% endif %}">{{ estados[orden.estado][0] }}</span>
   </div>
 

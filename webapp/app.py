@@ -20,7 +20,7 @@ import webapp.mailer as mailer
 import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
 import webapp.variables_correo as vcorreo
-from webapp import seguridad
+from webapp import seguridad, tributos
 from datetime import timedelta as _timedelta
 from urllib.parse import quote as _quote, urlencode
 from config import catalogos
@@ -147,13 +147,18 @@ class _AuthMiddleware:
             return
         role = session.get("user_role", "viewer")
         if role != "admin":
-            section = auth.section_for_path(path)
+            section = auth.section_for_path(path, scope.get("method", "GET"))
             if section == "__admin__":
                 response = RedirectResponse("/", status_code=302)
                 await response(scope, receive, send)
                 return
             if section and section not in session.get("user_permisos", []):
-                response = RedirectResponse("/?sin_acceso=1", status_code=302)
+                if path.startswith("/comprobantes") and scope.get("method") not in ("GET", "HEAD"):
+                    # Lo llama fetch: un 302 llegaría como «ok» sin haber hecho nada.
+                    response = JSONResponse({"ok": False, "error": "Necesitas permiso de Cobranzas para facturar."},
+                                            status_code=403)
+                else:
+                    response = RedirectResponse("/?sin_acceso=1", status_code=302)
                 await response(scope, receive, send)
                 return
 
@@ -715,10 +720,9 @@ async def guardar_factura_empresa(request: Request):
         )
         for _, pid in resolved
     }
-    items_comp = [{"member_id": mid, "producto_nombre": nombres_producto[pid],
-                   "monto": round(monto / len(resolved), 2) if len(resolved) else 0,
+    items_comp = [{"member_id": mid, "producto_nombre": nombres_producto[pid], "monto": parte,
                    "payment_id": pid, "tipo_pago": "principal", "cuota_numero": None}
-                  for mid, pid in resolved]
+                  for (mid, pid), parte in zip(resolved, tributos.repartir(monto, len(resolved)))]
     distintos = set(nombres_producto.values())
     producto_comp = distintos.pop() if len(distintos) == 1 else f"Membresías {periodo}"
     existing_comp = pdb.comprobantes_col.find_one({"numero": num_comprobante}, {"_id": 1})
@@ -2123,6 +2127,7 @@ async def factura_credito_enviar_email(factura_id: str, request: Request):
         "empresa":       info["empresa"],
         "ruc_empresa":   (fac or {}).get("ruc") or "",
         "monto_total":   info["monto_total"],
+        "tipo_afectacion": tributos.EXONERADO,     # facturas al crédito: solo membresías
         "items":         info["items"],
         "concepto":      info["concepto"],
         "socios":        (fac or {}).get("socios") or [],
@@ -2345,7 +2350,8 @@ async def comprobantes_preparar(request: Request):
     productos_json = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"),
          "tipo": p.get("tipo", ""), "periodo": p.get("periodo", ""),
-         "codigo_sunat": p.get("codigo_sunat", "")}
+         "codigo_sunat": p.get("codigo_sunat", ""),
+         "tipo_afectacion": tributos.por_defecto({"producto_id": str(p["_id"])})}
         for p in productos_raw
     ]
     empresas = pdb.get_all_companies()
@@ -2353,6 +2359,8 @@ async def comprobantes_preparar(request: Request):
         request,
         productos_json = productos_json,
         empresas       = empresas,
+        afectaciones   = tributos.AFECTACIONES,
+        tasa_igv       = catalogos.get_facturacion()["tasa_igv"],
     ))
 
 
@@ -2371,13 +2379,16 @@ async def comprobantes_list(
         search=search, tipo=tipo, empresa=empresa, sunat=sunat,
         sort_by=sort_by, sort_dir=sort_dir, page=page,
     )
+    for d in docs:
+        d["impuestos"] = tributos.resumen(d) if d.get("tipo") in ("boleta", "factura", "nota_credito") else None
     stats         = pdb.get_comprobante_stats()
     empresas      = pdb.get_all_companies()
     productos_raw = pdb.get_productos_list()
     productos_json = [
         {"id": str(p["_id"]), "nombre": p["nombre"], "precio": p.get("precio"),
          "tipo": p.get("tipo", ""), "periodo": p.get("periodo", ""),
-         "codigo_sunat": p.get("codigo_sunat", "")}
+         "codigo_sunat": p.get("codigo_sunat", ""),
+         "tipo_afectacion": tributos.por_defecto({"producto_id": str(p["_id"])})}
         for p in productos_raw
     ]
     pages = max(1, (total + 49) // 50)
@@ -2400,6 +2411,8 @@ async def comprobantes_list(
         pages          = pages,
         motivos_nc     = catalogos.MOTIVOS_NOTA_CREDITO,
         efectos_nc     = catalogos.EFECTOS_NOTA_CREDITO,
+        afectaciones   = tributos.AFECTACIONES,
+        tasa_igv       = catalogos.get_facturacion()["tasa_igv"],
     ))
 
 
@@ -2411,9 +2424,15 @@ def _resolve_payment_ids(items: list) -> None:
     No-op for items that already have payment_id.
     """
     from bson import ObjectId as _OId
+    cache: dict = {}
     for item in items:
-        if item.get("payment_id") or not item.get("member_id") or item.get("evento_id"):
-            continue    # una inscripción de evento nunca se cruza con una cuota
+        if not tributos.salda_cuota(item, cache):
+            # Una entrada u otra venta nunca se cruza con una cuota, aunque el formulario mande el pago.
+            for clave in ("payment_id", "tipo_pago", "cuota_numero"):
+                item.pop(clave, None)
+            continue
+        if item.get("payment_id") or not item.get("member_id"):
+            continue
 
         # Path 1: product FK → cuota_anual / cuota_provincia → principal payment
         # Si producto_id falta pero codigo_sunat está presente, resolver FK primero.
@@ -2428,6 +2447,8 @@ def _resolve_payment_ids(items: list) -> None:
                 prod = pdb.productos_col.find_one({"_id": _OId(item["producto_id"])})
             except Exception:
                 pass
+        if prod and prod.get("tipo") not in tributos.TIPOS_QUE_SALDAN_CUOTA:
+            continue
         if prod and prod.get("periodo"):
             periodo = prod["periodo"]
             if prod.get("tipo") in ("cuota_anual", "cuota_provincia"):
@@ -2485,7 +2506,7 @@ async def api_find_payment(member_id: str = "", producto_id: str = ""):
         prod = pdb.productos_col.find_one({"_id": _OId(producto_id)}, {"periodo": 1, "tipo": 1})
     except Exception:
         return JSONResponse({"payment_id": None, "tipo_pago": "principal", "periodo": ""})
-    if not prod or not prod.get("periodo"):
+    if not prod or not prod.get("periodo") or prod.get("tipo") not in tributos.TIPOS_QUE_SALDAN_CUOTA:
         return JSONResponse({"payment_id": None, "tipo_pago": "principal", "periodo": ""})
     periodo = prod["periodo"]
     pay = pdb.payments_col.find_one({"member_id": member_id, "periodo": periodo}, {"_id": 1})
@@ -2606,6 +2627,27 @@ async def comprobante_complete(comp_id: str, request: Request):
     return {"ok": True, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
 
 
+def _cambia_lo_emitido(actual: dict, data: dict, items: list) -> bool:
+    """True si la edición toca algo que SUNAT ya aceptó. Vincular socios y pagos sí se puede."""
+    for campo in ("numero", "tipo", "fecha_emision"):
+        if campo in data and str(data.get(campo) or "") != str(actual.get(campo) or ""):
+            return True
+    if "monto_total" in data and tributos.dinero(data.get("monto_total")) != tributos.dinero(actual.get("monto_total")):
+        return True
+    previos = actual.get("items") or []
+    if not items:
+        return False
+    if len(items) != len(previos):
+        return bool(previos)
+    for nuevo, viejo in zip(items, previos):
+        if tributos.dinero(nuevo.get("monto")) != tributos.dinero(viejo.get("monto")):
+            return True
+        elegida = nuevo.get("tipo_afectacion")
+        if elegida in tributos.AFECTACIONES and elegida != tributos.de_linea(viejo):
+            return True
+    return False
+
+
 def _importar_nota_credito_xml(fname: str, data: dict, content: bytes) -> dict:
     """Registra una nota de crédito importada. Su efecto en la cobranza queda por definir:
     lo elige el equipo desde la lista (nunca se cambia un pago al importar)."""
@@ -2627,7 +2669,7 @@ def _importar_nota_credito_xml(fname: str, data: dict, content: bytes) -> dict:
                 str(original["_id"]), numero=numero, fecha_emision=data["fecha_emision"],
                 motivo_codigo=motivo_codigo, motivo=data.get("motivo", ""), monto=data["monto_total"],
                 lineas_idx=None, efecto="", origen="xml", items_xml=data["items"], xml_raw=xml_raw,
-                validar_saldo=False,
+                validar_saldo=False, tributos_xml=data.get("tributos"),
             )
         except ValueError as e:
             return {**base, "status": "error", "msg": str(e)}
@@ -2641,7 +2683,9 @@ def _importar_nota_credito_xml(fname: str, data: dict, content: bytes) -> dict:
         "motivo_codigo": motivo_codigo, "motivo": data.get("motivo", ""),
         "doc_ref_id": None, "doc_ref_numero": data.get("ref_numero", ""), "doc_ref_tipo": data.get("ref_tipo", ""),
         "empresa": data["razon_social"], "ruc_empresa": data["ruc_empresa"], "socios": [],
-        "items": [{k: it.get(k) for k in ("member_id", "producto_nombre", "monto", "codigo_sunat")} for it in data["items"]],
+        "items": [{k: it[k] for k in ("member_id", "producto_nombre", "monto", "codigo_sunat", "tipo_afectacion", "tasa_igv")
+                   if k in it} for it in data["items"]],
+        **({"tributos": data["tributos"]} if data.get("tributos") else {}),
         "estado": "emitido", "origen": "xml", "efecto_pago": "", "pagos_afectados": [],
         "xml_raw": xml_raw, "created_at": datetime.now(timezone.utc),
     }).inserted_id)
@@ -2712,7 +2756,11 @@ async def comprobantes_import_xml(
         if pre_match:
             # Completar pre-comprobante existente con datos del XML
             pre_comp_id = str(pre_match["_id"])
+            con_impuesto = tributos.aplicar_xml([dict(i) for i in pre_match.get("items") or []], data)
+            pre_match["items"] = con_impuesto
             pdb.complete_pre_comprobante(
+                tributos_xml  = data.get("tributos"),
+                items         = con_impuesto,
                 comp_id       = pre_comp_id,
                 numero        = numero,
                 tipo          = xml_tipo,
@@ -2782,7 +2830,7 @@ async def comprobantes_import_xml(
         # Items: usar los vinculados por el usuario si existen; si no, los del XML
         user_items = items_map_dict.get(numero)
         if user_items:
-            items = user_items
+            items = tributos.aplicar_xml(user_items, data)
         else:
             items = data["items"]
             # Auto-cruce: código SUNAT → nombre y producto_id en plataforma
@@ -2813,6 +2861,7 @@ async def comprobantes_import_xml(
             items           = items,
             ruc             = ruc or "",
             xml_raw         = content.decode("utf-8", errors="replace"),
+            tributos_xml    = data.get("tributos"),
         )
         pdb.vincular_notas_pendientes(comp_id, numero)
 
@@ -2849,14 +2898,39 @@ async def comprobantes_import_xml(
 
 @app.post("/comprobantes/{comprobante_id}/update")
 async def comprobante_update(comprobante_id: str, request: Request):
-    actual = pdb.comprobantes_col.find_one({"_id": _oid(comprobante_id)}, {"tipo": 1})
-    if actual and actual.get("tipo") == "nota_credito":
+    actual = pdb.comprobantes_col.find_one({"_id": _oid(comprobante_id)},
+                                           {"tipo": 1, "numero": 1, "fecha_emision": 1, "monto_total": 1,
+                                            "items": 1, "sunat_estado": 1})
+    if not actual:
+        raise HTTPException(404, "Comprobante no encontrado")
+    if actual.get("tipo") == "nota_credito":
         return JSONResponse({"ok": False, "error": "Una nota de crédito no se edita: anúlala y regístrala de nuevo."},
                             status_code=400)
     data  = await request.json()
     items = data.get("items", [])
     # Las líneas que una nota de crédito ya anuló o corrigió conservan su marca al editar.
-    previos = (pdb.comprobantes_col.find_one({"_id": _oid(comprobante_id)}, {"items": 1}) or {}).get("items") or []
+    previos = actual.get("items") or []
+    emitido = actual.get("sunat_estado") in ("emitido", "anulado_sunat")
+    if emitido and _cambia_lo_emitido(actual, data, items):
+        return JSONResponse({"ok": False, "error": "Este comprobante ya está en SUNAT: número, fecha, montos e IGV no "
+                                                   "se editan. Para corregirlo emite una nota de crédito."},
+                            status_code=409)
+    if len(items) == len(previos):
+        for nuevo, viejo in zip(items, previos):
+            if nuevo.get("producto_nombre") != viejo.get("producto_nombre") and not emitido:
+                continue
+            # El formulario no manda todo: estas FK y la foto tributaria no se pierden al editar.
+            for clave in ("evento_id", "orden_id", "tipo_producto", "cuota_numero", "codigo_sunat",
+                          "tipo_afectacion", "tasa_igv"):
+                if clave in viejo and not nuevo.get(clave):
+                    nuevo[clave] = viejo[clave]
+            if emitido:     # lo que vio SUNAT, tal cual
+                nuevo["producto_nombre"] = viejo.get("producto_nombre", "")
+                for clave in ("tipo_afectacion", "tasa_igv"):
+                    if clave in viejo:
+                        nuevo[clave] = viejo[clave]
+                    else:
+                        nuevo.pop(clave, None)
     marcas = {(it.get("payment_id"), it.get("tipo_pago"), it.get("cuota_numero")): it["nc_id"]
               for it in previos if it.get("nc_id") and it.get("payment_id")}
     empresa = data.get("empresa", "").strip()
@@ -2989,11 +3063,7 @@ async def sunat_preflight(comp_id: str, request: Request):
         if socios:
             member = pdb.get_member(socios[0])
     elif tipo == "factura":
-        if comp.get("empresa_id"):
-            try:
-                empresa = pdb.companies_col.find_one({"_id": _OID(comp["empresa_id"])})
-            except Exception:
-                pass
+        empresa = pdb.empresa_de_comprobante(comp)
 
     ultimo_info = None
     try:
@@ -3059,11 +3129,8 @@ async def sunat_emitir(comp_id: str, request: Request):
         _socios_pre = comp.get("socios") or []
         if _socios_pre:
             _member_pre = pdb.get_member(_socios_pre[0])
-    elif _tipo_pre == "factura" and comp.get("empresa_id"):
-        try:
-            _empresa_pre = pdb.companies_col.find_one({"_id": _OID(comp["empresa_id"])})
-        except Exception:
-            pass
+    elif _tipo_pre == "factura":
+        _empresa_pre = pdb.empresa_de_comprobante(comp)
     _ultimo_pre = None
     try:
         _serie_pre = (comp.get("numero") or "").split("-", 1)[0]
@@ -3077,6 +3144,9 @@ async def sunat_emitir(comp_id: str, request: Request):
 
     tipo = comp.get("tipo", "boleta")
     resultado: dict
+    _impuestos = {k: v for k, v in tributos.resumen(comp).items() if k not in ("sin_definir", "descuadre")}
+    if not pdb.reservar_emision(comp_id):
+        return {"ok": False, "error": "Este comprobante ya se está enviando a SUNAT. Espera y vuelve a cargar la página."}
 
     if tipo == "boleta":
         member = None
@@ -3086,12 +3156,7 @@ async def sunat_emitir(comp_id: str, request: Request):
         resultado = emitir_boleta(comp, member)
 
     elif tipo == "factura":
-        empresa = None
-        if comp.get("empresa_id"):
-            try:
-                empresa = pdb.companies_col.find_one({"_id": _OID(comp["empresa_id"])})
-            except Exception:
-                pass
+        empresa = pdb.empresa_de_comprobante(comp)
         resultado = emitir_factura(comp, empresa)
 
     else:
@@ -3116,6 +3181,9 @@ async def sunat_emitir(comp_id: str, request: Request):
             error    = resultado.get("error", ""),
             ambiente = SUNAT_ENVIRONMENT,
         )
+    # Foto de lo que aceptó SUNAT; y se libera el envío.
+    pdb.comprobantes_col.update_one({"_id": _OID(comp_id)},
+                                    {"$set": {"emitiendo_at": None, **({"tributos": _impuestos} if resultado["ok"] else {})}})
 
     return resultado
 
@@ -3270,7 +3338,8 @@ async def comprobante_nota_credito(comp_id: str, request: Request):
     if not efecto:
         return {"ok": False, "error": "Elige qué pasa con la cobranza"}
     lineas = _lineas_de(data)
-    fecha = (data.get("fecha_emision") or "").strip() or _date_cls.today().isoformat()
+    from webapp.sunat_client import hoy_lima
+    fecha = (data.get("fecha_emision") or "").strip() or hoy_lima()
     sunat_campos = None
     numero = (data.get("numero") or "").strip().upper()
 
@@ -3283,6 +3352,10 @@ async def comprobante_nota_credito(comp_id: str, request: Request):
             return {"ok": False, "error": "Este comprobante no se emitió desde la plataforma. "
                                          "Emite la nota en el portal de SUNAT y regístrala con su número."}
         # Valida antes de enviar a SUNAT: lo que SUNAT acepta ya no se puede deshacer.
+        if tributos.resumen(original).get("gravadas") and not catalogos.get_facturacion().get("emitir_gravados"):
+            return {"ok": False, "error": "La emisión con IGV no está habilitada. Emite la nota en el portal SOL y regístrala con su número."}
+        if tributos.resumen(original).get("sin_definir"):
+            return {"ok": False, "error": "El comprobante original no tiene definido su IGV."}
         info = pdb.info_para_nota_credito(comp_id)
         if motivo_codigo not in catalogos.MOTIVOS_NOTA_CREDITO:
             return {"ok": False, "error": "Elige el motivo de la nota de crédito"}
@@ -3290,15 +3363,11 @@ async def comprobante_nota_credito(comp_id: str, request: Request):
             return {"ok": False, "error": f"El monto debe ser mayor a cero y no superar S/ {info['saldo']:.2f}"}
         serie = serie_nota_credito(original["numero"].split("-", 1)[0])
         numero = f"{serie}-{(pdb.get_ultimo_correlativo_emitido_nc(serie) or 0) + 1:05d}"
-        elegidas = [original["items"][i] for i in (lineas if lineas is not None else range(len(original.get("items") or [])))
-                    if i < len(original.get("items") or [])]
         member = pdb.get_member((original.get("socios") or [None])[0]) if original.get("tipo") == "boleta" and original.get("socios") else None
-        empresa = None
-        if original.get("tipo") == "factura" and original.get("empresa_id") and _oid_valido(original["empresa_id"]):
-            empresa = pdb.companies_col.find_one({"_id": _oid(original["empresa_id"])})
+        empresa = pdb.empresa_de_comprobante(original) if original.get("tipo") == "factura" else None
         resultado = emitir_nota_credito(original, {
             "numero": numero, "fecha_emision": fecha, "motivo_codigo": motivo_codigo,
-            "motivo": motivo or catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo], "monto": monto, "items": elegidas,
+            "motivo": motivo or catalogos.MOTIVOS_NOTA_CREDITO[motivo_codigo], "monto": monto, "lineas_idx": lineas,
         }, member, empresa)
         if not resultado.get("ok"):
             return {"ok": False, "error": "SUNAT no aceptó la nota: " + (resultado.get("error") or "")}
@@ -4532,7 +4601,7 @@ async def ia_tarea_delete(tarea_id: str):
 @app.get("/productos", response_class=HTMLResponse)
 async def productos_list(request: Request, tipo: str = ""):
     productos = pdb.get_productos(tipo=tipo)
-    return templates.TemplateResponse(request, "productos.html", _ctx(request,
+    return templates.TemplateResponse(request, "productos.html", _ctx(request, afectaciones=tributos.AFECTACIONES, facturacion=catalogos.get_facturacion(),
         productos=productos, tipo=tipo, tipos=pdb.TIPOS_PRODUCTO,
     ))
 
@@ -4543,6 +4612,8 @@ async def productos_list(request: Request, tipo: str = ""):
 async def configuracion(request: Request):
     return templates.TemplateResponse(request, "configuracion.html", _ctx(request,
         catalogos_def=catalogos.CATALOGOS,
+        facturacion=catalogos.get_facturacion(),
+        afectaciones=tributos.AFECTACIONES,
         catalogos_valores={k: catalogos.get_catalogo(k) for k in catalogos.CATALOGOS},
         campos_org=catalogos.CAMPOS_ORGANIZACION,
         periodo_fijado=catalogos.es_periodo_fijado(),
@@ -4563,6 +4634,34 @@ async def configuracion_organizacion(request: Request):
     return {"ok": True}
 
 
+@app.post("/configuracion/facturacion")
+async def configuracion_facturacion(request: Request):
+    """Tasa e IGV por tipo de venta. Solo administradores: decide qué impuesto sale en cada comprobante."""
+    if request.session.get("user_role") != "admin":
+        raise HTTPException(403, "Solo un administrador cambia la facturación.")
+    form = await request.form()
+    volver = lambda **q: RedirectResponse("/configuracion?" + urlencode(q), status_code=303)  # noqa: E731
+    tasa = _safe_float(str(form.get("tasa_igv") or "").replace(",", "."), 0)
+    if not 0 < tasa <= 30:
+        return volver(error="La tasa de IGV debe ser mayor a 0 y hasta 30.")
+    actual = catalogos.get_facturacion()
+    por_tipo = {}
+    for tipo in actual["afectacion_por_tipo"]:
+        valor = str(form.get(f"afectacion_{tipo}") or "")
+        por_tipo[tipo] = valor if valor in tributos.AFECTACIONES else ""
+        if tipo in tributos.TIPOS_QUE_SALDAN_CUOTA and not por_tipo[tipo]:
+            return volver(error="Las cuotas necesitan una afectación.")
+    emitir = form.get("emitir_gravados") == "1"
+    campos = {"tasa_igv": tasa, "afectacion_por_tipo": por_tipo, "emitir_gravados": emitir}
+    if emitir and not actual.get("emitir_gravados"):
+        if form.get("contador_reviso") != "1":
+            return volver(error="Para habilitar la emisión con IGV confirma que el contador revisó una prueba.")
+        campos.update(habilitado_por=request.session.get("user_email"),
+                      habilitado_at=datetime.now(timezone.utc))
+    catalogos.set_facturacion(campos)
+    return volver(ok="Facturación guardada.")
+
+
 @app.post("/configuracion/periodo")
 async def configuracion_periodo(request: Request):
     data = await request.json()
@@ -4581,12 +4680,13 @@ async def producto_add(
     codigo_sunat:  str = Form(""),
     cuota_numero:  str = Form(""),
     wc_product_id: str = Form(""),
+    tipo_afectacion: str = Form(""),
 ):
     precio_val     = _safe_float(precio) if precio.strip() else None
     cuota_num_val  = int(cuota_numero) if cuota_numero.strip().isdigit() else None
     wc_id_val      = int(wc_product_id) if wc_product_id.strip().isdigit() else None
     pdb.create_producto(nombre, tipo, precio_val, periodo, descripcion,
-                        codigo_wc, codigo_sunat, cuota_num_val, wc_id_val)
+                        codigo_wc, codigo_sunat, cuota_num_val, wc_id_val, tipo_afectacion)
     return RedirectResponse("/productos", status_code=303)
 
 
@@ -4603,12 +4703,13 @@ async def producto_update(
     codigo_wc:     str = Form(""),
     codigo_sunat:  str = Form(""),
     cuota_numero:  str = Form(""),
+    tipo_afectacion: str | None = Form(None),
 ):
     precio_val    = _safe_float(precio) if precio.strip() else None
     wc_id_val     = int(wc_product_id) if wc_product_id.strip().isdigit() else None
     cuota_num_val = int(cuota_numero) if cuota_numero.strip().isdigit() else None
     pdb.update_producto(producto_id, nombre, tipo, precio_val, periodo, descripcion,
-                        activo == "on", wc_id_val, codigo_wc, codigo_sunat, cuota_num_val)
+                        activo == "on", wc_id_val, codigo_wc, codigo_sunat, cuota_num_val, tipo_afectacion)
     return RedirectResponse("/productos", status_code=303)
 
 

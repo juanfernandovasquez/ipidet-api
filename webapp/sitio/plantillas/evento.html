@@ -33,7 +33,7 @@
         {% elif not persona.registrada %}
           <a class="btn btn--primario" href="{{ B }}/completar?next={{ B }}/eventos/{{ ev._id }}">Completar mi cuenta {{ i('flecha') }}</a>
         {% else %}
-          {% if ev.de_pago %}<p><strong class="monto">{{ mi_precio | soles if mi_precio else 'Sin costo para ti' }}</strong> <small class="suave">{{ 'precio de socio' if persona.socio else 'precio para no socios' }}</small></p>{% endif %}
+          {% if ev.de_pago %}<p><strong class="monto">{{ mi_precio | soles if mi_precio else 'Sin costo para ti' }}</strong> <small class="suave">{{ 'precio de socio' if persona.socio else 'precio para no socios' }}{% if ev.con_igv and mi_precio %} · IGV incluido{% endif %}</small></p>{% endif %}
           <button class="btn btn--primario" type="button" data-post="{{ B }}/api/eventos/{{ ev._id }}/inscribir">{{ 'Inscribirme y ver cómo pagar' if mi_precio else 'Inscribirme' }} {{ i('flecha') }}</button>
         {% endif %}
         {% if ev.limite %}<p class="suave">Inscripciones hasta el {{ (ev.limite | fecha).larga }}.</p>{% endif %}

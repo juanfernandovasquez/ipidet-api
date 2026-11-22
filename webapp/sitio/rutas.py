@@ -18,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 
 from config import catalogos
 from webapp import db as pdb
-from webapp import organizacion
+from webapp import organizacion, tributos
 from webapp.sitio import avisos, config, cuentas, eventos, ordenes, pagos
 from webapp.web_publica import _TEMAS_CONTACTO, _ficha_publico, _ip, dato_persona, email_valido
 
@@ -253,6 +253,7 @@ def ver_evento(request: Request, evento_id: str):
                        "descripcion": ev.get("descripcion", ""), "flyer": eventos.flyer(ev),
                        "limite": ev.get("fecha_limite_inscripcion", ""),
                        "precio_texto": eventos.texto_precio(ev), "de_pago": ev.get("cobro") == "pago",
+                       "con_igv": ev.get("cobro") == "pago" and eventos.afectacion(ev) == tributos.GRAVADO,
                        "proximo": (ev.get("fecha") or "") >= config.hoy(),
                        "externo": config.url_segura(ev.get("link_registro", "")),
                        # El enlace de la sesión solo lo recibe quien está inscrito.
@@ -399,7 +400,8 @@ def pagar(request: Request, orden_id: str):
     if not ordenes.es_de(o, p):
         raise HTTPException(404)
     f = o.get("facturacion") or {}
-    return _pagina(request, "pagar.html", "cuenta", orden=o, estados=ordenes.ESTADOS,
+    igv = float(tributos.desglosar(o["monto"], o.get("tipo_afectacion") or "", o.get("tasa_igv") or 0)[1])
+    return _pagina(request, "pagar.html", "cuenta", orden=o, igv=igv, estados=ordenes.ESTADOS,
                    metodos=pagos.disponibles("cuotas" if o["tipo"] == "cuota" else "eventos"),
                    fact={**f, "dni": f.get("dni") or ((p.get("socio") or {}).get("dni") or ""),
                          "nombre": f.get("nombre") or p["nombre_completo"]},

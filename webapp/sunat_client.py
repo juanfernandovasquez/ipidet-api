@@ -1,7 +1,10 @@
 """Cliente APISPERU — facturación electrónica SUNAT (UBL 2.1)."""
 import httpx
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+from config import catalogos
+from webapp import tributos
 
 from config.settings import (
     APISPERU_TOKEN,
@@ -14,6 +17,14 @@ from config.settings import (
 )
 
 _BASE = "https://facturacion.apisperu.com/api/v1"
+
+_LIMA = timezone(timedelta(hours=-5))
+
+
+def hoy_lima() -> str:
+    """Render corre en UTC: después de las 7 p. m. de Lima ya sería mañana."""
+    return datetime.now(_LIMA).strftime("%Y-%m-%d")
+
 
 # ── Número a letras (español, para el campo "legends") ────────────────────
 
@@ -56,6 +67,10 @@ def _cientos(n: int) -> str:
 def _entero_a_letras(n: int) -> str:
     if n == 0:
         return "CERO"
+    if n >= 1_000_000:
+        millones, resto = divmod(n, 1_000_000)
+        cab = "UN MILLON" if millones == 1 else f"{_entero_a_letras(millones)} MILLONES"
+        return f"{cab} {_entero_a_letras(resto)}" if resto else cab
     miles, cientos = n // 1000, n % 1000
     partes = []
     if miles:
@@ -66,8 +81,7 @@ def _entero_a_letras(n: int) -> str:
 
 
 def _monto_a_letras(monto: float) -> str:
-    entero = int(monto)
-    centavos = round((monto - entero) * 100)
+    entero, centavos = divmod(int(tributos.dinero(monto) * 100), 100)
     return f"SON {_entero_a_letras(entero)} CON {centavos:02d}/100 SOLES"
 
 
@@ -124,22 +138,19 @@ def _process_response(r: httpx.Response) -> dict:
     sr = data.get("sunatResponse") or {}
     cdr = sr.get("cdrResponse") or {}
 
-    # APISPERU beta no devuelve cdr.accepted — usar sr.success como indicador primario.
-    # CDR code "0" = aceptado; códigos 2xxx = observaciones (aceptado con notas); resto = rechazado.
     apisperu_success = bool(sr.get("success", False))
-    cdr_code = str(cdr.get("code", ""))
-    cdr_accepted_field = cdr.get("accepted")  # presente solo en algunos entornos
+    cdr_code = str(cdr.get("code") if cdr.get("code") is not None else "").strip()
 
-    if cdr_accepted_field is not None:
-        accepted = bool(cdr_accepted_field)
+    # Regla de SUNAT (la misma de greenter, que usa APISPERU): CDR 0 o ≥ 4000 = aceptado (≥ 4000 con
+    # observaciones); de 100 a 3999 = excepción o rechazo. `success` solo dice que SUNAT respondió.
+    if cdr_code.isdigit():
+        accepted = int(cdr_code) == 0 or int(cdr_code) >= 4000
+    elif cdr.get("accepted") is not None:
+        accepted = bool(cdr["accepted"])
     else:
-        # Si APISPERU reporta success=True o CDR code es 0/2xxx, consideramos aceptado
-        try:
-            accepted = apisperu_success or (cdr_code != "" and int(cdr_code) < 3000)
-        except (ValueError, TypeError):
-            accepted = apisperu_success
+        accepted = apisperu_success and not sr.get("error")
 
-    sunat_ok = apisperu_success or accepted
+    sunat_ok = accepted
 
     err_msg = None
     if not sunat_ok:
@@ -161,49 +172,65 @@ def _process_response(r: httpx.Response) -> dict:
     }
 
 
-# ── Payload builder (exonerado de IGV — servicios de membresía) ───────────
+# ── Payload builder (webapp/tributos.py calcula el IGV) ────────────────────
 
-def _build_details(items: list, fallback_monto: float, fallback_concepto: str) -> list:
-    """Build SUNAT details[] — one line per item, or a single fallback line."""
-    _def = lambda mto, desc, cod: {
-        "codProducto": cod or "CUOTA-IPIDET",
-        "unidad": "ZZ",
-        "descripcion": desc,
-        "cantidad": 1,
-        "mtoValorUnitario": mto,
-        "mtoValorVenta": mto,
-        "mtoBaseIgv": mto,
-        "porcentajeIgv": 0,
-        "igv": 0,
-        "tipAfeIgv": 20,
-        "totalImpuestos": 0,
-        "mtoPrecioUnitario": mto,
-    }
-    if not items:
-        return [_def(fallback_monto, fallback_concepto, "CUOTA-IPIDET")]
-    lines = [
-        _def(
-            float(it.get("monto") or 0),
-            (it.get("producto_nombre") or fallback_concepto).upper(),
-            it.get("codigo_sunat") or "CUOTA-IPIDET",
-        )
-        for it in items
-        if float(it.get("monto") or 0) > 0
-    ]
-    return lines or [_def(fallback_monto, fallback_concepto, "CUOTA-IPIDET")]
+def _build_details(lineas: list, fallback_concepto: str) -> list:
+    """details[] de SUNAT. Cada línea es una unidad a precio final."""
+    detalles = []
+    for x in lineas:
+        gravada = x["afectacion"] == tributos.GRAVADO
+        base, igv = float(x["base"]), float(x["igv"])
+        de_cuota = not x["tipo_producto"] or x["tipo_producto"] in tributos.TIPOS_QUE_SALDAN_CUOTA
+        detalles.append({
+            "codProducto": x["codigo_sunat"] or ("CUOTA-IPIDET" if de_cuota and not gravada else "SERVICIO-IPIDET"),
+            "unidad": "ZZ",
+            "descripcion": (x["producto_nombre"] or fallback_concepto).upper()[:500],
+            "cantidad": 1,
+            "mtoValorUnitario": base,
+            "mtoValorVenta": base,
+            "mtoBaseIgv": base,
+            "porcentajeIgv": float(x["tasa"]) if gravada else 0,
+            "igv": igv,
+            "tipAfeIgv": int(x["afectacion"]),
+            "totalImpuestos": igv,
+            "mtoPrecioUnitario": float(x["total"]),
+        })
+    return detalles
+
+
+def _totales_payload(lineas: list) -> dict:
+    if not lineas:
+        raise ValueError("El comprobante no tiene líneas con monto.")
+    if any(x["afectacion"] not in tributos.AFECTACIONES for x in lineas):
+        raise ValueError("Hay líneas sin definir si llevan IGV.")
+    t = tributos.totales(lineas)
+    campos = {"mtoIGV": t["igv"], "totalImpuestos": t["igv"], "mtoImpVenta": t["total"]}
+    # La plantilla UBL escribe un subtotal por cada campo presente (aunque valga 0): solo van los que aplican.
+    # Exonerado conserva el «gravadas 0» con el que SUNAT ya acepta las boletas de membresía.
+    if t["gravadas"] or t["exoneradas"]:
+        campos["mtoOperGravadas"] = t["gravadas"]
+    if t["exoneradas"]:
+        campos["mtoOperExoneradas"] = t["exoneradas"]
+    if t["inafectas"]:
+        campos["mtoOperInafectas"] = t["inafectas"]
+    return campos
 
 
 def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict,
                            credito_cuotas: list | None = None) -> dict:
     serie, correlativo = _parse_numero(comprobante["numero"])
-    monto = float(comprobante.get("monto_total") or 0)
-    fecha = comprobante.get("fecha_emision") or datetime.now().strftime("%Y-%m-%d")
+    lineas = tributos.lineas_de(comprobante)
+    totales = _totales_payload(lineas)
+    monto = totales["mtoImpVenta"]
+    if tributos.dinero(monto) != tributos.dinero(comprobante.get("monto_total")):
+        raise ValueError("Las líneas no suman el total del comprobante.")
+    fecha = comprobante.get("fecha_emision") or hoy_lima()
     fecha_iso = f"{fecha}T00:00:00-05:00"
     concepto = (
         comprobante.get("concepto") or comprobante.get("producto_nombre") or "CUOTA MEMBRESIA IPIDET"
     ).upper()
 
-    details = _build_details(comprobante.get("items") or [], monto, concepto)
+    details = _build_details(lineas, concepto)
 
     forma_pago: dict
     if credito_cuotas:
@@ -222,13 +249,9 @@ def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict,
         "tipoMoneda": "PEN",
         "client": client,
         "company": _ipidet_company(),
-        "mtoOperGravadas": 0,
-        "mtoOperExoneradas": monto,
-        "mtoIGV": 0,
-        "totalImpuestos": 0,
-        "valorVenta": monto,
+        **totales,
+        "valorVenta": float(tributos.dinero(monto) - tributos.dinero(totales["mtoIGV"])),
         "subTotal": monto,
-        "mtoImpVenta": monto,
         "details": details,
         "legends": [{"code": "1000", "value": _monto_a_letras(monto)}],
     }
@@ -260,13 +283,17 @@ def emitir_boleta(comprobante: dict, member: dict | None) -> dict:
         or "CLIENTE"
     )
     client = {"tipoDoc": "1", "numDoc": str(dni), "rznSocial": nombre.upper()}
-    payload = _build_invoice_payload(comprobante, "03", client)
+    try:
+        payload = _build_invoice_payload(comprobante, "03", client)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
 
     try:
         with httpx.Client(timeout=30) as http:
             r = http.post(f"{_BASE}/invoice/send", json=payload, headers=_headers())
     except httpx.TimeoutException:
-        return {"ok": False, "error": "Timeout al conectar con APISPERU (30s)"}
+        return {"ok": False, "error": "APISPERU no respondió en 30 s. Puede que SUNAT SÍ lo haya recibido: "
+                                      "consúltalo en el portal SOL antes de volver a enviarlo."}
     except Exception as e:
         return {"ok": False, "error": f"Error de conexión con APISPERU: {e}"}
 
@@ -313,13 +340,17 @@ def emitir_factura(comprobante: dict, empresa: dict | None) -> dict:
                                "fechaPago": f"{fecha_venc}T00:00:00-05:00"}]
 
     client = {"tipoDoc": "6", "numDoc": ruc, "rznSocial": razon.upper()}
-    payload = _build_invoice_payload(comprobante, "01", client, credito_cuotas=credito_cuotas)
+    try:
+        payload = _build_invoice_payload(comprobante, "01", client, credito_cuotas=credito_cuotas)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
 
     try:
         with httpx.Client(timeout=30) as http:
             r = http.post(f"{_BASE}/invoice/send", json=payload, headers=_headers())
     except httpx.TimeoutException:
-        return {"ok": False, "error": "Timeout al conectar con APISPERU (30s)"}
+        return {"ok": False, "error": "APISPERU no respondió en 30 s. Puede que SUNAT SÍ lo haya recibido: "
+                                      "consúltalo en el portal SOL antes de volver a enviarlo."}
     except Exception as e:
         return {"ok": False, "error": f"Error de conexión con APISPERU: {e}"}
 
@@ -349,16 +380,15 @@ def _cliente_de(comprobante: dict, member: dict | None, empresa: dict | None) ->
 def payload_nota_credito(original: dict, nota: dict, member: dict | None = None,
                          empresa: dict | None = None) -> dict:
     """Arma la Nota de Crédito (tipoDoc 07) para APISPERU.
-    nota = {numero 'BC01-00001', fecha_emision, motivo_codigo, motivo, monto, items}."""
+    nota = {numero 'BC01-00001', fecha_emision, motivo_codigo, motivo, monto, lineas_idx}.
+    La nota repite la afectación y la tasa de IGV del comprobante original."""
     serie_ref, corr_ref = _parse_numero(original["numero"])
     serie, correlativo = _parse_numero(nota["numero"])
     monto = round(float(nota.get("monto") or 0), 2)
-    fecha = nota.get("fecha_emision") or datetime.now().strftime("%Y-%m-%d")
+    fecha = nota.get("fecha_emision") or hoy_lima()
     motivo = (nota.get("motivo") or "ANULACION DE LA OPERACION").upper()[:250]
-    items = nota.get("items") or []
-    # Las líneas deben sumar el total: si no (descuento parcial sobre varias líneas), va una sola.
-    if abs(sum(float(it.get("monto") or 0) for it in items) - monto) > 0.009:
-        items = []
+    lineas = tributos.lineas_de_nota(original, monto, nota.get("lineas_idx"), motivo)
+    totales = _totales_payload(lineas)
     return {
         "ublVersion": "2.1",
         "tipoDoc": "07",
@@ -372,12 +402,8 @@ def payload_nota_credito(original: dict, nota: dict, member: dict | None = None,
         "tipoMoneda": "PEN",
         "client": _cliente_de(original, member, empresa),
         "company": _ipidet_company(),
-        "mtoOperGravadas": 0,
-        "mtoOperExoneradas": monto,
-        "mtoIGV": 0,
-        "totalImpuestos": 0,
-        "mtoImpVenta": monto,
-        "details": _build_details(items, monto, motivo),
+        **totales,
+        "details": _build_details(lineas, motivo),
         "legends": [{"code": "1000", "value": _monto_a_letras(monto)}],
     }
 
@@ -402,7 +428,8 @@ def emitir_nota_credito(original: dict, nota: dict, member: dict | None = None,
         with httpx.Client(timeout=30) as http:
             r = http.post(f"{_BASE}/note/send", json=payload, headers=_headers())
     except httpx.TimeoutException:
-        return {"ok": False, "error": "Timeout al conectar con APISPERU (30s)"}
+        return {"ok": False, "error": "APISPERU no respondió en 30 s. Puede que SUNAT SÍ lo haya recibido: "
+                                      "consúltalo en el portal SOL antes de volver a enviarlo."}
     except Exception as e:
         return {"ok": False, "error": f"Error de conexión con APISPERU: {e}"}
 
@@ -416,7 +443,7 @@ def anular_factura(comprobante: dict, correlativo_baja: str,
         return {"ok": False, "error": "APISPERU_TOKEN no configurado en .env"}
 
     serie, correlativo = _parse_numero(comprobante["numero"])
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    fecha_hoy = hoy_lima()
     fecha_iso = f"{fecha_hoy}T00:00:00-05:00"
 
     payload = {
@@ -436,7 +463,8 @@ def anular_factura(comprobante: dict, correlativo_baja: str,
         with httpx.Client(timeout=30) as http:
             r = http.post(f"{_BASE}/voided/send", json=payload, headers=_headers())
     except httpx.TimeoutException:
-        return {"ok": False, "error": "Timeout al conectar con APISPERU (30s)"}
+        return {"ok": False, "error": "APISPERU no respondió en 30 s. Puede que SUNAT SÍ lo haya recibido: "
+                                      "consúltalo en el portal SOL antes de volver a enviarlo."}
     except Exception as e:
         return {"ok": False, "error": f"Error de conexión con APISPERU: {e}"}
 
@@ -494,7 +522,7 @@ def validate_comprobante(
     else:
         try:
             fecha_dt = datetime.strptime(fecha, "%Y-%m-%d")
-            dias_atras = (datetime.now() - fecha_dt).days
+            dias_atras = (datetime.strptime(hoy_lima(), "%Y-%m-%d") - fecha_dt).days
             if dias_atras < 0:
                 errores.append("La fecha de emisión no puede ser futura.")
             elif dias_atras > 7:
@@ -521,7 +549,10 @@ def validate_comprobante(
             ])).strip()
             or ""
         )
-        if not dni or dni == "00000000":
+        if (not dni or dni == "00000000") and monto > tributos.BOLETA_CON_DNI_DESDE:
+            errores.append(f"Una boleta de más de S/ {tributos.BOLETA_CON_DNI_DESDE} necesita el nombre y el DNI del comprador.")
+            destinatario_display = nombre or "SIN NOMBRE"
+        elif not dni or dni == "00000000":
             advertencias.append(
                 "Sin DNI del destinatario — se enviará '00000000'. "
                 "Carga el DNI del socio para un comprobante correcto."
@@ -607,14 +638,25 @@ def validate_comprobante(
             "IPIDET_RUC no configurado. Agrega el RUC de IPIDET en las variables de entorno."
         )
 
+    # ── IGV ─────────────────────────────────────────────────────────────
+    impuestos = tributos.resumen(comp)
+    if impuestos["sin_definir"]:
+        errores.append("Define si cada línea lleva IGV, es exonerada o inafecta (edita el comprobante).")
+    if abs(impuestos["descuadre"]) >= 0.01:
+        errores.append(f"Las líneas suman S/ {impuestos['total']:.2f} y el comprobante dice S/ {monto:.2f}.")
+    if impuestos["gravadas"]:
+        if not catalogos.get_facturacion().get("emitir_gravados"):
+            errores.append(
+                "La emisión con IGV todavía no está habilitada. Emítelo en el portal SOL e importa su XML, o "
+                "pide a un administrador habilitarla en Configuración → Facturación e IGV tras la revisión del contador.")
+        if tipo == "factura" and monto > tributos.DETRACCION_DESDE:
+            errores.append(
+                f"Una factura con IGV de más de S/ {tributos.DETRACCION_DESDE} puede estar sujeta a detracción, "
+                "que la plataforma no informa. Emítela en el portal SOL e importa su XML.")
+
     # ── Estado del comprobante ──────────────────────────────────────────
     if comp.get("estado") == "anulado":
         errores.append("No se puede emitir un comprobante anulado en la plataforma.")
-    if any(it.get("evento_id") for it in comp.get("items") or []):
-        # El payload sale siempre exonerado de IGV (cuotas): un evento puede estar gravado.
-        errores.append(
-            "Es una inscripción a un evento: la plataforma solo sabe emitir sin IGV. Emítelo en el portal SOL "
-            "con el IGV que indique el contador e importa su XML para completar este borrador.")
 
     return {
         "errores":      errores,
@@ -626,6 +668,7 @@ def validate_comprobante(
             "serie":              serie,
             "correlativo":        correlativo_str,
             "monto":              monto,
+            "impuestos":          impuestos,
             "fecha_emision":      fecha,
             "destinatario":       destinatario_display,
             "ultimo_emitido":     ultimo_correlativo,

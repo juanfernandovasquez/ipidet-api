@@ -102,6 +102,18 @@ def parse_sunat_xml(content: bytes) -> dict:
     for line in root.findall(line_tag, _NS):
         desc     = _txt(line, 'cac:Item/cbc:Description')
         subtotal = _float(_txt(line, 'cbc:LineExtensionAmount'))
+        # LineExtensionAmount viene sin IGV; en la plataforma el monto de una línea es el precio final.
+        afect, tasa, igv_linea = None, None, 0.0
+        for sub in line.findall('cac:TaxTotal/cac:TaxSubtotal', _NS):
+            cod = _txt(sub, 'cac:TaxCategory/cbc:TaxExemptionReasonCode')
+            if cod:     # solo el IGV trae código del catálogo 07
+                afect = cod if cod in ('10', '20', '30') else None
+                if cod == '10':
+                    igv_linea = _float(_txt(sub, 'cbc:TaxAmount'))
+                    tasa = _float(_txt(sub, 'cac:TaxCategory/cbc:Percent')) or None
+        if afect is None:
+            igv_linea = _float(_txt(line, 'cac:TaxTotal/cbc:TaxAmount'))
+            afect = '10' if igv_linea else None
         price    = _float(_txt(line, 'cac:Price/cbc:PriceAmount'))
         qty_node = line.find(qty_tag, _NS)
         qty      = _float(qty_node.text if qty_node is not None else '1')
@@ -110,16 +122,36 @@ def parse_sunat_xml(content: bytes) -> dict:
         # Auto-detectar member_id si la descripción empieza con IPIDET-XXXX
         m = _MEMBER_RE.match(desc)
         member_id = m.group(1).upper() if m else None
+        linea = {'tipo_afectacion': afect} if afect else {}
+        if afect == '10' and tasa:
+            linea['tasa_igv'] = tasa
         items.append({
+            **linea,
             'producto_nombre': desc,
             'codigo_sunat':    codigo_sunat,
             'cantidad':        qty,
             'precio_unitario': price,
-            'monto':           subtotal,
+            'monto':           round(subtotal + igv_linea, 2),
             'member_id':       member_id,
         })
 
+    # Totales oficiales del documento, por tributo: 1000 IGV, 9997 exonerado, 9998 inafecto.
+    bases, igv_total = {}, 0.0
+    for sub in root.findall('cac:TaxTotal/cac:TaxSubtotal', _NS):
+        esquema = _txt(sub, 'cac:TaxCategory/cac:TaxScheme/cbc:ID')
+        bases[esquema] = bases.get(esquema, 0.0) + _float(_txt(sub, 'cbc:TaxableAmount'))
+        if esquema == '1000':
+            igv_total += _float(_txt(sub, 'cbc:TaxAmount'))
+    tributos = None
+    if any(k in bases for k in ('1000', '9997', '9998')):
+        tasas = {i['tasa_igv'] for i in items if i.get('tasa_igv')}
+        tributos = {'gravadas': round(bases.get('1000', 0.0), 2), 'exoneradas': round(bases.get('9997', 0.0), 2),
+                    'inafectas': round(bases.get('9998', 0.0), 2), 'igv': round(igv_total, 2),
+                    'valor_venta': round(monto_total - igv_total, 2), 'total': round(monto_total, 2),
+                    'tasa': next(iter(tasas)) if len(tasas) == 1 else None}
+
     return {
+        'tributos':      tributos,
         'numero':        numero,
         'tipo':          tipo,
         'fecha_emision': fecha,

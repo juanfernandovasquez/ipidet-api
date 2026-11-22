@@ -83,6 +83,14 @@
                    class="input w-full text-sm font-mono"
                    :required="newTipo === 'fraccionamiento'">
           </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">IGV</label>
+            <select name="tipo_afectacion" class="input w-full text-sm">
+                <option value="">Según su tipo</option>
+                {% for k, v in afectaciones.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+            </select>
+            <p class="text-[11px] text-slate-400 mt-1">El precio siempre es el final, con IGV si lo lleva. «Según su tipo» usa Configuración → Facturación e IGV.</p>
+          </div>
           <button type="submit" class="btn-primary w-full text-sm">
             <i class="fa-solid fa-plus mr-1.5"></i> Agregar producto
           </button>
@@ -154,6 +162,8 @@
                 </span>
                 {% endif %}
               </div>
+              {% set af = p.get('tipo_afectacion') or facturacion.afectacion_por_tipo.get(p.tipo, '') %}
+              <div class="mt-0.5"><span class="badge {{ 'badge-blue' if af == '10' else 'badge-gray' if af else 'badge-amber' }}">{{ afectaciones.get(af, 'IGV por venta') }}</span></div>
               {% if p.descripcion %}
               <div class="text-xs text-slate-400 truncate mt-0.5">{{ p.descripcion }}</div>
               {% endif %}
@@ -247,6 +257,13 @@
                          value="{{ p.get('codigo_sunat') or '' }}"
                          placeholder="ej: CUOTA-{{ periodo_actual }}"
                          class="input w-full text-sm font-mono">
+                </div>
+                <div class="col-span-2">
+                  <label class="block text-xs text-slate-500 mb-0.5">IGV <span class="text-slate-400">(el precio es el final, con IGV si lo lleva)</span></label>
+                  <select name="tipo_afectacion" class="input w-full text-sm">
+                    <option value="">Según su tipo</option>
+                {% for k, v in afectaciones.items() %}<option value="{{ k }}" {% if p.get('tipo_afectacion') == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+                  </select>
                 </div>
                 <!-- N° de cuota — solo para fraccionamiento -->
                 <div class="col-span-2" x-show="editTipo === 'fraccionamiento'" x-cloak>

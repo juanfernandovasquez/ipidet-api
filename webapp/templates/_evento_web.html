@@ -4,12 +4,22 @@
     {% if not web.publicable %}<span class="badge badge-amber">Este evento no se muestra en la web</span>{% endif %}
   </div>
   <form method="post" action="/eventos/{{ evento._id }}/web" class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-3"
-        data-cobro="{{ evento.cobro or '' }}" x-data="{ cobro: $el.dataset.cobro }">
+        data-cobro="{{ evento.cobro or '' }}" data-afect="{{ evento.tipo_afectacion or '' }}" data-defecto="{{ web.afectacion }}"
+        data-tasa="{{ web.tasa_igv }}" data-socio="{{ evento.precio_socio if evento.precio_socio is defined else '' }}"
+        data-publico="{{ evento.precio_publico if evento.precio_publico is defined else '' }}"
+        x-data="{ cobro: $el.dataset.cobro, afect: $el.dataset.afect, defecto: $el.dataset.defecto, tasa: Number($el.dataset.tasa), socio: $el.dataset.socio, publico: $el.dataset.publico,
+                  desglose(monto) { if ((this.afect || this.defecto) !== '10' || !(monto > 0)) return ''; const d = desgloseIgv([{ monto, afect: '10' }], this.tasa); return 'base ' + d.gravadas.toFixed(2) + ' + IGV ' + d.igv.toFixed(2); } }">
     <label class="flex items-center gap-2 text-sm md:col-span-4"><input type="checkbox" name="inscripcion_web" value="1" {% if evento.inscripcion_web %}checked{% endif %}> Recibir inscripciones en nuestra página</label>
     <div><label class="block text-xs text-slate-600 mb-1">Cobro</label>
       <select name="cobro" x-model="cobro" class="input w-full text-sm"><option value="">Sin definir</option>{% for k, v in web.cobros.items() %}<option value="{{ k }}" {% if evento.cobro == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
-    <div x-show="cobro === 'pago'"><label class="block text-xs text-slate-600 mb-1">Socios activos (S/, 0 = gratis)</label><input name="precio_socio" type="number" min="0" step="0.01" value="{{ evento.precio_socio if evento.precio_socio is defined else '' }}" class="input w-full text-sm"></div>
-    <div x-show="cobro === 'pago'"><label class="block text-xs text-slate-600 mb-1">No socios (S/)</label><input name="precio_publico" type="number" min="0" step="0.01" value="{{ evento.precio_publico if evento.precio_publico is defined else '' }}" class="input w-full text-sm"></div>
+    <div x-show="cobro === 'pago'"><label class="block text-xs text-slate-600 mb-1">Socios activos (S/, 0 = gratis)</label><input name="precio_socio" type="number" min="0" step="0.01" x-model="socio" class="input w-full text-sm"><p class="text-[11px] text-slate-500 mt-1" x-text="desglose(socio)"></p></div>
+    <div x-show="cobro === 'pago'"><label class="block text-xs text-slate-600 mb-1">No socios (S/)</label><input name="precio_publico" type="number" min="0" step="0.01" x-model="publico" class="input w-full text-sm"><p class="text-[11px] text-slate-500 mt-1" x-text="desglose(publico)"></p></div>
+    <div x-show="cobro === 'pago'"><label class="block text-xs text-slate-600 mb-1">IGV de la entrada</label>
+      <select name="tipo_afectacion" x-model="afect" class="input w-full text-sm">
+        <option value="">{% if web.afectacion and not evento.tipo_afectacion %}Según configuración: {{ web.afectaciones[web.afectacion] }}{% else %}Elige…{% endif %}</option>
+        {% for k, v in web.afectaciones.items() %}<option value="{{ k }}" {% if evento.tipo_afectacion == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+      </select>
+      <p class="text-[11px] text-slate-400 mt-1">Los precios son finales, con IGV incluido.</p></div>
 
     <div class="md:col-span-4 pt-3 border-t border-slate-100 text-xs text-slate-500">
       Grabación: el primer video es el «Link grabación» de la ficha. Hoy la ve: <strong>{{ web.niveles[web.vigente] }}</strong>. Los socios activos ven siempre las que no están ocultas.

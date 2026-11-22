@@ -14,6 +14,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from config import catalogos
 from webapp import db as pdb
+from webapp import tributos
 from webapp.sitio import avisos, config, cuentas, eventos, ordenes, pagos
 from webapp.web_publica import dato_persona, email_valido
 
@@ -299,6 +300,8 @@ def contexto_evento(evento: dict) -> dict:
         "niveles": eventos.NIVELES, "niveles_apertura": eventos.NIVELES_APERTURA, "cobros": eventos.COBROS,
         "defecto": config.cargar().get("grabacion_nivel_defecto", "socios"),
         "vigente": eventos.nivel_vigente(evento), "partes": eventos.grabaciones_de(evento),
+        "afectaciones": tributos.AFECTACIONES, "afectacion": eventos.afectacion(evento),
+        "tasa_igv": catalogos.get_facturacion()["tasa_igv"],
         "precio_texto": eventos.texto_precio(evento), "ordenes": filas, "estados": ordenes.ESTADOS,
         "extra_texto": "\n".join(f"{g.get('titulo', '')} | {g.get('url', '')}"
                                  for g in evento.get("grabaciones_extra") or []),
@@ -343,6 +346,11 @@ async def evento_web(request: Request, evento_id: str):
             publico = _monto(f.get("precio_publico", ""), "Precio para no socios")
             if not (socio or publico):
                 raise ValueError("Un evento de pago necesita al menos un precio mayor a cero.")
+            afect = f.get("tipo_afectacion") if f.get("tipo_afectacion") in tributos.AFECTACIONES else ""
+            if not (afect or catalogos.get_facturacion()["afectacion_por_tipo"].get("evento")):
+                raise ValueError("Elige si la entrada lleva IGV, es exonerada o inafecta.")
+        else:
+            afect = ""
         nivel = f.get("grabacion_nivel") if f.get("grabacion_nivel") in eventos.NIVELES else ""
         ap_fecha = _fecha(f.get("apertura_fecha", ""), "Apertura")
         ap_nivel = f.get("apertura_nivel") if f.get("apertura_nivel") in eventos.NIVELES_APERTURA else ""
@@ -360,7 +368,7 @@ async def evento_web(request: Request, evento_id: str):
             extra.append({"titulo": titulo.strip()[:80] if sep else f"Parte {n}", "url": url})
     except ValueError as e:
         return _volver(ruta, error=str(e))
-    cambios = {"inscripcion_web": inscribe, "cobro": cobro, "precio_socio": socio, "precio_publico": publico,
+    cambios = {"inscripcion_web": inscribe, "cobro": cobro, "tipo_afectacion": afect, "precio_socio": socio, "precio_publico": publico,
                "grabacion_nivel": nivel, "grabacion_desde": desde,
                "grabacion_apertura": {"fecha": ap_fecha, "nivel": ap_nivel} if ap_fecha else {},
                "grabaciones_extra": extra}

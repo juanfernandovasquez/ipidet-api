@@ -161,6 +161,17 @@ EFECTOS_NOTA_CREDITO = {
 # Sugerencia inicial del efecto según el motivo. «01» no tiene: puede ser devolución o reemplazo.
 EFECTO_NC_SUGERIDO = {"02": "reemplazo", "03": "reemplazo", "06": "devolucion", "07": "devolucion"}
 
+# Facturación (IGV). Valores mientras no se guarden en /configuracion → Facturación e IGV.
+# Afectación = catálogo 07 de SUNAT: «10» gravado, «20» exonerado, «30» inafecto, "" = elegir en cada venta.
+_FACTURACION_DEFECTO = {
+    "tasa_igv": 18,
+    "afectacion_por_tipo": {"cuota_anual": "20", "cuota_provincia": "20", "fraccionamiento": "20",
+                            "evento": "", "otro": ""},
+    # El ambiente de APISPERU lo fija su token, no una variable nuestra: la emisión con IGV se habilita
+    # a mano cuando el contador revisó la primera prueba.
+    "emitir_gravados": False,
+}
+
 # Valores si la colección aún no los tiene; se editan en /alianzas y /ponentes.
 _ALIANZAS_DEFECTO = {"propuestas_por_corrida": 5, "perfil": "", "criterios": ""}
 _PONENTES_DEFECTO = {"propuestas_por_corrida": 6, "publico": "", "temas": "",
@@ -406,6 +417,22 @@ def set_imagen_org(clave: str, datos: bytes | None, tipo: str = "") -> None:
                              "actualizado": datetime.now(timezone.utc)}, upsert=True)
     else:
         _config.delete_one({"_id": _IMAGENES_ORG[clave]})
+    invalidar()
+
+
+# ── Facturación ────────────────────────────────────────────────────────────────
+
+def get_facturacion() -> dict:
+    def _load():
+        doc = _config.find_one({"_id": "facturacion"}) or {}
+        return {**_FACTURACION_DEFECTO, **doc,
+                "afectacion_por_tipo": {**_FACTURACION_DEFECTO["afectacion_por_tipo"],
+                                        **(doc.get("afectacion_por_tipo") or {})}}
+    return _cached("facturacion", _load)
+
+
+def set_facturacion(campos: dict) -> None:
+    _config.update_one({"_id": "facturacion"}, {"$set": campos}, upsert=True)
     invalidar()
 
 

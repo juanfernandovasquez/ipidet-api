@@ -48,6 +48,43 @@
     <a href="/organizacion" class="btn-primary text-sm self-start"><i class="fa-solid fa-arrow-right mr-1.5"></i>Ir a IPIDET y consejo</a>
   </section>
 
+  <!-- Facturación e IGV -->
+  <section id="facturacion" class="bg-white rounded-xl border border-slate-200 p-5 min-w-0 scroll-mt-20 xl:col-span-2">
+    <h2 class="text-sm font-semibold text-slate-700 mb-1">
+      <i class="fa-solid fa-percent text-slate-400 mr-1.5"></i> Facturación e IGV
+    </h2>
+    <p class="text-xs text-slate-500 mb-3">Los precios se guardan finales: si una venta lleva IGV, ya está incluido. Cada producto o línea puede apartarse de lo que elijas aquí. Cambiarlo no altera los comprobantes ya creados.</p>
+    {% for clave, color in (('ok', 'text-green-700'), ('error', 'text-red-700')) %}{% if request.query_params.get(clave) %}<p class="text-sm {{ color }} mb-3">{{ request.query_params.get(clave) }}</p>{% endif %}{% endfor %}
+    <form method="post" action="/configuracion/facturacion" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Tasa de IGV (%)</label>
+        <input name="tasa_igv" type="number" min="0.01" max="30" step="0.01" value="{{ facturacion.tasa_igv }}" class="input w-full text-sm" required>
+      </div>
+      {% set nombres = {'cuota_anual': 'Membresía Lima', 'cuota_provincia': 'Membresía provincias', 'fraccionamiento': 'Cuota fraccionada', 'evento': 'Entradas a eventos', 'otro': 'Otras ventas'} %}
+      {% for tipo, valor in facturacion.afectacion_por_tipo.items() %}
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">{{ nombres.get(tipo, tipo) }}</label>
+        <select name="afectacion_{{ tipo }}" class="input w-full text-sm">
+          {% if tipo in ('evento', 'otro') %}<option value="">Elegir en cada venta</option>{% endif %}
+          {% for k, v in afectaciones.items() %}<option value="{{ k }}" {% if valor == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endfor %}
+      <div class="sm:col-span-2 lg:col-span-3 pt-3 border-t border-slate-100 space-y-2">
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="emitir_gravados" value="1" {% if facturacion.emitir_gravados %}checked{% endif %}> Permitir emitir a SUNAT comprobantes con IGV desde la plataforma</label>
+        {% if not facturacion.emitir_gravados %}
+        <label class="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" name="contador_reviso" value="1"> El contador revisó una prueba con IGV (necesario para habilitarlo)</label>
+        <p class="text-xs text-amber-700">Mientras esté apagado puedes preparar, calcular, imprimir e importar el XML. La emisión se hace en el portal SOL.</p>
+        {% elif facturacion.habilitado_por %}
+        <p class="text-xs text-slate-500">Lo habilitó {{ facturacion.habilitado_por }}.</p>
+        {% endif %}
+      </div>
+      {% if current_user_role == 'admin' %}
+      <div class="sm:col-span-2 lg:col-span-3"><button class="btn-primary text-sm"><i class="fa-solid fa-floppy-disk mr-1.5"></i>Guardar facturación</button></div>
+      {% endif %}
+    </form>
+  </section>
+
   <!-- Catálogos -->
   {% for key, meta in catalogos_def.items() %}
   <section id="{{ key }}" class="bg-white rounded-xl border border-slate-200 p-5 min-w-0 scroll-mt-20"

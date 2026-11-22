@@ -286,10 +286,14 @@
         <td class="px-3 py-3 text-xs font-mono {% if c.fecha_vencimiento and c.estado_credito == 'vencido' %}text-red-600 font-medium{% else %}text-slate-300{% endif %}">{{ c.fecha_vencimiento | format_fecha }}</td>
         <td class="px-3 py-3 text-slate-600 text-sm">{{ c.empresa or '—' }}</td>
         <td class="px-3 py-3 text-sm text-slate-700">
-          {% set si = c.socios_info %}{% if si %}{% for s in si[:2] %}<a href="/members/{{ s.member_id }}" class="hover:text-blue-600 hover:underline">{{ s.nombre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if si | length > 2 %}<span class="text-slate-400 text-xs">, +{{ si | length - 2 }} más</span>{% endif %}{% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}
+          {% set si = c.socios_info %}{% if si %}{% for s in si[:2] %}<a href="/members/{{ s.member_id }}" class="hover:text-blue-600 hover:underline">{{ s.nombre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if si | length > 2 %}<span class="text-slate-400 text-xs">, +{{ si | length - 2 }} más</span>{% endif %}{% elif c.destinatario_nombre %}{{ c.destinatario_nombre }} <span class="text-slate-400 text-xs">no socio</span>{% else %}<span class="text-slate-300 text-xs">—</span>{% endif %}
         </td>
-        <td class="px-3 py-3 text-right font-semibold text-slate-800">
+        <td class="px-3 py-3 text-right font-semibold text-slate-800 whitespace-nowrap">
           {% if c.monto_total %}{{ c.monto_total | soles }}{% else %}—{% endif %}
+          {% if c.impuestos and c.estado != 'anulado' %}
+            {% if c.impuestos.sin_definir %}<div class="mt-0.5"><span class="badge badge-amber">IGV por definir</span></div>
+            {% elif c.impuestos.igv %}<div class="text-[11px] font-normal text-slate-500">IGV {{ c.impuestos.igv | soles }}</div>{% endif %}
+          {% endif %}
         </td>
         <td class="px-3 py-3">
           {% if c.estado == 'pre_registrado' %}
@@ -523,12 +527,14 @@
          },
          get es_credito() { return this.form.modalidad === 'credito'; },
          productos: [],
+         tasa: Number($el.dataset.tasa),
          items: [],
+         get impuestos() { return desgloseIgv(this.items, this.tasa); },
          get montoTotal() {
            return this.items.reduce((s, it) => s + (parseFloat(it.monto) || 0), 0);
          },
          agregarItem() {
-           this.items.push({ sid: '', snombre: '', sdni: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '', payment_id: null, tipo_pago: 'principal' });
+           this.items.push({ sid: '', snombre: '', sdni: '', sSearch: '', sResults: [], pid: '', pnombre: '', pcode: '', monto: '', afect: '', payment_id: null, tipo_pago: 'principal' });
          },
          quitarItem(idx) { this.items.splice(idx, 1); },
          async buscarSocio(item) {
@@ -550,6 +556,8 @@
            if (p) {
              item.pnombre = p.nombre;
              item.pcode   = p.codigo_sunat || '';
+             item.afect   = p.tipo_afectacion || '';
+             item.tasa    = '';
              if (p.precio != null) item.monto = p.precio;
              if (p.periodo && !this.form.periodo) this.form.periodo = p.periodo;
            } else {
@@ -572,6 +580,7 @@
          get canGuardar() {
            if (!this.form.tipo || !this.form.fecha_emision) return false;
            if (!this.items.some(it => it.pid || it.pnombre)) return false;
+           if (this.items.some(it => (it.pid || it.pnombre) && !it.afect)) return false;
            if (this.es_credito && !this.form.fecha_vencimiento) return false;
            return true;
          },
@@ -606,7 +615,9 @@
                const pid = (this.productos.find(p => p.nombre === it.producto_nombre) || {}).id || '';
                const sid = it.member_id || '';
                const snombre = sid ? (sm[sid] || sid) : '';
-               return { sid, snombre, sdni: '', sSearch: snombre, sResults: [], pid, pnombre: it.producto_nombre || '', monto: it.monto || '', payment_id: it.payment_id || null, tipo_pago: it.tipo_pago || 'principal' };
+               // Sin la marca: comprobante anterior al IGV, cuando todo era exonerado.
+               const afect = 'tipo_afectacion' in it ? (it.tipo_afectacion || '') : (it.evento_id ? '' : '20');
+               return { orig: it, afect, tasa: it.tasa_igv || '', pcode: it.codigo_sunat || '', sid, snombre, sdni: '', sSearch: snombre, sResults: [], pid, pnombre: it.producto_nombre || '', monto: it.monto || '', payment_id: it.payment_id || null, tipo_pago: it.tipo_pago || 'principal' };
              });
            } else {
              this.items = [];
@@ -621,8 +632,11 @@
              member_id: it.sid || null, producto_id: it.pid || null,
              producto_nombre: it.pnombre, codigo_sunat: it.pcode || '',
              monto: parseFloat(it.monto) || 0,
+             tipo_afectacion: it.afect,
              payment_id: it.payment_id || null,
              tipo_pago:  it.tipo_pago  || 'principal',
+             ...(it.orig && it.orig.cuota_numero ? { cuota_numero: it.orig.cuota_numero } : {}),
+             ...(it.orig && it.orig.evento_id ? { evento_id: it.orig.evento_id, orden_id: it.orig.orden_id } : {}),
            }));
            // Para boletas a persona natural: auto-rellenar destinatario desde el ítem único
            const soloSocios = this.items.filter(it => it.sid && it.sdni);
@@ -639,12 +653,15 @@
                                     destinatario_dni: destDni, destinatario_nombre: destNombre, destinatario_id: destId }),
            });
            this.guardando = false;
-           if (r.ok) location.reload();
+           if (r.ok) { location.reload(); return; }
+           const d = await r.json().catch(() => ({}));
+           avisar(d.error || 'No se pudo guardar el comprobante.', 'error');
          },
        }"
        x-init="productos = JSON.parse($el.dataset.productos); agregarItem();"
        @comp-editar.window="cargarEdicion($event.detail)"
        @comp-nuevo.window="resetForm()"
+       data-tasa="{{ tasa_igv }}"
        data-productos='{{ productos_json | tojson }}'>
 
     <!-- Cabecera -->
@@ -742,11 +759,12 @@
         <div class="border border-slate-200 rounded-xl shadow-sm">
           <!-- Encabezado de columnas -->
           <div class="grid text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-b border-slate-200 px-3 py-2 rounded-t-xl"
-               style="grid-template-columns: 1.5rem 1fr 9rem 5.5rem 2rem">
+               style="grid-template-columns: 1.5rem minmax(0,1fr) 8rem 6.5rem 5.5rem 1.5rem">
             <span class="text-center">#</span>
             <span>Socio</span>
             <span>Producto</span>
-            <span class="text-right pr-1">Monto S/</span>
+            <span>IGV</span>
+            <span class="text-right pr-1">Precio final</span>
             <span></span>
           </div>
 
@@ -754,7 +772,7 @@
           <div class="divide-y divide-slate-100 bg-white">
             <template x-for="(item, idx) in items" :key="idx">
               <div class="grid items-start gap-2 px-3 py-2 hover:bg-blue-50/30 transition-colors"
-                   style="grid-template-columns: 1.5rem 1fr 9rem 5.5rem 2rem">
+                   style="grid-template-columns: 1.5rem minmax(0,1fr) 8rem 6.5rem 5.5rem 1.5rem">
 
                 <span class="text-xs text-slate-400 font-mono text-center pt-2" x-text="idx + 1"></span>
 
@@ -799,6 +817,13 @@
                   </span>
                 </div>
 
+                <!-- IGV -->
+                <select x-model="item.afect" class="input w-full text-xs py-1.5"
+                        :class="(item.pid || item.pnombre) && !item.afect && 'border-amber-400'">
+                  <option value="">Elige…</option>
+                  {% for k, v in afectaciones.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+                </select>
+
                 <!-- Monto -->
                 <input type="number" step="0.01" x-model="item.monto"
                        placeholder="0.00" class="input w-full text-xs py-1.5 text-right font-mono">
@@ -820,6 +845,8 @@
               <i class="fa-solid fa-plus text-[10px]"></i> otra línea
             </button>
             <div class="flex items-center gap-2">
+              <span class="text-[11px] text-slate-500" x-show="impuestos.igv > 0" x-cloak
+                    x-text="'IGV incluido S/ ' + impuestos.igv.toFixed(2)"></span>
               <span class="text-xs text-slate-500">Total</span>
               <span class="text-base font-bold text-green-700 font-mono" x-text="'S/ ' + montoTotal.toFixed(2)"></span>
             </div>
@@ -1013,7 +1040,13 @@
              const desc         = g(itemEl, 'Description', CBS);
              const siEl         = itemEl ? itemEl.getElementsByTagNameNS(CAC, 'SellersItemIdentification')[0] : null;
              const codigoSunat  = g(siEl, 'ID', CBS);
-             const lineMonetary = parseFloat(g(line, 'LineExtensionAmount', CBS)) || 0;
+             // LineExtensionAmount viene sin IGV: se suma el impuesto de la línea si está gravada.
+             const base = parseFloat(g(line, 'LineExtensionAmount', CBS)) || 0;
+             let igvLinea = 0;
+             for (const sub of line.getElementsByTagNameNS(CAC, 'TaxSubtotal')) {
+               if (g(sub, 'TaxExemptionReasonCode', CBS) === '10') igvLinea = parseFloat(g(sub, 'TaxAmount', CBS)) || 0;
+             }
+             const lineMonetary = Math.round((base + igvLinea) * 100) / 100;
              const memberMatch  = /^(IPIDET-\d+)/i.exec(desc);
              const memberId     = memberMatch ? memberMatch[1].toUpperCase() : null;
              xmlItems.push({ desc, codigoSunat, monto: lineMonetary, memberId });
@@ -2520,6 +2553,12 @@ class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backd
               <span class="capitalize text-slate-700" x-text="preflight.resumen?.tipo || '—'"></span>
               <span class="text-slate-400">Monto</span>
               <span class="font-mono text-slate-700" x-text="'S/ ' + (preflight.resumen?.monto || 0).toFixed(2)"></span>
+              <template x-for="r in [['Op. gravadas', 'gravadas'], ['Op. exoneradas', 'exoneradas'], ['Op. inafectas', 'inafectas'], ['IGV', 'igv']].filter(r => preflight.resumen?.impuestos?.[r[1]])" :key="r[1]">
+                <div class="col-span-2 grid grid-cols-2 gap-x-4">
+                  <span class="text-slate-400" x-text="r[0]"></span>
+                  <span class="font-mono text-slate-700" x-text="'S/ ' + preflight.resumen.impuestos[r[1]].toFixed(2)"></span>
+                </div>
+              </template>
               <span class="text-slate-400">Fecha</span>
               <span class="font-mono text-slate-700" x-text="preflight.resumen?.fecha_emision || '—'"></span>
               <span class="text-slate-400">Destinatario</span>

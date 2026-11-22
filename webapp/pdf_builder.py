@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 
 from config import catalogos
+from webapp import tributos
 
 
 def _emisor() -> dict:
@@ -15,6 +16,7 @@ _TIPO_LABELS = {
     "boleta":  "BOLETA DE VENTA ELECTRÓNICA",
     "factura": "FACTURA ELECTRÓNICA",
     "recibo":  "RECIBO POR HONORARIOS",
+    "nota_credito": "NOTA DE CRÉDITO ELECTRÓNICA",
 }
 
 _COLOR_PRIMARY   = (30,  58, 95)
@@ -83,13 +85,14 @@ def _cell_nl(pdf: FPDF, w: float, h: float, txt: str, *,
 def _qr_content(comp: dict, socios_info: list) -> str:
     """Construye el string QR en formato SUNAT: RUC|TipoDoc|Nro|IGV|Total|Fecha|TipoDocRec|NroDocRec|Hash4"""
     tipo     = comp.get("tipo", "boleta")
-    tipo_num = "03" if tipo == "boleta" else "01"
+    tipo_num = {"boleta": "03", "nota_credito": "07"}.get(tipo, "01")
+    igv      = f"{tributos.resumen(comp)['igv']:.2f}"
     numero   = comp.get("numero", "")
     total    = f"{float(comp.get('monto_total') or 0):.2f}"
     fecha    = comp.get("fecha_emision", "")
     hash4    = (comp.get("sunat_hash") or "")[:4]
 
-    if tipo == "factura":
+    if tipo == "factura" or (tipo == "nota_credito" and comp.get("doc_ref_tipo") == "factura"):
         tipo_doc_rec = "6"
         nro_doc_rec  = comp.get("ruc_empresa", "") or ""
     else:
@@ -100,7 +103,7 @@ def _qr_content(comp: dict, socios_info: list) -> str:
         if not nro_doc_rec:
             nro_doc_rec = comp.get("destinatario_dni", "") or ""
 
-    return f"{_emisor()['ruc']}|{tipo_num}|{numero}|0.00|{total}|{fecha}|{tipo_doc_rec}|{nro_doc_rec}|{hash4}"
+    return f"{_emisor()['ruc']}|{tipo_num}|{numero}|{igv}|{total}|{fecha}|{tipo_doc_rec}|{nro_doc_rec}|{hash4}"
 
 
 def _build_qr_png(content: str) -> bytes | None:
@@ -351,8 +354,18 @@ def build_comprobante_pdf(
             _cell(pdf, cw_lbl, 5.5, label, align="R")
             _cell_nl(pdf, cw_val, 5.5, valor, align="R")
 
-    _tot("Op. exoneradas / inafectas:", f"S/ {monto_total:.2f}")
-    _tot("IGV (0%):", "S/ 0.00")
+    t = tributos.resumen(comp)
+    if t["sin_definir"]:
+        _tot("IGV:", "Por definir")
+    else:
+        for rotulo, clave in (("Op. gravadas:", "gravadas"), ("Op. exoneradas:", "exoneradas"),
+                              ("Op. inafectas:", "inafectas")):
+            if t[clave]:
+                _tot(rotulo, f"S/ {t[clave]:.2f}")
+        if t["igv"]:
+            _tot(f"IGV ({t['tasa']:g}%):" if t.get("tasa") else "IGV:", f"S/ {t['igv']:.2f}")
+        else:
+            _tot("IGV (0%):", "S/ 0.00")
     _tot("TOTAL A PAGAR:", f"S/ {monto_total:.2f}", resaltar=True)
 
     medio_pago = (comp.get("medio_pago") or "").strip()

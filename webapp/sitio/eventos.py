@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from bson import ObjectId
 
+from config import catalogos
 from config.mongo_client import db
 from webapp.sitio import config
 
@@ -95,6 +96,12 @@ def precio(ev: dict, es_socio: bool) -> float:
     if ev.get("cobro") != "pago":
         return 0.0
     return round(float(ev.get("precio_socio" if es_socio else "precio_publico") or 0), 2)
+
+
+def afectacion(ev: dict) -> str:
+    """IGV de la entrada: lo elegido en el evento o, si no, lo configurado para eventos. "" = por definir."""
+    valor = ev.get("tipo_afectacion") or catalogos.get_facturacion()["afectacion_por_tipo"].get("evento", "")
+    return valor if valor in ("10", "20", "30") else ""
 
 
 def texto_precio(ev: dict) -> str:
