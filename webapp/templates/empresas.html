@@ -41,7 +41,7 @@
     </thead>
 
     {% for e in empresas %}
-    <tbody x-data="empresaRow('{{ e.nombre | replace("'", "\\'") }}')" class="border-b border-slate-100 last:border-0">
+    <tbody data-nombre="{{ e.nombre }}" x-data="empresaRow($el.dataset.nombre)" class="border-b border-slate-100 last:border-0">
 
       <!-- Fila principal — click para expandir -->
       <tr class="transition-colors"

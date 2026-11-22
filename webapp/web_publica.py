@@ -22,7 +22,7 @@ from config import catalogos
 
 router = APIRouter()
 
-_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[a-z]{2,}$", re.I)
+_EMAIL = re.compile(r"[a-z0-9_][a-z0-9._%+-]{0,63}@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,24}", re.I | re.A)
 _TEMAS_CONTACTO = {
     "admision": "Información sobre afiliación",
     "pago": "Consulta sobre pago de cuota",
@@ -55,6 +55,18 @@ def _permitido(ip: str) -> bool:
 
 def _texto(v, n: int) -> str:
     return re.sub(r"\s+", " ", str(v or "")).strip()[:n]
+
+
+def email_valido(v: str) -> bool:
+    return bool(_EMAIL.fullmatch(v or ""))
+
+
+def dato_persona(v, n: int) -> str:
+    """Nombre, celular, empresa… escrito por un visitante. Luego se muestra en el panel, va en correos
+    HTML y sale a Excel: sin etiquetas, comillas de código, enlaces ni inicio de fórmula."""
+    limpio = re.sub(r'[<>"`{}\[\]\\]', "", str(v or "")).replace("'", "’")
+    limpio = re.sub(r"(?i)\w*:/+\S*|www\.\S*", "", limpio)
+    return re.sub(r"^[=@\-\s]+", "", _texto(limpio, n))
 
 
 # ── Datos del sitio ────────────────────────────────────────────────────────────
@@ -161,7 +173,7 @@ async def contacto(request: Request):
         return {"ok": True}
     email = _texto(data.get("email"), 120).lower()
     mensaje = str(data.get("mensaje") or "").strip()[:3000]
-    if not _EMAIL.match(email):
+    if not email_valido(email):
         return _rechazo("Revisa tu correo electrónico.")
     if len(mensaje) < 5:
         return _rechazo("Cuéntanos en qué podemos ayudarte.")
@@ -171,8 +183,8 @@ async def contacto(request: Request):
         return _rechazo("Recibimos varios mensajes seguidos. Inténtalo más tarde o escríbenos por WhatsApp.", 429)
     from webapp import db as pdb
     tema = data.get("tema") if data.get("tema") in _TEMAS_CONTACTO else "otro"
-    nombre, apellido = _texto(data.get("nombre"), 80), _texto(data.get("apellido"), 80)
-    celular = _texto(data.get("celular"), 30)
+    nombre, apellido = dato_persona(data.get("nombre"), 80), dato_persona(data.get("apellido"), 80)
+    celular = re.sub(r"[^0-9+() -]", "", _texto(data.get("celular"), 30))
     pid = _ficha_publico(email, {"nombre": nombre, "apellido": apellido, "celular": celular}, "web-contacto",
                          "Formulario de contacto de la web")
     pdb.create_pendiente(
@@ -199,7 +211,7 @@ async def suscribir(request: Request):
     if _texto(data.get("web"), 10):
         return {"ok": True}
     email = _texto(data.get("email"), 120).lower()
-    if not _EMAIL.match(email):
+    if not email_valido(email):
         return _rechazo("Revisa tu correo electrónico.")
     if not _permitido(_ip(request)):
         return _rechazo("Inténtalo de nuevo más tarde.", 429)

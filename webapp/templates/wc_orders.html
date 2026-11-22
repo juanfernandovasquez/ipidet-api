@@ -256,7 +256,7 @@ document.addEventListener('alpine:init', () => {
 
       {% for o in orders %}
       {# Todas las filas usan el mismo componente Alpine; init() lee data-mongo #}
-      <tr x-data="vinculador({{ o.order_id }}, '{{ o.billing_email }}')"
+      <tr data-email="{{ o.billing_email }}" x-data="vinculador({{ o.order_id }}, $el.dataset.email)"
           data-mongo='{{ o.mongo | tojson if o.mongo else "null" }}'
           class="hover:bg-slate-50 align-top">
 

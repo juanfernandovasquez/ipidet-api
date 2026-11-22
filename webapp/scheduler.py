@@ -139,6 +139,7 @@ async def _ejecutar_programados():
             destinatarios   = envio.get("destinatarios", [])
             imagenes_inline = envio.get("imagenes_inline", [])
 
+            from html import escape as html_escape
             from webapp import variables_correo as vcorreo
             periodo = ((envio.get("filtros") or {}).get("periodo") or "").strip() or None
             valores = vcorreo.contexto([d.get("member_id", "") for d in destinatarios], periodo)
@@ -155,7 +156,8 @@ async def _ejecutar_programados():
                 if not email or email in ya_pagaron:
                     continue
                 v           = valores.get(d.get("member_id", ""))
-                cuerpo_p    = vcorreo.sustituir(cuerpo, d, v)
+                # El nombre puede venir de Público, donde lo escribe un tercero: va como texto.
+                cuerpo_p    = vcorreo.sustituir(cuerpo, {**d, "nombre": html_escape(nombre or "")}, v)
                 cuerpo_html = mailer._render_body(cuerpo_p)
                 full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
                 if imagenes_inline and not inline_atts:

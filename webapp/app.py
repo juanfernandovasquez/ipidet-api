@@ -2,6 +2,7 @@ import io
 import re
 import base64 as _b64
 from markupsafe import Markup, escape
+from html import escape as _html_escape
 from fastapi import FastAPI, Request, Form, Query, UploadFile, File, HTTPException
 from typing import List
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse, Response
@@ -3415,7 +3416,9 @@ async def campana_enviar_lote(request: Request, campana_id: str):
             cuerpo_p = vcorreo.sustituir(campana["cuerpo"], d, v)
         else:
             asunto_p = campana["asunto"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
-            cuerpo_p = campana["cuerpo"].replace("{{nombre}}", nombre).replace("{{apellido}}", apellido)
+            # Los datos de Público los escriben terceros: van como texto, nunca como HTML.
+            cuerpo_p = (campana["cuerpo"].replace("{{nombre}}", _html_escape(nombre))
+                        .replace("{{apellido}}", _html_escape(apellido)))
         html_body = mailer._base_html(
             f'<div style="color:#475569;line-height:1.7">{mailer._render_body(cuerpo_p)}</div>',
             disclaimer=campana.get("disclaimer", True),
@@ -6156,7 +6159,7 @@ async def api_publico_enviar(request: Request):
             continue
         nombre   = d.get("nombre", "")
         asunto_p = asunto.replace("{{nombre}}", nombre)
-        cuerpo_p = cuerpo.replace("{{nombre}}", nombre)
+        cuerpo_p = cuerpo.replace("{{nombre}}", _html_escape(nombre))  # lo escribe un tercero
         cuerpo_html = mailer._render_body(cuerpo_p)
         full_html   = f'<div style="color:#475569;line-height:1.7">{cuerpo_html}</div>'
         if imagenesInline:

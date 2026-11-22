@@ -344,7 +344,8 @@
       <!-- Panel de edición -->
       <div x-show="editing" x-cloak class="border-t border-slate-100 px-4 py-3 bg-slate-50">
         <form method="post" action="/pendientes/{{ item._id }}/update" class="space-y-3"
-              x-data="socioSearch('{{ item.get('member_id') or '' }}', '{{ item.get('nombre_completo') or item.get('nombre_miembro') or '' }}')">
+              data-socio="{{ item.get('member_id') or '' }}" data-nombre="{{ item.get('nombre_completo') or item.get('nombre_miembro') or '' }}"
+              x-data="socioSearch($el.dataset.socio, $el.dataset.nombre)">
           <input type="hidden" name="redirect_to" value="{{ cur_url }}">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div class="md:col-span-2">

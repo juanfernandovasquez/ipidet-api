@@ -304,7 +304,7 @@
 
       <!-- Gestión de etiquetas -->
       <div class="bg-white rounded-2xl border border-slate-200 p-5"
-           x-data="tagsManager({{ (prospecto.tags or []) | tojson }}, {{ all_tags | tojson }}, '{{ prospecto._id }}')">
+           x-data='tagsManager({{ (prospecto.tags or []) | tojson }}, {{ all_tags | tojson }}, "{{ prospecto._id }}")'>
         <h2 class="font-semibold text-slate-800 text-sm mb-3 flex items-center gap-2">
           <i class="fa-solid fa-tags text-slate-500"></i> Etiquetas
         </h2>
