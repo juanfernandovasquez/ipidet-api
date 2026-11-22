@@ -3,7 +3,7 @@
 Solo expone lo que ya es público y lo que el equipo carga en la plataforma, para que la web se
 actualice sola:
 - GET  /api/web/sitio      contacto y redes, consejo directivo vigente (nombre, cargo, foto), eventos
-                           publicables, cuotas vigentes, aliadas y dos cifras institucionales.
+                           publicables, cuotas vigentes, aliadas y eventos realizados.
 - POST /api/web/contacto   formulario de contacto → ficha en Público + Pendiente + aviso por Telegram.
 - POST /api/web/suscribir  boletín → ficha en Público con la etiqueta «boletin».
 
@@ -19,6 +19,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from config import catalogos
+from webapp import seguridad
 
 router = APIRouter()
 
@@ -35,21 +36,29 @@ _TEMAS_CONTACTO = {
 # ── Límite de envíos por IP (en memoria: suficiente para una sola instancia) ──
 _envios: dict[str, deque] = defaultdict(deque)
 _MAX_POR_HORA = 5
+_MAX_POR_DIA = 150   # entre todas las IP: un ataque distribuido no llena Público, Pendientes ni Telegram
+_dia: deque = deque()
 
 
 def _ip(request: Request) -> str:
-    reenviada = request.headers.get("x-forwarded-for", "")
-    return (reenviada.split(",")[0].strip() or (request.client.host if request.client else "")) or "?"
+    return seguridad.ip_cliente(request)
 
 
 def _permitido(ip: str) -> bool:
     ahora = time.monotonic()
+    while _dia and ahora - _dia[0] > 86400:
+        _dia.popleft()
+    if len(_dia) >= _MAX_POR_DIA:
+        return False
+    if len(_envios) > 5000:
+        _envios.clear()
     cola = _envios[ip]
     while cola and ahora - cola[0] > 3600:
         cola.popleft()
     if len(cola) >= _MAX_POR_HORA:
         return False
     cola.append(ahora)
+    _dia.append(ahora)
     return True
 
 
@@ -120,7 +129,6 @@ def _sitio() -> dict:
         "aliadas": [{"nombre": a.get("nombre", ""), "siglas": a.get("siglas", ""), "web": a.get("web", "")}
                     for a in pdb.alianzas_col.find({"estado": "aliada"}, {"nombre": 1, "siglas": 1, "web": 1}).limit(20)],
         "cifras": {
-            "socios_activos": pdb.members_col.count_documents({"estado": "activo"}),
             "eventos_realizados": pdb.eventos_col.count_documents({"estado": {"$ne": "cancelado"}, "fecha": {"$lt": hoy}}),
         },
     }

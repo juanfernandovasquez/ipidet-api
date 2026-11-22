@@ -14,7 +14,7 @@
  */
 
 define('IPIDET_PORTAL_API_BASE', 'https://ipidet-api.onrender.com');
-define('IPIDET_PORTAL_SECRET',   'ipidet_portal_2026');
+define('IPIDET_PORTAL_SECRET',   'CAMBIAR_POR_VALOR_DEL_.ENV');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. ENDPOINT REST PROXY (server-to-server, el secret nunca sale al browser)

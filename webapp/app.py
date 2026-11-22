@@ -20,6 +20,7 @@ import webapp.mailer as mailer
 import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
 import webapp.variables_correo as vcorreo
+from webapp import seguridad
 from datetime import timedelta as _timedelta
 from urllib.parse import quote as _quote, urlencode
 from config import catalogos
@@ -45,6 +46,8 @@ def _store_tmp_image(data: bytes, mime: str) -> str:
 # ── Brute-force protection (in-memory, resets on redeploy) ────────────────────
 _login_attempts: dict = {}   # email → {"count": int, "locked_until": float}
 _login_lock = _threading.Lock()
+_login_por_ip = seguridad.Intentos(25, 900)      # frena probar una clave contra muchos correos
+_portal_fallos = seguridad.Intentos(20, 900)
 
 def _check_login_allowed(email: str) -> bool:
     with _login_lock:
@@ -96,13 +99,14 @@ from datetime import date as _date_cls, datetime, timezone  # noqa: E402
 MAX_BULK_RECIPIENTS = 1000
 
 from fastapi.staticfiles import StaticFiles as _StaticFiles
-app = FastAPI(title="IPIDET Admin")
+# Sin /docs ni /openapi.json: no hace falta publicar el mapa de las rutas.
+app = FastAPI(title="IPIDET Admin", docs_url=None, redoc_url=None, openapi_url=None)
 
 from webapp.vendor import router as _vendor_router  # Alpine, Tailwind, etc. desde nuestro dominio
 app.include_router(_vendor_router)
 from webapp import organizacion as _org  # sección IPIDET: datos, logo, firma, consejo
 app.include_router(_org.router)
-from webapp.web_publica import router as _web_router  # API pública para ipidet.org
+from webapp.web_publica import router as _web_router, email_valido  # API pública para ipidet.org
 app.include_router(_web_router)
 
 # CORS: solo permite llamadas desde el servidor WordPress (server-to-server)
@@ -162,6 +166,8 @@ class _AuthMiddleware:
 
 app.add_middleware(_AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=True, same_site="lax", max_age=86400)
+app.add_middleware(seguridad.Seguridad,  # va último: envuelve a todos
+                   es_publica=lambda ruta: ruta in _PUBLIC_PATHS or ruta.startswith(_PUBLIC_PREFIXES))
 templates = Jinja2Templates(directory="webapp/templates")
 import os as _os
 _static_dir = _os.path.join(_os.path.dirname(__file__), "static")
@@ -3933,7 +3939,7 @@ async def brevo_bounce(request: Request):
     if not BREVO_WEBHOOK_TOKEN:
         return JSONResponse({"error": "Webhook no configurado en servidor"}, status_code=503)
     token = request.headers.get("X-Mailin-Token", "") or request.headers.get("X-Brevo-Token", "")
-    if token != BREVO_WEBHOOK_TOKEN:
+    if not seguridad.iguales(token, BREVO_WEBHOOK_TOKEN):
         return JSONResponse({"error": "token inválido"}, status_code=401)
     try:
         payload = await request.json()
@@ -4650,6 +4656,25 @@ async def rebote_restaurar(email: str = Form(...), member_id: str = Form(""), pr
 
 
 # ── Portal de socios ──────────────────────────────────────────────────────────
+def _portal_autorizado(request: Request, secreto: str) -> bool:
+    ip = seguridad.ip_cliente(request)
+    if not _portal_fallos.permitido(ip):
+        return False
+    if seguridad.iguales(request.headers.get("authorization", ""), f"Bearer {secreto}" if secreto else ""):
+        return True
+    _portal_fallos.sumar(ip)
+    return False
+
+
+def _avisar_cambio_portal(que: str) -> None:
+    """Todo cambio de identidad que llega por el portal lo ve el equipo."""
+    try:
+        agente_correo._tg("sendMessage", chat_id=agente_correo.TELEGRAM_CHAT_ID,
+                          text=f"🔐 El portal cambió el {que}. Si el socio no lo pidió, revísalo hoy.")
+    except Exception as e:  # noqa: BLE001
+        print(f"[portal] no se pudo avisar el cambio: {e}")
+
+
 @app.get("/api/portal/member-status")
 async def portal_member_status(
     request: Request,
@@ -4657,8 +4682,7 @@ async def portal_member_status(
     wp_user_id: int = Query(None),
 ):
     from config.settings import PORTAL_SECRET
-    auth_header = request.headers.get("authorization", "")
-    if not PORTAL_SECRET or auth_header != f"Bearer {PORTAL_SECRET}":
+    if not _portal_autorizado(request, PORTAL_SECRET):
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     if not email or "@" not in email:
         return JSONResponse({"error": "Email inválido"}, status_code=400)
@@ -4853,8 +4877,7 @@ async def wc_vincular(order_id: int, request: Request):
 @app.post("/api/portal/update-alternative-email")
 async def portal_update_alt_email(request: Request):
     from config.settings import PORTAL_SECRET
-    auth_header = request.headers.get("authorization", "")
-    if not PORTAL_SECRET or auth_header != f"Bearer {PORTAL_SECRET}":
+    if not _portal_autorizado(request, PORTAL_SECRET):
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     try:
         body = await request.json()
@@ -4869,15 +4892,18 @@ async def portal_update_alt_email(request: Request):
         return JSONResponse({"error": "primary_email inválido"}, status_code=400)
     if not alternative_email or "@" not in alternative_email:
         return JSONResponse({"error": "alternative_email inválido"}, status_code=400)
+    if not email_valido(alternative_email):
+        return JSONResponse({"error": "alternative_email inválido"}, status_code=400)
     result = portal_routes.update_alternative_email(primary_email, alternative_email, wp_user_id=wp_user_id)
+    if result.get("ok"):
+        _avisar_cambio_portal(f"correo alternativo de {result.get('member_id')} → {alternative_email}")
     return result
 
 
 @app.post("/api/portal/update-dni")
 async def portal_update_dni(request: Request):
     from config.settings import PORTAL_SECRET
-    auth_header = request.headers.get("authorization", "")
-    if not PORTAL_SECRET or auth_header != f"Bearer {PORTAL_SECRET}":
+    if not _portal_autorizado(request, PORTAL_SECRET):
         return JSONResponse({"error": "No autorizado"}, status_code=401)
     try:
         body = await request.json()
@@ -4892,7 +4918,11 @@ async def portal_update_dni(request: Request):
         return JSONResponse({"error": "primary_email inválido"}, status_code=400)
     if not dni:
         return JSONResponse({"error": "dni vacío"}, status_code=400)
+    if not re.fullmatch(r"[A-Za-z0-9-]{8,15}", dni):
+        return JSONResponse({"error": "dni inválido"}, status_code=400)
     result = portal_routes.update_member_dni_by_email(primary_email, dni, wp_user_id=wp_user_id)
+    if result.get("ok"):
+        _avisar_cambio_portal(f"DNI de {result.get('member_id')}")
     return result
 
 
@@ -4913,13 +4943,15 @@ async def login_post(
     next: str = Form("/"),
 ):
     email_norm = email.strip().lower()
-    if not _check_login_allowed(email_norm):
+    ip = seguridad.ip_cliente(request)
+    if not _login_por_ip.permitido(ip) or not _check_login_allowed(email_norm):
         return templates.TemplateResponse(request, "login.html", {
             "next": next,
             "error": "Demasiados intentos fallidos. Intenta de nuevo en 15 minutos.",
         })
     user = auth.get_user(email)
     if not user or not auth.verify_password(password, user["password_hash"]):
+        _login_por_ip.sumar(ip)
         count = _record_login_failure(email_norm)
         remaining = max(0, 5 - count)
         msg = "Correo o contraseña incorrectos."
@@ -4934,7 +4966,7 @@ async def login_post(
     request.session["user_email"]   = user["email"]
     request.session["user_role"]    = user["role"]
     request.session["user_permisos"]= user.get("permisos", auth.ALL_SECTIONS)
-    return RedirectResponse(next if next.startswith("/") else "/", status_code=302)
+    return RedirectResponse(seguridad.ruta_interna(next), status_code=302)
 
 
 @app.get("/logout")

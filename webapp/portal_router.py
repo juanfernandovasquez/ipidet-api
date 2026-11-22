@@ -172,7 +172,14 @@ def update_alternative_email(primary_email: str, alternative_email: str, wp_user
     if wp_user_id and not member.get("wp_user_id"):
         pdb.members_col.update_one({"member_id": member["member_id"]}, {"$set": {"wp_user_id": wp_user_id}})
 
+    ajeno = pdb.members_col.find_one(
+        {"member_id": {"$ne": member["member_id"]},
+         "emails.email": {"$regex": f"^{re.escape(alternative_email)}$", "$options": "i"}}, {"_id": 1})
+    if ajeno:
+        return {"ok": False, "error": "Ese correo no se puede registrar. Escribe a IPIDET."}
     emails = member.get("emails", [])
+    if any((e.get("email") or "").strip().lower() == alternative_email for e in emails):
+        return {"ok": True, "member_id": member["member_id"], "alternative_email": alternative_email}
     # Buscar si ya hay un email alternativo (no principal) habilitado
     alt_idx = next(
         (i for i, e in enumerate(emails) if not e.get("principal") and e.get("estado") == "habilitado"),
@@ -181,12 +188,14 @@ def update_alternative_email(primary_email: str, alternative_email: str, wp_user
     if alt_idx is not None:
         pdb.members_col.update_one(
             {"member_id": member["member_id"]},
-            {"$set": {f"emails.{alt_idx}.email": alternative_email}},
+            # origen «portal»: nadie verificó que el correo sea del socio, así que no sirve para entrar a la web.
+            {"$set": {f"emails.{alt_idx}.email": alternative_email, f"emails.{alt_idx}.origen": "portal"}},
         )
     else:
         pdb.members_col.update_one(
             {"member_id": member["member_id"]},
-            {"$push": {"emails": {"email": alternative_email, "estado": "habilitado", "principal": False}}},
+            {"$push": {"emails": {"email": alternative_email, "estado": "habilitado", "principal": False,
+                                  "origen": "portal"}}},
         )
     _cache_del(primary_email)
     _cache_del(f"wpid_{wp_user_id}")
