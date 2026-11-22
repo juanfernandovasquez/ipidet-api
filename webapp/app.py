@@ -3424,25 +3424,16 @@ async def campana_enviar_lote(request: Request, campana_id: str):
             disclaimer=campana.get("disclaimer", True),
         )
         try:
-            ok, err = await mailer.send_email(email, asunto_p, html_body)
-            if ok:
-                enviados_ok += 1
-                pdb.campanas_col.update_one(
-                    {"_id": ObjectId(campana_id)},
-                    {"$set": {"destinatarios.$[el].estado": "enviado",
-                               "destinatarios.$[el].enviado_at": ahora_iso},
-                     "$inc": {"enviados": 1}},
-                    array_filters=[{"el.email": email, "el.estado": "pendiente"}],
-                )
-            else:
-                fallidos_n += 1
-                pdb.campanas_col.update_one(
-                    {"_id": ObjectId(campana_id)},
-                    {"$set": {"destinatarios.$[el].estado": "fallido",
-                               "destinatarios.$[el].error": str(err)},
-                     "$inc": {"fallidos": 1}},
-                    array_filters=[{"el.email": email, "el.estado": "pendiente"}],
-                )
+            # send_email no devuelve nada: si el envío falla, lanza una excepción.
+            await mailer.send_email(email, asunto_p, html_body)
+            enviados_ok += 1
+            pdb.campanas_col.update_one(
+                {"_id": ObjectId(campana_id)},
+                {"$set": {"destinatarios.$[el].estado": "enviado",
+                           "destinatarios.$[el].enviado_at": ahora_iso},
+                 "$inc": {"enviados": 1}},
+                array_filters=[{"el.email": email, "el.estado": "pendiente"}],
+            )
         except Exception as exc:
             fallidos_n += 1
             pdb.campanas_col.update_one(
