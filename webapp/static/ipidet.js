@@ -147,6 +147,30 @@
     if (nav) nav.scrollTop = Math.max(0, activo.offsetTop - nav.clientHeight / 2);
   });
 
+  // IGV en pantalla: montos finales, en céntimos. Mismo redondeo que webapp/tributos.py (que es el que vale).
+  window.desgloseIgv = (lineas, tasa) => {
+    const r = { gravadas: 0, exoneradas: 0, inafectas: 0, igv: 0, total: 0, sinDefinir: 0 };
+    lineas.forEach((l) => {
+      const c = Math.round(Number((Number(l.monto) || 0) * 100).toPrecision(12));
+      if (c <= 0) return;
+      r.total += c;
+      if (l.afect === '10') {
+        const t = Number(l.tasa) || Number(tasa);
+        const base = Math.round(c * 100 / (100 + t));
+        r.gravadas += base; r.igv += c - base;
+      } else if (l.afect === '20') r.exoneradas += c;
+      else if (l.afect === '30') r.inafectas += c;
+      else r.sinDefinir += 1;
+    });
+    ['gravadas', 'exoneradas', 'inafectas', 'igv', 'total'].forEach((k) => { r[k] /= 100; });
+    return r;
+  };
+  // Fecha de hoy del navegador: toISOString() da la de UTC y en Lima, desde las 7 p. m., ya es mañana.
+  window.hoyLocal = () => {
+    const d = new Date();
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+
   document.addEventListener('alpine:initialized', () => {
     const flash = document.body.dataset.flash;
     if (flash) window.avisar(flash);

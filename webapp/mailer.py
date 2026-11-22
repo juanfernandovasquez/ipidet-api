@@ -388,15 +388,16 @@ def tpl_comprobante_pago(comp: dict, socios_info: list) -> str:
                   "recibo": "Recibo por Honorarios"}.get(tipo, tipo.capitalize())
     fecha      = comp.get("fecha_emision", "")
     monto      = float(comp.get("monto_total") or 0)
-    empresa    = comp.get("empresa", "")
+    from html import escape as _e   # el comprador puede venir de un formulario público
+    empresa    = _e(comp.get("empresa") or "")
     has_xml    = bool(comp.get("xml_raw"))
 
     if empresa:
         saludo_nombre = empresa
     elif socios_info:
-        saludo_nombre = socios_info[0].get("nombre", "")
+        saludo_nombre = _e(socios_info[0].get("nombre", ""))
     else:
-        saludo_nombre = "socio/a"
+        saludo_nombre = _e(comp.get("destinatario_nombre") or "") or "socio/a"
 
     items = comp.get("items") or []
     if not items:
@@ -405,7 +406,7 @@ def tpl_comprobante_pago(comp: dict, socios_info: list) -> str:
     items_rows = "".join(
         f'<tr style="background:{"#f8fafc" if i % 2 else "#ffffff"}">'
         f'<td style="padding:8px 12px;font-size:13px;color:#1e293b">'
-        f'{it.get("producto_nombre") or it.get("codigo_sunat") or "—"}'
+        f'{_e(str(it.get("producto_nombre") or it.get("codigo_sunat") or "—"))}'
         f'{(" · <span style=\'color:#94a3b8;font-size:11px\'>" + it["member_id"] + "</span>") if it.get("member_id") else ""}'
         f'</td>'
         f'<td style="padding:8px 12px;font-size:13px;color:#1e293b;text-align:right">'
@@ -413,15 +414,21 @@ def tpl_comprobante_pago(comp: dict, socios_info: list) -> str:
         f'</td></tr>'
         for i, it in enumerate(items)
     )
+    from webapp import tributos as _trib
+    impuestos = _trib.resumen(comp)
+    if impuestos["igv"]:
+        for rotulo, valor in (("Valor de venta", impuestos["valor_venta"]), ("IGV", impuestos["igv"])):
+            items_rows += (f'<tr><td style="padding:6px 12px;font-size:12px;color:#64748b;text-align:right">{rotulo}</td>'
+                           f'<td style="padding:6px 12px;font-size:12px;color:#64748b;text-align:right">S/ {valor:.2f}</td></tr>')
 
-    medio_pago = (comp.get("medio_pago") or "").strip()
+    medio_pago = _e((comp.get("medio_pago") or "").strip())
 
     receptor_rows = ""
     if empresa:
         if comp.get("ruc_empresa"):
             receptor_rows += (
                 f'<tr><td style="padding:6px 12px;font-size:13px;color:#64748b;font-weight:600">RUC</td>'
-                f'<td style="padding:6px 12px;font-size:13px;color:#1e293b">{comp["ruc_empresa"]}</td></tr>'
+                f'<td style="padding:6px 12px;font-size:13px;color:#1e293b">{_e(str(comp["ruc_empresa"]))}</td></tr>'
             )
     else:
         for s in socios_info:

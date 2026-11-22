@@ -6,6 +6,7 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from config import catalogos
 from config.settings import DB_NAME
+from webapp import tributos
 
 
 def _sf(val, default: float = 0.0) -> float:
@@ -2044,6 +2045,9 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
         mid = item.get("member_id")
         if not mid:
             continue
+        if not tributos.salda_cuota(item):
+            results.append(_res(item, "ok", "Entrada u otra venta: no toca cuotas"))
+            continue
         if item.get("nc_id"):
             # Línea anulada o corregida con nota de crédito: su pago lo decidió la nota.
             results.append(_res(item, "nota_credito", "Línea afectada por una nota de crédito: no se sincroniza"))
@@ -3838,7 +3842,7 @@ def create_producto(nombre: str, tipo: str, precio: float | None,
                     periodo: str, descripcion: str,
                     codigo_wc: str = "", codigo_sunat: str = "",
                     cuota_numero: int | None = None,
-                    wc_product_id: int | None = None) -> str:
+                    wc_product_id: int | None = None, tipo_afectacion: str = "") -> str:
     doc = {
         "nombre":        nombre.strip(),
         "tipo":          tipo,
@@ -3849,6 +3853,7 @@ def create_producto(nombre: str, tipo: str, precio: float | None,
         "codigo_wc":     codigo_wc.strip(),
         "codigo_sunat":  codigo_sunat.strip(),
         "cuota_numero":  cuota_numero,
+        "tipo_afectacion": tipo_afectacion if tipo_afectacion in tributos.AFECTACIONES else "",
         "activo":        True,
         "created_at":    datetime.now(timezone.utc),
     }
@@ -3861,7 +3866,7 @@ def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | No
                     periodo: str, descripcion: str, activo: bool,
                     wc_product_id: int | None = None,
                     codigo_wc: str = "", codigo_sunat: str = "",
-                    cuota_numero: int | None = None) -> None:
+                    cuota_numero: int | None = None, tipo_afectacion: str | None = None) -> None:
     productos_col.update_one(
         {"_id": ObjectId(producto_id)},
         {"$set": {
@@ -3875,6 +3880,8 @@ def update_producto(producto_id: str, nombre: str, tipo: str, precio: float | No
             "codigo_wc":     codigo_wc.strip(),
             "codigo_sunat":  codigo_sunat.strip(),
             "cuota_numero":  cuota_numero,
+            **({} if tipo_afectacion is None else
+               {"tipo_afectacion": tipo_afectacion if tipo_afectacion in tributos.AFECTACIONES else ""}),
         }},
     )
     catalogos.invalidar()
@@ -4121,9 +4128,10 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
                         xml_raw: str = "",
                         fecha_vencimiento: str = "",
                         estado_credito: str = "",
-                        fecha_pago: str = "") -> str:
+                        fecha_pago: str = "", tributos_xml: dict | None = None) -> str:
     # Derive socios from items if provided
     if items:
+        tributos.sellar(items)
         seen = set()
         socios = [it["member_id"] for it in items
                   if it.get("member_id") and it["member_id"] not in seen and not seen.add(it["member_id"])]
@@ -4165,6 +4173,11 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         "destinatario_dni":     destinatario_dni.strip() if destinatario_dni else "",
         "created_at":           datetime.now(timezone.utc),
     }
+    if not doc["items"]:
+        # Sin líneas: lo usan las cuotas. Una venta sin socio debe decir si lleva IGV.
+        doc["tipo_afectacion"] = tributos.EXONERADO if socios else ""
+    if tributos_xml:
+        doc["tributos"] = tributos_xml
     result = comprobantes_col.insert_one(doc)
     return str(result.inserted_id)
 
@@ -4200,6 +4213,10 @@ def buscar_borrador_para_xml(data: dict) -> dict | None:
         clave = _nombre_clave(data["razon_social"])
         candidatos = [c for c in comprobantes_col.find(base).sort("created_at", -1)
                       if clave and _nombre_clave(c.get("destinatario_nombre") or "") == clave]
+    # Un borrador con una entrada (u otra venta) solo se completa con un XML del mismo monto: si no, la
+    # boleta de la cuota de un socio completaría el borrador de su evento.
+    candidatos = [c for c in candidatos if all(tributos.salda_cuota(i) for i in c.get("items") or [])
+                  or abs(float(c.get("monto_total") or 0) - float(monto)) < 0.01]
     if not candidatos:
         return None
     mismo_monto = [c for c in candidatos if abs(float(c.get("monto_total") or 0) - float(monto)) < 0.01]
@@ -4244,6 +4261,8 @@ def update_comprobante(comprobante_id: str, fields: dict) -> None:
                "sunat_estado", "sunat_xml", "sunat_hash", "sunat_cdr_code",
                "sunat_cdr_desc", "sunat_accepted", "sunat_error", "sunat_emitido_at"}
     update = {k: v for k, v in fields.items() if k in allowed}
+    if update.get("items"):
+        tributos.sellar(update["items"], historico=True)
     if "empresa" in update:
         emp = (update["empresa"] or "").strip()
         if emp:
@@ -4460,7 +4479,7 @@ def registrar_nota_credito(original_id: str, numero: str, fecha_emision: str, mo
                            motivo: str, monto: float, lineas_idx: list | None, efecto: str,
                            origen: str = "manual", items_xml: list | None = None,
                            xml_raw: str = "", sunat: dict | None = None,
-                           validar_saldo: bool = True) -> tuple[str, list[dict]]:
+                           validar_saldo: bool = True, tributos_xml: dict | None = None) -> tuple[str, list[dict]]:
     """Registra una nota de crédito sobre un comprobante y aplica su efecto en los pagos.
 
     `lineas_idx` = posiciones de las líneas del original que afecta (None = todas).
@@ -4502,6 +4521,7 @@ def registrar_nota_credito(original_id: str, numero: str, fecha_emision: str, mo
         if len(items) == 1 or not items:
             items = [{**(items[0] if items else {}), "monto": monto}]
     socios = list(dict.fromkeys(it["member_id"] for it in items if it.get("member_id"))) or original.get("socios") or []
+    tributos_nota = tributos_xml or tributos.totales(tributos.lineas_de_nota(original, monto, lineas_idx, motivo))
     ahora = datetime.now(timezone.utc)
     doc = {
         "numero":              numero,
@@ -4525,6 +4545,7 @@ def registrar_nota_credito(original_id: str, numero: str, fecha_emision: str, mo
         "destinatario_dni":    original.get("destinatario_dni", ""),
         "socios":              socios,
         "items":               items,
+        "tributos":            tributos_nota,
         "estado":              "emitido",
         "origen":              origen,
         "efecto_pago":         efecto,
@@ -4657,6 +4678,29 @@ def get_ultimo_correlativo_emitido_nc(serie: str) -> int | None:
     return info["numero"] if info else None
 
 
+def reservar_emision(comprobante_id: str) -> bool:
+    """Un solo envío a SUNAT a la vez por comprobante (doble clic, dos personas). Caduca a los 3 minutos."""
+    ahora = datetime.now(timezone.utc)
+    r = comprobantes_col.update_one(
+        {"_id": ObjectId(comprobante_id), "sunat_estado": {"$nin": ["emitido", "anulado_sunat"]},
+         "$or": [{"emitiendo_at": {"$exists": False}}, {"emitiendo_at": None},
+                 {"emitiendo_at": {"$lt": datetime.fromtimestamp(ahora.timestamp() - 180, timezone.utc)}}]},
+        {"$set": {"emitiendo_at": ahora}})
+    return bool(r.modified_count)
+
+
+def empresa_de_comprobante(comp: dict) -> dict | None:
+    """Receptor de una factura: su empresa (FK) o, si no está en Empresas, los datos del propio comprobante."""
+    eid = comp.get("empresa_id") or ""
+    if eid and ObjectId.is_valid(eid):
+        doc = companies_col.find_one({"_id": ObjectId(eid)})
+        if doc:
+            return doc
+    if comp.get("ruc_empresa") and comp.get("empresa"):
+        return {"ruc": comp["ruc_empresa"], "razon_social": comp["empresa"]}
+    return None
+
+
 def update_sunat_estado(
     comprobante_id: str,
     estado: str,
@@ -4750,6 +4794,7 @@ def get_comprobante_email_info(comp_id: str) -> dict | None:
         "empresa_contacto": empresa_contacto,
         "has_xml":          bool(comp.get("xml_raw") or comp.get("sunat_xml")),
         "monto_total":      comp.get("monto_total") or 0,
+        "tributos":         tributos.resumen(comp),
         "items":            comp.get("items") or [],
         "concepto":         comp.get("concepto") or comp.get("producto_nombre") or "",
         "socios_info":      socios_info,
@@ -4844,7 +4889,7 @@ def backfill_comprobantes_payment_ids() -> dict:
     fixed_items = 0
     # $in:[None,""] matches both null values and absent fields (MongoDB treats missing as null)
     cursor = comprobantes_col.find(
-        {"estado": {"$ne": "anulado"},
+        {"estado": {"$nin": ["anulado", "pre_registrado"]},   # un borrador todavía no es un cobro
          "items": {"$elemMatch": {"member_id": {"$exists": True, "$nin": [None, ""]},
                                   "payment_id": {"$in": [None, ""]}}}}
     )
@@ -4905,7 +4950,7 @@ def backfill_resync_comprobantes_with_payment_id() -> dict:
     """
     synced = 0
     cursor = comprobantes_col.find(
-        {"estado": {"$ne": "anulado"},
+        {"estado": {"$nin": ["anulado", "pre_registrado"]},   # un borrador no marca pagos
          "items": {"$elemMatch": {"payment_id": {"$exists": True, "$nin": [None, ""]}}}}
     )
     for comp in cursor:
@@ -4971,7 +5016,8 @@ def get_pre_comprobantes(tipo: str = None) -> list:
 
 def complete_pre_comprobante(comp_id: str, numero: str, tipo: str,
                               fecha_emision: str, monto_total: float = None,
-                              ruc: str = None) -> dict:
+                              ruc: str = None, tributos_xml: dict | None = None,
+                              items: list | None = None) -> dict:
     """Completa un pre-comprobante con los datos reales del XML/SUNAT."""
     update: dict = {
         "numero":       numero,
@@ -4983,6 +5029,10 @@ def complete_pre_comprobante(comp_id: str, numero: str, tipo: str,
         update["monto_total"] = monto_total
     if ruc is not None:
         update["ruc_empresa"] = ruc
+    if tributos_xml:
+        update["tributos"] = tributos_xml
+    if items:
+        update["items"] = items
     comprobantes_col.update_one({"_id": ObjectId(comp_id)}, {"$set": update})
     doc = comprobantes_col.find_one({"_id": ObjectId(comp_id)})
     if doc:
@@ -5048,7 +5098,7 @@ def get_comprobantes_por_empresa(empresa: str) -> list:
 
 
 def get_productos_list() -> list:
-    return list(productos_col.find({"activo": True}, {"nombre": 1, "tipo": 1, "precio": 1, "periodo": 1, "codigo_sunat": 1}).sort("nombre", 1))
+    return list(productos_col.find({"activo": True}, {"nombre": 1, "tipo": 1, "precio": 1, "periodo": 1, "codigo_sunat": 1, "tipo_afectacion": 1}).sort("nombre", 1))
 
 
 # ── Ingresos (flujo de caja) ───────────────────────────────────────────────────

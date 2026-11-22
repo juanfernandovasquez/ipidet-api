@@ -3,7 +3,7 @@
 {% block heading %}Preparar comprobante{% endblock %}
 
 {% block content %}
-<div x-data="preparar()" x-init="init()"
+<div x-data="preparar()"
      class="grid grid-cols-1 xl:grid-cols-5 gap-5">
 
   <!-- ──────────── Panel izquierdo: Builder ──────────── -->
@@ -118,6 +118,17 @@
                   class="text-slate-400 hover:text-red-500 transition-colors shrink-0">
             <i class="fa-solid fa-xmark text-xs"></i>
           </button>
+        </div>
+
+        <!-- Comprador que no es socio (entradas, otras ventas) -->
+        <button type="button" x-show="form.tipo === 'boleta' && !destinatario.member_id && !externo && !form.empresa_id" x-cloak
+                @click="externo = true; destinatario.nombre = ''; destinatario.dni = ''"
+                class="btn-ghost text-xs shrink-0 whitespace-nowrap"><i class="fa-solid fa-user-plus mr-1"></i>No es socio</button>
+        <div x-show="form.tipo === 'boleta' && externo && !destinatario.member_id" x-cloak class="flex items-center gap-2 flex-wrap">
+          <input type="text" x-model="destinatario.nombre" maxlength="120" placeholder="Nombre del comprador" class="input text-sm w-52">
+          <input type="text" x-model="destinatario.dni" maxlength="8" inputmode="numeric" placeholder="DNI" class="input text-sm font-mono w-28">
+          <button type="button" @click="externo = false; destinatario.nombre = ''; destinatario.dni = ''" class="text-slate-400 hover:text-red-500" title="Quitar comprador">
+            <i class="fa-solid fa-xmark text-xs"></i></button>
         </div>
 
         <!-- DNI input inline (cuando socio seleccionado sin DNI) -->
@@ -281,11 +292,20 @@
                 </div>
               </div>
               <div>
-                <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Monto S/</label>
+                <label class="block text-[10px] font-medium text-slate-500 mb-0.5">Precio final S/ (con IGV si lo lleva)</label>
                 <input type="number" step="0.01" min="0" x-model="ln.monto"
                        placeholder="0.00"
                        class="input w-full text-sm font-mono">
               </div>
+            </div>
+            <div x-show="ln.pid" x-cloak class="flex flex-wrap items-center gap-2">
+              <label class="text-[10px] font-medium text-slate-500">IGV</label>
+              <select x-model="ln.afect" class="input text-xs py-1" :class="!ln.afect && 'border-amber-400'">
+                <option value="">Elige…</option>
+                {% for k, v in afectaciones.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+              </select>
+              <span x-show="ln.afect === '10' && ln.monto > 0" class="text-[11px] text-slate-500 font-mono"
+                    x-text="(() => { const d = desgloseIgv([ln], tasa); return 'base ' + d.gravadas.toFixed(2) + ' + IGV ' + d.igv.toFixed(2); })()"></span>
             </div>
 
           </div>
@@ -293,7 +313,10 @@
       </div>
 
       <!-- Total -->
-      <div class="flex items-center justify-end mt-4 pt-3 border-t border-slate-100">
+      <div class="flex flex-wrap items-center justify-end gap-y-1 mt-4 pt-3 border-t border-slate-100">
+        <span class="text-xs text-slate-500 mr-4" x-show="impuestos.igv > 0" x-cloak
+              x-text="'Valor de venta S/ ' + (impuestos.total - impuestos.igv).toFixed(2) + ' · IGV S/ ' + impuestos.igv.toFixed(2)"></span>
+        <span class="text-xs text-amber-700 mr-4" x-show="faltaIgv" x-cloak>Elige el IGV de cada línea</span>
         <span class="text-xs text-slate-500 mr-3">Total</span>
         <span class="text-lg font-bold text-green-700 font-mono" x-text="'S/ ' + total.toFixed(2)"></span>
       </div>
@@ -342,7 +365,7 @@
         </div>
 
         <!-- Destinatario DNI (solo boleta) -->
-        <div x-show="form.tipo === 'boleta' && destinatario.member_id" x-cloak class="border-b border-dashed border-slate-300 pb-2">
+        <div x-show="form.tipo === 'boleta' && (destinatario.member_id || (externo && destinatario.nombre))" x-cloak class="border-b border-dashed border-slate-300 pb-2">
           <div class="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Para:</div>
           <div class="font-bold text-slate-900" x-text="destinatario.nombre || '—'"></div>
           <div x-show="destinatario.dni" class="flex items-center justify-between gap-2 mt-1">
@@ -409,6 +432,13 @@
           </template>
         </div>
 
+        <!-- Desglose para copiar al portal SOL -->
+        <div x-show="total > 0" x-cloak class="text-[11px] text-slate-600 space-y-0.5 font-mono pt-1">
+          <div class="flex justify-between" x-show="impuestos.gravadas > 0"><span>Op. gravadas</span><span x-text="impuestos.gravadas.toFixed(2)"></span></div>
+          <div class="flex justify-between" x-show="impuestos.exoneradas > 0"><span>Op. exoneradas</span><span x-text="impuestos.exoneradas.toFixed(2)"></span></div>
+          <div class="flex justify-between" x-show="impuestos.inafectas > 0"><span>Op. inafectas</span><span x-text="impuestos.inafectas.toFixed(2)"></span></div>
+          <div class="flex justify-between" x-show="impuestos.igv > 0"><span x-text="'IGV ' + tasa + '%'"></span><span x-text="impuestos.igv.toFixed(2)"></span></div>
+        </div>
         <!-- Total -->
         <div class="border-t-2 border-slate-800 pt-2 flex items-center justify-between">
           <span class="font-bold text-slate-600 text-sm">TOTAL</span>
@@ -567,9 +597,11 @@
 function preparar() {
   return {
     productos: [],
+    tasa: {{ tasa_igv | tojson }},
+    externo: false,
     form: {
       tipo: 'boleta',
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyLocal(),
       empresa: '',
       empresa_id: '',
       ruc: '',
@@ -597,10 +629,18 @@ function preparar() {
     get total() {
       return this.lineas.reduce((s, l) => s + (parseFloat(l.monto) || 0), 0);
     },
+    get impuestos() { return desgloseIgv(this.lineas, this.tasa); },
+    get faltaIgv() { return this.lineas.some(l => l.pid && !l.afect); },
     get canGuardar() {
       if (!this.form.fecha) return false;
       if (!this.lineas.some(l => l.pid)) return false;
-      if (this.form.tipo === 'boleta' && !this.destinatario.member_id) return false;
+      if (this.faltaIgv) return false;
+      if (this.lineas.some(l => !l.pid && parseFloat(l.monto) > 0)) return false;   // sumaría al total sin guardarse
+      if (this.form.tipo === 'boleta' && !this.destinatario.member_id) {
+        const dni = this.destinatario.dni.trim();
+        if (!this.externo || !this.destinatario.nombre.trim()) return false;
+        if (dni && !/^\d{8}$/.test(dni)) return false;
+      }
       if (this.form.tipo === 'factura' && !this.form.empresa_id) return false;
       return true;
     },
@@ -629,7 +669,7 @@ function preparar() {
       this.lineas.push({
         sid: '', snombre: '', sSearch: '', sResults: [],
         pid: '', pnombre: '', pcode: '', pSearchQ: '', pSearchRes: [],
-        monto: '',
+        monto: '', afect: '',
       });
     },
 
@@ -660,6 +700,7 @@ function preparar() {
       ln.pcode      = pr.codigo_sunat || '';
       ln.pSearchQ   = pr.nombre;
       ln.pSearchRes = [];
+      ln.afect      = pr.tipo_afectacion || '';
       if (pr.precio && !ln.monto) ln.monto = pr.precio;
     },
 
@@ -685,6 +726,7 @@ function preparar() {
       this.empNewForm.show = false;
     },
     elegirSocioDestinatario(s) {
+      this.externo = false;
       this.destinatario.member_id = s.member_id;
       this.destinatario.nombre    = ((s.apellidos || '') + ' ' + (s.nombres || '')).trim() || s.member_id;
       this.destinatario.dni       = s.dni || '';
@@ -754,12 +796,14 @@ function preparar() {
     copiarPreview() {
       const lineasFiltradas = this.lineas.filter(l => l.sid || l.pid);
       const rows = lineasFiltradas.map((ln, i) =>
-        `Línea ${i+1}\nCódigo: ${ln.pcode || '—'}\nDescripción: ${this.lineDesc(ln)}\nMonto: ${ln.monto ? parseFloat(ln.monto).toFixed(2) : '—'}`
+        `Línea ${i+1}\nCódigo: ${ln.pcode || '—'}\nDescripción: ${this.lineDesc(ln)}\nMonto: ${ln.monto ? parseFloat(ln.monto).toFixed(2) : '—'}\nIGV: ${({ '10': 'gravado', '20': 'exonerado', '30': 'inafecto' })[ln.afect] || 'por definir'}`
       );
       const header = (this.form.tipo === 'factura' ? 'FACTURA' : 'BOLETA') + ' — ' + (this.form.fecha || '') +
         (this.form.empresa ? '\nEmpresa: ' + this.form.empresa + (this.form.ruc ? ' | RUC: ' + this.form.ruc : '') : '') +
-        (this.destinatario.member_id ? '\nDestinatario: ' + this.destinatario.nombre + (this.destinatario.dni ? ' | DNI: ' + this.destinatario.dni : '') : '');
-      const texto = [header, ...rows, 'TOTAL: ' + this.total.toFixed(2)].join('\n\n');
+        ((this.destinatario.member_id || this.externo) ? '\nDestinatario: ' + this.destinatario.nombre + (this.destinatario.dni ? ' | DNI: ' + this.destinatario.dni : '') : '');
+      const d = this.impuestos;
+      const igv = d.igv ? ['Valor de venta: ' + (d.total - d.igv).toFixed(2) + '\nIGV: ' + d.igv.toFixed(2)] : [];
+      const texto = [header, ...rows, ...igv, 'TOTAL: ' + this.total.toFixed(2)].join('\n\n');
       this.copiar(texto, 'preview');
     },
 
@@ -773,6 +817,7 @@ function preparar() {
         producto_nombre: l.pnombre,
         codigo_sunat:    l.pcode || '',
         monto:           parseFloat(l.monto) || 0,
+        tipo_afectacion: l.afect,
       }));
       try {
         const r = await fetch('/comprobantes/add', {

@@ -48,8 +48,11 @@ _PATH_MAP = [
     ("/admin",            "__admin__"),
 ]
 
-def section_for_path(path: str) -> str | None:
+def section_for_path(path: str, metodo: str = "GET") -> str | None:
     """Devuelve la sección que controla el acceso a esa ruta, o None si es libre."""
+    # Ver comprobantes es libre; registrar, editar, emitir a SUNAT o anular es de Cobranzas.
+    if metodo not in ("GET", "HEAD") and path.startswith("/comprobantes"):
+        return "billing"
     for prefix, section in _PATH_MAP:
         if path == prefix or path.startswith(prefix + "/") or path.startswith(prefix + "?"):
             return section
