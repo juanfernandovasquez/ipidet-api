@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% from "_macros.html" import heroe %}
+{% block titulo %}{{ titulo }} — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe(titulo, titulo) }}
+<section class="seccion"><div class="contenedor angosto legal">
+  {% for p in parrafos %}{% if p.startswith('## ') %}<h3>{{ p[3:] }}</h3>{% else %}<p>{{ p }}</p>{% endif %}{% endfor %}
+</div></section>
+{% endblock %}

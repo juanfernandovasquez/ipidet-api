@@ -30,6 +30,7 @@ _PATH_MAP = [
     ("/publico",          "members"),   # el menú ya lo mostraba solo con este permiso
     ("/empresas",         "billing"),
     ("/productos",        "billing"),
+    ("/sitio",            "billing"),   # web propia: pagos, cuentas, medios de pago
     ("/organizacion",     "billing"),   # datos de IPIDET y consejo directivo
     ("/wc-orders",        "finanzas"),
     ("/sync-usuarios",    "finanzas"),

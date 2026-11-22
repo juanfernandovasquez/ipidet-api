@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe, meta, boletin %}
+{% block titulo %}Eventos — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Eventos', 'Eventos y conversatorios', 'Conversatorios institucionales, presentaciones y foros con especialistas en tributación.', 'portada-eventos.jpg') }}
+<section class="seccion"><div class="contenedor">
+  {% if principal %}
+  <div class="destacado aparece">
+    <div class="destacado__img">{% if principal.flyer %}<img src="{{ principal.flyer }}" alt="">{% endif %}</div>
+    <div class="destacado__cuerpo">
+      <span class="etiqueta">{{ 'Próximo evento' if principal.proximo else 'Último evento' }}</span>
+      <h3>{{ principal.titulo }}</h3>
+      {{ meta(principal) }}
+      <div><a class="btn btn--primario" href="{{ B }}/eventos/{{ principal._id }}">{{ 'Ver e inscribirme' if principal.proximo else 'Ver detalle' }} {{ i('flecha', 'icono--flecha') }}</a></div>
+    </div>
+  </div>
+  {% else %}<div class="vacio">Pronto anunciaremos nuevos eventos.</div>{% endif %}
+  {% if resto %}
+  <div class="filtros aparece" role="group" aria-label="Filtrar eventos">
+    {% for valor, texto in (('todos', 'Todos'), ('proximos', 'Próximos'), ('conversatorio', 'Conversatorios'), ('presentacion', 'Presentaciones'), ('evento', 'Otros')) %}
+    <button class="pastilla" type="button" data-filtro="{{ valor }}" aria-pressed="{{ 'true' if valor == 'todos' else 'false' }}">{{ texto }}</button>
+    {% endfor %}
+    <label class="buscador"><span class="sr">Buscar evento</span>{{ i('buscar') }}<input type="search" placeholder="Buscar por tema…" data-buscar></label>
+  </div>
+  <div class="rejilla rejilla--3" data-filtrable>
+    {% for ev in resto %}
+    <a class="cartel" href="{{ B }}/eventos/{{ ev._id }}" data-clases="{{ ev.tipo_web }}{% if ev.proximo %} proximos{% endif %}" data-texto="{{ ev.titulo | lower }}">
+      <div class="cartel__img">{% if ev.flyer %}<img src="{{ ev.flyer }}" alt="" loading="lazy">{% endif %}</div>
+      <div class="cartel__cuerpo"><span class="tipo {{ 'tipo--proximo' if ev.proximo else 'tipo--' ~ ev.tipo_web }}">{{ 'Próximo' if ev.proximo else ev.tipo_texto }}</span><h3>{{ ev.titulo | corto }}</h3>{{ meta(ev) }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="vacio" data-sin-resultados hidden>No hay eventos con ese filtro.</div>
+  {% endif %}
+</div></section>
+{{ boletin() }}
+{% endblock %}

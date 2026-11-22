@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}Completa tu cuenta — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Mi cuenta', 'Completa tu cuenta', persona.email) }}
+<section class="seccion"><div class="contenedor angosto">
+  <form class="tarjeta" data-json="{{ B }}/api/perfil" novalidate>
+    {% if persona.socio_detectado %}<p class="aviso aviso--bien">{{ i('check') }} Te reconocimos como asociado activo. Al terminar tendrás acceso completo.</p>{% endif %}
+    <div class="formulario espacio-chico">
+      <input type="hidden" name="next" value="{{ siguiente }}">
+      <div><label for="p-nombre">Nombres</label><input class="campo" id="p-nombre" name="nombre" maxlength="80" value="{{ persona.nombre }}" autocomplete="given-name" required></div>
+      <div><label for="p-apellido">Apellidos</label><input class="campo" id="p-apellido" name="apellido" maxlength="80" value="{{ persona.apellido }}" autocomplete="family-name" required></div>
+      <div><label for="p-celular">Celular <span class="ayuda">(opcional)</span></label><input class="campo" id="p-celular" name="celular" type="tel" maxlength="30" autocomplete="tel"></div>
+      <div><label for="p-ciudad">Ciudad <span class="ayuda">(opcional)</span></label><input class="campo" id="p-ciudad" name="ciudad" maxlength="80"></div>
+      <div class="ancho"><label for="p-empresa">Empresa <span class="ayuda">(opcional)</span></label><input class="campo" id="p-empresa" name="empresa" maxlength="120" autocomplete="organization"></div>
+      <label class="casilla ancho"><input type="checkbox" name="acepta" required> <span>Acepto los <a class="enlace" href="{{ B }}/terminos" target="_blank">Términos</a> y la <a class="enlace" href="{{ B }}/privacidad" target="_blank">Política de privacidad</a>.</span></label>
+      <label class="casilla ancho"><input type="checkbox" name="acepta_avisos"> <span>Quiero recibir invitaciones a eventos y novedades (opcional).</span></label>
+      <p class="estado-form ancho" role="status"></p>
+      <div class="ancho"><button class="btn btn--primario" type="submit">Crear mi cuenta {{ i('flecha') }}</button></div>
+    </div>
+  </form>
+</div></section>
+{% endblock %}
+{% block flotante %}{% endblock %}

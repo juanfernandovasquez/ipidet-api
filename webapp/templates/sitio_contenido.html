@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Contenido de la web — IPIDET{% endblock %}
+{% block heading %}Sitio web{% endblock %}
+{% block content %}
+{% include "_tabs_sitio.html" %}
+<form method="post" action="/sitio/contenido" class="space-y-3 max-w-5xl">
+  <p class="text-xs text-slate-500">En las listas con columnas, sepáralas con «|». El RUC, la razón social, la dirección, el correo y las cuotas se completan solos donde dice <span class="font-mono">{{ '{ruc}' }}</span>, <span class="font-mono">{{ '{razon_social}' }}</span>, <span class="font-mono">{{ '{direccion}' }}</span>, <span class="font-mono">{{ '{email}' }}</span>, <span class="font-mono">{{ '{cuota_lima}' }}</span>.</p>
+  {% for titulo, campos in grupos %}
+  <details class="bg-white rounded-xl border border-slate-200 p-4" {% if loop.first %}open{% endif %}>
+    <summary class="cursor-pointer text-sm font-semibold text-slate-700">{{ titulo }}</summary>
+    <div class="space-y-3 mt-3">
+      {% for clave, d in campos.items() %}
+      <div><label class="block text-xs font-medium text-slate-600 mb-1">{{ d[0] }}</label>
+        {% if d[1] in ('lista', 'tabla', 'parrafo') %}<textarea name="{{ clave }}" rows="{{ 3 if d[1] == 'parrafo' else 7 }}" class="input w-full text-sm">{{ valores[clave] }}</textarea>
+        {% else %}<input name="{{ clave }}" value="{{ valores[clave] }}" class="input w-full text-sm">{% endif %}</div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endfor %}
+  {% if es_admin %}<button class="btn-primary text-sm">Guardar contenido</button>{% endif %}
+</form>
+{% endblock %}

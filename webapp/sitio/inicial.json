@@ -1,0 +1,131 @@
+{
+  "publicada": false,
+  "url_base": "https://ipidet-api.onrender.com/web",
+  "cifra_socios": 345,
+  "mostrar_cifra_socios": true,
+  "grabacion_nivel_defecto": "socios",
+  "max_codigos_dia": 150,
+
+  "direccion": "Calle German Schreiber 276, Lima 27",
+  "mapa_url": "https://www.google.com/maps/search/?api=1&query=Calle+German+Schreiber+276+San+Isidro+Lima",
+  "telefonos": ["(01) 422-6048", "(01) 421-7698"],
+  "whatsapp": "+51 922 474 067",
+  "email": "administracion@ipidet.org",
+  "facebook": "https://www.facebook.com/Ipidet/",
+  "linkedin": "https://www.linkedin.com/in/ipidet-org-15186414a/",
+  "youtube": "https://www.youtube.com/channel/UCA8uw2eF3QWs5HiMPeUbz9g",
+  "biblioteca_url": "https://ipidet.org/biblioteca-ipidet/",
+
+  "descripcion": "Asociación civil de carácter cultural y científico, sin fines de lucro, que reúne a profesionales especializados en tributación desde 1979.",
+  "fundacion": "1979-01-23",
+  "lema": "Reunimos a profesionales especializados en tributación para estudiar, debatir y mejorar el sistema tributario peruano.",
+  "bienvenida_cita": "En IPIDET encontrarás información tributaria y contable de interés y muy útil para tu desarrollo profesional.",
+  "bienvenida_texto": "Promovemos el estudio y la investigación tributaria, participamos en el perfeccionamiento de la legislación nacional y organizamos conferencias, seminarios y foros nacionales e internacionales.",
+  "bienvenida_foto": "/web/estatico/img/presidenta.webp",
+  "quienes_somos": "En IPIDET el asociado puede participar en eventos, exponer y escribir artículos que se publican en los medios que organiza el Instituto.",
+  "cifras": [
+    ["N.º 6", "ediciones de la Revista institucional"],
+    ["VI", "Foro Internacional de Tributación y Contabilidad"]
+  ],
+  "objetivos": [
+    ["Agrupar", "A profesionales con título universitario que, por razones científicas, académicas o profesionales, se han especializado en tributación."],
+    ["Investigar", "El estudio de los principios y técnicas que rigen un sistema tributario y de las materias afines a la tributación."],
+    ["Perfeccionar", "La legislación tributaria nacional, participando en las comisiones destinadas a ese fin."],
+    ["Difundir", "Con conferencias, seminarios, congresos y jornadas nacionales e internacionales sobre tributación."]
+  ],
+  "valores": ["Compromiso", "Honestidad", "Respeto", "Responsabilidad", "Disciplina"],
+
+  "consejo_periodo": "2026 – 2028",
+  "consejo_respaldo": [
+    ["Katarzyna Dunin-Borkowski", "Presidenta", "/web/estatico/img/consejo/katarzyna-dunin.webp"],
+    ["Miguel Bobadilla La Madrid", "Vicepresidente", "/web/estatico/img/consejo/miguel-bobadilla.webp"],
+    ["Gloria Guevara", "Secretaria", "/web/estatico/img/consejo/gloria-guevara.webp"],
+    ["Tadeo Caballero", "Tesorero", "/web/estatico/img/consejo/tadeo-caballero.webp"],
+    ["Fernando Miranda", "Vocal", "/web/estatico/img/consejo/fernando-miranda.webp"],
+    ["José Barja", "Vocal", "/web/estatico/img/consejo/jose-barja.webp"],
+    ["Diego Sarmiento", "Vocal", "/web/estatico/img/consejo/diego-sarmiento.webp"]
+  ],
+  "expresidentes": [
+    ["1981 – 1983", "Enrique Noriega Del Valle Noguerol"], ["1983 – 1985", "Manuel Luna Victoria Sánchez"],
+    ["1985 – 1987", "Enrique Noriega Del Valle Noguerol"], ["1987 – 1989", "César Rodríguez Dueñas"],
+    ["1989 – 1991", "César Chang Koo"], ["1991 – 1993", "Nelson Santos Guardamino"],
+    ["1993 – 1995", "Víctor Vargas Calderón"], ["1995 – 1997", "Alberto Nue Bracamonte"],
+    ["1999 – 2001", "Katica Svarcic Morales"], ["2001 – 2003", "Rolando León Tenicela"],
+    ["2003 – 2004", "Alberto Nue Bracamonte"], ["2004 – 2006", "Guillermo Ruiz Secada"],
+    ["2006 – 2008", "Rubén Del Rosario Goytizolo"], ["2008 – 2010", "César Rodríguez Dueñas"],
+    ["2010 – 2012", "Luis Alberto Durán Rojo"], ["2012 – 2014", "María Perales Bazalar"],
+    ["2014 – 2016", "Carlos Llosa Saldaña"], ["2016 – 2018", "John Casas Aguilar"],
+    ["2018 – 2020", "Walker Villanueva Gutiérrez"], ["2020 – 2022", "Víctor Cruzado Ribeyro"],
+    ["2022 – 2024", "Khaled Luyo Acosta"], ["2024 – 2026", "Carlos Valle Larrea"]
+  ],
+  "honorarios": [
+    "Humberto Allemant Salazar", "Francisco Escribano López", "Alberto Tarsitano", "Víctor Gallart Tapia",
+    "Luis Hernández Berenguel", "Manuel Luna Victoria Sánchez", "César Talledo Mazú", "Fernando Serrano",
+    "César Chang Koo", "Víctor Vargas Calderón", "César Rodríguez Dueñas", "Alberto Nue Bracamonte",
+    "Graciela Fernández Baca", "Luis Durán Rojo"
+  ],
+  "comunicados": [
+    ["VI Foro Internacional de Tributación y Contabilidad", "25 y 26 de noviembre de 2025", "/web/estatico/img/flyer-foro.jpeg"]
+  ],
+
+  "cuota_notas": [
+    "Tu empresa puede pagarla: emitimos la factura a su nombre.",
+    "En Lima puedes fraccionarla en 3 cuotas de S/ 260."
+  ],
+  "pasos": [
+    ["Crea tu cuenta", "Regístrate con tu correo y presiona «Quiero asociarme»: el equipo abre tu postulación."],
+    ["Reúne los documentos", "Descarga la solicitud y la guía de postulación de tu sede."],
+    ["Envía tu expediente", "Mándalo por correo. El equipo lo revisa y te indica los siguientes pasos."],
+    ["Paga tu cuota", "Cuando seas admitido, entras con el mismo correo y pagas desde Mi cuenta."]
+  ],
+  "documentos": [
+    ["Solicitud de inscripción", "https://ipidet.org/wp-content/uploads/2026/10/Solicitud-de-Admision.pdf"],
+    ["Requisitos de admisión", "https://ipidet.org/wp-content/uploads/2025/10/REQUISITOS-DE-ADMISION.pdf"],
+    ["Reglamento de admisión", "https://ipidet.org/wp-content/uploads/2026/10/Reglamento-de-admision.pdf"],
+    ["Beneficios de los asociados", "https://ipidet.org/wp-content/uploads/2026/10/Beneficios-de-los-asociados.pdf"],
+    ["Guía de postulación · Lima", "https://ipidet.org/wp-content/uploads/2026/10/Guia-de-postulacion-IPIDET-.pdf"],
+    ["Guía de postulación · Filiales", "https://ipidet.org/wp-content/uploads/2026/10/Guia-de-postulacion-IPIDET-Fiales.pdf"]
+  ],
+  "preguntas": [
+    ["¿Quiénes pueden asociarse?", "Profesionales con título universitario que, por razones científicas, académicas o profesionales, se han especializado en tributación. Los requisitos completos están en el documento «Requisitos de admisión»."],
+    ["¿Cuánto es la cuota anual?", "Para asociados de Lima, {cuota_lima}. Para asociados de filiales en provincias, {cuota_provincia}."],
+    ["¿Qué puedo hacer con una cuenta si no soy socio?", "Inscribirte a eventos, seguir tus pagos y ver las grabaciones abiertas a personas registradas. Las demás son para asociados activos."],
+    ["¿Mi empresa puede pagar por mí?", "Sí. Al informar tu pago elige factura e ingresa el RUC y la razón social de la empresa."],
+    ["¿Dónde envío mi solicitud y documentos?", "A {email} o por WhatsApp al {whatsapp}. También puedes acercarte a nuestra sede en {direccion}."]
+  ],
+
+  "privacidad": [
+    "## Quién trata tus datos",
+    "{razon_social}, con RUC {ruc} y domicilio en {direccion}, es responsable de los datos personales que recibe en este sitio, conforme a la Ley N.º 29733, Ley de Protección de Datos Personales, y su Reglamento aprobado por Decreto Supremo N.º 016-2024-JUS.",
+    "## Qué datos recogemos",
+    "Nombre, apellidos, correo, celular, ciudad, profesión y empresa; los eventos a los que te inscribes y asistes; los datos que pides en tu comprobante (DNI o RUC, razón social y dirección fiscal); el número de operación y la constancia de tus pagos; y lo que nos escribes. Por seguridad registramos de forma temporal los intentos de ingreso y la dirección IP. No pedimos ni guardamos números de tarjeta.",
+    "## Para qué los usamos",
+    "Para crear y proteger tu cuenta, reconocer si eres asociado, gestionar inscripciones, pagos, comprobantes y postulaciones, responder tus consultas y cumplir obligaciones tributarias y legales. Son necesarios para prestarte esos servicios: sin ellos no podemos atenderlos.",
+    "## Avisos de eventos",
+    "Solo te enviamos invitaciones y novedades si lo autorizas. Puedes retirar esa autorización desde Mi cuenta o escribiendo a {email}, sin que afecte tu cuenta.",
+    "## Con quién se comparten",
+    "No vendemos tus datos. Los tratan por encargo proveedores que operan el servicio: Render (alojamiento), MongoDB Atlas (base de datos), Brevo y Google (correo), Zoom (sesiones virtuales), Telegram (avisos internos) y Anthropic (asistencia para responder correos). Algunos están fuera del Perú, por lo que existe flujo transfronterizo de datos. También los entregamos a SUNAT u otras autoridades cuando la ley lo exige.",
+    "## Videos de YouTube",
+    "Las grabaciones se reproducen con el reproductor de YouTube. Al reproducir una, Google puede recibir datos técnicos de tu navegador según su propia política de privacidad.",
+    "## Cookies",
+    "Usamos solo cookies necesarias para mantener tu sesión. No usamos cookies publicitarias.",
+    "## Cuánto tiempo los conservamos",
+    "Mientras tengas una cuenta o una relación con IPIDET y, después, durante los plazos que exigen las normas tributarias y legales.",
+    "## Tus derechos",
+    "Puedes pedir acceso, rectificación, cancelación u oposición, portabilidad cuando corresponda, y revocar tu consentimiento escribiendo a {email}. Te responderemos en los plazos que fija la ley. Si no estás conforme, puedes acudir a la Autoridad Nacional de Protección de Datos Personales."
+  ],
+  "terminos": [
+    "## Cuentas",
+    "Cualquier persona puede crear una cuenta gratuita con su correo. Crear una cuenta no te convierte en asociado. La cuenta es personal: no compartas tus códigos de ingreso.",
+    "## Accesos",
+    "Los asociados en estado activo tienen acceso completo. Las demás personas registradas acceden a los contenidos que IPIDET habilite para ellas, que pueden cambiar con el tiempo.",
+    "## Eventos e inscripciones",
+    "Una inscripción de pago queda confirmada cuando IPIDET verifica el abono. Los cupos son limitados. Si IPIDET cancela o reprograma un evento, te avisará y coordinará contigo la devolución cuando corresponda.",
+    "## Pagos y comprobantes",
+    "Los pagos se hacen por los medios publicados en este sitio y se verifican manualmente. El comprobante se emite con los datos que ingresas: revísalos antes de enviarlos.",
+    "## Grabaciones y materiales",
+    "Pertenecen a IPIDET o a sus autores. No se pueden compartir los enlaces, descargar, redistribuir ni usar con fines comerciales sin autorización escrita.",
+    "## Contacto",
+    "Escríbenos a {email} ante cualquier duda o reclamo."
+  ]
+}

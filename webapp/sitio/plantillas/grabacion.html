@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}{{ ev.titulo }} — Grabación IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Grabación', ev.titulo, (ev.fecha | fecha).larga) }}
+<section class="seccion"><div class="contenedor angosto">
+  {% for parte in partes %}
+    {% if partes | length > 1 %}<h3 class="espacio-chico">{{ parte.titulo }}</h3>{% endif %}
+    {% if parte.embed %}
+    <div class="reproductor"><iframe src="{{ parte.embed }}" title="{{ ev.titulo }} · {{ parte.titulo }}" loading="lazy" allowfullscreen
+      allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+      referrerpolicy="strict-origin-when-cross-origin"
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"></iframe></div>
+    {% else %}
+    <a class="btn btn--primario" href="{{ parte.url }}" target="_blank" rel="noopener noreferrer">Abrir grabación {{ i('externo') }}</a>
+    {% endif %}
+  {% endfor %}
+
+  {% if not ac.puede %}
+  <div class="tarjeta cerrado">
+    <div class="tarjeta__icono">{{ i('candado') }}</div>
+    {% if ac.motivo == 'fecha' %}
+      <h3>Estará disponible el {{ (ev.desde | fecha).larga }}</h3>
+    {% elif ac.motivo == 'completar' %}
+      <h3>Completa tu cuenta para continuar</h3>
+      <a class="btn btn--primario" href="{{ B }}/completar?next={{ B }}/grabaciones/{{ ev._id }}">Completar mi cuenta</a>
+    {% elif ac.motivo == 'ingresar' %}
+      <h3>{{ niveles[ac.nivel] }}</h3>
+      <p>Ingresa con tu correo. Si eres asociado activo, usa el de tu ficha.</p>
+      <a class="btn btn--primario" href="{{ B }}/ingresar?next={{ B }}/grabaciones/{{ ev._id }}">Ingresar o crear cuenta</a>
+    {% else %}
+      <h3>{{ niveles[ac.nivel] }}</h3>
+      <p>Tu cuenta todavía no tiene acceso a esta grabación.</p>
+      <a class="btn btn--primario" href="{{ B }}/tramites">Quiero asociarme {{ i('flecha') }}</a>
+    {% endif %}
+    {% if ac.proxima %}<p class="suave">Desde el {{ (ac.proxima.fecha | fecha).larga }} se abrirá a: {{ niveles[ac.proxima.nivel] | lower }}.</p>{% endif %}
+  </div>
+  {% endif %}
+  <p class="espacio"><a class="enlace" href="{{ B }}/grabaciones">{{ i('izquierda') }} Todas las grabaciones</a></p>
+</div></section>
+{% endblock %}

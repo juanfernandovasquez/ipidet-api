@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Pagos de la web — IPIDET{% endblock %}
+{% block heading %}Sitio web{% endblock %}
+{% block content %}
+{% include "_tabs_sitio.html" %}
+<form method="get" class="flex flex-wrap items-end gap-2 mb-4">
+  <input name="search" value="{{ f.search }}" placeholder="Nombre, correo, evento u operación" class="input text-sm w-72">
+  <select name="estado" class="input text-sm"><option value="">Todos los estados</option>{% for k, v in estados.items() %}<option value="{{ k }}" {% if f.estado == k %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}</select>
+  <select name="tipo" class="input text-sm"><option value="">Eventos y cuotas</option><option value="evento" {% if f.tipo == 'evento' %}selected{% endif %}>Eventos</option><option value="cuota" {% if f.tipo == 'cuota' %}selected{% endif %}>Cuotas</option></select>
+  {% if f.evento %}<input type="hidden" name="evento" value="{{ f.evento }}">{% endif %}
+  <button class="btn-ghost text-sm">Filtrar</button>
+  <span class="text-xs text-slate-500 ml-auto">{{ total }} en total</span>
+</form>
+<p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Una constancia se puede falsificar. Confirma solo lo que veas abonado en el banco.</p>
+
+<div class="space-y-3">
+{% for o in ordenes_web %}
+<article class="bg-white rounded-xl border border-slate-200 p-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <div class="font-medium text-slate-800">{% if o.tipo == 'evento' %}<a class="hover:underline" href="/eventos/{{ o.evento_id }}#web">{{ o.descripcion }}</a>{% else %}{{ o.descripcion }}{% endif %}</div>
+      <div class="text-xs text-slate-500 break-words">{{ o.nombre }} · {{ o.email }}{% if o.member_id %} · <a class="text-blue-700 hover:underline" href="/members/{{ o.member_id }}">{{ o.member_id }}</a>{% else %} · no socio{% endif %}</div>
+      {% if o.metodo or o.operacion %}<div class="text-xs text-slate-500">{{ (o.metodo or {}).get('nombre', '') }}{% if o.operacion %} · operación <span class="font-mono">{{ o.operacion }}</span>{% endif %}{% if o.fecha_pago %} · {{ o.fecha_pago | format_fecha }}{% endif %}</div>{% endif %}
+      {% set fc = o.facturacion or {} %}
+      {% if fc.tipo == 'factura' %}<div class="text-xs text-slate-500">Factura · RUC {{ fc.ruc }} · {{ fc.razon_social }} · {{ fc.direccion }}</div>
+      {% elif fc.tipo == 'boleta' %}<div class="text-xs text-slate-500">Boleta · {{ fc.nombre }}{% if fc.dni %} · DNI {{ fc.dni }}{% endif %}</div>{% endif %}
+      {% if o.observacion %}<div class="text-xs text-amber-700">{{ o.observacion }}</div>{% endif %}
+    </div>
+    <div class="text-right">
+      <div class="font-semibold">{% if o.monto %}{{ (o.monto_pagado or o.monto) | soles }}{% else %}Sin costo{% endif %}</div>
+      <span class="badge badge-{{ estados[o.estado][1] }}">{{ estados[o.estado][0] }}</span>
+      {% if o.comprobante %}<div class="text-xs text-slate-500 mt-1">{% if o.comprobante.numero %}{{ o.comprobante.numero }}{% else %}Borrador en Comprobantes{% endif %}</div>{% endif %}
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2 mt-3">
+    {% if o.voucher_id %}<a class="btn-ghost text-sm" href="/sitio/pagos/{{ o._id }}/constancia"><i class="fa-solid fa-download mr-1"></i> Constancia</a>{% endif %}
+    {% if o.estado == 'confirmada' and o.monto and not o.comprobante %}
+    <form method="post" action="/sitio/pagos/{{ o._id }}/comprobante"><button class="btn-ghost text-sm">Preparar borrador de comprobante</button></form>
+    {% endif %}
+  </div>
+
+  {% if o.estado in ('por_pagar', 'en_revision', 'observada') %}
+  <details class="mt-2" {% if o.estado == 'en_revision' %}open{% endif %}>
+    <summary class="text-sm text-blue-700 cursor-pointer">Confirmar, observar o anular</summary>
+    <form method="post" action="/sitio/pagos/{{ o._id }}/confirmar" class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 items-end">
+      <div><label class="block text-xs text-slate-600 mb-1">Monto abonado</label><input name="monto" type="number" step="0.01" min="0.01" value="{{ o.monto }}" class="input w-full text-sm" required></div>
+      <div><label class="block text-xs text-slate-600 mb-1">Fecha del abono</label><input name="fecha_pago" type="date" max="{{ hoy }}" value="{{ o.fecha_pago or hoy }}" class="input w-full text-sm" required></div>
+      <div><label class="block text-xs text-slate-600 mb-1">Medio de pago</label><select name="medio" class="input w-full text-sm"><option value="">{{ (o.metodo or {}).get('nombre') or 'Sin especificar' }}</option>{% for m in medios_pago %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></div>
+      <label class="text-xs flex items-center gap-2"><input type="checkbox" name="abono_verificado" value="1" required> Vi el abono en el banco</label>
+      <label class="text-xs flex items-center gap-2"><input type="checkbox" name="preparar" value="1" checked> Preparar borrador (no emite a SUNAT)</label>
+      <button class="btn-primary text-sm">Confirmar pago</button>
+    </form>
+    <div class="flex flex-wrap gap-3 mt-3 pt-3 border-t border-slate-100">
+      <form method="post" action="/sitio/pagos/{{ o._id }}/observar" class="flex gap-2"><input name="motivo" maxlength="300" placeholder="Qué debe corregir" class="input text-sm w-56" required><button class="btn-ghost text-sm">Observar</button></form>
+      <form method="post" action="/sitio/pagos/{{ o._id }}/anular" class="flex gap-2" data-confirm="¿Anular esta solicitud? Se le avisará a la persona."><input name="motivo" maxlength="300" placeholder="Motivo (opcional)" class="input text-sm w-56"><button class="btn-danger text-sm">Anular</button></form>
+    </div>
+  </details>
+  {% elif o.estado == 'confirmando' %}
+  <p class="text-xs text-red-700 mt-2">Quedó a medio confirmar: revisa el pago en Cobranzas antes de hacer nada más.</p>
+  {% elif o.estado == 'confirmada' and o.tipo == 'evento' %}
+  <details class="mt-2"><summary class="text-sm text-blue-700 cursor-pointer">Anular inscripción</summary>
+    <form method="post" action="/sitio/pagos/{{ o._id }}/anular" class="flex flex-wrap gap-2 mt-2" data-confirm="¿Anular la inscripción? Si hubo pago, la devolución y la nota de crédito se hacen aparte.">
+      <input name="motivo" maxlength="300" placeholder="Motivo" class="input text-sm w-72" {% if o.monto %}required{% endif %}><button class="btn-danger text-sm">Anular</button></form>
+  </details>
+  {% endif %}
+</article>
+{% else %}<p class="text-center text-slate-400 py-10">No hay pagos ni inscripciones con ese filtro.</p>{% endfor %}
+</div>
+{% set qs = 'search=' ~ (f.search | urlencode) ~ '&estado=' ~ (f.estado | urlencode) ~ '&tipo=' ~ (f.tipo | urlencode) ~ '&evento=' ~ (f.evento | urlencode) ~ '&' %}
+{% include "_paginas_sitio.html" %}
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Sitio web — IPIDET{% endblock %}
+{% block heading %}Sitio web{% endblock %}
+{% block content %}
+{% include "_tabs_sitio.html" %}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+  <section class="bg-white rounded-xl border border-slate-200 p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <h2 class="text-sm font-semibold text-slate-700"><i class="fa-solid fa-globe text-slate-400 mr-1.5"></i> Publicación</h2>
+      {% if cfg.publicada %}<span class="badge badge-green">Publicada</span>{% else %}<span class="badge badge-amber">Solo la ve el equipo</span>{% endif %}
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Sin publicar, la web solo se ve con una sesión del panel. La dirección es <span class="font-mono">/web</span>.</p>
+    <ul class="space-y-1.5 text-sm mb-4">
+      {% for hecho, texto, href in listo %}
+      <li><i class="fa-solid {% if hecho %}fa-check text-green-600{% else %}fa-triangle-exclamation text-amber-500{% endif %} mr-1.5"></i><a class="hover:underline" href="{{ href }}">{{ texto }}</a></li>
+      {% endfor %}
+    </ul>
+    <div class="flex gap-4 text-xs text-slate-500 mb-4">
+      <span>{{ n_cuentas }} cuentas registradas</span><span>{{ n_inscripciones }} inscripciones confirmadas</span>
+    </div>
+    {% if es_admin %}
+    <form method="post" action="/sitio/publicar" data-confirm="{% if cfg.publicada %}¿Quitar la web de internet? Solo la verá el equipo.{% else %}¿Publicar la web? Cualquiera podrá verla, crear una cuenta e inscribirse.{% endif %}">
+      <input type="hidden" name="publicada" value="{{ '0' if cfg.publicada else '1' }}">
+      <button class="{{ 'btn-danger' if cfg.publicada else 'btn-primary' }} text-sm">{{ 'Volver a vista previa' if cfg.publicada else 'Publicar la web' }}</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="bg-white rounded-xl border border-slate-200 p-5">
+    <h2 class="text-sm font-semibold text-slate-700 mb-3"><i class="fa-solid fa-sliders text-slate-400 mr-1.5"></i> Ajustes</h2>
+    <form method="post" action="/sitio/ajustes" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div><label class="block text-xs font-medium text-slate-600 mb-1">Cifra de socios que se muestra</label>
+        <input name="cifra_socios" type="number" min="0" value="{{ cfg.cifra_socios }}" class="input w-full">
+        <p class="text-[11px] text-slate-400 mt-1">Es una cifra escrita por el equipo: no sale del padrón.</p></div>
+      <div><label class="block text-xs font-medium text-slate-600 mb-1">Grabación sin nivel propio</label>
+        <select name="grabacion_nivel_defecto" class="input w-full">{% for k, v in niveles.items() %}<option value="{{ k }}" {% if k == cfg.grabacion_nivel_defecto %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+      <div><label class="block text-xs font-medium text-slate-600 mb-1">Máximo de códigos de ingreso al día</label>
+        <input name="max_codigos_dia" type="number" min="20" max="2000" value="{{ cfg.max_codigos_dia }}" class="input w-full">
+        <p class="text-[11px] text-slate-400 mt-1">Salen de la cuota de correos de Brevo.</p></div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="mostrar_cifra_socios" value="1" {% if cfg.mostrar_cifra_socios %}checked{% endif %}> Mostrar la cifra de socios</label>
+      {% if es_admin %}<div class="sm:col-span-2"><button class="btn-primary text-sm">Guardar ajustes</button></div>{% endif %}
+    </form>
+  </section>
+</div>
+
+<section class="bg-white rounded-xl border border-slate-200 p-5">
+  <h2 class="text-sm font-semibold text-slate-700 mb-1"><i class="fa-solid fa-circle-play text-slate-400 mr-1.5"></i> Grabaciones ({{ grabaciones | length }})</h2>
+  <p class="text-xs text-slate-500 mb-3">Salen de cada evento. Los socios activos ven todas, salvo las ocultas o las que aún no llegan a su fecha.</p>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-100">
+        <th class="py-2 pr-3 font-medium">Evento</th><th class="py-2 pr-3 font-medium">Fecha</th><th class="py-2 pr-3 font-medium">Quién la ve hoy</th><th class="py-2 pr-3 font-medium">Programado</th><th class="py-2"></th></tr></thead>
+      <tbody>
+      {% for g in grabaciones %}
+      <tr class="border-b border-slate-50">
+        <td class="py-2 pr-3">{{ g.titulo }}{% if not g.embebe %} <span class="badge badge-amber">No es YouTube: no se verá dentro de la página</span>{% endif %}</td>
+        <td class="py-2 pr-3 whitespace-nowrap">{{ g.fecha | format_fecha }}</td>
+        <td class="py-2 pr-3"><span class="badge badge-{{ 'green' if g.nivel == 'publico' else 'blue' if g.nivel in ('registrados', 'inscritos') else 'gray' }}">{{ niveles[g.nivel] }}</span>{% if not g.propio %} <span class="text-[11px] text-slate-400">predeterminado</span>{% endif %}</td>
+        <td class="py-2 pr-3 text-xs text-slate-500">{% if g.desde %}Desde {{ g.desde | format_fecha }}. {% endif %}{% if g.apertura.fecha %}Abre a «{{ niveles[g.apertura.nivel] }}» el {{ g.apertura.fecha | format_fecha }}{% endif %}</td>
+        <td class="py-2 text-right"><a href="/eventos/{{ g._id }}#web" class="text-blue-700 hover:underline">Configurar</a></td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="py-6 text-center text-slate-400">Ningún evento tiene enlace de grabación.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

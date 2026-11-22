@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}Contacto — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Contacto', '¿En qué podemos ayudarte?', 'Escríbenos por el canal que prefieras. Te respondemos lo antes posible.') }}
+<section class="seccion"><div class="contenedor contacto">
+  <div data-escalonar>
+    {% if c.whatsapp_url %}<a class="canal canal--wa" href="{{ c.whatsapp_url }}" target="_blank" rel="noopener noreferrer"><span class="canal__icono">{{ i('whatsapp') }}</span><span><small>WhatsApp</small><strong>{{ c.whatsapp }}</strong></span></a>{% endif %}
+    {% if c.telefonos %}<a class="canal" href="tel:{{ c.telefonos[0] | replace(' ', '') | replace('(', '') | replace(')', '') | replace('-', '') }}"><span class="canal__icono">{{ i('telefono') }}</span><span><small>Teléfonos</small><strong>{{ c.telefonos | join(' · ') }}</strong></span></a>{% endif %}
+    <a class="canal" href="mailto:{{ c.email }}"><span class="canal__icono">{{ i('correo') }}</span><span><small>Correo</small><strong>{{ c.email }}</strong></span></a>
+    <a class="canal" href="{{ c.mapa_url | enlace }}" target="_blank" rel="noopener noreferrer"><span class="canal__icono">{{ i('lugar') }}</span><span><small>Sede · cómo llegar</small><strong>{{ c.direccion }}</strong></span></a>
+  </div>
+  <form class="tarjeta aparece" data-json="/api/web/contacto" data-limpiar data-ok="¡Gracias! Recibimos tu mensaje y te responderemos pronto." novalidate>
+    <h3>Envíanos un mensaje</h3>
+    <p class="suave">Tus datos solo se usan para responderte.</p>
+    <div class="formulario espacio-chico">
+      <div><label for="c-nombre">Nombre</label><input class="campo" id="c-nombre" name="nombre" maxlength="80" autocomplete="given-name" value="{{ persona.nombre if persona else '' }}" required></div>
+      <div><label for="c-apellido">Apellido</label><input class="campo" id="c-apellido" name="apellido" maxlength="80" autocomplete="family-name" value="{{ persona.apellido if persona else '' }}"></div>
+      <div><label for="c-email">Correo</label><input class="campo" id="c-email" type="email" name="email" maxlength="120" autocomplete="email" value="{{ persona.email if persona else '' }}" required></div>
+      <div><label for="c-celular">Celular <span class="ayuda">(opcional)</span></label><input class="campo" id="c-celular" type="tel" name="celular" maxlength="30" autocomplete="tel" value="{{ persona.celular if persona else '' }}"></div>
+      <div class="ancho"><label for="c-tema">Tema</label><select class="campo" id="c-tema" name="tema">{% for valor, texto in temas.items() %}<option value="{{ valor }}">{{ texto }}</option>{% endfor %}</select></div>
+      <div class="ancho"><label for="c-mensaje">Mensaje</label><textarea class="campo" id="c-mensaje" name="mensaje" rows="5" maxlength="3000" required></textarea></div>
+      <input class="trampa" type="text" name="web" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <label class="casilla ancho"><input type="checkbox" name="acepta" required> <span>Autorizo a IPIDET a usar mis datos para responder, según la <a class="enlace" href="{{ B }}/privacidad">Política de privacidad</a>.</span></label>
+      <p class="estado-form ancho" role="status"></p>
+      <div class="ancho"><button class="btn btn--primario" type="submit">Enviar mensaje {{ i('enviar') }}</button></div>
+    </div>
+  </form>
+</div></section>
+{% endblock %}

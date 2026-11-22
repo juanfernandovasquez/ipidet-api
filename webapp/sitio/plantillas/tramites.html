@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}Admisión — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Admisión', 'Asóciate a IPIDET', 'Cuatro pasos, todos los documentos en un solo lugar y alguien del equipo para acompañarte.', 'portada-tramites.jpg') }}
+<section class="seccion" id="cuota"><div class="contenedor">
+  <div class="fila-cabeza aparece">
+    <div><span class="etiqueta">Cuota anual</span><h2>¿Dónde ejerces?</h2></div>
+    <div class="selector" role="group" aria-label="Sede">
+      <button type="button" data-sede="lima" aria-pressed="true">Lima</button>
+      <button type="button" data-sede="provincia" aria-pressed="false">Provincias</button>
+    </div>
+  </div>
+  <div class="precio aparece">
+    {% for sede, clave, rotulo in (('lima', 'cuota_anual', 'Asociado ordinario · Lima'), ('provincia', 'cuota_provincia', 'Asociado de filial · provincias')) %}
+    <div class="precio__monto" data-de-sede="{{ sede }}" {% if sede != 'lima' %}hidden{% endif %}>
+      <span class="chip">{{ rotulo }}</span>
+      <div class="precio__cifra num">{% if cuotas[clave] %}<small>S/</small>{{ '{:,.0f}'.format(cuotas[clave]) }}{% else %}<small>Consúltanos</small>{% endif %}</div>
+      <span class="claro">por año</span>
+    </div>
+    {% endfor %}
+    <div class="precio__detalle">
+      <ul class="lista-check">
+        {% for nota in cfg.cuota_notas %}<li {% if 'Lima' in nota %}data-de-sede="lima"{% endif %}>{{ i('check') }} {{ nota }}</li>{% endfor %}
+      </ul>
+      <div class="acciones">
+        {% if persona and persona.socio %}
+          <a class="btn btn--primario" href="{{ B }}/cuenta#cuotas">Pagar mi cuota {{ i('flecha') }}</a>
+        {% elif persona and persona.registrada %}
+          <button class="btn btn--primario" type="button" data-post="{{ B }}/api/postular">Quiero asociarme {{ i('flecha') }}</button>
+        {% else %}
+          <a class="btn btn--primario" href="{{ B }}/ingresar?next={{ B }}/tramites">Crear cuenta y postular {{ i('flecha') }}</a>
+        {% endif %}
+      </div>
+      <p class="estado-form" role="status"></p>
+    </div>
+  </div>
+</div></section>
+
+<section class="seccion seccion--blanca" id="pasos"><div class="contenedor">
+  <div class="cabeza aparece"><span class="etiqueta">Proceso de admisión</span><h2>Los pasos para asociarte</h2></div>
+  <div class="pasos" data-escalonar>{% for titulo, texto in cfg.pasos %}<div class="paso"><h3>{{ titulo }}</h3><p>{{ texto }}</p></div>{% endfor %}</div>
+</div></section>
+
+<section class="seccion seccion--libro"><div class="contenedor">
+  <div class="cabeza aparece"><span class="etiqueta">Documentos</span><h2>Todo lo que necesitas, en un solo lugar</h2></div>
+  <div class="rejilla rejilla--3" data-escalonar>
+    {% for nombre, url in cfg.documentos %}<a class="documento" href="{{ url | enlace }}" target="_blank" rel="noopener noreferrer"><span class="documento__icono">{{ i('archivo') }}</span><span><strong>{{ nombre }}</strong><small>Documento</small></span>{{ i('externo', 'icono--externo') }}</a>{% endfor %}
+  </div>
+</div></section>
+
+<section class="seccion seccion--blanca"><div class="contenedor angosto">
+  <div class="cabeza aparece"><span class="etiqueta">Preguntas frecuentes</span><h2>¿Tienes dudas?</h2></div>
+  <div class="acordeon aparece">
+    {% for q, r in preguntas %}<details {% if loop.first %}open{% endif %}><summary>{{ q }}{{ i('abajo') }}</summary><div class="respuesta">{{ r }}</div></details>{% endfor %}
+  </div>
+  <p class="espacio suave">¿Otra consulta? <a class="enlace" href="{{ B }}/contacto">Escríbenos {{ i('flecha') }}</a></p>
+</div></section>
+{% endblock %}

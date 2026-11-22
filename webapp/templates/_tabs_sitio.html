@@ -1,0 +1,9 @@
+{% set r = request.url.path %}
+<div class="flex flex-wrap items-center gap-1 border-b border-slate-200 mb-5">
+  {% for href, texto in (('/sitio', 'Resumen'), ('/sitio/pagos', 'Pagos e inscripciones'), ('/sitio/metodos', 'Medios de pago'), ('/sitio/cuentas', 'Cuentas'), ('/sitio/contenido', 'Contenido')) %}
+  <a href="{{ href }}" class="px-3 py-2 text-sm border-b-2 {% if r == href %}border-brand-700 text-brand-700 font-semibold{% else %}border-transparent text-slate-500 hover:text-slate-800{% endif %}">
+    {{ texto }}{% if href == '/sitio/pagos' and por_verificar %} <span class="badge badge-amber">{{ por_verificar }}</span>{% endif %}</a>
+  {% endfor %}
+  <a href="/web" target="_blank" class="ml-auto btn-ghost text-sm mb-1"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> Ver la web</a>
+</div>
+{% include "_aviso_query.html" %}

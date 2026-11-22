@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}Grabaciones — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Grabaciones', 'Vuelve a ver nuestros eventos', 'Los asociados activos acceden a todas. Con una cuenta gratuita ves las que están abiertas a personas registradas.', 'portada-eventos.jpg') }}
+<section class="seccion"><div class="contenedor">
+  {% if persona and persona.socio %}<p class="aviso aviso--bien">{{ i('check') }} Eres asociado activo: tienes acceso completo.</p>
+  {% elif not persona %}<p class="aviso">{{ i('candado') }} <span><a class="enlace" href="{{ B }}/ingresar?next={{ B }}/grabaciones">Ingresa o crea tu cuenta</a> para ver más grabaciones.</span></p>{% endif %}
+  {% if filas %}
+  <div class="filtros aparece" role="group" aria-label="Filtrar grabaciones">
+    <button class="pastilla" type="button" data-filtro="todos" aria-pressed="true">Todas</button>
+    <button class="pastilla" type="button" data-filtro="disponible" aria-pressed="false">Puedo verlas</button>
+    <label class="buscador"><span class="sr">Buscar grabación</span>{{ i('buscar') }}<input type="search" placeholder="Buscar por tema…" data-buscar></label>
+  </div>
+  <div class="rejilla rejilla--3" data-filtrable>
+    {% for g in filas %}
+    <a class="cartel" href="{{ B }}/grabaciones/{{ g._id }}" data-clases="{% if g.acceso.puede %}disponible{% endif %}" data-texto="{{ g.titulo | lower }}">
+      <div class="cartel__img portada-video">{% if g.flyer %}<img src="{{ g.flyer }}" alt="" loading="lazy">{% endif %}<span class="portada-video__marca">{{ i('play' if g.acceso.puede else 'candado') }}</span></div>
+      <div class="cartel__cuerpo">
+        <span class="tipo {{ 'tipo--proximo' if g.acceso.puede else 'tipo--evento' }}">{% if g.acceso.puede %}Disponible{% elif g.acceso.motivo == 'fecha' %}Desde el {{ (g.desde | fecha).larga }}{% else %}{{ niveles[g.acceso.nivel] }}{% endif %}</span>
+        <h3>{{ g.titulo | corto }}</h3>
+        <div class="evento__meta"><span>{{ i('calendario') }} {{ (g.fecha | fecha).larga }}</span>{% if g.partes > 1 %}<span>{{ g.partes }} videos</span>{% endif %}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="vacio" data-sin-resultados hidden>No hay grabaciones con ese filtro.</div>
+  {% else %}<div class="vacio">Pronto publicaremos grabaciones.</div>{% endif %}
+</div></section>
+{% endblock %}

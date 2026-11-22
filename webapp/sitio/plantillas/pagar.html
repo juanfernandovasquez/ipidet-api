@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}Pago — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Pago', orden.descripcion) }}
+<section class="seccion"><div class="contenedor angosto">
+  <div class="tarjeta total">
+    <span>Total<strong class="monto">{{ orden.monto | soles }}</strong></span>
+    <span class="estado {% if orden.estado != 'confirmada' %}estado--pendiente{% endif %}">{{ estados[orden.estado][0] }}</span>
+  </div>
+
+  {% if orden.estado == 'confirmada' %}
+    <p class="aviso aviso--bien">{{ i('check') }} Recibimos tu pago. Verás el comprobante en Mi cuenta cuando sea emitido.</p>
+  {% elif orden.estado == 'anulada' %}
+    <p class="aviso">Esta solicitud fue anulada.</p>
+  {% elif orden.estado == 'confirmando' %}
+    <p class="aviso">Estamos confirmando tu pago.</p>
+  {% else %}
+    {% if orden.estado == 'en_revision' %}<p class="aviso aviso--bien">{{ i('check') }} Recibimos los datos de tu pago y lo estamos verificando. Si te equivocaste, puedes corregirlos abajo.</p>{% endif %}
+    {% if orden.estado == 'observada' %}<p class="aviso">Revisa tu pago: {{ orden.observacion }}</p>{% endif %}
+
+    {% if not metodos %}
+      <p class="aviso">Escríbenos a {{ c.email }} o por WhatsApp al {{ c.whatsapp }} y te indicamos cómo pagar.</p>
+    {% else %}
+    <form class="tarjeta espacio-chico" data-multipart="{{ B }}/api/ordenes/{{ orden._id }}/informar" novalidate>
+      <h3>1. Paga por uno de estos medios</h3>
+      <div class="medios">
+        {% for m in metodos %}
+        <label class="medio">
+          <input type="radio" name="metodo_id" value="{{ m.id }}" required {% if (orden.metodo and orden.metodo.id == m.id) or metodos | length == 1 %}checked{% endif %}>
+          <span>
+            <strong>{{ m.nombre }}</strong>
+            {% if m.banco %}<small>{{ m.banco }}</small>{% endif %}
+            {% if m.titular %}<small>Titular: {{ m.titular }}</small>{% endif %}
+            {% if m.numero %}<small>Número: <b class="num">{{ m.numero }}</b></small>{% endif %}
+            {% if m.cci %}<small>CCI: <b class="num">{{ m.cci }}</b></small>{% endif %}
+            {% if m.instrucciones %}<small class="parrafo">{{ m.instrucciones }}</small>{% endif %}
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <h3 class="espacio-chico">2. Cuéntanos de tu pago</h3>
+      <div class="formulario">
+        <div><label for="o-fecha">Fecha del pago</label><input class="campo" id="o-fecha" type="date" name="fecha_pago" max="{{ hoy }}" value="{{ orden.fecha_pago or hoy }}" required></div>
+        <div><label for="o-op">Número de operación</label><input class="campo" id="o-op" name="operacion" maxlength="40" value="{{ orden.operacion or '' }}"></div>
+        <div class="ancho"><label for="o-archivo">Constancia <span class="ayuda">(JPG, PNG o PDF, hasta 4 MB)</span></label><input class="campo" id="o-archivo" type="file" name="archivo" accept=".jpg,.jpeg,.png,.pdf">{% if orden.voucher_id %}<span class="ayuda">Ya tenemos una constancia: adjunta otra solo para reemplazarla.</span>{% endif %}</div>
+      </div>
+
+      <h3 class="espacio-chico">3. Datos para tu comprobante</h3>
+      {% set es_factura = fact.tipo == 'factura' %}
+      <div class="formulario">
+        <div class="ancho"><label for="o-tipo">Comprobante</label><select class="campo" id="o-tipo" name="comp_tipo" data-comprobante>
+          <option value="boleta" {% if not es_factura %}selected{% endif %}>Boleta</option>
+          <option value="factura" {% if es_factura %}selected{% endif %}>Factura</option></select></div>
+        <div data-solo="boleta" {% if es_factura %}hidden{% endif %}><label for="o-nombre">Nombre completo</label><input class="campo" id="o-nombre" name="comp_nombre" maxlength="120" value="{{ fact.nombre }}"></div>
+        <div data-solo="boleta" {% if es_factura %}hidden{% endif %}><label for="o-dni">DNI{% if orden.monto <= dni_desde %} <span class="ayuda">(opcional)</span>{% endif %}</label><input class="campo" id="o-dni" name="dni" inputmode="numeric" maxlength="8" value="{{ fact.dni }}"></div>
+        <div data-solo="factura" {% if not es_factura %}hidden{% endif %}><label for="o-ruc">RUC</label><input class="campo" id="o-ruc" name="ruc" inputmode="numeric" maxlength="11" value="{{ fact.ruc or '' }}"></div>
+        <div data-solo="factura" {% if not es_factura %}hidden{% endif %}><label for="o-razon">Razón social</label><input class="campo" id="o-razon" name="razon_social" maxlength="160" value="{{ fact.razon_social or '' }}"></div>
+        <div class="ancho" data-solo="factura" {% if not es_factura %}hidden{% endif %}><label for="o-dir">Dirección fiscal</label><input class="campo" id="o-dir" name="direccion" maxlength="200" value="{{ fact.direccion or '' }}"></div>
+        <p class="suave ancho">{{ i('candado') }} Nunca te pediremos por aquí datos de tu tarjeta ni claves del banco.</p>
+        <p class="estado-form ancho" role="status"></p>
+        <div class="ancho"><button class="btn btn--primario" type="submit">Enviar para verificación {{ i('enviar') }}</button></div>
+      </div>
+    </form>
+    {% endif %}
+
+    {% if orden.estado != 'en_revision' %}
+    <div class="espacio-chico">
+      <button class="btn btn--borde" type="button" data-post="{{ B }}/api/ordenes/{{ orden._id }}/anular" data-confirmar="Toca otra vez para anular">Anular esta solicitud</button>
+      <p class="estado-form" role="status"></p>
+    </div>
+    {% endif %}
+  {% endif %}
+  <p class="espacio"><a class="enlace" href="{{ B }}/cuenta">{{ i('izquierda') }} Mi cuenta</a></p>
+</div></section>
+{% endblock %}
+{% block flotante %}{% endblock %}

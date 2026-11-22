@@ -1,0 +1,53 @@
+/* Lo que la web real agrega al diseño del mockup (sitio.css). Mismos tokens. */
+[hidden] { display: none !important; }
+
+.previa { display: flex; gap: .5rem; justify-content: center; align-items: center; padding: .45rem 1rem; background: #fbf3e2; color: #6f5019; font-size: .85rem; font-weight: 700; }
+.suave { color: var(--gris); }
+.claro { color: rgba(236, 246, 239, .75); }
+.espacio { margin-top: 30px; }
+.espacio-chico { margin-top: 20px; }
+.parrafo { white-space: pre-line; }
+.angosto { max-width: 860px; }
+.sin-vinetas { list-style: none; padding: 0; margin: 18px 0 0; }
+.resumen { cursor: pointer; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+a.evento, a.cartel { color: inherit; text-decoration: none; }
+
+.aviso { display: flex; gap: .6rem; align-items: center; padding: .75rem 1rem; margin: 14px 0; border-radius: 10px; background: #fbf3e2; color: #6f5019; border: 1px solid var(--laton-claro); }
+.aviso--bien { background: var(--verde-50); color: var(--verde-800); border-color: var(--verde-100); }
+.acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.acciones--columna { display: grid; margin-top: 16px; }
+
+.ficha { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 30px; align-items: start; }
+.ficha--sola { grid-template-columns: minmax(0, 760px); justify-content: center; }
+.ficha__img img { width: 100%; height: auto; border-radius: 14px; box-shadow: var(--sombra); }
+.accion { display: grid; gap: 12px; justify-items: start; margin-top: 24px; }
+
+.portada-video { position: relative; }
+.portada-video__marca { position: absolute; right: 12px; bottom: 12px; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--verde-900); color: #fff; }
+.reproductor { position: relative; aspect-ratio: 16 / 9; margin: 14px 0 24px; border-radius: 14px; overflow: hidden; background: var(--verde-950); box-shadow: var(--sombra); }
+.reproductor iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.cerrado { display: grid; gap: 12px; justify-items: center; text-align: center; padding-top: 34px; padding-bottom: 34px; }
+
+.acceso { max-width: 520px; }
+.formulario.una { grid-template-columns: 1fr; margin-top: 18px; }
+.codigo { font-size: 1.6rem; letter-spacing: .35em; text-align: center; font-variant-numeric: lining-nums tabular-nums; }
+
+.credencial__tipo { color: var(--laton-claro); font-size: .9rem; }
+.portal > * { min-width: 0; }
+.portal .renglon { flex-wrap: wrap; }
+.portal .renglon__texto { min-width: 190px; }
+
+.total { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.total .monto { display: block; font-size: 2rem; }
+.medios { display: grid; gap: 10px; margin-top: 12px; }
+.medio { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--linea); border-radius: 12px; cursor: pointer; }
+.medio:has(input:checked) { border-color: var(--verde-700); background: var(--verde-50); }
+.medio input { margin-top: 5px; accent-color: var(--verde-700); }
+.medio small { display: block; color: var(--gris); }
+.medio b { user-select: all; }
+
+.legal h3 { margin: 28px 0 8px; }
+.legal p { color: var(--gris); line-height: 1.75; }
+
+@media (max-width: 1080px) { .menu { gap: 16px; } }
+@media (max-width: 860px) { .ficha { grid-template-columns: minmax(0, 1fr); } }

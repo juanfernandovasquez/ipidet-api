@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}No encontramos esa página — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Aviso', 'No encontramos esa página', 'Puede que se haya movido o que tu cuenta no tenga acceso.') }}
+<section class="seccion"><div class="contenedor angosto"><a class="btn btn--primario" href="{{ B }}">Ir al inicio {{ i('flecha') }}</a></div></section>
+{% endblock %}

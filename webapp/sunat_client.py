@@ -610,6 +610,11 @@ def validate_comprobante(
     # ── Estado del comprobante ──────────────────────────────────────────
     if comp.get("estado") == "anulado":
         errores.append("No se puede emitir un comprobante anulado en la plataforma.")
+    if any(it.get("evento_id") for it in comp.get("items") or []):
+        # El payload sale siempre exonerado de IGV (cuotas): un evento puede estar gravado.
+        errores.append(
+            "Es una inscripción a un evento: la plataforma solo sabe emitir sin IGV. Emítelo en el portal SOL "
+            "con el IGV que indique el contador e importa su XML para completar este borrador.")
 
     return {
         "errores":      errores,

@@ -1,0 +1,43 @@
+{% macro i(nombre, clase='') %}<svg class="icono {{ clase }}" aria-hidden="true"><use href="#i-{{ nombre }}"></use></svg>{% endmacro %}
+
+{% macro heroe(miga, titulo, texto='', foto='') %}
+<section class="heroe heroe--interior">
+  {% if foto %}<div class="heroe__foto" style="background-image:url({{ B }}/estatico/img/{{ foto }})"></div>{% endif %}
+  <div class="contenedor heroe__contenido entrada">
+    <div class="miga"><a href="{{ B }}">Inicio</a> {{ i('derecha') }} <span>{{ miga }}</span></div>
+    <h1>{{ titulo }}</h1>
+    {% if texto %}<p class="heroe__texto">{{ texto }}</p>{% endif %}
+  </div>
+  <div class="heroe__corte"></div>
+</section>
+{% endmacro %}
+
+{% macro meta(ev) %}
+<div class="evento__meta">
+  {% set f = ev.fecha | fecha %}
+  {% if f.larga %}<span>{{ i('calendario') }} {{ f.larga }}{% if ev.hora %} · {{ ev.hora }}{% endif %}</span>{% endif %}
+  {% if ev.lugar or ev.modalidad %}<span>{{ i('lugar') }} {{ ev.modalidad | default('', true) | capitalize }}{% if ev.modalidad and ev.lugar %} · {% endif %}{{ ev.lugar | default('', true) }}</span>{% endif %}
+  {% if ev.precio_texto %}<span>{{ i('recibo') }} {{ ev.precio_texto }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro boletin() %}
+<section class="boletin seccion">
+  <div class="contenedor boletin__caja">
+    <div class="aparece">
+      <span class="etiqueta" style="color:var(--laton-claro)">Boletín</span>
+      <h2>Entérate primero de los próximos eventos</h2>
+      <p>Te escribimos solo cuando hay un evento, un conversatorio o un comunicado importante.</p>
+    </div>
+    <form class="aparece" data-json="/api/web/suscribir" data-limpiar data-ok="¡Gracias! Te avisaremos de los próximos eventos." novalidate>
+      <div class="boletin__form">
+        <label class="sr" for="boletin-email">Tu correo</label>
+        <input id="boletin-email" type="email" name="email" placeholder="tucorreo@ejemplo.com" autocomplete="email" required>
+        <input class="trampa" type="text" name="web" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button class="btn btn--laton" type="submit">Suscribirme {{ i('enviar') }}</button>
+      </div>
+      <p class="estado-form" role="status"></p>
+    </form>
+  </div>
+</section>
+{% endmacro %}

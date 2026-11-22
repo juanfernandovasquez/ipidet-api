@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}Ingresar — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Mi cuenta', 'Ingresa o crea tu cuenta', 'Sin contraseñas: te enviamos un código a tu correo.') }}
+<section class="seccion"><div class="contenedor acceso" data-acceso>
+  <form class="tarjeta" data-json="{{ B }}/api/codigo" data-paso="correo" novalidate>
+    <div class="tarjeta__icono">{{ i('correo') }}</div>
+    <h3>¿Cuál es tu correo?</h3>
+    <p class="suave">Si eres asociado, usa el correo de tu ficha y te reconoceremos. Si no, crearás una cuenta gratuita.</p>
+    <div class="formulario una">
+      <div><label for="a-email">Correo</label><input class="campo" id="a-email" type="email" name="email" maxlength="120" autocomplete="email" required autofocus></div>
+      <p class="estado-form" role="status"></p>
+      <button class="btn btn--primario" type="submit">Enviarme un código {{ i('enviar') }}</button>
+    </div>
+  </form>
+  <form class="tarjeta" data-json="{{ B }}/api/entrar" data-paso="codigo" hidden novalidate>
+    <div class="tarjeta__icono">{{ i('candado') }}</div>
+    <h3>Escribe el código</h3>
+    <p class="suave">Lo enviamos a <strong data-correo></strong>. Vence en {{ minutos }} minutos. Si no llega, revisa la carpeta de spam o escríbenos.</p>
+    <div class="formulario una">
+      <input type="hidden" name="reto">
+      <input type="hidden" name="next" value="{{ siguiente }}">
+      <div><label for="a-codigo">Código de 6 dígitos</label><input class="campo codigo" id="a-codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required></div>
+      <p class="estado-form" role="status"></p>
+      <button class="btn btn--primario" type="submit">Entrar {{ i('flecha') }}</button>
+      <button class="btn btn--borde" type="button" data-otro-correo>Usar otro correo o pedir otro código</button>
+    </div>
+  </form>
+</div></section>
+{% endblock %}
+{% block flotante %}{% endblock %}

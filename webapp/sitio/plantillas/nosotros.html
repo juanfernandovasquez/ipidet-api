@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe, boletin %}
+{% block titulo %}Nosotros — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Nosotros', 'Al servicio de la tributación en el Perú desde ' ~ cfg.fundacion[:4], cfg.descripcion, 'portada.jpg') }}
+<section class="seccion"><div class="contenedor">
+  <div class="cabeza aparece"><span class="etiqueta">Quiénes somos</span><h2>Una comunidad que estudia y aporta a la tributación</h2><p>{{ cfg.quienes_somos }}</p></div>
+  {% set iconos = ['personas', 'libro', 'edificio', 'micro'] %}
+  <div class="rejilla rejilla--4" data-escalonar>
+    {% for titulo, texto in cfg.objetivos %}<div class="tarjeta tarjeta--viva"><div class="tarjeta__icono">{{ i(iconos[loop.index0 % 4]) }}</div><h3>{{ titulo }}</h3><p>{{ texto }}</p></div>{% endfor %}
+  </div>
+  <div class="aparece espacio">
+    <span class="etiqueta">Valores institucionales</span>
+    {% set iv = ['premio', 'escudo', 'personas', 'check', 'diana'] %}
+    <div class="valores">{% for v in cfg.valores %}<span class="valor">{{ i(iv[loop.index0 % 5]) }} {{ v }}</span>{% endfor %}</div>
+  </div>
+</div></section>
+
+<section class="seccion seccion--blanca" id="consejo"><div class="contenedor">
+  <div class="cabeza aparece"><span class="etiqueta">Gestión {{ cfg.consejo_periodo }}</span><h2>Consejo Directivo</h2></div>
+  <div class="consejo" data-escalonar>
+    {% for p in consejo %}
+    <article class="persona">
+      <div class="persona__foto">{% if p.foto %}<img src="{{ p.foto }}" alt="{{ p.nombre }}" loading="lazy">{% else %}<div class="persona__inicial">{{ p.nombre[:1] }}</div>{% endif %}</div>
+      <div class="persona__datos"><div class="persona__cargo">{{ p.cargo }}</div><div class="persona__nombre">{{ p.nombre }}</div></div>
+    </article>
+    {% endfor %}
+  </div>
+</div></section>
+
+<section class="seccion seccion--libro"><div class="contenedor">
+  <div class="fila-cabeza aparece">
+    <div><span class="etiqueta">Nuestra historia</span><h2>Quienes presidieron IPIDET</h2></div>
+    <div class="linea-tiempo__botones">
+      <button class="redondo" type="button" aria-label="Anteriores" data-mover="-1" data-objetivo="#pista">{{ i('izquierda') }}</button>
+      <button class="redondo" type="button" aria-label="Más recientes" data-mover="1" data-objetivo="#pista">{{ i('derecha') }}</button>
+    </div>
+  </div>
+  <div class="linea-tiempo aparece"><div class="linea-tiempo__pista" id="pista" tabindex="0" aria-label="Línea de tiempo de expresidentes">
+    {% for periodo, nombre in cfg.expresidentes %}<div class="hito"><div class="hito__anios num">{{ periodo }}</div><div class="hito__nombre">{{ nombre }}</div></div>{% endfor %}
+    {% if presidencia %}<div class="hito hito--actual"><div class="hito__anios num">{{ cfg.consejo_periodo }} · actual</div><div class="hito__nombre">{{ presidencia.nombre }}</div></div>{% endif %}
+  </div></div>
+  {% if cfg.honorarios %}
+  <details class="tarjeta aparece espacio">
+    <summary class="resumen"><span>{{ i('premio') }} Socios honorarios</span>{{ i('abajo') }}</summary>
+    <ul class="nombres sin-vinetas">{% for n in cfg.honorarios %}<li>{{ n }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</div></section>
+{{ boletin() }}
+{% endblock %}

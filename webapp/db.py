@@ -549,6 +549,13 @@ def emails_publico_rebotados(emails: list[str]) -> set[str]:
         {"email": {"$in": lista}, "email_estado": "rebotado"}, {"email": 1})}
 
 
+def emails_publico_sin_avisos(emails: list[str]) -> set[str]:
+    """Quienes no autorizaron (o retiraron) los avisos al registrarse en la web."""
+    lista = [e.strip().lower() for e in emails if e]
+    return {(p.get("email") or "").lower() for p in publico_col.find(
+        {"email": {"$in": lista}, "sin_avisos": True}, {"email": 1})}
+
+
 def get_bounced_emails() -> dict:
     """Rebotes registrados en socios y en Público, más recientes primero.
 
@@ -2044,6 +2051,9 @@ def sync_comprobante_to_payments(items: list, numero: str, tipo: str,
         mid = item.get("member_id")
         if not mid:
             continue
+        if item.get("evento_id"):
+            results.append(_res(item, "ok", "Inscripción de evento: no toca cuotas"))
+            continue
         if item.get("nc_id"):
             # Línea anulada o corregida con nota de crédito: su pago lo decidió la nota.
             results.append(_res(item, "nota_credito", "Línea afectada por una nota de crédito: no se sincroniza"))
@@ -3376,6 +3386,9 @@ def seguimiento_comercial_evento(evento_id: str) -> dict:
     regs = ev.get("zoom_registrants") or []
     inscritos, asistieron = socios_de_evento(evento_id)
     no_socios = [r for r in regs if not r.get("es_socio") and r.get("email")]
+    no_socios += [o for o in _db.web_ordenes.find(
+        {"tipo": "evento", "evento_id": evento_id, "estado": "confirmada", "member_id": None},
+        {"email": 1, "asistio": 1}) if o.get("email")]
     asist_ns = {r["email"].lower() for r in no_socios if r.get("asistio")}
     ids = [str(p["_id"]) for p in publico_col.find({"email": {"$in": list(asist_ns)}}, {"_id": 1})]
     con_postulacion = postulantes_col.count_documents({"prospecto_id": {"$in": ids},
@@ -3409,6 +3422,19 @@ def eventos_de_socio(member_id: str) -> list[dict]:
             "duracion_min": sum(z.get("duracion_min") or 0 for z in zoom) or None,
         })
     res.sort(key=lambda e: e["fecha"], reverse=True)
+    return res
+
+
+def pagos_eventos_de_socio(member_id: str) -> dict[str, dict]:
+    """{evento_id: inscripción de pago vigente} del socio, con su comprobante (FK)."""
+    res: dict[str, dict] = {}
+    for o in _db.web_ordenes.find({"tipo": "evento", "member_id": member_id, "activa": True, "monto": {"$gt": 0}}):
+        cid, comp = o.get("comprobante_id"), None
+        if cid and ObjectId.is_valid(cid):
+            comp = comprobantes_col.find_one({"_id": ObjectId(cid), "estado": {"$ne": "anulado"}}, {"numero": 1})
+        res[o["evento_id"]] = {"evento_id": o["evento_id"], "titulo": o.get("descripcion", ""),
+                               "monto": o.get("monto_pagado") or o["monto"], "estado": o.get("estado"),
+                               "numero": (comp or {}).get("numero") or ""}
     return res
 
 
@@ -4200,6 +4226,10 @@ def buscar_borrador_para_xml(data: dict) -> dict | None:
         clave = _nombre_clave(data["razon_social"])
         candidatos = [c for c in comprobantes_col.find(base).sort("created_at", -1)
                       if clave and _nombre_clave(c.get("destinatario_nombre") or "") == clave]
+    # Un borrador de la web solo se completa con un XML del mismo monto: si no, la cuota de un socio
+    # completaría el borrador de su evento (o al revés).
+    candidatos = [c for c in candidatos if not any(i.get("orden_id") for i in c.get("items") or [])
+                  or abs(float(c.get("monto_total") or 0) - float(monto)) < 0.01]
     if not candidatos:
         return None
     mismo_monto = [c for c in candidatos if abs(float(c.get("monto_total") or 0) - float(monto)) < 0.01]
@@ -4844,7 +4874,7 @@ def backfill_comprobantes_payment_ids() -> dict:
     fixed_items = 0
     # $in:[None,""] matches both null values and absent fields (MongoDB treats missing as null)
     cursor = comprobantes_col.find(
-        {"estado": {"$ne": "anulado"},
+        {"estado": {"$nin": ["anulado", "pre_registrado"]},   # un borrador todavía no es un cobro
          "items": {"$elemMatch": {"member_id": {"$exists": True, "$nin": [None, ""]},
                                   "payment_id": {"$in": [None, ""]}}}}
     )
@@ -4852,7 +4882,7 @@ def backfill_comprobantes_payment_ids() -> dict:
         items = list(comp.get("items") or [])
         changed = False
         for item in items:
-            if item.get("payment_id") or not item.get("member_id"):
+            if item.get("payment_id") or not item.get("member_id") or item.get("evento_id"):
                 continue
             prod = None
             prod_id = item.get("producto_id")
@@ -4905,7 +4935,7 @@ def backfill_resync_comprobantes_with_payment_id() -> dict:
     """
     synced = 0
     cursor = comprobantes_col.find(
-        {"estado": {"$ne": "anulado"},
+        {"estado": {"$nin": ["anulado", "pre_registrado"]},   # un borrador no marca pagos
          "items": {"$elemMatch": {"payment_id": {"$exists": True, "$nin": [None, ""]}}}}
     )
     for comp in cursor:
@@ -5168,6 +5198,30 @@ def get_ingresos(fecha_desde: str = "", fecha_hasta: str = "",
                     "num_comprobante": num_cmp,
                     "tipo_comprobante": pp.get("tipo_comprobante", ""),
                     "link_constancia": pp.get("link_constancia", ""),
+                })
+
+    # 4. Eventos cobrados. No tienen período de cuota: al filtrar por período no entran.
+    if not periodo:
+        ordenes_evento = list(_db.web_ordenes.find({"tipo": "evento", "estado": "confirmada", "monto": {"$gt": 0}}))
+        ids_comp = [ObjectId(o["comprobante_id"]) for o in ordenes_evento
+                    if o.get("comprobante_id") and ObjectId.is_valid(o["comprobante_id"])]
+        comps_evento = {str(c["_id"]): c for c in comprobantes_col.find(
+            {"_id": {"$in": ids_comp}, "estado": {"$ne": "anulado"}}, {"numero": 1, "tipo": 1})}
+        for o in ordenes_evento:
+            fact = o.get("facturacion") or {}
+            emp = fact.get("razon_social", "") if fact.get("tipo") == "factura" else ""
+            comp = comps_evento.get(o.get("comprobante_id") or "", {})
+            num_cmp = comp.get("numero") or ""
+            if (empresa and empresa.lower() not in emp.lower()) or (tipo_fecha == "emision" and not num_cmp):
+                continue
+            if _ok_fecha(o.get("fecha_pago") or "") and (not medio or o.get("medio_pago") == medio):
+                result.append({
+                    "_id": f"evento_{o['_id']}", "tipo_entrada": "evento", "fecha": o["fecha_pago"],
+                    "member_id": o.get("member_id") or "", "nombre": o.get("nombre", ""), "periodo": "",
+                    "concepto": f"Evento — {o.get('descripcion', '')}", "monto": o.get("monto_pagado") or o["monto"],
+                    "empresa": emp, "medio_pago": o.get("medio_pago", ""),
+                    "num_comprobante": num_cmp, "tipo_comprobante": comp.get("tipo", "") if num_cmp else "",
+                    "link_constancia": "",
                 })
 
     result.sort(key=lambda x: x.get("fecha", ""), reverse=True)

@@ -1,7 +1,7 @@
 """API pública para la web ipidet.org (/api/web/...).
 
-Solo expone lo que ya es público y lo que el equipo carga en la plataforma, para que la web se
-actualice sola:
+Solo responde cuando la web está publicada en /sitio (o a una sesión del panel: vista previa).
+Solo expone lo que ya es público y lo que el equipo carga en la plataforma:
 - GET  /api/web/sitio      contacto y redes, consejo directivo vigente (nombre, cargo, foto), eventos
                            publicables, cuotas vigentes, aliadas y eventos realizados.
 - POST /api/web/contacto   formulario de contacto → ficha en Público + Pendiente + aviso por Telegram.
@@ -98,12 +98,13 @@ def _eventos(pdb) -> list[dict]:
         {"estado": {"$ne": "cancelado"}, "fecha": {"$gte": desde}, "publicar_web": {"$ne": False},
          "$or": [{"publicar_web": True}, {"flyer_url": {"$nin": [None, ""]}}]},
         {"titulo": 1, "fecha": 1, "hora": 1, "modalidad": 1, "lugar": 1, "flyer_url": 1, "link_registro": 1,
-         "descripcion": 1, "precio": 1},
+         "descripcion": 1, "precio": 1, "inscripcion_web": 1, "cobro": 1},
     ).sort("fecha", -1).limit(40):
         filas.append({
             "id": str(e["_id"]), "titulo": e.get("titulo", ""), "fecha": e.get("fecha", ""), "hora": e.get("hora", ""),
             "modalidad": e.get("modalidad", ""), "lugar": e.get("lugar", ""), "flyer": _flyer(e.get("flyer_url", "")),
-            "registro": e.get("link_registro", "") if (e.get("fecha") or "") >= date.today().isoformat() else "",
+            "registro": e.get("link_registro", "") if (e.get("fecha") or "") >= date.today().isoformat()
+            and not e.get("inscripcion_web") and e.get("cobro") != "pago" else "",
             "descripcion": _texto(e.get("descripcion"), 600), "precio": e.get("precio", ""),
         })
     return filas
@@ -134,14 +135,21 @@ def _sitio() -> dict:
     }
 
 
+def _cerrada(request: Request) -> bool:
+    from webapp.sitio import config as sitio_cfg
+    return not request.session.get("user_email") and not sitio_cfg.publicada()
+
+
 @router.get("/api/web/sitio")
-async def sitio():
+async def sitio(request: Request):
+    if _cerrada(request):
+        return _rechazo("La web todavía no está publicada.", 404)
     hit = _cache.get("sitio")
     if not hit or time.monotonic() - hit[0] > _TTL:
         from fastapi.concurrency import run_in_threadpool
         hit = (time.monotonic(), await run_in_threadpool(_sitio))
         _cache["sitio"] = hit
-    return JSONResponse(hit[1], headers={"Cache-Control": "public, max-age=300"})
+    return JSONResponse(hit[1], headers={"Cache-Control": "private, max-age=300"})
 
 
 # ── Formularios ────────────────────────────────────────────────────────────────
@@ -162,7 +170,7 @@ def _ficha_publico(email: str, datos: dict, etiqueta: str, fuente_detalle: str) 
     return str(pdb.publico_col.insert_one({
         "nombre": "", "apellido": "", "celular": "", "titulo": "", "empresa": "", "ciudad": "", "notas": "",
         **datos, "email": email, "fuente": "portal", "fuente_detalle": fuente_detalle, "estado": "nuevo",
-        "tags": [etiqueta], "es_socio": bool(socio), "member_id": socio, "comunicaciones": [],
+        "tags": [etiqueta], "es_socio": bool(socio), "sin_avisos": etiqueta != "boletin", "member_id": socio, "comunicaciones": [],
         "created_at": ahora, "updated_at": ahora,
     }).inserted_id)
 
@@ -173,6 +181,8 @@ def _rechazo(msg: str, code: int = 400) -> JSONResponse:
 
 @router.post("/api/web/contacto")
 async def contacto(request: Request):
+    if _cerrada(request):
+        return _rechazo("La web todavía no está publicada.", 404)
     try:
         data = await request.json()
     except Exception:
@@ -212,6 +222,8 @@ async def contacto(request: Request):
 
 @router.post("/api/web/suscribir")
 async def suscribir(request: Request):
+    if _cerrada(request):
+        return _rechazo("La web todavía no está publicada.", 404)
     try:
         data = await request.json()
     except Exception:

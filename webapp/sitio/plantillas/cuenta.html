@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe %}
+{% block titulo %}Mi cuenta — IPIDET{% endblock %}
+{% macro renglon(icono, titulo, detalle='') %}
+<div class="renglon"><span class="renglon__icono">{{ i(icono) }}</span><span class="renglon__texto"><strong>{{ titulo }}</strong>{% if detalle %}<small>{{ detalle }}</small>{% endif %}</span>{% if caller %}{{ caller() }}{% endif %}</div>
+{% endmacro %}
+{% block contenido %}
+{{ heroe('Mi cuenta', 'Hola, ' ~ persona.nombre.split(' ')[0]) }}
+<section class="seccion"><div class="contenedor portal">
+  <aside>
+    <div class="credencial">
+      <img src="{{ B }}/estatico/img/logo-blanco.png" alt="IPIDET">
+      <div class="credencial__nombre">{{ persona.nombre_completo }}</div>
+      <div class="credencial__tipo">{% if persona.socio %}{{ persona.socio.titulo or 'Asociado' }}{% else %}Cuenta registrada{% endif %}</div>
+      <div class="credencial__fila">
+        {% if persona.socio %}<span>Registro<strong class="num">{{ persona.member_id }}</strong></span><span>Estado<strong>Activo · acceso completo</strong></span>
+        {% else %}<span>Acceso<strong>Limitado</strong></span>{% endif %}
+      </div>
+    </div>
+    <div class="acciones acciones--columna">
+      <a class="btn btn--laton" href="{{ B }}/grabaciones">{{ i('play') }} Grabaciones</a>
+      {% if persona.socio %}
+        <button class="btn btn--borde" type="button" data-post="{{ B }}/api/constancia">{{ i('premio') }} Pedir mi constancia</button>
+        {% if c.biblioteca_url | enlace %}<a class="btn btn--borde" href="{{ c.biblioteca_url | enlace }}" target="_blank" rel="noopener noreferrer">{{ i('libro') }} Biblioteca</a>{% endif %}
+      {% else %}
+        <a class="btn btn--borde" href="{{ B }}/tramites">{{ i('personas') }} Quiero asociarme</a>
+      {% endif %}
+      <button class="btn btn--borde" type="button" data-post="{{ B }}/api/salir">{{ i('salir') }} Salir</button>
+      <p class="estado-form" role="status"></p>
+    </div>
+  </aside>
+
+  <div class="tarjeta">
+    {% set tabs = [('resumen', 'Resumen'), ('eventos', 'Mis eventos')] + ([('cuotas', 'Cuotas')] if persona.socio else []) + [('comprobantes', 'Comprobantes'), ('datos', 'Mis datos')] %}
+    <div class="pestanas" role="tablist" aria-label="Mi cuenta">
+      {% for k, texto in tabs %}<button role="tab" id="t-{{ k }}" aria-controls="p-{{ k }}" aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ 0 if loop.first else -1 }}">{{ texto }}</button>{% endfor %}
+    </div>
+
+    <div role="tabpanel" id="p-resumen" aria-labelledby="t-resumen" class="panel-pestana">
+      {% for o in tramites %}
+        {% call renglon('recibo', o.descripcion, o.monto | soles) %}
+          <span class="estado estado--pendiente">{{ estados[o.estado][0] }}</span><a class="btn btn--borde btn--chico" href="{{ B }}/pagar/{{ o._id }}">Ver</a>
+        {% endcall %}
+      {% endfor %}
+      {% for e in mis_eventos if e.inscrito and e.fecha >= hoy and not e.cancelado %}
+        {% call renglon('micro', e.titulo, (e.fecha | fecha).larga) %}<a class="btn btn--borde btn--chico" href="{{ B }}/eventos/{{ e._id }}">Ver</a>{% endcall %}
+      {% endfor %}
+      {% if persona.socio and por_pagar %}
+        {% call renglon('calendario', 'Tienes cuotas pendientes', por_pagar | length ~ ' por pagar') %}<button class="btn btn--borde btn--chico" type="button" data-ir-pestana="p-cuotas">Ver cuotas</button>{% endcall %}
+      {% elif persona.socio %}
+        {{ renglon('check', 'No tienes cuotas pendientes') }}
+      {% endif %}
+      {% if not tramites and not persona.socio %}
+        {{ renglon('estrella', 'Tu cuenta está lista', 'Inscríbete a eventos y mira las grabaciones abiertas a personas registradas.') }}
+      {% endif %}
+    </div>
+
+    <div role="tabpanel" id="p-eventos" aria-labelledby="t-eventos" class="panel-pestana" hidden>
+      {% for e in mis_eventos %}
+        {% set o = e.orden %}
+        {% set pagado = ('Pagaste ' ~ ((o.monto_pagado or o.monto) | soles)) if o and o.estado == 'confirmada' and o.monto else '' %}
+        {% call renglon('micro', e.titulo, [(e.fecha | fecha).larga, pagado] | select | join(' · ')) %}
+          {% if e.cancelado %}<span class="estado estado--pendiente">Cancelado</span>
+          {% elif e.inscrito %}<span class="estado">{{ 'Asististe' if e.asistio else 'Inscrito' }}</span>
+          {% elif o %}<span class="estado estado--pendiente">{{ estados[o.estado][0] }}</span>{% endif %}
+          {% if o and o.activa and o.estado != 'confirmada' %}<a class="btn btn--borde btn--chico" href="{{ B }}/pagar/{{ o._id }}">Pago</a>
+          {% elif e.grabacion %}<a class="btn btn--borde btn--chico" href="{{ B }}/grabaciones/{{ e._id }}">Grabación</a>
+          {% elif not e.cancelado %}<a class="btn btn--borde btn--chico" href="{{ B }}/eventos/{{ e._id }}">Ver</a>{% endif %}
+        {% endcall %}
+      {% else %}<p class="suave">Todavía no tienes eventos. <a class="enlace" href="{{ B }}/eventos">Ver la agenda</a></p>{% endfor %}
+    </div>
+
+    {% if persona.socio %}
+    <div role="tabpanel" id="p-cuotas" aria-labelledby="t-cuotas" class="panel-pestana" hidden>
+      {% for f in por_pagar %}
+        {% call renglon('calendario', f.descripcion, 'Vence el ' ~ (f.vence | fecha).larga if f.vence else '') %}
+          {% if f.monto %}<span class="monto">{{ f.monto | soles }}</span>{% endif %}
+          {% if f.orden %}<a class="btn btn--borde btn--chico" href="{{ B }}/pagar/{{ f.orden._id }}">{{ estados[f.orden.estado][0] }}</a>
+          {% elif f.monto %}<button class="btn btn--primario btn--chico" type="button" data-post="{{ B }}/api/cuotas/pagar" data-payment="{{ f.payment_id }}" data-cuota="{{ f.cuota_numero or '' }}">Pagar</button>
+          {% else %}<span class="estado estado--pendiente">Consúltanos el monto</span>{% endif %}
+        {% endcall %}
+      {% endfor %}
+      <p class="estado-form" role="status"></p>
+      {% if periodos %}<h3 class="espacio-chico">Historial</h3>{% endif %}
+      {% for p in periodos %}
+        {% set detalle = [('Pagada el ' ~ (p.fecha_pago | fecha).larga) if p.fecha_pago and p.estado == 'pagado' else '', ('Pagó ' ~ p.empresa) if p.empresa else ''] | select | join(' · ') %}
+        {% call renglon('recibo', 'Cuota ' ~ p.periodo, detalle) %}<span class="estado {% if p.estado not in ('pagado', 'exonerado', 'no_aplica') %}estado--pendiente{% endif %}">{{ p.etiqueta }}</span>{% endcall %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div role="tabpanel" id="p-comprobantes" aria-labelledby="t-comprobantes" class="panel-pestana" hidden>
+      {% for k in comprobantes %}
+        {% call renglon('recibo', k.tipo | capitalize ~ ' ' ~ k.numero, [(k.fecha | fecha).larga, k.detalle] | select | join(' · ')) %}
+          {% if k.monto %}<span class="monto">{{ k.monto | soles }}</span>{% endif %}
+          {% if k.anulado_nc %}<span class="estado estado--pendiente">Con nota de crédito</span>
+          {% elif k.descargar %}<a class="btn btn--borde btn--chico" href="{{ B }}/comprobante/{{ k._id }}">{{ i('descargar') }} PDF</a>{% endif %}
+        {% endcall %}
+      {% else %}<p class="suave">Tus comprobantes aparecerán aquí cuando sean emitidos.</p>{% endfor %}
+    </div>
+
+    <div role="tabpanel" id="p-datos" aria-labelledby="t-datos" class="panel-pestana" hidden>
+      <form data-json="{{ B }}/api/perfil" data-sin-ir data-ok="Tus datos quedaron guardados." novalidate>
+        <div class="formulario">
+          {% for campo, texto in (('nombre', 'Nombres'), ('apellido', 'Apellidos'), ('celular', 'Celular'), ('ciudad', 'Ciudad'), ('empresa', 'Empresa')) %}
+          <div {% if campo == 'empresa' %}class="ancho"{% endif %}><label for="d-{{ campo }}">{{ texto }}</label><input class="campo" id="d-{{ campo }}" name="{{ campo }}" maxlength="80" value="{{ persona[campo] }}" {% if campo in ('nombre', 'apellido') %}required{% endif %}></div>
+          {% endfor %}
+          <p class="suave ancho">Correo de ingreso: <strong>{{ persona.email }}</strong>{% if persona.socio %}. Los datos de tu ficha de asociado los actualiza el equipo: escríbenos si cambiaron.{% endif %}</p>
+          <label class="casilla ancho"><input type="checkbox" name="acepta_avisos" {% if persona.acepta_avisos %}checked{% endif %}> <span>Quiero recibir invitaciones a eventos y novedades.</span></label>
+          <p class="estado-form ancho" role="status"></p>
+          <div class="ancho"><button class="btn btn--primario" type="submit">Guardar</button></div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div></section>
+{% endblock %}
+{% block flotante %}{% endblock %}

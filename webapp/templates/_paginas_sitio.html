@@ -1,0 +1,9 @@
+{% if paginas > 1 %}
+<div class="flex items-center justify-between mt-3 text-sm text-slate-500">
+  <span>Página {{ page }} de {{ paginas }}</span>
+  <div class="flex gap-2">
+    {% if page > 1 %}<a class="btn-ghost text-sm" href="{{ request.scope.path }}?{{ qs }}page={{ page - 1 }}">Anterior</a>{% endif %}
+    {% if page < paginas %}<a class="btn-ghost text-sm" href="{{ request.scope.path }}?{{ qs }}page={{ page + 1 }}">Siguiente</a>{% endif %}
+  </div>
+</div>
+{% endif %}

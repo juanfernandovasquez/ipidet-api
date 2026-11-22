@@ -134,9 +134,9 @@
           <td class="px-4 py-3 text-slate-600 text-xs font-mono whitespace-nowrap">{{ e.fecha | format_fecha }}</td>
 
           <td class="px-4 py-3">
-            <a href="/members/{{ e.member_id }}" class="font-medium text-slate-800 hover:text-blue-600 transition-colors">
+            {% if e.member_id %}<a href="/members/{{ e.member_id }}" class="font-medium text-slate-800 hover:text-blue-600 transition-colors">
               {{ e.nombre }}
-            </a>
+            </a>{% else %}<span class="font-medium text-slate-800">{{ e.nombre }}</span> <span class="text-xs text-slate-400">no socio</span>{% endif %}
             <div class="text-xs text-slate-400">{{ e.member_id }}</div>
           </td>
 
@@ -147,6 +147,8 @@
             <span class="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
               <i class="fa-solid fa-layer-group text-[9px]"></i> {{ e.concepto }}
             </span>
+            {% elif e.tipo_entrada == 'evento' %}
+            <span class="badge badge-blue">{{ e.concepto }}</span>
             {% elif e.tipo_entrada == 'parcial' %}
             <span class="inline-flex items-center gap-1 text-xs bg-violet-50 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full font-medium">
               <i class="fa-solid fa-puzzle-piece text-[9px]"></i> {{ e.concepto }}

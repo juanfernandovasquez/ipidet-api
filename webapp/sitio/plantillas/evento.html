@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, heroe, meta %}
+{% block titulo %}{{ ev.titulo }} — IPIDET{% endblock %}
+{% block contenido %}
+{{ heroe('Evento', ev.titulo) }}
+<section class="seccion"><div class="contenedor ficha {% if not ev.flyer %}ficha--sola{% endif %}">
+  {% if ev.flyer %}<div class="ficha__img"><img src="{{ ev.flyer }}" alt="Flyer del evento"></div>{% endif %}
+  <div class="tarjeta">
+    {{ meta(ev) }}
+    {% if ev.descripcion %}<p class="parrafo espacio-chico">{{ ev.descripcion }}</p>{% endif %}
+    {% if ev.expositores %}
+    <h3 class="espacio-chico">Expositores</h3>
+    {% for x in ev.expositores %}<div class="renglon"><span class="renglon__icono">{{ i('usuario') }}</span><span class="renglon__texto"><strong>{{ x.nombre }}</strong><small>{{ [x.titulo, x.empresa] | select | join(' · ') }}</small></span></div>{% endfor %}
+    {% endif %}
+
+    <div class="accion">
+      {% if inscripcion == 'cancelado' %}
+        <p class="aviso">Este evento fue cancelado.</p>
+      {% elif inscrito %}
+        <p class="aviso aviso--bien">{{ i('check') }} Estás inscrito.</p>
+        {% if ev.sesion %}<a class="btn btn--primario" href="{{ ev.sesion }}" target="_blank" rel="noopener noreferrer">Entrar a la sesión {{ i('externo') }}</a>
+        {% elif ev.proximo %}<p class="suave">Te enviaremos los datos para participar.</p>{% endif %}
+        {% if orden and orden.estado == 'confirmada' and not orden.monto and ev.proximo %}
+        <button class="btn btn--borde" type="button" data-post="{{ B }}/api/ordenes/{{ orden._id }}/anular" data-confirmar="Toca otra vez para cancelar tu inscripción">Cancelar inscripción</button>
+        {% endif %}
+      {% elif orden %}
+        <p class="aviso">Tu inscripción todavía no está confirmada.</p>
+        <a class="btn btn--primario" href="{{ B }}/pagar/{{ orden._id }}">Ver mi pago {{ i('flecha') }}</a>
+      {% elif inscripcion == 'abierta' %}
+        {% if not persona %}
+          <p class="suave">Necesitas una cuenta gratuita. Si eres socio, entra con el correo de tu ficha y se aplica tu precio.</p>
+          <a class="btn btn--primario" href="{{ B }}/ingresar?next={{ B }}/eventos/{{ ev._id }}">Ingresar para inscribirme {{ i('flecha') }}</a>
+        {% elif not persona.registrada %}
+          <a class="btn btn--primario" href="{{ B }}/completar?next={{ B }}/eventos/{{ ev._id }}">Completar mi cuenta {{ i('flecha') }}</a>
+        {% else %}
+          {% if ev.de_pago %}<p><strong class="monto">{{ mi_precio | soles if mi_precio else 'Sin costo para ti' }}</strong> <small class="suave">{{ 'precio de socio' if persona.socio else 'precio para no socios' }}</small></p>{% endif %}
+          <button class="btn btn--primario" type="button" data-post="{{ B }}/api/eventos/{{ ev._id }}/inscribir">{{ 'Inscribirme y ver cómo pagar' if mi_precio else 'Inscribirme' }} {{ i('flecha') }}</button>
+        {% endif %}
+        {% if ev.limite %}<p class="suave">Inscripciones hasta el {{ (ev.limite | fecha).larga }}.</p>{% endif %}
+      {% elif inscripcion == 'externa' %}
+        <a class="btn btn--primario" href="{{ ev.externo }}" target="_blank" rel="noopener noreferrer">Inscribirme {{ i('externo') }}</a>
+      {% elif inscripcion == 'llena' %}
+        <p class="aviso">Los cupos están completos.</p>
+      {% elif inscripcion == 'cerrada' %}
+        <p class="aviso">Las inscripciones ya cerraron.</p>
+      {% elif inscripcion == 'pronto' %}
+        <p class="aviso">Pronto abriremos las inscripciones.</p>
+      {% endif %}
+      {% if con_grabacion %}<a class="btn btn--laton" href="{{ B }}/grabaciones/{{ ev._id }}">{{ i('play') }} Ver grabación</a>{% endif %}
+      <p class="estado-form" role="status"></p>
+    </div>
+  </div>
+</div></section>
+{% endblock %}

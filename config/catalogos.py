@@ -132,6 +132,7 @@ ETAPAS_POSTULANTE_ABIERTAS = ("consulta", "documentos", "evaluacion", "aprobado"
 # «socio» solo se alcanza con «Dar de alta como socio»; nunca se elige a mano.
 ETAPAS_POSTULANTE_CIERRE = ("desistio", "rechazado")
 ORIGENES_POSTULANTE = {"correo": "Correo", "publico": "Desde Público", "manual": "Agregado a mano",
+                       "web": "Página web",
                        "excel": "Importación Excel", "migracion": "Postulación anterior"}
 
 # Notas de crédito. Los motivos son el catálogo 09 de SUNAT (norma tributaria, no dato del negocio).

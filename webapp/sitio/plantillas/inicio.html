@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% from "_macros.html" import i, boletin %}
+{% block titulo %}IPIDET — Instituto Peruano de Investigación y Desarrollo Tributario{% endblock %}
+{% block contenido %}
+<section class="heroe">
+  <div class="heroe__foto" style="background-image:url({{ B }}/estatico/img/portada.jpg)"></div>
+  <div class="heroe__anio" aria-hidden="true">{{ cfg.fundacion[:4] }}</div>
+  <div class="contenedor heroe__contenido entrada">
+    <div><span class="chip">{{ i('estrella') }} Asociación civil · Lima, Perú · Desde {{ cfg.fundacion[:4] }}</span></div>
+    <h1>Instituto Peruano de <em>Investigación y Desarrollo</em> Tributario</h1>
+    <p class="heroe__texto">{{ cfg.lema }}</p>
+    <div class="heroe__acciones">
+      <a class="btn btn--laton" href="{{ B }}/tramites">Quiero asociarme {{ i('flecha', 'icono--flecha') }}</a>
+      <a class="btn btn--claro" href="#agenda">{{ i('calendario') }} Ver eventos</a>
+    </div>
+  </div>
+  <div class="heroe__corte"></div>
+</section>
+
+<div class="cifras"><div class="contenedor"><div class="cifras__caja aparece">
+  <div class="cifra"><div class="cifra__valor num" data-contar="{{ anios }}">{{ anios }}</div><div class="cifra__texto">años de trayectoria</div></div>
+  {% if cfg.mostrar_cifra_socios and cfg.cifra_socios %}
+  <div class="cifra"><div class="cifra__valor num" data-contar="{{ cfg.cifra_socios }}">{{ cfg.cifra_socios }}</div><div class="cifra__texto">asociados</div></div>
+  {% endif %}
+  {% for valor, texto in cfg.cifras %}<div class="cifra"><div class="cifra__valor num">{{ valor }}</div><div class="cifra__texto">{{ texto }}</div></div>{% endfor %}
+</div></div></div>
+
+<section class="seccion"><div class="contenedor bienvenida">
+  {% if presidencia %}
+  <figure class="retrato aparece" style="margin:0">
+    <div class="retrato__marco"><img src="{{ cfg.bienvenida_foto | enlace or presidencia.foto }}" alt="{{ presidencia.nombre }}"></div>
+    <figcaption class="retrato__pie"><strong>{{ presidencia.nombre }}</strong><span>{{ presidencia.cargo }} · Consejo Directivo {{ cfg.consejo_periodo }}</span></figcaption>
+    <div class="retrato__adorno"></div>
+  </figure>
+  {% endif %}
+  <div class="aparece">
+    <span class="etiqueta">Bienvenida</span>
+    <h2>Un espacio para crecer en la profesión tributaria</h2>
+    <blockquote class="cita">{{ cfg.bienvenida_cita }}</blockquote>
+    <p class="suave">{{ cfg.bienvenida_texto }}</p>
+    <div class="espacio"><a class="enlace" href="{{ B }}/nosotros#consejo">Conocer al Consejo Directivo {{ i('flecha') }}</a></div>
+  </div>
+</div></section>
+
+<section class="seccion seccion--blanca"><div class="contenedor">
+  <div class="cabeza cabeza--centro aparece"><span class="etiqueta">Explora</span><h2>¿Qué estás buscando?</h2></div>
+  <div class="rejilla rejilla--3" data-escalonar>
+    <a class="tarjeta tarjeta--viva" href="{{ B }}/eventos"><div class="tarjeta__icono">{{ i('micro') }}</div><h3>Eventos y conversatorios</h3><p>Inscríbete a conversatorios, presentaciones y foros con especialistas.</p><span class="enlace">Ver eventos {{ i('flecha') }}</span></a>
+    <a class="tarjeta tarjeta--viva" href="{{ B }}/grabaciones"><div class="tarjeta__icono">{{ i('play') }}</div><h3>Grabaciones</h3><p>Vuelve a ver los eventos. Los asociados activos acceden a todas.</p><span class="enlace">Ver grabaciones {{ i('flecha') }}</span></a>
+    <a class="tarjeta tarjeta--viva" href="{{ B }}/tramites"><div class="tarjeta__icono">{{ i('archivo') }}</div><h3>Admisión</h3><p>Requisitos, cuota anual y los pasos para asociarte.</p><span class="enlace">Cómo asociarme {{ i('flecha') }}</span></a>
+  </div>
+</div></section>
+
+<section class="seccion seccion--libro" id="agenda"><div class="contenedor {% if cfg.comunicados %}agenda{% endif %}">
+  <div>
+    <div class="fila-cabeza aparece">
+      <div><span class="etiqueta">Agenda</span><h2>{{ 'Próximos eventos' if hay_proximos else 'Eventos recientes' }}</h2></div>
+      <a class="enlace" href="{{ B }}/eventos">Todos los eventos {{ i('flecha') }}</a>
+    </div>
+    <div data-escalonar>
+      {% for ev in agenda %}{% set f = ev.fecha | fecha %}
+      <a class="evento" href="{{ B }}/eventos/{{ ev._id }}">
+        <div class="evento__fecha">{% if ev.flyer %}<img src="{{ ev.flyer }}" alt="" loading="lazy">{% endif %}<div><span class="num">{{ f.dia }}</span><small>{{ f.mes }} {{ f.anio[2:] }}</small></div></div>
+        <div class="evento__cuerpo">
+          <span class="tipo {{ 'tipo--proximo' if ev.proximo else 'tipo--' ~ ev.tipo_web }}">{{ 'Próximo' if ev.proximo else ev.tipo_texto }}</span>
+          <h3>{{ ev.titulo | corto }}</h3>
+          <div class="evento__meta"><span>{{ i('calendario') }} {{ f.larga }}</span></div>
+        </div>
+        <div class="evento__ir">{{ i('derecha') }}</div>
+      </a>
+      {% else %}<div class="vacio">Pronto anunciaremos nuevos eventos.</div>{% endfor %}
+    </div>
+  </div>
+  {% if cfg.comunicados %}
+  <aside>
+    <div class="fila-cabeza aparece"><div><span class="etiqueta">Novedades</span><h2>Comunicados</h2></div></div>
+    <div data-escalonar>
+      {% for titulo, cuando, imagen in cfg.comunicados %}
+      <a class="cartel cartel--fila" href="{{ imagen | enlace }}" target="_blank" rel="noopener noreferrer">
+        <div class="cartel__img"><img src="{{ imagen | enlace }}" alt="" loading="lazy"></div>
+        <div class="cartel__cuerpo"><span class="tipo tipo--presentacion">{{ cuando }}</span><h3>{{ titulo }}</h3><span class="enlace">Ver {{ i('flecha') }}</span></div>
+      </a>
+      {% endfor %}
+    </div>
+  </aside>
+  {% endif %}
+</div></section>
+
+{% if aliadas %}
+<section class="seccion seccion--blanca"><div class="contenedor">
+  <div class="cabeza cabeza--centro"><span class="etiqueta">Red institucional</span><h2>Instituciones aliadas</h2></div>
+  <div class="aliadas">{% for a in aliadas %}{% if a.web %}<a class="aliada" href="{{ a.web }}" target="_blank" rel="noopener noreferrer">{{ a.nombre }}</a>{% else %}<span class="aliada">{{ a.nombre }}</span>{% endif %}{% endfor %}</div>
+</div></section>
+{% endif %}
+{{ boletin() }}
+{% endblock %}

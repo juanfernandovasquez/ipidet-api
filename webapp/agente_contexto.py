@@ -55,6 +55,28 @@ def _sin_vacios(d: dict) -> dict:
 
 # ── Fuentes autorizadas ────────────────────────────────────────────────────────
 
+def _enlaces_evento(e: dict, proximo: bool, hoy: str) -> dict:
+    """El agente respeta los permisos de la web: solo da el enlace de una grabación abierta a todos, y
+    no da el registro externo de un evento que se cobra (se saltaría el pago)."""
+    from webapp.sitio import config as sitio_cfg, eventos as sitio_ev
+    datos: dict = {}
+    if proximo:
+        if e.get("inscripcion_web"):
+            if sitio_cfg.publicada():
+                datos["link_inscripcion"] = f"{sitio_cfg.cargar()['url_base'].rstrip('/')}/eventos/{e['_id']}"
+        elif e.get("cobro") != "pago":
+            datos["link_inscripcion"] = e.get("link_registro")
+    if e.get("link_grabacion"):
+        nivel = sitio_ev.nivel_vigente(e, hoy)
+        if (e.get("grabacion_desde") or "") > hoy or nivel == "oculta":
+            datos["grabacion"] = "Todavía no está disponible. No enviar enlaces."
+        elif nivel == "publico":
+            datos["link_grabacion"] = e.get("link_grabacion")
+        else:
+            datos["grabacion"] = f"Acceso restringido ({sitio_ev.NIVELES[nivel]}). No hay enlace para enviar por correo."
+    return datos
+
+
 def _evento_como_fuente(e: dict, hoy: str) -> dict:
     cupo = e.get("cupo_max")
     inscritos = len(e.get("inscritos") or []) + len(e.get("zoom_registrants") or [])
@@ -68,8 +90,7 @@ def _evento_como_fuente(e: dict, hoy: str) -> dict:
         "lugar": e.get("lugar"),
         "precio": e.get("precio"),
         "inscripcion_hasta": e.get("fecha_limite_inscripcion"),
-        "link_inscripcion": e.get("link_registro") if proximo else None,
-        "link_grabacion": e.get("link_grabacion"),
+        **_enlaces_evento(e, proximo, hoy),
         "cupos_libres": max(0, int(cupo) - inscritos) if str(cupo or "").isdigit() and proximo else None,
         "descripcion": _texto(e.get("descripcion"), 1500),
         "expositores": [

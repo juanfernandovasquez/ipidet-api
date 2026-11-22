@@ -125,7 +125,7 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-tag text-slate-400 mr-1"></i>Precio</label>
-          <input name="precio" type="text" value="{{ evento.precio or '' }}" placeholder="Gratuito, S/ 150…" class="input w-full text-sm">
+          <input name="precio" type="text" value="{{ evento.precio or '' }}"{% if evento.cobro %} readonly title="Se calcula con los montos de la sección Web"{% endif %} placeholder="Gratuito, S/ 150…" class="input w-full text-sm">
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-600 mb-1"><i class="fa-solid fa-calendar-xmark text-slate-400 mr-1"></i>Cierre de inscripciones</label>
@@ -171,6 +171,8 @@
   <input type="hidden" name="publicar" value="{{ '' if _en_web else '1' }}">
   <button class="btn-ghost text-xs">{{ 'Quitar de la web' if _en_web else 'Mostrar en la web' }}</button>
 </form>
+
+{% include "_evento_web.html" %}
 
 <!-- ═══════════════════════════════════════════════════════════
      SECCIÓN — RESPUESTAS DEL AGENTE DE CORREOS

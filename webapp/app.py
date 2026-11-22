@@ -108,6 +108,10 @@ from webapp import organizacion as _org  # sección IPIDET: datos, logo, firma, 
 app.include_router(_org.router)
 from webapp.web_publica import router as _web_router, email_valido  # API pública para ipidet.org
 app.include_router(_web_router)
+from webapp.sitio import panel as _sitio_panel, rutas as _sitio_rutas  # web propia (/web) y su administración
+app.include_router(_sitio_panel.router)
+app.mount("/web/estatico", _StaticFiles(directory=str(_sitio_rutas.AQUI / "estatico")), name="sitio_estatico")
+app.include_router(_sitio_rutas.router)
 
 # CORS: solo permite llamadas desde el servidor WordPress (server-to-server)
 _ORIGEN_WEB = WC_STORE_URL.rstrip("/")
@@ -120,8 +124,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-WC-Webhook-Signature"],
 )
 
-_PUBLIC_PATHS = {"/login", "/logout"}
-_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/api/web/", "/static/", "/correo-img/", "/vendor/", "/org/")
+_PUBLIC_PATHS = {"/login", "/logout", "/web"}
+_PUBLIC_PREFIXES = ("/webhook/", "/api/portal/", "/api/web/", "/static/", "/correo-img/", "/vendor/", "/org/", "/web/")
 
 class _AuthMiddleware:
     """Middleware ASGI puro — compatible con SessionMiddleware sin interferir en la cookie."""
@@ -269,6 +273,12 @@ async def _startup():
                            ("cuotas_codigo", pdb.backfill_cuotas_codigo)):
             pdb.correr_backfill_si_toca(nombre, fn)
     asyncio.get_running_loop().run_in_executor(None, _backfills)
+
+    def _indices_sitio():
+        from webapp.sitio import cuentas as _c, ordenes as _o
+        _c.asegurar_indices()
+        _o.asegurar_indices()
+    asyncio.get_running_loop().run_in_executor(None, _indices_sitio)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -475,6 +485,7 @@ async def member_detail(request: Request, member_id: str):
         member=doc,
         detalle_pagos=pdb.detalle_comprobantes_de_pagos(doc.get("payments") or []),
         eventos_socio=pdb.eventos_de_socio(doc.get("member_id") or member_id),
+        pagos_eventos=pdb.pagos_eventos_de_socio(doc.get("member_id") or member_id),
         cargos_consejo=_org.cargos_de_socio(doc.get("member_id") or member_id),
         nombres_producto=productos,
         titulos=pdb.get_member_titulos(),
@@ -2401,8 +2412,8 @@ def _resolve_payment_ids(items: list) -> None:
     """
     from bson import ObjectId as _OId
     for item in items:
-        if item.get("payment_id") or not item.get("member_id"):
-            continue
+        if item.get("payment_id") or not item.get("member_id") or item.get("evento_id"):
+            continue    # una inscripción de evento nunca se cruza con una cuota
 
         # Path 1: product FK → cuota_anual / cuota_provincia → principal payment
         # Si producto_id falta pero codigo_sunat está presente, resolver FK primero.
@@ -2717,8 +2728,8 @@ async def comprobantes_import_xml(
             # tenía items como si no, para items que aún no tienen payment_id.
             xml_items_by_mid = {it["member_id"]: it for it in data["items"] if it.get("member_id")}
             for idx, it in enumerate(items):
-                if it.get("payment_id"):
-                    continue  # ya tiene FK directa, no tocar
+                if it.get("payment_id") or it.get("evento_id"):
+                    continue  # ya tiene FK directa (pago o evento), no tocar
                 xml_it = xml_items_by_mid.get(it.get("member_id")) or (data["items"][idx] if idx < len(data["items"]) else None)
                 if xml_it:
                     cs = xml_it.get("codigo_sunat", "")
@@ -4043,6 +4054,7 @@ async def evento_detalle(request: Request, evento_id: str):
         evento=evento, stats=stats,
         ponentes_sugeridos=pdb.contar_sugeridos_evento(evento_id),
         seguimiento=pdb.seguimiento_comercial_evento(evento_id),
+        web=_sitio_panel.contexto_evento(evento),
         checklist_pre=catalogos.get_catalogo("checklist_evento_pre"),
         checklist_post=catalogos.get_catalogo("checklist_evento_post"),
     ))
@@ -6143,8 +6155,9 @@ async def api_publico_preview(request: Request):
                "nombre": d.get("nombre", ""),
                "apellido": d.get("apellido", ""),
                "email": d.get("email", "")} for d in docs
-              if d.get("email") and d.get("email_estado") != "rebotado"]
+              if d.get("email") and d.get("email_estado") != "rebotado" and not d.get("sin_avisos")]
     return {"total": len(result), "destinatarios": result,
+            "sin_avisos": sum(1 for d in docs if d.get("sin_avisos")),
             "rebotados": sum(1 for d in docs if d.get("email_estado") == "rebotado")}
 
 
@@ -6172,8 +6185,10 @@ async def api_publico_enviar(request: Request):
     # Los emails que rebotaron no se vuelven a usar (aunque vengan en la lista del navegador).
     rebotados = pdb.emails_publico_rebotados([d.get("email", "") for d in destinatarios])
     destinatarios = [d for d in destinatarios if (d.get("email") or "").lower() not in rebotados]
+    sin_permiso = pdb.emails_publico_sin_avisos([d.get("email", "") for d in destinatarios])
+    destinatarios = [d for d in destinatarios if (d.get("email") or "").lower() not in sin_permiso]
     if not destinatarios:
-        return JSONResponse({"error": "Todos los destinatarios tienen el email rebotado."}, status_code=422)
+        return JSONResponse({"error": "Todos los destinatarios tienen el email rebotado o no autorizaron avisos."}, status_code=422)
 
     mensajes = []
     inline_atts: list = []

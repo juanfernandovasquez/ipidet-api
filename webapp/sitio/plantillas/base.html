@@ -1,0 +1,77 @@
+{% from "_macros.html" import i %}
+{% set menu = [('inicio', B, 'Inicio'), ('nosotros', B ~ '/nosotros', 'Nosotros'), ('eventos', B ~ '/eventos', 'Eventos'), ('grabaciones', B ~ '/grabaciones', 'Grabaciones'), ('tramites', B ~ '/tramites', 'Admisión'), ('contacto', B ~ '/contacto', 'Contacto')] %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}IPIDET{% endblock %}</title>
+  <meta name="description" content="{{ cfg.descripcion }}">
+  <meta name="theme-color" content="#0a3020">
+  {% if vista_previa %}<meta name="robots" content="noindex, nofollow">{% endif %}
+  <link rel="icon" type="image/png" href="{{ B }}/estatico/img/isotipo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,600&amp;family=Source+Sans+3:wght@400;500;600;700&amp;display=swap">
+  <link rel="stylesheet" href="{{ B }}/estatico/sitio.css?v=1">
+  <link rel="stylesheet" href="{{ B }}/estatico/web.css?v=1">
+  <noscript><style>.aparece{opacity:1;transform:none}</style></noscript>
+  <script src="{{ B }}/estatico/web.js?v=1" defer></script>
+</head>
+<body>
+  {% include "_iconos.html" %}
+  <a class="saltar" href="#contenido">Saltar al contenido</a>
+  {% if vista_previa %}<div class="previa">{{ i('candado') }} Vista previa del equipo: la web no está publicada.</div>{% endif %}
+  <header class="cabecera">
+    <div class="contenedor cabecera__fila">
+      <a class="cabecera__logo" href="{{ B }}" aria-label="IPIDET, inicio"><img src="{{ B }}/estatico/img/logo.png" alt="IPIDET" width="120" height="42"></a>
+      <nav class="menu" aria-label="Principal">
+        {% for k, href, texto in menu %}<a href="{{ href }}" {% if k == activa %}aria-current="page"{% endif %}>{{ texto }}</a>{% endfor %}
+      </nav>
+      <div class="cabecera__acciones">
+        {% if persona %}<a class="btn btn--primario btn--chico" href="{{ B }}/cuenta">{{ i('usuario') }} Mi cuenta</a>
+        {% else %}<a class="btn btn--primario btn--chico" href="{{ B }}/ingresar">{{ i('usuario') }} Ingresar</a>{% endif %}
+        <button class="boton-menu" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="cajon">{{ i('menu') }}</button>
+      </div>
+    </div>
+  </header>
+  <div class="cajon" id="cajon">
+    <div class="cajon__fondo" data-cerrar-menu></div>
+    <nav class="cajon__panel" aria-label="Menú móvil">
+      <div class="cajon__cabeza"><img src="{{ B }}/estatico/img/logo.png" alt="IPIDET" style="height:36px;width:auto">
+        <button class="redondo" type="button" aria-label="Cerrar menú" data-cerrar-menu>{{ i('cerrar') }}</button></div>
+      {% for k, href, texto in menu %}<a class="item" href="{{ href }}" {% if k == activa %}aria-current="page"{% endif %}>{{ texto }}{{ i('derecha') }}</a>{% endfor %}
+      <a class="btn btn--primario" href="{{ B }}/{{ 'cuenta' if persona else 'ingresar' }}">{{ i('usuario') }} {{ 'Mi cuenta' if persona else 'Ingresar o crear cuenta' }}</a>
+    </nav>
+  </div>
+
+  <main id="contenido">{% block contenido %}{% endblock %}</main>
+
+  <footer class="pie">
+    <div class="contenedor pie__rejilla">
+      <div>
+        <div class="pie__logo"><img src="{{ B }}/estatico/img/logo-blanco.png" alt="IPIDET" width="126" height="44"></div>
+        <p>{{ cfg.descripcion }}</p>
+        <div class="redes">
+          {% for red in ('facebook', 'linkedin', 'youtube') %}{% if c[red] %}<a href="{{ c[red] }}" target="_blank" rel="noopener noreferrer" aria-label="{{ red | capitalize }}">{{ i(red) }}</a>{% endif %}{% endfor %}
+        </div>
+      </div>
+      <div><h4>Navega</h4><ul>{% for k, href, texto in menu %}<li><a href="{{ href }}">{{ texto }}</a></li>{% endfor %}</ul></div>
+      <div><h4>Tu cuenta</h4><ul>
+        <li><a href="{{ B }}/cuenta">Mi cuenta</a></li>
+        <li><a href="{{ B }}/privacidad">Política de privacidad</a></li>
+        <li><a href="{{ B }}/terminos">Términos y condiciones</a></li>
+      </ul></div>
+      <div><h4>Contacto</h4><ul>
+        <li class="pie__dato">{{ i('lugar') }}<a href="{{ c.mapa_url | enlace }}" target="_blank" rel="noopener noreferrer">{{ c.direccion }}</a></li>
+        {% if c.telefonos %}<li class="pie__dato">{{ i('telefono') }}<span>{{ c.telefonos | join(' · ') }}</span></li>{% endif %}
+        {% if c.whatsapp_url %}<li class="pie__dato">{{ i('whatsapp') }}<a href="{{ c.whatsapp_url }}" target="_blank" rel="noopener noreferrer">{{ c.whatsapp }}</a></li>{% endif %}
+        <li class="pie__dato">{{ i('correo') }}<a href="mailto:{{ c.email }}">{{ c.email }}</a></li>
+      </ul></div>
+    </div>
+    <div class="contenedor pie__base"><span>© {{ hoy[:4] }} IPIDET — Instituto Peruano de Investigación y Desarrollo Tributario</span><span>Desde {{ (cfg.fundacion | fecha).larga }}</span></div>
+  </footer>
+  <button class="arriba" type="button" aria-label="Volver arriba">{{ i('subir') }}</button>
+  {% block flotante %}{% if c.whatsapp_url %}<a class="wa-flotante" href="{{ c.whatsapp_url }}" target="_blank" rel="noopener noreferrer" aria-label="Escríbenos por WhatsApp">{{ i('whatsapp') }}<span>¿Consultas?</span></a>{% endif %}{% endblock %}
+</body>
+</html>
