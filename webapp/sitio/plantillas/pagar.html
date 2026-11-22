@@ -2,7 +2,7 @@
 {% from "_macros.html" import i, heroe %}
 {% block titulo %}Pago — IPIDET{% endblock %}
 {% block contenido %}
-{{ heroe('Pago', orden.descripcion) }}
+{{ heroe('Pago', orden.descripcion, compacto=true) }}
 <section class="seccion"><div class="contenedor angosto">
   <div class="tarjeta total">
     <span>Total<strong class="monto">{{ orden.monto | soles }}</strong></span>

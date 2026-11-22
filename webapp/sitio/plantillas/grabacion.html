@@ -2,7 +2,7 @@
 {% from "_macros.html" import i, heroe %}
 {% block titulo %}{{ ev.titulo }} — Grabación IPIDET{% endblock %}
 {% block contenido %}
-{{ heroe('Grabación', ev.titulo, (ev.fecha | fecha).larga) }}
+{{ heroe('Grabación', ev.titulo, (ev.fecha | fecha).larga, compacto=true) }}
 <section class="seccion"><div class="contenedor angosto">
   {% for parte in partes %}
     {% if partes | length > 1 %}<h3 class="espacio-chico">{{ parte.titulo }}</h3>{% endif %}

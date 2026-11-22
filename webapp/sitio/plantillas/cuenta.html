@@ -5,7 +5,7 @@
 <div class="renglon"><span class="renglon__icono">{{ i(icono) }}</span><span class="renglon__texto"><strong>{{ titulo }}</strong>{% if detalle %}<small>{{ detalle }}</small>{% endif %}</span>{% if caller %}{{ caller() }}{% endif %}</div>
 {% endmacro %}
 {% block contenido %}
-{{ heroe('Mi cuenta', 'Hola, ' ~ persona.nombre.split(' ')[0]) }}
+{{ heroe('Mi cuenta', 'Hola, ' ~ persona.nombre.split(' ')[0], compacto=true) }}
 <section class="seccion"><div class="contenedor portal">
   <aside>
     <div class="credencial">

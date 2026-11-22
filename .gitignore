@@ -38,3 +38,6 @@ IPIDET_backup*/
 
 # Resultados de búsquedas hechas con Claude Code (investigacion.py)
 investigaciones/
+
+# Copia del snippet con el secreto del portal dentro: nunca versionar
+portal/wordpress/snippet_b64.txt

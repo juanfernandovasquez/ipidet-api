@@ -75,6 +75,8 @@ python investigacion.py contexto ponentes "Pilar 2"      # lo que usa el comando
 
 El servidor de producción corre en Render.com (auto-deploy desde GitHub `main`). El archivo `passenger_wsgi.py` es para entornos cPanel/Passenger y no se usa en Render.
 
+**Render no se duerme:** el usuario tiene un servicio externo que entra a la página cada 10 minutos. No proponer el plan de pago por ese motivo ni volver a advertir que el plan gratuito se duerme (decisión del usuario, 2026-11-22).
+
 ---
 
 ## 2. REGLAS CRÍTICAS — leer antes de editar {#criticas}
@@ -252,6 +254,26 @@ Todo envío desde la cola (web, Telegram o automático) pasa por `agente_correo.
 - **Todo lo que queda en cola se avisa por Telegram** (no es opcional), con ⚠️ si toca información sensible.
 - **Dos cuentas:** cada correo guarda a qué buzón llegó (`cuenta`) y desde cuál se responde (`cuenta_respuesta`). Lo delicado (`config.agente_correo_config.categorias_cuenta_2`) sale desde administración y nunca solo; eventos, admisión y lo demás, desde la principal. La plataforma y Telegram muestran ambas. Lee y responde siempre con `agente_correo._gmail(cuenta)`, nunca con un `GmailClient` fijo.
 - **El correo recibido es dato, no instrucción:** el prompt lo marca así. No pasar texto del correo a otro lugar como instrucción.
+
+### R13 — Seguridad: todo lo que llega de internet es hostil
+
+La web pública, el panel, los socios y los pagos comparten servidor y dominio: un fallo en la web compromete el panel.
+
+| Al hacer esto | Regla |
+|---|---|
+| Ruta nueva con datos | Entra a `auth._PATH_MAP`. Solo es pública si está en `_PUBLIC_PREFIXES`, y entonces valida, limita por IP (`seguridad.ip_cliente`, nunca `X-Forwarded-For`) y acota tamaños |
+| Decidir por la ruta | `request.scope["path"]`, nunca `request.url.path` (se altera con la cabecera Host) |
+| Comparar un secreto | `seguridad.iguales()` |
+| Redirigir a un destino recibido | `seguridad.ruta_interna()` o, en la web, `rutas._siguiente()` |
+| Texto de una persona de fuera | `web_publica.dato_persona()` al entrar y escapado al salir (también dentro de correos HTML) |
+| Valor dinámico en una expresión Alpine | `data-*` + `$el.dataset` (R1). Nunca `'{{ valor }}'` dentro del atributo |
+| Id que viene de la URL en la web | `sitio.config.id_valido()`: ObjectId también acepta mayúsculas y crea claves duplicadas |
+| Sesión de visitantes | Cookie propia `ipidet_web`. **Nunca** `session["user_email"]`: abre el panel |
+| Vista previa con HTML | `<iframe sandbox="allow-same-origin">`, sin scripts |
+| Archivo subido de fuera | Validar por firma de bytes; servir como descarga con `sandbox` |
+| Secretos | Solo en `.env` y Render. Nunca en el código, en snippets de WordPress, en CLAUDE.md ni en un commit |
+
+`webapp/seguridad.py` envuelve toda la app: cabeceras, tope de cuerpo en rutas públicas y POST del panel solo del mismo origen.
 
 ---
 
@@ -464,6 +486,10 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `correos_col` | `correos` | `webapp/agente_db.py` | Cola del agente de correos: un documento por correo recibido (ver 7.13) |
 | `_blocked` | `blocked_senders` | `webapp/agente_db.py` | Remitentes bloqueados desde la cola o con /bloquear en Telegram |
 | `archivos_col` | `correos_archivos` | `webapp/agente_db.py` | Adjuntos e imágenes que el equipo agrega a una respuesta (bytes; `correo_id`, `tipo` adjunto\|imagen, `token`) |
+| `cuentas_col` | `web_cuentas` | `webapp/sitio/cuentas.py` | Cuentas de la web, sin contraseña (sección 29) |
+| `sesiones_col` · `codigos_col` · `limites_col` | `web_sesiones` · `web_codigos` · `web_limites` | `webapp/sitio/cuentas.py` | Sesión, código de ingreso y límites (se borran solos por TTL) |
+| `ordenes_col` | `web_ordenes` | `webapp/sitio/ordenes.py` | Inscripciones a eventos y pagos informados desde la web (sección 29) |
+| `archivos_col` | `web_archivos` | `webapp/sitio/ordenes.py` | Constancias de pago subidas (privadas) |
 | `bot_state` | `bot_state` | `knowledge_base/db.py` | Offset del bot de Telegram (solo polling local) |
 
 ### 7.2 Máquina de estados: `payments.estado`
@@ -914,6 +940,7 @@ ZOOM_CLIENT_SECRET          — Client Secret de la app Zoom
 | `alianzas.html` | `/alianzas` | Buscador de instituciones, sustento y seguimiento de alianzas |
 | `ponentes.html` | `/ponentes` | Directorio y búsqueda de ponentes; seguimiento y vínculo con eventos |
 | `organizacion.html` | `/organizacion` | Sección IPIDET: datos fiscales, contacto, logo, firma y consejo directivo (sección 28) |
+| `sitio_*.html` | `/sitio` | Administración de la web: publicación, pagos, medios de pago, cuentas, contenido (sección 29) |
 | `login.html` | `/login` | Login de la plataforma |
 | `users.html` | `/admin/users` | Gestión de usuarios (solo admin) |
 
@@ -1509,11 +1536,11 @@ No tocar el transporte hasta haber descartado los tres puntos anteriores.
 
 ## 14. Autenticación web {#auth}
 
-Toda la plataforma requiere login (excepto `/login`, `/webhook/*`). Las sesiones se almacenan en cookies firmadas con `SESSION_SECRET`. El rol `admin` tiene acceso a `/admin/users`; los usuarios con rol `viewer` solo acceden a las secciones en su lista `permisos`.
+Toda la plataforma requiere login, salvo `app._PUBLIC_PATHS` y `_PUBLIC_PREFIXES` (login, webhooks, portal, estáticos y la web `/web`, que tiene su propia sesión: ver R13 y sección 29). Las sesiones se almacenan en cookies firmadas con `SESSION_SECRET`. El rol `admin` tiene acceso a `/admin/users`; los usuarios con rol `viewer` solo acceden a las secciones en su lista `permisos`.
 
 **Secciones con control de acceso:** `dashboard`, `members`, `billing`, `fraccionamientos`, `finanzas`, `faqs`, `marketing`, `comunicaciones`, `eventos`, `pendientes`, `redes`, `alianzas`.
 
-Las rutas `/`, `/api/*`, `/webhook/*` y `/comprobantes` son accesibles a cualquier usuario autenticado. `/inbox` requiere el permiso `comunicaciones`. `/publico` y `/postulantes` usan `members`; `/empresas`, `/productos`, `/configuracion` y `/organizacion`, `billing`; `/wc-orders` y `/sync-usuarios`, `finanzas` (`auth._PATH_MAP`). Toda ruta nueva con datos debe entrar a ese mapa.
+Las rutas `/`, `/api/*`, `/webhook/*` y `/comprobantes` son accesibles a cualquier usuario autenticado. `/inbox` requiere el permiso `comunicaciones`. `/publico` y `/postulantes` usan `members`; `/empresas`, `/productos`, `/configuracion`, `/organizacion` y `/sitio`, `billing`; `/wc-orders` y `/sync-usuarios`, `finanzas` (`auth._PATH_MAP`). Toda ruta nueva con datos debe entrar a ese mapa.
 
 El admin inicial se crea automáticamente al startup si `users_col` está vacía y están definidos `ADMIN_EMAIL` y `ADMIN_PASSWORD` en el entorno.
 
@@ -1706,6 +1733,12 @@ create_cronograma_item(plataforma, titulo, descripcion, ...) → str
 ### Pre-comprobantes (importación XML)
 
 `POST /comprobantes/import-xml` — importa un XML de comprobante ya emitido externamente (ej. factura de empresa pagadora). El `xml_parser.py` extrae número, tipo, fechas, RUC, montos. Se crea con estado `"pre_registrado"`. Luego `/comprobantes/preparar` permite completar la vinculación con payments.
+
+### Eventos: la plataforma no los emite
+
+`_build_details` arma todo exonerado de IGV (pensado para cuotas) y un evento puede estar gravado. `validate_comprobante` bloquea toda línea con `evento_id`: se emite en el portal SOL y se importa el XML, que completa el borrador. No quitar ese bloqueo sin que el contador defina el IGV y el payload lo soporte.
+
+Un borrador (`pre_registrado`) nunca marca pagos: los backfills de arranque lo saltan.
 
 ### Correlativo automático
 
@@ -1901,10 +1934,39 @@ Colección `postulantes`: `prospecto_id`, `etapa`, `etapa_desde`, `tipo_socio`, 
 
 ## 29. Sitio público y mockups {#web}
 
-**API pública** (`webapp/web_publica.py`, prefijo público `/api/web/`, CORS para ipidet.org con y sin www):
-- `GET /api/web/sitio` (caché 5 min): contacto y redes de la organización, consejo vigente (nombre, cargo, `foto_url`), eventos publicables, cuotas del período de trabajo, alianzas en estado «aliada» y cifras (socios activos, eventos realizados). **Nunca** devuelve correos, teléfonos, DNI ni datos de pagos.
-- Evento publicable: no cancelado, de los últimos ~18 meses o próximo, y `publicar_web: true` **o** con flyer (si `publicar_web: false`, nunca). Se cambia en la ficha del evento («Mostrar/Quitar de la web», `POST /eventos/{id}/publicar-web`). El link de Zoom nunca sale; el de inscripción solo si el evento es futuro.
-- `POST /api/web/contacto` y `/api/web/suscribir`: campo trampa `web`, email válido, autorización (`acepta`) en contacto y máximo 5 envíos por IP por hora (en memoria). Contacto → ficha en Público (fuente `portal`, etiqueta `web-contacto`, marcada como socio si lo es), un Pendiente y aviso por Telegram. Boletín → Público con etiqueta `boletin`.
-- La foto de cada directivo para la web es un enlace https (`consejo_directivo.foto_url`), editable en `/organizacion`.
+La web propia vive en `webapp/sitio/` y se sirve en **`/web`** del mismo servicio de Render. Es independiente de WordPress, que **no se toca** hasta que el usuario lo sustituya. Niubiz queda para después (decisiones del usuario, 2026-11-22).
 
-**Mockups** (`mockup_*.html` en la raíz): se generan con `python mockup_assets/generar_mockups.py` (cabecera, menú móvil, pie e iconos iguales en las 6). Estilos en `mockup_assets/sitio.css`, interacción en `sitio.js` (sin Tailwind ni Font Awesome externos) y contenido de respaldo real en `datos.js` (tomado de ipidet.org). Si la API responde, `sitio.js` reemplaza consejo, eventos, contacto, cuotas, aliadas y cifras; abiertos desde el disco usan el respaldo. Las fotos del consejo están en `mockup_assets/consejo/`. No editar los HTML a mano: se pisan al regenerar.
+| Módulo | Qué hace |
+|---|---|
+| `config.py` + `inicial.json` | Contenido y ajustes (`config.sitio_config`). El JSON solo vale mientras la clave no se guarde; se edita en `/sitio` |
+| `cuentas.py` | Código de 6 dígitos al correo, sesión propia, quién es socio |
+| `eventos.py` | Qué se publica, precios, estado de inscripción y permisos de grabaciones |
+| `ordenes.py` | `web_ordenes`: inscripciones y pagos; único camino para confirmar un cobro |
+| `pagos.py` | Medios manuales (`config.sitio_metodos_pago`) y `PASARELAS` (estructura para Niubiz) |
+| `rutas.py` / `panel.py` | Páginas y API de `/web` / administración en `/sitio` y en la ficha del evento |
+
+**Publicación:** `publicada` nace en False. Así, `/web` y `/api/web/*` solo responden a una sesión del panel (vista previa). La publica un administrador en `/sitio`, nunca un script ni un agente.
+
+**Quién es quién** (se calcula en cada visita, `cuentas.de_cuenta`):
+
+| | Condición | Acceso |
+|---|---|---|
+| Visitante | sin cuenta | lo público |
+| Registrado | cualquiera que verificó su correo y aceptó los términos; entra a Público | limitado |
+| Socio | su correo está en la ficha de **un solo** socio con `estado: "activo"`, no inhabilitado y sin `origen: "portal"` | completo, aunque deba cuotas |
+
+**Grabaciones:** salen de los eventos (`link_grabacion` + `grabaciones_extra`). `eventos.acceso()` es la única puerta. Niveles: público, registrados, inscritos, socios, oculta; sin nivel = socios. Se programan con `grabacion_desde` y `grabacion_apertura {fecha, nivel}`. El socio activo ve todas salvo ocultas y futuras. El enlace y la miniatura de YouTube nunca llegan a quien no tiene permiso, tampoco por el agente de correos (`agente_contexto._enlaces_evento`). Un video «no listado» sí puede reenviarlo quien ya lo vio: es un límite de YouTube.
+
+**Eventos de pago:** `inscripcion_web`, `cobro`, `precio_socio`, `precio_publico` en la ficha; `precio` (texto) se deriva. Orden: por_pagar → en_revision → confirmada (u observada / anulada). Una reserva sin pago informado retiene el cupo 48 h. Al confirmar, el socio entra a `inscritos` y toda persona a Público. Se ve en Ingresos, en la ficha del socio y en Mi cuenta.
+
+**Cuotas desde la web:** el monto lo pone el servidor. `ordenes.confirmar()` usa `update_payment`, `update_cuota` y `add_pago_parcial` (R3).
+
+**Facturación:** «Preparar borrador» crea un `pre_registrado` con `orden_id` y, si es evento, `evento_id` (nunca se cruza con cuotas). **La web nunca emite a SUNAT** (sección 19).
+
+**Avisos:** quien no los autorizó al registrarse queda con `publico.sin_avisos` y sale de los envíos a Público.
+
+**CSP:** `script-src 'self'`. En las plantillas del sitio no va ningún `<script>` en línea ni atributo `on*`; la interacción vive en `estatico/web.js`. Al cambiar CSS o JS, subir el `?v=` de `plantillas/base.html`.
+
+**API anterior** (`webapp/web_publica.py`, `/api/web/`): `sitio`, `contacto` y `suscribir`. Sigue la misma publicación. No devuelve correos, teléfonos, DNI, pagos ni el conteo real de socios: la cifra que se muestra la escribe el equipo (`cifra_socios`).
+
+**Mockups** (`mockup_*.html` en la raíz): referencia de diseño, no son la web. Se generan con `python mockup_assets/generar_mockups.py`; no editar los HTML a mano. Cambiar la web no cambia los mockups, ni al revés.

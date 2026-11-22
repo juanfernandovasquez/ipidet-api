@@ -2,7 +2,7 @@
 {% from "_macros.html" import i, heroe %}
 {% block titulo %}Completa tu cuenta — IPIDET{% endblock %}
 {% block contenido %}
-{{ heroe('Mi cuenta', 'Completa tu cuenta', persona.email) }}
+{{ heroe('Mi cuenta', 'Completa tu cuenta', persona.email, compacto=true) }}
 <section class="seccion"><div class="contenedor angosto">
   <form class="tarjeta" data-json="{{ B }}/api/perfil" novalidate>
     {% if persona.socio_detectado %}<p class="aviso aviso--bien">{{ i('check') }} Te reconocimos como asociado activo. Al terminar tendrás acceso completo.</p>{% endif %}

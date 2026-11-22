@@ -2,7 +2,7 @@
 {% from "_macros.html" import i, heroe, meta %}
 {% block titulo %}{{ ev.titulo }} — IPIDET{% endblock %}
 {% block contenido %}
-{{ heroe('Evento', ev.titulo) }}
+{{ heroe('Evento', ev.titulo, compacto=true) }}
 <section class="seccion"><div class="contenedor ficha {% if not ev.flyer %}ficha--sola{% endif %}">
   {% if ev.flyer %}<div class="ficha__img"><img src="{{ ev.flyer }}" alt="Flyer del evento"></div>{% endif %}
   <div class="tarjeta">

@@ -2,7 +2,7 @@
 {% from "_macros.html" import i, heroe %}
 {% block titulo %}Ingresar — IPIDET{% endblock %}
 {% block contenido %}
-{{ heroe('Mi cuenta', 'Ingresa o crea tu cuenta', 'Sin contraseñas: te enviamos un código a tu correo.') }}
+{{ heroe('Mi cuenta', 'Ingresa o crea tu cuenta', 'Sin contraseñas: te enviamos un código a tu correo.', compacto=true) }}
 <section class="seccion"><div class="contenedor acceso" data-acceso>
   <form class="tarjeta" data-json="{{ B }}/api/codigo" data-paso="correo" novalidate>
     <div class="tarjeta__icono">{{ i('correo') }}</div>

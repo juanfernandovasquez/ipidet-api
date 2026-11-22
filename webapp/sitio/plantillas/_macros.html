@@ -1,7 +1,7 @@
 {% macro i(nombre, clase='') %}<svg class="icono {{ clase }}" aria-hidden="true"><use href="#i-{{ nombre }}"></use></svg>{% endmacro %}
 
-{% macro heroe(miga, titulo, texto='', foto='') %}
-<section class="heroe heroe--interior">
+{% macro heroe(miga, titulo, texto='', foto='', compacto=false) %}
+<section class="heroe heroe--interior{% if compacto %} heroe--compacto{% endif %}">
   {% if foto %}<div class="heroe__foto" style="background-image:url({{ B }}/estatico/img/{{ foto }})"></div>{% endif %}
   <div class="contenedor heroe__contenido entrada">
     <div class="miga"><a href="{{ B }}">Inicio</a> {{ i('derecha') }} <span>{{ miga }}</span></div>
