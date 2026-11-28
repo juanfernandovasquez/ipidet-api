@@ -170,6 +170,8 @@ _FACTURACION_DEFECTO = {
     # El ambiente de APISPERU lo fija su token, no una variable nuestra: la emisión con IGV se habilita
     # a mano cuando el contador revisó la primera prueba.
     "emitir_gravados": False,
+    # Copia de todo correo con un comprobante. Vacío = el email de la organización.
+    "copia_comprobantes": "",
 }
 
 # Valores si la colección aún no los tiene; se editan en /alianzas y /ponentes.
@@ -429,6 +431,11 @@ def get_facturacion() -> dict:
                 "afectacion_por_tipo": {**_FACTURACION_DEFECTO["afectacion_por_tipo"],
                                         **(doc.get("afectacion_por_tipo") or {})}}
     return _cached("facturacion", _load)
+
+
+def copia_comprobantes() -> str:
+    """Quién recibe copia de cada correo con un comprobante (decisión del usuario, 2026-11-27)."""
+    return (get_facturacion().get("copia_comprobantes") or get_organizacion().get("email") or "").strip().lower()
 
 
 def set_facturacion(campos: dict) -> None:

@@ -5,7 +5,7 @@ from io import BytesIO
 from pathlib import Path
 
 from config import catalogos
-from webapp import tributos
+from webapp import forma_pago, tributos
 
 
 def _emisor() -> dict:
@@ -368,15 +368,37 @@ def build_comprobante_pdf(
             _tot("IGV (0%):", "S/ 0.00")
     _tot("TOTAL A PAGAR:", f"S/ {monto_total:.2f}", resaltar=True)
 
-    medio_pago = (comp.get("medio_pago") or "").strip()
-    if medio_pago:
-        pdf.ln(3)
+    cuotas = forma_pago.cuotas_de(comp) if tipo in ("factura", "boleta") else []
+
+    def _dato(rotulo: str, valor: str) -> None:
         pdf.set_x(LM)
         pdf.set_font("Helvetica", "", 8)
         pdf.set_text_color(*_COLOR_GRAY_TEXT)
-        _cell(pdf, CW * 0.22, 5, "Forma de pago:")
+        _cell(pdf, CW * 0.30, 5, rotulo)
         pdf.set_text_color(*_COLOR_BODY_TEXT)
-        _cell_nl(pdf, CW * 0.78, 5, _safe(medio_pago))
+        _cell_nl(pdf, CW * 0.70, 5, _safe(valor))
+
+    medio_pago = (comp.get("medio_pago") or "").strip()
+    pdf.ln(3)
+    _dato("Forma de pago:", "Crédito" if cuotas else "Contado")
+    if cuotas:
+        _dato("Monto neto pendiente de pago:", f"S/ {forma_pago.pendiente(comp):.2f}")
+        pdf.set_x(LM)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_fill_color(*_COLOR_LIGHT_BG)
+        pdf.set_text_color(*_COLOR_PRIMARY)
+        _cell(pdf, CW * 0.20, 5.5, "Cuota", fill=True)
+        _cell(pdf, CW * 0.30, 5.5, "Vence", fill=True)
+        _cell_nl(pdf, CW * 0.25, 5.5, "Monto (S/)", fill=True, align="R")
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(*_COLOR_BODY_TEXT)
+        for c in cuotas:
+            pdf.set_x(LM)
+            _cell(pdf, CW * 0.20, 5, f"Cuota {c['numero']:03d}")
+            _cell(pdf, CW * 0.30, 5, _fmt_fecha(c["fecha_venc"]))
+            _cell_nl(pdf, CW * 0.25, 5, f"{c['monto']:.2f}", align="R")
+    if medio_pago:
+        _dato("Medio de pago:", medio_pago)
 
     pdf.ln(6)
 

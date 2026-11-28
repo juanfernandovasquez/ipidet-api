@@ -422,6 +422,14 @@ def tpl_comprobante_pago(comp: dict, socios_info: list) -> str:
                            f'<td style="padding:6px 12px;font-size:12px;color:#64748b;text-align:right">S/ {valor:.2f}</td></tr>')
 
     medio_pago = _e((comp.get("medio_pago") or "").strip())
+    from webapp import forma_pago as _fp
+    _cuotas = _fp.cuotas_de(comp) if comp.get("tipo") in ("factura", "boleta") else []
+    if _cuotas:
+        items_rows += ('<tr><td colspan="2" style="padding:10px 12px 4px;font-size:12px;color:#1e293b;font-weight:600">'
+                       f'Pago al crédito · pendiente S/ {_fp.pendiente(comp):.2f}</td></tr>')
+        for _c in _cuotas:
+            items_rows += (f'<tr><td style="padding:4px 12px;font-size:12px;color:#64748b">Cuota {_c["numero"]} · vence {_e(_c["fecha_venc"])}</td>'
+                           f'<td style="padding:4px 12px;font-size:12px;color:#64748b;text-align:right">S/ {_c["monto"]:.2f}</td></tr>')
 
     receptor_rows = ""
     if empresa:

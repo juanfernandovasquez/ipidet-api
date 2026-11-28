@@ -70,6 +70,11 @@
         </select>
       </div>
       {% endfor %}
+      <div class="sm:col-span-2 lg:col-span-3">
+        <label class="block text-xs font-medium text-slate-600 mb-1">Copia de todo correo con un comprobante</label>
+        <input name="copia_comprobantes" type="email" value="{{ facturacion.copia_comprobantes or '' }}" placeholder="{{ copia_comprobantes }}" class="input w-full sm:w-96 text-sm">
+        <p class="text-[11px] text-slate-400 mt-1">Hoy va a <strong>{{ copia_comprobantes or 'nadie' }}</strong>. Vacío = el correo de IPIDET y consejo.</p>
+      </div>
       <div class="sm:col-span-2 lg:col-span-3 pt-3 border-t border-slate-100 space-y-2">
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="emitir_gravados" value="1" {% if facturacion.emitir_gravados %}checked{% endif %}> Permitir emitir a SUNAT comprobantes con IGV desde la plataforma</label>
         {% if not facturacion.emitir_gravados %}

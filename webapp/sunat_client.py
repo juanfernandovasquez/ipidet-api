@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from config import catalogos
-from webapp import tributos
+from webapp import forma_pago, tributos
 
 from config.settings import (
     APISPERU_TOKEN,
@@ -216,8 +216,7 @@ def _totales_payload(lineas: list) -> dict:
     return campos
 
 
-def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict,
-                           credito_cuotas: list | None = None) -> dict:
+def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict) -> dict:
     serie, correlativo = _parse_numero(comprobante["numero"])
     lineas = tributos.lineas_de(comprobante)
     totales = _totales_payload(lineas)
@@ -232,11 +231,8 @@ def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict,
 
     details = _build_details(lineas, concepto)
 
-    forma_pago: dict
-    if credito_cuotas:
-        forma_pago = {"moneda": "PEN", "tipo": "Credito", "monto": monto}
-    else:
-        forma_pago = {"moneda": "PEN", "tipo": "Contado"}
+    # Al crédito: monto neto pendiente y cada cuota con su fecha (RS 193-2020). Solo facturas.
+    pago, cuotas = forma_pago.para_sunat(comprobante) if tipo_sunat == "01" else ({"moneda": "PEN", "tipo": "Contado"}, [])
 
     payload = {
         "ublVersion": "2.1",
@@ -245,7 +241,7 @@ def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict,
         "serie": serie,
         "correlativo": correlativo,
         "fechaEmision": fecha_iso,
-        "formaPago": forma_pago,
+        "formaPago": pago,
         "tipoMoneda": "PEN",
         "client": client,
         "company": _ipidet_company(),
@@ -255,8 +251,8 @@ def _build_invoice_payload(comprobante: dict, tipo_sunat: str, client: dict,
         "details": details,
         "legends": [{"code": "1000", "value": _monto_a_letras(monto)}],
     }
-    if credito_cuotas:
-        payload["cuotas"] = credito_cuotas
+    if cuotas:
+        payload["cuotas"] = cuotas
     return payload
 
 
@@ -303,8 +299,7 @@ def emitir_boleta(comprobante: dict, member: dict | None) -> dict:
 def emitir_factura(comprobante: dict, empresa: dict | None) -> dict:
     """Envía factura a SUNAT vía APISPERU. Retorna dict {ok, xml, hash, cdr_*, error}.
 
-    Si comprobante.es_credito=True y tiene fecha_vencimiento, emite como Crédito.
-    Si además tiene cuotas_credito (lista de {fecha_venc, monto}), las incluye todas.
+    La forma de pago (contado o crédito con sus cuotas) sale de webapp/forma_pago.py.
     """
     if not APISPERU_TOKEN:
         return {"ok": False, "error": "APISPERU_TOKEN no configurado en .env"}
@@ -317,31 +312,9 @@ def emitir_factura(comprobante: dict, empresa: dict | None) -> dict:
     if not ruc:
         return {"ok": False, "error": "RUC de la empresa no encontrado. Completa el campo RUC en Empresas."}
 
-    # Detect credit payment mode — factura a crédito when fecha_vencimiento is set
-    credito_cuotas: list | None = None
-    fecha_venc = (comprobante.get("fecha_vencimiento") or "").strip()
-    if fecha_venc:
-        monto = float(comprobante.get("monto_total") or 0)
-        # Multi-cuota: passed explicitly as cuotas_credito [{fecha_venc, monto}]
-        cuotas_raw = comprobante.get("cuotas_credito") or []
-        if cuotas_raw:
-            credito_cuotas = [
-                {
-                    "moneda": "PEN",
-                    "monto": float(c.get("monto") or 0),
-                    "fechaPago": f"{c['fecha_venc']}T00:00:00-05:00",
-                }
-                for c in cuotas_raw
-                if c.get("fecha_venc") and float(c.get("monto") or 0) > 0
-            ]
-        # Single due date
-        if not credito_cuotas:
-            credito_cuotas = [{"moneda": "PEN", "monto": monto,
-                               "fechaPago": f"{fecha_venc}T00:00:00-05:00"}]
-
     client = {"tipoDoc": "6", "numDoc": ruc, "rznSocial": razon.upper()}
     try:
-        payload = _build_invoice_payload(comprobante, "01", client, credito_cuotas=credito_cuotas)
+        payload = _build_invoice_payload(comprobante, "01", client)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
 
@@ -621,12 +594,13 @@ def validate_comprobante(
                 f"asegúrate de que el correlativo {correlativo_str} sea el siguiente en tu serie."
             )
 
-    # ── Crédito: informar forma de pago que se enviará a SUNAT ──────────
-    if tipo == "factura" and comp.get("fecha_vencimiento"):
-        advertencias.append(
-            f"Se emitirá como Factura a Crédito (vence {comp['fecha_vencimiento']}). "
-            "SUNAT registrará el pago diferido."
-        )
+    # ── Crédito: cuotas que se informarán a SUNAT ───────────────────────
+    cuotas = forma_pago.cuotas_de(comp)
+    if cuotas:
+        errores.extend(forma_pago.errores(comp, cuotas))
+        if tipo == "factura":
+            advertencias.append("Se emitirá al crédito en " + (f"{len(cuotas)} cuotas" if len(cuotas) > 1 else "una cuota")
+                                + ": " + ", ".join(f"S/ {c['monto']:.2f} al {c['fecha_venc']}" for c in cuotas) + ".")
 
     # ── Config APISPERU ─────────────────────────────────────────────────
     if not APISPERU_TOKEN:
@@ -669,6 +643,7 @@ def validate_comprobante(
             "correlativo":        correlativo_str,
             "monto":              monto,
             "impuestos":          impuestos,
+            "cuotas":             cuotas,
             "fecha_emision":      fecha,
             "destinatario":       destinatario_display,
             "ultimo_emitido":     ultimo_correlativo,

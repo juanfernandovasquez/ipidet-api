@@ -20,7 +20,7 @@ import webapp.mailer as mailer
 import webapp.scheduler as scheduler
 import webapp.zoom_client as zoom_client
 import webapp.variables_correo as vcorreo
-from webapp import seguridad, tributos
+from webapp import forma_pago, seguridad, tributos
 from datetime import timedelta as _timedelta
 from urllib.parse import quote as _quote, urlencode
 from config import catalogos
@@ -758,6 +758,7 @@ async def guardar_factura_empresa(request: Request):
                         to=pay["email_principal"],
                         subject=f"Comprobante IPIDET {periodo} — {num_comprobante}",
                         html_body=html,
+                        cc=_copias([], pay["email_principal"]) or None,
                     )
                 except Exception:
                     pass
@@ -844,6 +845,7 @@ async def emitir_comprobante(
                     to=pay["email_principal"],
                     subject=f"Comprobante IPIDET {periodo} — {num}",
                     html_body=html,
+                    cc=_copias([], pay["email_principal"]) or None,
                 )
             except Exception:
                 pass  # no bloquear el flujo si el email falla
@@ -2016,7 +2018,7 @@ async def comprobante_enviar_email(comp_id: str, request: Request):
             subject=subject,
             html_body=html_body,
             attachments=attachments,
-            cc=cc_emails or None,
+            cc=_copias(cc_emails, to_emails) or None,
         )
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
@@ -2084,7 +2086,7 @@ async def comprobante_enviar_sunat_docs(comp_id: str, request: Request):
 
     try:
         await mailer.send_email(to=to_emails, subject=subject,
-                                html_body=html_body, attachments=attachments)
+                                html_body=html_body, attachments=attachments, cc=_copias([], to_emails) or None)
     except Exception as exc:
         return _JR({"ok": False, "error": str(exc)}, status_code=500)
 
@@ -2143,7 +2145,7 @@ async def factura_credito_enviar_email(factura_id: str, request: Request):
     try:
         await mailer.send_email(
             to=to_emails, subject=subject, html_body=html_body,
-            attachments=attachments, cc=cc_emails or None,
+            attachments=attachments, cc=_copias(cc_emails, to_emails) or None,
         )
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=500)
@@ -2535,8 +2537,12 @@ async def comprobante_add(request: Request):
     # Without a number → save as pre-registered draft
     estado = "emitido" if numero else "pre_registrado"
 
-    fecha_vencimiento = data.get("fecha_vencimiento", "").strip()
-    es_credito = bool(data.get("es_credito") and numero)
+    cuotas_credito, errores_credito = _cuotas_del_formulario(data, data.get("tipo", "boleta"),
+                                                             data.get("fecha_emision", ""), monto_total)
+    if errores_credito:
+        return JSONResponse({"ok": False, "error": " ".join(errores_credito)}, status_code=422)
+    fecha_vencimiento = cuotas_credito[-1]["fecha_venc"] if cuotas_credito else ""
+    es_credito = bool(cuotas_credito and numero)
 
     comp_id = pdb.create_comprobante(
         numero               = numero,
@@ -2557,6 +2563,7 @@ async def comprobante_add(request: Request):
         destinatario_dni     = data.get("destinatario_dni", ""),
         fecha_vencimiento    = fecha_vencimiento,
         estado_credito       = "pendiente" if es_credito else "",
+        cuotas_credito       = cuotas_credito or None,
     )
 
     # Only sync payments when we have a real numero
@@ -2625,6 +2632,29 @@ async def comprobante_complete(comp_id: str, request: Request):
     cruce_ok     = sum(1 for r in cruce if r["status"] == "ok")
     cruce_alerts = sum(1 for r in cruce if r["status"] not in ("ok", "ya_pagado"))
     return {"ok": True, "cruce_ok": cruce_ok, "cruce_alerts": cruce_alerts, "cruce_items": cruce}
+
+
+def _copias(cc: list | None, para) -> list[str]:
+    """Copias de un correo con comprobante: las elegidas más, siempre, la de facturación."""
+    para = {p.strip().lower() for p in ([para] if isinstance(para, str) else para or [])}
+    res = []
+    for e in [*(cc or []), catalogos.copia_comprobantes()]:
+        e = (e or "").strip().lower()
+        if e and e not in para and e not in res:
+            res.append(e)
+    return res
+
+
+def _cuotas_del_formulario(data: dict, tipo: str, fecha_emision: str, total) -> tuple[list, list]:
+    """(cuotas, errores) de un comprobante al crédito. Sin crédito: ([], [])."""
+    if not data.get("es_credito"):
+        return [], []
+    cuotas = forma_pago.limpiar(data.get("cuotas_credito"), total)
+    if not cuotas and (data.get("fecha_vencimiento") or "").strip():
+        cuotas = forma_pago.limpiar([{"monto": total, "fecha_venc": data["fecha_vencimiento"]}], total)
+    if not cuotas:
+        return [], ["Indica al menos una cuota con su fecha de vencimiento."]
+    return cuotas, forma_pago.errores({"tipo": tipo, "fecha_emision": fecha_emision, "monto_total": total}, cuotas)
 
 
 def _cambia_lo_emitido(actual: dict, data: dict, items: list) -> bool:
@@ -2910,6 +2940,9 @@ async def comprobante_update(comprobante_id: str, request: Request):
     items = data.get("items", [])
     # Las líneas que una nota de crédito ya anuló o corrigió conservan su marca al editar.
     previos = actual.get("items") or []
+    actual_completo = pdb.comprobantes_col.find_one({"_id": _oid(comprobante_id)},
+                                                    {"cuotas_credito": 1, "fecha_vencimiento": 1, "monto_total": 1,
+                                                     "estado_credito": 1, "fecha_cobro": 1, "tipo": 1})
     emitido = actual.get("sunat_estado") in ("emitido", "anulado_sunat")
     if emitido and _cambia_lo_emitido(actual, data, items):
         return JSONResponse({"ok": False, "error": "Este comprobante ya está en SUNAT: número, fecha, montos e IGV no "
@@ -2934,7 +2967,19 @@ async def comprobante_update(comprobante_id: str, request: Request):
     marcas = {(it.get("payment_id"), it.get("tipo_pago"), it.get("cuota_numero")): it["nc_id"]
               for it in previos if it.get("nc_id") and it.get("payment_id")}
     empresa = data.get("empresa", "").strip()
-    fecha_vencimiento = data.get("fecha_vencimiento", "").strip()
+    cuotas_credito, errores_credito = _cuotas_del_formulario(data, data.get("tipo", "boleta"),
+                                                             data.get("fecha_emision", ""), data.get("monto_total"))
+    if errores_credito:
+        return JSONResponse({"ok": False, "error": " ".join(errores_credito)}, status_code=422)
+    if emitido:
+        # SUNAT ya tiene sus cuotas: se conservan las fechas y montos, y lo que ya se cobró.
+        antes = forma_pago.cuotas_de(actual_completo)
+        cambio = [(c["monto"], c["fecha_venc"]) for c in antes] != [(c["monto"], c["fecha_venc"]) for c in cuotas_credito]
+        if cambio and (antes or cuotas_credito):
+            return JSONResponse({"ok": False, "error": "La forma de pago y las cuotas de un comprobante en SUNAT no se "
+                                                       "editan aquí."}, status_code=409)
+        cuotas_credito = antes
+    fecha_vencimiento = cuotas_credito[-1]["fecha_venc"] if cuotas_credito else ""
 
     fields = {
         "numero":            data.get("numero", ""),
@@ -2946,8 +2991,11 @@ async def comprobante_update(comprobante_id: str, request: Request):
         "medio_pago":        data.get("medio_pago", ""),
         "fecha_pago":        data.get("fecha_pago", ""),
         "fecha_vencimiento": fecha_vencimiento,
+        "cuotas_credito":    cuotas_credito,
         "items":             items,
     }
+    if not cuotas_credito:
+        fields["estado_credito"] = ""
     if items:
         _resolve_payment_ids(items)
         for it in items:
@@ -2960,7 +3008,7 @@ async def comprobante_update(comprobante_id: str, request: Request):
         fields["producto_nombre"] = prod_names[0] if len(prod_names) == 1 else ", ".join(sorted(prod_names))
     else:
         fields["producto_nombre"] = data.get("producto_nombre", "")
-    if data.get("es_credito") and fields["numero"] and fields.get("fecha_vencimiento"):
+    if cuotas_credito and fields["numero"] and fields.get("fecha_vencimiento"):
         from bson import ObjectId as _ObjId
         existing = pdb.comprobantes_col.find_one({"_id": _ObjId(comprobante_id)}, {"estado_credito": 1})
         if not (existing and existing.get("estado_credito")):
@@ -3034,10 +3082,16 @@ async def comprobante_sync(comprobante_id: str):
 @app.post("/comprobantes/{comprobante_id}/credito/cobrar")
 async def comprobante_cobrar(comprobante_id: str, request: Request):
     data = await request.json()
-    fecha_cobro = (data.get("fecha_cobro") or "").strip()
-    pdb.update_comprobante(comprobante_id, {"estado_credito": "cobrado", "fecha_cobro": fecha_cobro or None})
-    pdb.sync_comp_credito_to_payments(comprobante_id, "pagado", fecha_cobro)
-    return {"ok": True}
+    from webapp.sunat_client import hoy_lima
+    fecha_cobro = (data.get("fecha_cobro") or "").strip()[:10] or hoy_lima()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", fecha_cobro):
+        return JSONResponse({"ok": False, "error": "Fecha de cobro no válida."}, status_code=422)
+    numero = _safe_int(data.get("numero"))
+    try:
+        r = pdb.cobrar_cuota_credito(comprobante_id, numero, fecha_cobro)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=422)
+    return {"ok": True, **r}
 
 
 # ── SUNAT preflight (validación pre-emisión) ──────────────────────────────────
@@ -4617,6 +4671,7 @@ async def configuracion(request: Request):
     return templates.TemplateResponse(request, "configuracion.html", _ctx(request,
         catalogos_def=catalogos.CATALOGOS,
         facturacion=catalogos.get_facturacion(),
+        copia_comprobantes=catalogos.copia_comprobantes(),
         afectaciones=tributos.AFECTACIONES,
         catalogos_valores={k: catalogos.get_catalogo(k) for k in catalogos.CATALOGOS},
         campos_org=catalogos.CAMPOS_ORGANIZACION,
@@ -4656,7 +4711,11 @@ async def configuracion_facturacion(request: Request):
         if tipo in tributos.TIPOS_QUE_SALDAN_CUOTA and not por_tipo[tipo]:
             return volver(error="Las cuotas necesitan una afectación.")
     emitir = form.get("emitir_gravados") == "1"
-    campos = {"tasa_igv": tasa, "afectacion_por_tipo": por_tipo, "emitir_gravados": emitir}
+    copia = str(form.get("copia_comprobantes") or "").strip().lower()
+    if copia and not email_valido(copia):
+        return volver(error="La copia de comprobantes debe ser un correo válido.")
+    campos = {"tasa_igv": tasa, "afectacion_por_tipo": por_tipo, "emitir_gravados": emitir,
+              "copia_comprobantes": copia}
     if emitir and not actual.get("emitir_gravados"):
         if form.get("contador_reviso") != "1":
             return volver(error="Para habilitar la emisión con IGV confirma que el contador revisó una prueba.")

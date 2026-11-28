@@ -282,7 +282,9 @@ La web pública, el panel, los socios y los pagos comparten servidor y dominio: 
 - **Solo una membresía o cuota salda pagos** (`tributos.salda_cuota`). Una entrada a evento u otra venta nunca lleva `payment_id`.
 - Las membresías son exoneradas por decisión del usuario; los eventos pueden llevar IGV. Los valores por defecto se editan en Configuración → Facturación e IGV (R10).
 - Lo aceptado por SUNAT no se edita (número, fecha, montos, IGV): se corrige con nota de crédito.
-- **Nunca probar contra APISPERU ni emitir sin autorización expresa del usuario.** Las pruebas sustituyen `sunat_client.httpx`.
+- **Nunca probar contra APISPERU ni emitir sin autorización expresa del usuario.** Las pruebas sustituyen `sunat_client.httpx`. `/invoice/xml` y `/note/xml` generan el XML sin enviarlo a SUNAT; la consulta `/invoice/status` respondió contra producción aunque el usuario indicó beta (2026-11-27), así que no se usó `/send` en pruebas.
+- **Forma de pago** (`webapp/forma_pago.py`): una factura al crédito guarda `cuotas_credito` [{numero, monto, fecha_venc, estado, fecha_pago}] y se informa a SUNAT con el monto neto pendiente y cada cuota (RS 193-2020). Cada cuota vence después de la emisión y las cuotas suman el pendiente (hoy el total: sin detracción ni pago inicial). El estado (pendiente, vencido, cobrado) se calcula de las cuotas; se cobra por cuota (`POST /comprobantes/{id}/credito/cobrar` con `numero`). Un comprobante antiguo con solo `fecha_vencimiento` es una cuota.
+- **Copia:** todo correo con un comprobante lleva copia a `catalogos.copia_comprobantes()` (Configuración → Facturación; vacío = email de la organización). Usar `app._copias()` en cualquier envío nuevo de comprobantes.
 
 ---
 

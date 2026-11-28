@@ -7,7 +7,7 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from config import catalogos
 from config.settings import DB_NAME
-from webapp import tributos
+from webapp import forma_pago, tributos
 
 
 def _sf(val, default: float = 0.0) -> float:
@@ -4022,16 +4022,12 @@ def get_comprobantes_unified(
             d["lineas"] = lineas
             d["socios_map"] = {}
             _enrich(d)
-            # If this comprobante has a fecha_vencimiento it is self-contained crédito
-            if d.get("fecha_vencimiento"):
+            # Al crédito: el estado sale de sus cuotas (una cuota vencida se ve sola, sin guardarla)
+            if forma_pago.es_credito(d):
                 credito_numeros.add(d["numero"])
                 credito_comp_ids.add(d["_id"])  # FK dedup
-                # Derive estado_credito dynamically if not stored
-                if not d.get("estado_credito"):
-                    d["estado_credito"] = _sync_credito_estado({
-                        "estado": d.get("estado_credito", ""),
-                        "fecha_vencimiento": d["fecha_vencimiento"],
-                    })
+                d["cuotas_vista"] = forma_pago.cuotas_de(d)
+                d["estado_credito"] = forma_pago.estado(d, _date.today().isoformat())
             all_docs.append(d)
 
     if include_cred:
@@ -4152,7 +4148,8 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
                         xml_raw: str = "",
                         fecha_vencimiento: str = "",
                         estado_credito: str = "",
-                        fecha_pago: str = "", tributos_xml: dict | None = None) -> str:
+                        fecha_pago: str = "", tributos_xml: dict | None = None,
+                        cuotas_credito: list | None = None) -> str:
     # Derive socios from items if provided
     if items:
         tributos.sellar(items)
@@ -4202,6 +4199,10 @@ def create_comprobante(numero: str, tipo: str, fecha_emision: str, monto_total: 
         doc["tipo_afectacion"] = tributos.EXONERADO if socios else ""
     if tributos_xml:
         doc["tributos"] = tributos_xml
+    if cuotas_credito:
+        doc["cuotas_credito"] = cuotas_credito
+        doc["fecha_vencimiento"] = cuotas_credito[-1]["fecha_venc"]
+        doc["estado_credito"] = doc["estado_credito"] or "pendiente"
     result = comprobantes_col.insert_one(doc)
     return str(result.inserted_id)
 
@@ -4282,7 +4283,7 @@ def update_comprobante(comprobante_id: str, fields: dict) -> None:
     allowed = {"numero", "tipo", "fecha_emision", "monto_total",
                "producto_nombre", "concepto", "empresa", "empresa_id", "ruc_empresa",
                "socios", "items", "estado", "medio_pago", "fecha_pago", "xml_raw", "fecha_vencimiento",
-               "estado_credito", "fecha_cobro",
+               "estado_credito", "fecha_cobro", "cuotas_credito",
                "sunat_estado", "sunat_xml", "sunat_hash", "sunat_cdr_code",
                "sunat_cdr_desc", "sunat_accepted", "sunat_error", "sunat_emitido_at"}
     update = {k: v for k, v in fields.items() if k in allowed}
@@ -4654,6 +4655,28 @@ def sync_comp_credito_to_payments(comprobante_id: str, nuevo_estado: str, fecha_
                            comprobante_id=comprobante_id)
         except Exception:
             pass
+
+
+def cobrar_cuota_credito(comprobante_id: str, numero: int | None, fecha: str) -> dict:
+    """Marca pagada una cuota (o todas las pendientes si numero es None). Al quedar todas pagadas, el
+    comprobante pasa a cobrado y sus cuotas de socio a «pagado» en Cobranzas."""
+    comp = comprobantes_col.find_one({"_id": ObjectId(comprobante_id)})
+    if not comp or not forma_pago.es_credito(comp):
+        raise ValueError("Ese comprobante no es al crédito.")
+    cuotas = forma_pago.cuotas_de(comp)
+    objetivo = [c for c in cuotas if c["estado"] != "pagado" and (numero is None or c["numero"] == numero)]
+    if not objetivo:
+        raise ValueError("Esa cuota ya estaba pagada.")
+    for c in objetivo:
+        c.update(estado="pagado", fecha_pago=fecha)
+    cambios = {"cuotas_credito": cuotas}
+    todas = all(c["estado"] == "pagado" for c in cuotas)
+    if todas:
+        cambios.update(estado_credito="cobrado", fecha_cobro=max(c["fecha_pago"] for c in cuotas))
+    comprobantes_col.update_one({"_id": comp["_id"]}, {"$set": cambios})
+    if todas:
+        sync_comp_credito_to_payments(comprobante_id, "pagado", cambios["fecha_cobro"])
+    return {"cuotas": cuotas, "cobrado": todas}
 
 
 def get_comprobante_by_id(comprobante_id: str) -> dict | None:
