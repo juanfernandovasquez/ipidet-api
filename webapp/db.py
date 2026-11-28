@@ -1,4 +1,5 @@
 import re as _re
+import time as _time_mod
 import unicodedata as _unicodedata
 from urllib.parse import quote as _quote, urlsplit as _urlsplit
 from datetime import datetime, timezone, date as _date, timedelta as _timedelta
@@ -5479,7 +5480,8 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
                              titulo: str = "", empresa: str = "", fuente: str = "",
                              tags: list = None, es_socio: str = "",
                              zoom_evento_ids: list = None, zoom_asistio: str = "",
-                             asistencias_min: int = 0, actividad: str = "", interes: str = "") -> dict:
+                             asistencias_min: int = 0, actividad: str = "", interes: str = "",
+                             nuevos_evento: str = "") -> dict:
     """Helper interno — construye la query de prospectos con todos los filtros.
 
     asistencias_min: asistió al menos a N eventos. actividad: "30"/"90"/"180" = tuvo un evento en esos
@@ -5494,6 +5496,9 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
         extra.append({"zoom_eventos.evento_fecha": {"$not": {"$gte": _desde_dias(180)}}})
     if interes in INTERES_PUBLICO:
         extra.append(_q_interes(interes))
+    if nuevos_evento:
+        # Quienes llegaron a la base por primera vez con ese evento
+        extra.append({"email": {"$in": sorted(nuevos_por_evento().get(nuevos_evento, {}).get("emails_nuevos", set()))}})
     if extra:
         query["$and"] = extra
     if estado:
@@ -5539,6 +5544,95 @@ def _build_prospectos_query(search: str = "", estado: str = "", ciudad: str = ""
         query["$or"] = [{"nombre": rx}, {"apellido": rx}, {"email": rx},
                         {"empresa": rx}, {"celular": rx}]
     return query
+
+
+# ── Nuevos inscritos por evento ───────────────────────────────────────────────
+# Nuevo = no es socio y la base no sabía de esa persona (ni en Público, ni inscrita a un evento anterior,
+# ni escribió a la cola de correos) hasta un día antes de inscribirse. Se calcula al consultar: no hay
+# campos extra. Lo anterior a que existieran estos datos (24-10-2026 para Público) cuenta como nuevo.
+_TOLERANCIA_NUEVO = _timedelta(days=1)
+_cache_nuevos: dict = {}
+
+
+def _instante(valor):
+    """datetime UTC de lo que guarda cada fuente: datetime, ISO con Z o fecha YYYY-MM-DD."""
+    if isinstance(valor, datetime):
+        return valor if valor.tzinfo else valor.replace(tzinfo=timezone.utc)
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    try:
+        d = datetime.fromisoformat(texto.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def _inscripciones() -> dict[str, list[dict]]:
+    """{evento_id: [{email, cuando, member_id}]} de Zoom, la plataforma y la web."""
+    res: dict[str, list[dict]] = {}
+    for ev in eventos_col.find({"$or": [{"zoom_registrants.0": {"$exists": True}}, {"inscritos.0": {"$exists": True}}]},
+                               {"fecha": 1, "zoom_registrants.email": 1, "zoom_registrants.registrado_at": 1,
+                                "zoom_registrants.member_id": 1, "inscritos.email": 1, "inscritos.member_id": 1,
+                                "inscritos.fecha_ins": 1}):
+        lista = res.setdefault(str(ev["_id"]), [])
+        respaldo = _instante(ev.get("fecha"))
+        for r in ev.get("zoom_registrants") or []:
+            lista.append({"email": (r.get("email") or "").strip().lower(), "member_id": r.get("member_id"),
+                          "cuando": _instante(r.get("registrado_at")) or respaldo})
+        for i in ev.get("inscritos") or []:
+            lista.append({"email": (i.get("email") or "").strip().lower(), "member_id": i.get("member_id"),
+                          "cuando": _instante(i.get("fecha_ins")) or respaldo})
+    for o in _db.web_ordenes.find({"tipo": "evento", "estado": {"$ne": "anulada"}},
+                                  {"evento_id": 1, "email": 1, "member_id": 1, "created_at": 1}):
+        res.setdefault(o["evento_id"], []).append({"email": (o.get("email") or "").strip().lower(),
+                                                   "member_id": o.get("member_id"),
+                                                   "cuando": _instante(o.get("created_at"))})
+    return res
+
+
+def nuevos_por_evento() -> dict[str, dict]:
+    """{evento_id: {inscritos, socios, conocidos, nuevos, emails_nuevos}}. Caché de 5 minutos."""
+    hit = _cache_nuevos.get("v")
+    if hit and _time_mod.monotonic() - hit[0] < 300:
+        return hit[1]
+    inscripciones = _inscripciones()
+    socios = {(e.get("email") or "").strip().lower()
+              for m in members_col.find({}, {"emails.email": 1}) for e in m.get("emails") or []} - {""}
+    primero: dict[str, datetime] = {}
+
+    def ver(email, cuando):
+        if email and cuando and (email not in primero or cuando < primero[email]):
+            primero[email] = cuando
+
+    for lista in inscripciones.values():
+        for r in lista:
+            ver(r["email"], r["cuando"])
+    for p in publico_col.find({}, {"email": 1, "created_at": 1}):
+        ver((p.get("email") or "").strip().lower(), _instante(p.get("created_at")))
+    for c in _db.correos.aggregate([{"$group": {"_id": {"$toLower": "$de_email"}, "f": {"$min": "$fecha"}}}]):
+        ver((c["_id"] or "").strip(), _instante(c.get("f")))
+
+    res: dict[str, dict] = {}
+    for eid, lista in inscripciones.items():
+        vistos, nuevos = set(), set()
+        n_socios = n_conocidos = 0
+        for r in sorted(lista, key=lambda x: x["cuando"] or datetime.max.replace(tzinfo=timezone.utc)):
+            email = r["email"]
+            clave = email or f"socio:{r.get('member_id')}"
+            if clave in vistos or not (email or r.get("member_id")):
+                continue
+            vistos.add(clave)
+            if r.get("member_id") or email in socios:
+                n_socios += 1
+            elif r["cuando"] and primero.get(email, r["cuando"]) >= r["cuando"] - _TOLERANCIA_NUEVO:
+                nuevos.add(email)
+            else:
+                n_conocidos += 1
+        res[eid] = {"inscritos": len(vistos), "socios": n_socios, "conocidos": n_conocidos,
+                    "nuevos": len(nuevos), "emails_nuevos": nuevos}
+    _cache_nuevos["v"] = (_time_mod.monotonic(), res)
+    return res
 
 
 def get_zoom_eventos_disponibles() -> list:

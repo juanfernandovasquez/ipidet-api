@@ -130,6 +130,10 @@
         {% for t in tags %}<input type="hidden" name="tags" value="{{ t }}">{% endfor %}
         {% if zoom_asistio %}<input type="hidden" name="zoom_asistio" value="{{ zoom_asistio }}">{% endif %}
         {% for eid in (zoom_evento_ids or []) %}<input type="hidden" name="zoom_evento_id" value="{{ eid }}">{% endfor %}
+        {% if nuevos_evento %}<input type="hidden" name="nuevos_evento" value="{{ nuevos_evento }}">
+        <div class="w-full flex flex-wrap items-center gap-2 text-sm bg-green-50 border border-green-200 text-green-800 rounded-lg px-3 py-2">
+          <i class="fa-solid fa-user-plus"></i> Nuevos que llegaron con «{{ nuevos_evento_titulo or 'el evento' }}»
+          <a href="/publico" class="ml-auto text-xs underline">Quitar</a></div>{% endif %}
 
         <span class="text-xs text-slate-400 ml-auto whitespace-nowrap">
           {{ total }} prospecto{% if total != 1 %}s{% endif %}

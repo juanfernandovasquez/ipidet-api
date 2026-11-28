@@ -4056,6 +4056,9 @@ async def eventos_list(
     page: int = 1,
 ):
     eventos, total = pdb.get_eventos(search=search, estado=estado, page=page)
+    nuevos = pdb.nuevos_por_evento()
+    for ev in eventos:
+        ev["captacion"] = nuevos.get(str(ev["_id"]))
     # Agrupar por mes
     grupos: dict[str, list] = {}
     for ev in eventos:
@@ -4123,6 +4126,7 @@ async def evento_detalle(request: Request, evento_id: str):
         evento=evento, stats=stats,
         ponentes_sugeridos=pdb.contar_sugeridos_evento(evento_id),
         seguimiento=pdb.seguimiento_comercial_evento(evento_id),
+        captacion=pdb.nuevos_por_evento().get(evento_id),
         web=_sitio_panel.contexto_evento(evento),
         checklist_pre=catalogos.get_catalogo("checklist_evento_pre"),
         checklist_post=catalogos.get_catalogo("checklist_evento_post"),
@@ -5665,14 +5669,16 @@ async def publico_list(
     zoom_evento_id: List[str] = Query(default=[]),
     zoom_asistio: str = "", page: int = 1,
     interes: str = "", asistencias_min: str = "", actividad: str = "",
+    nuevos_evento: str = "",
 ):
+    nuevos_evento = nuevos_evento if _oid_valido(nuevos_evento) else ""
     docs, total = pdb.get_prospectos(search=search, estado=estado, ciudad=ciudad,
                                      titulo=titulo, empresa=empresa, fuente=fuente,
                                      tags=tags, es_socio=es_socio,
                                      zoom_evento_ids=zoom_evento_id,
                                      zoom_asistio=zoom_asistio, page=page,
                                      interes=interes, asistencias_min=_safe_int(asistencias_min, 0),
-                                     actividad=actividad)
+                                     actividad=actividad, nuevos_evento=nuevos_evento)
     for d in docs:  # interés comercial y asistencias, calculados de sus eventos
         d["interes"] = pdb.interes_prospecto(d)
     stats             = pdb.get_publico_stats()
@@ -5692,6 +5698,9 @@ async def publico_list(
         tags=tags, es_socio=es_socio,
         zoom_evento_ids=zoom_evento_id, zoom_asistio=zoom_asistio,
         interes=interes, asistencias_min=asistencias_min, actividad=actividad,
+        nuevos_evento=nuevos_evento,
+        nuevos_evento_titulo=(pdb.eventos_col.find_one({"_id": _oid(nuevos_evento)}, {"titulo": 1}) or {}).get("titulo", "")
+        if nuevos_evento else "",
     ))
 
 
@@ -6251,7 +6260,8 @@ async def api_publico_preview(request: Request):
                                   zoom_evento_ids=zoom_evento_ids,
                                   zoom_asistio=zoom_asistio,
                                   asistencias_min=_safe_int(data.get("asistencias_min"), 0),
-                                  actividad=data.get("actividad", ""), interes=data.get("interes", ""))
+                                  actividad=data.get("actividad", ""), interes=data.get("interes", ""),
+                                  nuevos_evento=data.get("nuevos_evento", "") if _oid_valido(data.get("nuevos_evento")) else "")
     result = [{"_id": str(d.get("_id", "")),
                "nombre": d.get("nombre", ""),
                "apellido": d.get("apellido", ""),

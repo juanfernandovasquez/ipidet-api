@@ -1084,6 +1084,29 @@ window._eventoData = {
 </div>
 {% endif %}
 
+{# Captación: cuántos llegaron a la base por primera vez con este evento (db.nuevos_por_evento) #}
+{% if captacion and captacion.inscritos %}
+{% set eid = evento._id | string %}
+<div class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <h3 class="text-sm font-semibold text-slate-700"><i class="fa-solid fa-user-plus mr-1.5 text-slate-500"></i>Captación del evento</h3>
+    <span class="text-xs text-slate-500">{{ captacion.inscritos }} inscritos sin repetir</span>
+  </div>
+  <div class="grid grid-cols-3 gap-2 text-center mb-3">
+    <div class="rounded-lg border border-green-200 bg-green-50 p-2"><div class="text-xl font-semibold text-green-800 tabular-nums">{{ captacion.nuevos }}</div><div class="text-[11px] text-green-800">Nuevos para IPIDET</div></div>
+    <div class="rounded-lg border border-slate-200 p-2"><div class="text-xl font-semibold text-slate-700 tabular-nums">{{ captacion.conocidos }}</div><div class="text-[11px] text-slate-500">Ya estaban en la base</div></div>
+    <div class="rounded-lg border border-slate-200 p-2"><div class="text-xl font-semibold text-slate-700 tabular-nums">{{ captacion.socios }}</div><div class="text-[11px] text-slate-500">Socios</div></div>
+  </div>
+  <p class="text-xs text-slate-500 mb-2">Nuevo = no es socio y no estaba en Público, en un evento anterior ni en la cola de correos hasta un día antes de inscribirse. Lo anterior al 24/10/2026 casi no tiene registros: ahí casi todos aparecen como nuevos.</p>
+  {% if captacion.nuevos %}
+  <div class="flex flex-wrap gap-2">
+    <a href="/publico?nuevos_evento={{ eid }}" class="btn-ghost text-xs"><i class="fa-solid fa-address-book mr-1"></i>Verlos en Público</a>
+    <a href="/comunicaciones?modo=publico&es_socio=false&zoom_asistio=&nuevos_evento={{ eid }}" class="btn-ghost text-xs"><i class="fa-solid fa-paper-plane mr-1"></i>Escribirles</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {# Seguimiento comercial: a quién escribir después del evento (db.seguimiento_comercial_evento) #}
 {% if seguimiento and (seguimiento.no_socios_asistieron or seguimiento.no_socios_no_asistieron or seguimiento.socios_asistieron or seguimiento.socios_no_asistieron) %}
 {% set eid = evento._id | string %}

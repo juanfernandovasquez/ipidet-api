@@ -93,7 +93,8 @@
 
         <!-- Footer: inscritos + cupo -->
         <div class="flex items-center justify-between text-xs text-slate-400">
-          <span><i class="fa-solid fa-users mr-1"></i>{{ ev.n_inscritos }} inscrito(s)</span>
+          <span><i class="fa-solid fa-users mr-1"></i>{{ ev.n_inscritos }} inscrito(s)
+            {% if ev.captacion and ev.captacion.nuevos %}<span class="badge badge-green ml-1" title="Personas que llegaron a la base por primera vez con este evento">{{ ev.captacion.nuevos }} nuevos</span>{% endif %}</span>
           {% if ev.cupo_max %}
             {% if ev.lleno %}
             <span class="text-red-500 font-medium"><i class="fa-solid fa-ban mr-1"></i>Lleno</span>

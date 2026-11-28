@@ -220,6 +220,10 @@
                   {% for e in eventos_lista %}<option value="{{ e.id }}">{{ e.fecha | format_fecha }} · {{ e.titulo }}</option>{% endfor %}
                 </select>
               </div>
+              <div x-show="filtrosPublico.nuevos_evento" x-cloak class="sm:col-span-2 flex items-center gap-2 text-xs bg-green-50 border border-green-200 text-green-800 rounded-lg px-2 py-1.5">
+                <i class="fa-solid fa-user-plus"></i> Solo los nuevos que llegaron con el evento elegido
+                <button type="button" class="ml-auto underline" @click="filtrosPublico.nuevos_evento = ''">Quitar</button>
+              </div>
               <div x-show="filtrosPublico.zoom_evento_id">
                 <label class="block text-xs font-medium text-slate-600 mb-1">Personas que…</label>
                 <select x-model="filtrosPublico.zoom_asistio" class="input w-full text-sm">
@@ -1620,7 +1624,7 @@ function comunicaciones() {
 
     filtrosPublico: {
       estado: '', ciudad: '', titulo: '', fuente: '', tag: '',
-      zoom_evento_id: '', zoom_asistio: 'true', interes: '', asistencias_min: '', actividad: '',
+      zoom_evento_id: '', zoom_asistio: 'true', interes: '', asistencias_min: '', actividad: '', nuevos_evento: '',
       es_socio: 'false',   // Público = quienes aún no son socios, salvo que se marque lo contrario
     },
 
@@ -1720,7 +1724,7 @@ function comunicaciones() {
       const q = new URLSearchParams(location.search);
       if (q.get('modo') === 'publico') {
         this.filtros.modo = 'publico';
-        ['zoom_evento_id', 'zoom_asistio', 'interes', 'asistencias_min', 'actividad', 'estado', 'es_socio']
+        ['zoom_evento_id', 'zoom_asistio', 'interes', 'asistencias_min', 'actividad', 'estado', 'es_socio', 'nuevos_evento']
           .forEach(k => { if (q.has(k)) this.filtrosPublico[k] = q.get(k); });
       } else if (q.get('evento_id')) {
         this.filtros.evento_id = q.get('evento_id');
