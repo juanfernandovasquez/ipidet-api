@@ -106,6 +106,8 @@ from webapp.vendor import router as _vendor_router  # Alpine, Tailwind, etc. des
 app.include_router(_vendor_router)
 from webapp import organizacion as _org  # sección IPIDET: datos, logo, firma, consejo
 app.include_router(_org.router)
+from webapp import fotos as _fotos  # foto de perfil de los socios
+app.include_router(_fotos.router)
 from webapp.web_publica import router as _web_router, email_valido  # API pública para ipidet.org
 app.include_router(_web_router)
 from webapp.sitio import panel as _sitio_panel, rutas as _sitio_rutas  # web propia (/web) y su administración

@@ -68,9 +68,12 @@ CATALOGOS: dict[str, dict] = {
     "requisitos_admision":  {"titulo": "Requisitos de admisión",   "formato": "id_label",
                              "ayuda": "Lo que se marca en la ficha de cada postulante (documentos, entrevista, pago de ingreso…)."},
     "cargos_consejo":       {"titulo": "Cargos del consejo directivo", "formato": "texto",
-                             "ayuda": "Cargos que se eligen en la sección IPIDET → Consejo directivo, en el orden en que se muestran.",
-                             "inicial": ["Presidente(a)", "Vicepresidente(a)", "Secretario(a)", "Tesorero(a)",
-                                         "Vocal", "Director(a) académico(a)"]},
+                             "ayuda": "Cargos del consejo, en el orden en que se muestran en IPIDET y consejo y en la web. "
+                                      "Repite un cargo para tener varias plazas (por ejemplo, tres «Vocal»).",
+                             "repetibles": True,
+                             # Los de ipidet.org/consejo-directivo (2026-11-28)
+                             "inicial": ["Presidente", "Vicepresidente", "Secretaria", "Tesorero",
+                                         "Vocal", "Vocal", "Vocal"]},
     "tratamientos":         {"titulo": "Tratamiento por título",   "formato": "valor_label",
                              "ayuda": "Abreviatura que va antes del apellido en los correos ({{tratamiento}}). Valor = título tal como está en el padrón; etiqueta = abreviatura.",
                              "inicial": [{"valor": "Contador", "label": "C.P.C."}, {"valor": "Contadora", "label": "C.P.C."},
@@ -337,7 +340,7 @@ def set_catalogo(key: str, valores: list) -> list:
     if meta["formato"] == "texto":
         for v in valores:
             v = v.strip() if isinstance(v, str) else ""
-            if v and v not in vistos:
+            if v and (meta.get("repetibles") or v not in vistos):
                 vistos.add(v)
                 limpio.append(v)
     else:

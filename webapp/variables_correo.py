@@ -26,6 +26,7 @@ VARIABLES: list[tuple[str, str]] = [
     ("periodos_adeudados", "Todos los períodos con deuda: «2025 y 2026»"),
     ("deuda_total",        "Suma de lo que debe en todos los períodos"),
     ("medios_pago",        "Medios de pago (catálogo de Configuración)"),
+    ("cuentas_pago",       "Cuentas de IPIDET para pagar, una por línea (IPIDET y consejo → Cuentas)"),
     ("org_email",          "Email de contacto de la organización"),
     ("org_telefono",       "Teléfono de la organización"),
     ("org_web",            "Sitio web de la organización"),
@@ -48,6 +49,15 @@ def _titulo_propio(texto: str) -> str:
 
 def _soles(monto: float) -> str:
     return f"S/ {monto:,.2f}"  # mismo formato que el filtro `soles` de la web
+
+
+def _cuentas() -> list[str]:
+    from webapp.sitio import pagos
+    return pagos.texto_cuentas()
+
+
+def _esc(texto: str) -> str:
+    return texto.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _lista(items: list[str]) -> str:
@@ -93,6 +103,7 @@ def contexto(member_ids: list[str], periodo: str | None) -> dict[str, dict]:
     comunes = {
         "periodo":        periodo,
         "medios_pago":    _lista(catalogos.get_catalogo("medios_pago")),
+        "cuentas_pago":   "<br>".join(_esc(x) for x in _cuentas()),
         "org_email":      org.get("email", ""),
         "org_telefono":   org.get("telefono", ""),
         "org_web":        org.get("web", ""),

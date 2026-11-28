@@ -133,7 +133,7 @@ def activas_con(email: str) -> list[dict]:
                                    "estado": {"$ne": "inhabilitado"},
                                    # Lo que llegó por el portal de WordPress no prueba identidad.
                                    "origen": {"$ne": "portal"}}}},
-        {"member_id": 1, "apellidos": 1, "nombres": 1, "titulo": 1, "tipo_socio": 1, "dni": 1,
+        {"member_id": 1, "apellidos": 1, "nombres": 1, "titulo": 1, "tipo_socio": 1, "dni": 1, "foto_at": 1,
          "centro_trabajo": 1, "celular": 1, "ubicacion": 1, "emails": 1, "fecha_ingreso": 1},
     ).limit(3))
 

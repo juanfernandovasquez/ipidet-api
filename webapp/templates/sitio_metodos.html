@@ -1,45 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Medios de pago de la web — IPIDET{% endblock %}
 {% block heading %}Sitio web{% endblock %}
-{% macro campos(m) %}
-<input type="hidden" name="id" value="{{ m.id or '' }}">
-<div><label class="block text-xs text-slate-600 mb-1">Tipo</label><select name="tipo" class="input w-full text-sm">{% for k, v in tipos.items() %}<option value="{{ k }}" {% if m.tipo == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
-<div><label class="block text-xs text-slate-600 mb-1">Nombre que ve la persona</label><input name="nombre" maxlength="80" value="{{ m.nombre or '' }}" class="input w-full text-sm" required></div>
-<div><label class="block text-xs text-slate-600 mb-1">Banco</label><input name="banco" list="bancos-web" maxlength="80" value="{{ m.banco or '' }}" class="input w-full text-sm"></div>
-<div><label class="block text-xs text-slate-600 mb-1">Titular</label><input name="titular" maxlength="160" value="{{ m.titular or titular }}" class="input w-full text-sm"></div>
-<div><label class="block text-xs text-slate-600 mb-1">Número de cuenta o celular</label><input name="numero" maxlength="40" value="{{ m.numero or '' }}" class="input w-full text-sm font-mono" autocomplete="off"></div>
-<div><label class="block text-xs text-slate-600 mb-1">CCI (20 dígitos)</label><input name="cci" maxlength="30" value="{{ m.cci or '' }}" class="input w-full text-sm font-mono" autocomplete="off"></div>
-<div><label class="block text-xs text-slate-600 mb-1">Moneda</label><select name="moneda" class="input w-full text-sm">{% for k, v in monedas.items() %}<option value="{{ k }}" {% if m.moneda == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
-<div class="md:col-span-2"><label class="block text-xs text-slate-600 mb-1">Instrucciones</label><textarea name="instrucciones" rows="2" maxlength="600" class="input w-full text-sm">{{ m.instrucciones or '' }}</textarea></div>
-<div class="flex flex-wrap items-center gap-4 md:col-span-3 text-sm">
-  {% for k, v in para.items() %}<label class="flex items-center gap-1.5"><input type="checkbox" name="para" value="{{ k }}" {% if not m or k in (m.para or []) %}checked{% endif %}> {{ v }}</label>{% endfor %}
-  <label class="flex items-center gap-1.5"><input type="checkbox" name="activo" value="1" {% if not m or m.activo %}checked{% endif %}> Visible en la web</label>
-  {% if es_admin %}<button class="btn-primary text-sm ml-auto">Guardar</button>{% endif %}
-</div>
-{% endmacro %}
+
 {% block content %}
 {% include "_tabs_sitio.html" %}
-<datalist id="bancos-web">{% for b in bancos %}<option value="{{ b }}">{% endfor %}</datalist>
-{% if not es_admin %}<p class="text-xs text-slate-500 mb-3">Solo un administrador puede cambiar los medios de pago.</p>{% endif %}
-<div class="space-y-3">
-{% for m in metodos %}
-<details class="bg-white rounded-xl border border-slate-200 p-4">
-  <summary class="cursor-pointer text-sm"><span class="font-medium">{{ m.nombre }}</span>
-    <span class="text-slate-500">· {{ tipos[m.tipo] }}{% if m.numero %} · <span class="font-mono">{{ m.numero }}</span>{% endif %}</span>
-    {% if m.activo %}<span class="badge badge-green ml-1">Visible</span>{% else %}<span class="badge badge-gray ml-1">Oculto</span>{% endif %}
-    {% if m.moneda != 'PEN' %}<span class="badge badge-amber ml-1">No se ofrece: la web cobra en soles</span>{% endif %}</summary>
-  <form method="post" action="/sitio/metodos/guardar" class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4" data-confirm="¿Guardar? Revisa el número dígito por dígito: ahí depositarán las personas.">{{ campos(m) }}</form>
-  {% if es_admin %}<form method="post" action="/sitio/metodos/{{ m.id }}/eliminar" class="mt-3" data-confirm="¿Eliminar este medio de pago?"><button class="btn-danger text-sm">Eliminar</button></form>{% endif %}
-</details>
-{% else %}<p class="text-sm text-slate-400 py-4">Todavía no hay medios de pago. Sin ellos, la web pide escribir al equipo.</p>{% endfor %}
-
-{% if es_admin %}
-<details class="bg-white rounded-xl border border-slate-200 p-4" {% if not metodos %}open{% endif %}>
-  <summary class="cursor-pointer text-sm font-medium"><i class="fa-solid fa-plus text-slate-400 mr-1"></i> Agregar medio de pago</summary>
-  <form method="post" action="/sitio/metodos/guardar" class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4" data-confirm="¿Guardar? Revisa el número dígito por dígito: ahí depositarán las personas.">{{ campos({}) }}</form>
-</details>
-{% endif %}
-
+{% with volver = "/sitio/metodos" %}{% include "_cuentas_ipidet.html" %}{% endwith %}
+<div class="space-y-3 mt-3">
 <section class="bg-white rounded-xl border border-slate-200 p-4">
   <h2 class="text-sm font-semibold text-slate-700 mb-2"><i class="fa-solid fa-credit-card text-slate-400 mr-1.5"></i> Pasarelas de pago</h2>
   {% for p in pasarelas.values() %}<div class="flex flex-wrap items-center gap-2 text-sm"><span>{{ p.nombre }}</span><span class="badge badge-gray">Aún no disponible</span><span class="text-xs text-slate-500">{{ p.nota }}</span></div>{% endfor %}

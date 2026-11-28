@@ -9,7 +9,7 @@ from datetime import date
 from urllib.parse import urlencode
 
 from bson import ObjectId
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 
 from config import catalogos
@@ -159,22 +159,27 @@ async def metodo_guardar(request: Request, tareas: BackgroundTasks):
     try:
         m = pagos.guardar(datos, datos.get("id", ""))
     except ValueError as e:
-        return _volver("/sitio/metodos", error=str(e))
+        return _volver(_destino(datos.get("volver")), error=str(e))
     fin = (m.get("numero") or m.get("cci") or "")[-4:]
     tareas.add_task(avisos.equipo, f"🏦 Cambió un medio de pago de la web: {m['nombre']} (termina en {fin or 's/n'}) · "
                                    f"{_usuario(request)}. Si no lo esperabas, revísalo ya.")
-    resp = _volver("/sitio/metodos", ok="Medio de pago guardado.")
+    resp = _volver(_destino(datos.get("volver")), ok="Cuenta guardada.")
     resp.background = tareas
     return resp
 
 
+def _destino(volver) -> str:
+    """Las cuentas se editan aquí y en IPIDET y consejo: vuelve a donde estaba."""
+    return "/organizacion" if volver == "/organizacion" else "/sitio/metodos"
+
+
 @router.post("/sitio/metodos/{metodo_id}/eliminar")
-def metodo_eliminar(request: Request, metodo_id: str, tareas: BackgroundTasks):
+def metodo_eliminar(request: Request, metodo_id: str, tareas: BackgroundTasks, volver: str = Form("")):
     _solo_admin(request)
     m = pagos.por_id(metodo_id)
     pagos.eliminar(metodo_id)
     tareas.add_task(avisos.equipo, f"🏦 Se quitó un medio de pago de la web: {(m or {}).get('nombre', metodo_id)} · {_usuario(request)}")
-    resp = _volver("/sitio/metodos", ok="Medio de pago eliminado.")
+    resp = _volver(_destino(volver), ok="Cuenta eliminada.")
     resp.background = tareas
     return resp
 

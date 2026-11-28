@@ -18,7 +18,7 @@ from fastapi.templating import Jinja2Templates
 
 from config import catalogos
 from webapp import db as pdb
-from webapp import organizacion, tributos
+from webapp import fotos, organizacion, tributos
 from webapp.sitio import avisos, config, cuentas, eventos, ordenes, pagos
 from webapp.web_publica import _TEMAS_CONTACTO, _ficha_publico, _ip, dato_persona, email_valido
 
@@ -100,13 +100,16 @@ class RutaSitio(APIRoute):
                     '<!doctype html><html lang="es"><meta charset="utf-8"><title>IPIDET</title>'
                     "<p>Esta página todavía no está publicada.</p>", status_code=404), False)
             if request.method != "GET":
-                archivo = ruta.endswith("/informar")
+                foto = ruta == f"{BASE}/api/foto"
+                archivo = ruta.endswith("/informar") or foto
                 tipo = request.headers.get("content-type", "").split(";")[0].strip().lower()
                 if not _mismo_origen(request) or tipo != ("multipart/form-data" if archivo else "application/json"):
                     return _asegurar(_error("Solicitud no válida.", 403), publicada)
                 largo = request.headers.get("content-length", "")
-                if not largo.isdigit() or int(largo) > (MAX_CUERPO if archivo else 50_000):
-                    return _asegurar(_error("El envío es demasiado grande. La constancia admite hasta 4 MB.", 413), publicada)
+                tope = fotos.MAX_ARCHIVO + 200_000 if foto else MAX_CUERPO if archivo else 50_000
+                if not largo.isdigit() or int(largo) > tope:
+                    return _asegurar(_error("El envío es demasiado grande. " + ("La foto admite hasta 8 MB." if foto
+                                            else "La constancia admite hasta 4 MB."), 413), publicada)
             try:
                 resp = await original(request)
             except ordenes.Invalido as e:
@@ -170,7 +173,9 @@ def _consejo() -> list[dict]:
     vigente = organizacion.consejo(incluir_anteriores=False)["vigente"]
     if vigente:
         return [{"nombre": d["nombre"].title() if d["nombre"].isupper() else d["nombre"],
-                 "cargo": d.get("cargo", ""), "foto": config.url_segura(d.get("foto_url", ""))} for d in vigente]
+                 "cargo": d.get("cargo", ""),
+                 "foto": (f"{BASE}/consejo/{quote(d['member_id'], safe='')}/foto?v={d['foto_at']}" if d.get("foto_at")
+                          else config.url_segura(d.get("foto_url", "")))} for d in vigente]
     return [{"nombre": n, "cargo": c, "foto": config.url_segura(f)}
             for n, c, f in config.cargar().get("consejo_respaldo") or []]
 
@@ -192,6 +197,14 @@ def nosotros(request: Request):
     consejo = _consejo()
     return _pagina(request, "nosotros.html", "nosotros", consejo=consejo,
                    presidencia=next((p for p in consejo if p["cargo"].lower().startswith("president")), None))
+
+
+@router.get("/consejo/{member_id}/foto")
+def foto_consejo(member_id: str):
+    """Pública solo la foto de quien está hoy en el consejo directivo."""
+    if not any(d.get("member_id") == member_id for d in organizacion.consejo(incluir_anteriores=False)["vigente"]):
+        raise HTTPException(404)
+    return fotos.respuesta(member_id, "public, max-age=3600")
 
 
 @router.get("/tramites")
@@ -389,6 +402,38 @@ def cuenta(request: Request):
                    tramites=[o for o in mias if o.get("activa") and o.get("estado") != "confirmada"],
                    mis_eventos=_eventos_cuenta(p, mias), comprobantes=_comprobantes_de(p, mias),
                    estados=ordenes.ESTADOS)
+
+
+@router.get("/cuenta/foto")
+def mi_foto(request: Request):
+    p = cuentas.persona(request)
+    if not p or not p.get("member_id"):
+        raise HTTPException(404)
+    return fotos.respuesta(p["member_id"], "private, max-age=600")
+
+
+@router.post("/api/foto")
+def api_foto(request: Request, archivo: UploadFile | None = File(None)):
+    """El socio sube su foto de perfil. Se vuelve a dibujar como JPEG: no queda nada más que la imagen."""
+    p = _con_cuenta(request)
+    if not p.get("member_id"):
+        raise HTTPException(403, "La foto de perfil es para asociados.")
+    _limite(f"foto:{p['id']}", 10)
+    crudo = archivo.file.read(fotos.MAX_ARCHIVO + 1) if archivo and archivo.filename else b""
+    try:
+        fotos.guardar(p["member_id"], fotos.procesar(crudo), "web", p["email"])
+    except ValueError as e:
+        return _error(str(e))
+    return _bien(ir=f"{BASE}/cuenta")
+
+
+@router.post("/api/foto/quitar")
+def api_foto_quitar(request: Request):
+    p = _con_cuenta(request)
+    if not p.get("member_id"):
+        raise HTTPException(403, "La foto de perfil es para asociados.")
+    fotos.quitar(p["member_id"])
+    return _bien(ir=f"{BASE}/cuenta")
 
 
 @router.get("/pagar/{orden_id}")

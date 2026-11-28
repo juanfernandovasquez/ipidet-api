@@ -494,6 +494,7 @@ Base: `ipidet_agent` — URI en `.env` como `MONGODB_URI`. En Atlas, el cliente 
 | `redes_posts_col` | `redes_posts` | `webapp/db.py` | Posts publicados en RRSS |
 | `redes_cronograma_col` | `redes_cronograma` | `webapp/db.py` | Calendario de publicaciones planificadas |
 | `users_col` | `users` | `webapp/auth.py` | Usuarios de la plataforma web |
+| `fotos_col` | `members_fotos` | `webapp/fotos.py` | Foto de perfil de cada socio (bytes JPEG 512 px; `member_id` único) |
 | `correos_col` | `correos` | `webapp/agente_db.py` | Cola del agente de correos: un documento por correo recibido (ver 7.13) |
 | `_blocked` | `blocked_senders` | `webapp/agente_db.py` | Remitentes bloqueados desde la cola o con /bloquear en Telegram |
 | `archivos_col` | `correos_archivos` | `webapp/agente_db.py` | Adjuntos e imágenes que el equipo agrega a una respuesta (bytes; `correo_id`, `tipo` adjunto\|imagen, `token`) |
@@ -574,6 +575,7 @@ comentarios      [{
                    fecha: "YYYY-MM-DD HH:MM"
                  }]
 linkedin         string    opcional; URL normalizada por db.normalizar_linkedin
+foto_at          int       si tiene foto de perfil (marca para refrescar la caché); foto_origen panel|web|linkedin
 created_at       datetime
 ```
 
@@ -1950,7 +1952,9 @@ Colección `postulantes`: `prospecto_id`, `etapa`, `etapa_desde`, `tipo_socio`, 
 - **Datos fiscales** (`catalogos.CAMPOS_FISCALES`: RUC, razón social, nombre comercial, dirección fiscal, distrito, provincia, departamento, ubigeo) en `config.organizacion`. `catalogos.get_datos_fiscales()` es la única fuente del emisor para el PDF (`pdf_builder`) y SUNAT (`sunat_client._ipidet_company`): base de datos y, si está vacío, las variables `IPIDET_*` de Render. **El RUC siempre es el de Render** porque está atado al token de APISPERU; si el de la base difiere, la página lo avisa.
 - **Contacto y redes** (`CAMPOS_ORGANIZACION`): email, web, teléfono, ciudad, firmante, LinkedIn, Instagram, Facebook, YouTube. `set_organizacion` guarda solo los campos que recibe.
 - **Logo y firma**: bytes en `config.organizacion_logo` / `organizacion_firma` (`catalogos.get_imagen_org`). Si no hay, se usan `static/logo.png` y `mockup_assets/firma_presidenta.png`. El logo es público (`/org/logo`, va en correos); la firma solo con sesión (`/organizacion/firma`). Los usan `constancia.py`, `pdf_builder.py` y `mailer.logo_inline_att()`.
-- **Consejo directivo**: colección `consejo_directivo` (`member_id`, `cargo`, `desde`, `hasta`, `notas`). Unida al padrón por `member_id` (R8): nombre, título, contacto y estado de pago del período salen de `members` y `payments` al mostrar. Vigente = `desde ≤ hoy` y sin `hasta` o `hasta ≥ hoy`. Cerrar un cargo (`/terminar`) lo pasa a «Gestiones anteriores»; eliminar es solo para errores. «Firmante» copia nombre y cargo al firmante de constancias. Los cargos son el catálogo `cargos_consejo`. La ficha del socio muestra sus cargos (`organizacion.cargos_de_socio`).
+- **Foto de perfil** (`webapp/fotos.py`): la sube el equipo en la ficha del socio o el socio en «Mi cuenta» de la web; o se trae de LinkedIn pegando el enlace de la **imagen** (solo `media.licdn.com`, sin redirecciones). LinkedIn no deja leer perfiles automáticamente y el enlace caduca, por eso se descarga y se guarda. Toda imagen se redibuja como JPEG cuadrado (sin metadatos). Privada: en el panel con sesión; en la web, el socio ve la suya y el público solo la de quien está hoy en el consejo (`/web/consejo/{member_id}/foto`).
+- **Cuentas de IPIDET**: sección en `/organizacion` y en Sitio web → Medios de pago; es una sola lista (`config.sitio_metodos_pago`, `webapp/sitio/pagos.py`, parcial `_cuentas_ipidet.html`). La usan la web para cobrar, la variable `{{cuentas_pago}}` de los correos (`pagos.texto_cuentas`) y el agente como contexto de apoyo (nunca fuente autorizada: un número de cuenta siempre pasa por revisión). Solo un administrador la cambia.
+- **Consejo directivo**: colección `consejo_directivo` (`member_id`, `cargo`, `desde`, `hasta`, `notas`). Unida al padrón por `member_id` (R8): nombre, título, contacto y estado de pago del período salen de `members` y `payments` al mostrar. Vigente = `desde ≤ hoy` y sin `hasta` o `hasta ≥ hoy`. Cerrar un cargo (`/terminar`) lo pasa a «Gestiones anteriores»; eliminar es solo para errores. «Firmante» copia nombre y cargo al firmante de constancias. Los cargos son el catálogo `cargos_consejo` (repetible: «Vocal» tres veces = tres plazas; por defecto, los de ipidet.org). La pantalla muestra una fila por plaza, libre u ocupada, en el orden del catálogo; quien tiene un cargo fuera del catálogo va al final. La ficha del socio muestra sus cargos (`organizacion.cargos_de_socio`).
 
 ---
 

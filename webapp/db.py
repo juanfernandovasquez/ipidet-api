@@ -6588,6 +6588,7 @@ def _ensure_indexes() -> None:
     from pymongo import ASCENDING as A, DESCENDING as D
     indices = [
         (members_col, [("member_id", A)], {"unique": True}),
+        (_db.members_fotos, [("member_id", A)], {"unique": True}),
         (members_col, [("emails.email", A)], {}),
         (members_col, [("apellidos", A)], {}),
         (members_col, [("estado", A)], {}),

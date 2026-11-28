@@ -89,6 +89,27 @@ def guardar(datos: dict, metodo_id: str = "") -> dict:
     return m
 
 
+def texto_cuentas(solo_activas: bool = True) -> list[str]:
+    """Una línea por cuenta: «BCP · Cuenta corriente en soles N.º … · CCI … · Titular: …». Para correos y el agente."""
+    lineas = []
+    for m in todos():
+        if solo_activas and not m.get("activo"):
+            continue
+        partes = [m.get("nombre") or TIPOS.get(m.get("tipo"), "")]
+        if m.get("banco") and m["banco"].lower() not in partes[0].lower():
+            partes.append(m["banco"])
+        if m.get("numero"):
+            partes.append(("Celular " if m.get("tipo") == "billetera" else "N.º ") + m["numero"])
+        if m.get("cci"):
+            partes.append("CCI " + m["cci"])
+        if m.get("titular"):
+            partes.append("Titular: " + m["titular"])
+        if m.get("moneda") == "USD":
+            partes.append("en dólares")
+        lineas.append(" · ".join(p for p in partes if p))
+    return lineas
+
+
 def eliminar(metodo_id: str) -> None:
     db.config.update_one({"_id": _ID}, {"$pull": {"valores": {"id": metodo_id}}})
     catalogos.invalidar()

@@ -10,6 +10,7 @@ from starlette.responses import JSONResponse
 MAX_CUERPO_PUBLICO = 1_000_000          # lo que se acepta sin sesión
 MAX_CUERPO_CONSTANCIA = 4_200_000       # /web/api/ordenes/<id>/informar
 _RE_CONSTANCIA = re.compile(r"/web/api/ordenes/[0-9a-f]{24}/informar")
+MAX_CUERPO_FOTO = 8_200_000             # /web/api/foto (fotos de celular)
 _CABECERAS = {
     "Strict-Transport-Security": "max-age=31536000",
     "X-Content-Type-Options": "nosniff",
@@ -92,7 +93,8 @@ class Seguridad:
             await self.app(scope, receive, enviar)
             return
 
-        tope = MAX_CUERPO_CONSTANCIA if _RE_CONSTANCIA.fullmatch(ruta) else MAX_CUERPO_PUBLICO
+        tope = (MAX_CUERPO_CONSTANCIA if _RE_CONSTANCIA.fullmatch(ruta)
+                else MAX_CUERPO_FOTO if ruta == "/web/api/foto" else MAX_CUERPO_PUBLICO)
         largo = cab.get("content-length", "")
         excedido = largo.isdigit() and int(largo) > tope
         trozos: list[bytes] = []

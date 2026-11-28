@@ -165,7 +165,14 @@ def _apoyo() -> dict:
                                for f in db.faqs.find({"active": True, "autorizada": {"$ne": True}}).limit(60)],
         "comunicaciones": _comunicaciones(),
         "cronograma_de_redes": _cronograma(),
+        "cuentas_de_ipidet_para_pagar": _cuentas(),
     }
+
+
+def _cuentas() -> list[str]:
+    """Cuentas de IPIDET y consejo. Apoyo, no fuente autorizada: un número de cuenta siempre lo revisa el equipo."""
+    from webapp.sitio import pagos
+    return pagos.texto_cuentas()
 
 
 def conocimiento() -> tuple[str, dict[str, dict]]:
@@ -209,7 +216,8 @@ def cuenta_del_socio(member_id: str) -> dict:
                      "el equipo lo revisa antes de enviar.",
             "estado_del_socio": socio.get("estado") or "", "tipo_socio": socio.get("tipo_socio") or "",
             "pagos_por_periodo": pagos,
-            "medios_de_pago": catalogos.get_catalogo("medios_pago")}
+            "medios_de_pago": catalogos.get_catalogo("medios_pago"),
+            "cuentas_de_ipidet": _cuentas()}
 
 
 def remitente(correo: dict, hilo: list[dict]) -> tuple[dict, dict]:

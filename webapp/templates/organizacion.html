@@ -2,6 +2,84 @@
 {% block title %}IPIDET y consejo directivo — IPIDET{% endblock %}
 {% block heading %}IPIDET y consejo directivo{% endblock %}
 
+{% macro buscador() %}
+<div class="relative min-w-0" x-data="{ q: '', res: [], sel: '',
+          async buscar() { if (this.q.length < 2) { this.res = []; return; }
+            const r = await fetch('/api/members?search=' + encodeURIComponent(this.q));
+            this.res = ((await r.json()).members || []).slice(0, 8); } }">
+  <input type="text" class="input w-full text-sm" placeholder="Buscar socio por nombre o N.º" x-model="q"
+         @input.debounce.350ms="buscar()" autocomplete="off" required>
+  <input type="hidden" name="member_id" :value="sel">
+  <div x-show="res.length" x-cloak class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+    <template x-for="m in res" :key="m.member_id">
+      <button type="button" class="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+              @click="sel = m.member_id; q = (m.apellidos || '') + ' ' + (m.nombres || '') + ' · ' + m.member_id; res = []">
+        <span x-text="(m.apellidos || '') + ' ' + (m.nombres || '')"></span>
+        <span class="text-xs text-slate-400" x-text="m.member_id"></span>
+      </button>
+    </template>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro fila_directivo(d) %}
+<tr class="border-b border-slate-50 align-top">
+  <td class="py-2.5 pr-4 font-medium text-slate-800 whitespace-nowrap">
+    {{ d.cargo }}
+    {% if org.firmante_nombre and d.nombre and org.firmante_nombre | lower == d.nombre | lower %}
+    <span class="badge badge-blue ml-1" title="Firma las constancias">Firmante</span>{% endif %}
+  </td>
+  <td class="py-2.5 pr-4">
+    <div class="flex items-start gap-2.5">
+    {% if d.foto_at %}<img src="/members/{{ d.member_id }}/foto?v={{ d.foto_at }}" alt="" class="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200">
+    {% elif d.foto_url %}<img src="{{ d.foto_url }}" alt="" class="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200">
+    {% else %}<span class="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0" title="Sin foto"><i class="fa-solid fa-user text-xs"></i></span>{% endif %}
+    <div class="min-w-0">
+    <a href="/members/{{ d.member_id }}" class="text-blue-700 hover:underline font-medium">{{ d.nombre }}</a>
+    <div class="text-xs text-slate-500">{{ d.titulo }}{% if d.titulo and d.centro_trabajo %} · {% endif %}{{ d.centro_trabajo }}</div>
+    {% if not d.existe_socio %}<span class="badge badge-red">No está en el padrón</span>
+    {% elif d.estado_socio and d.estado_socio != 'activo' %}<span class="badge badge-amber">Socio {{ d.estado_socio }}</span>{% endif %}
+    {% if d.existe_socio %}
+    <details class="mt-1">
+      <summary class="text-xs text-blue-600 cursor-pointer">{{ 'Cambiar foto' if d.foto_at or d.foto_url else 'Agregar foto' }}</summary>
+      <form method="post" action="/members/{{ d.member_id }}/foto" enctype="multipart/form-data" class="mt-1 space-y-1.5 w-72 max-w-full">
+        <input type="hidden" name="volver" value="/organizacion">
+        <input type="file" name="archivo" accept="image/jpeg,image/png,image/webp" class="text-xs w-full">
+        <input type="url" name="enlace" class="input text-xs w-full" placeholder="o enlace de la imagen de LinkedIn (media.licdn.com)">
+        <button class="btn-ghost text-xs">Guardar foto</button>
+      </form>
+    </details>
+    {% endif %}
+    </div></div>
+  </td>
+  <td class="py-2.5 pr-4 text-xs text-slate-600">
+    {% if d.email %}<div><i class="fa-regular fa-envelope text-slate-400 mr-1"></i>{{ d.email }}</div>{% endif %}
+    {% if d.celular %}<div><i class="fa-solid fa-phone text-slate-400 mr-1"></i>{{ d.celular }}</div>{% endif %}
+    {% if d.linkedin %}<a href="{{ d.linkedin }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline"><i class="fa-brands fa-linkedin mr-1"></i>LinkedIn</a>{% endif %}
+  </td>
+  <td class="py-2.5 pr-4">
+    {% set lbl = status_labels.get(d.pago_periodo) %}
+    {% if lbl %}<span class="badge badge-{{ lbl[1] }}">{{ lbl[0] }}</span>{% else %}<span class="text-xs text-slate-400">Sin registro</span>{% endif %}
+  </td>
+  <td class="py-2.5 pr-4 text-xs text-slate-600 whitespace-nowrap">
+    {{ d.desde | format_fecha }}{% if d.hasta %} – {{ d.hasta | format_fecha }}{% else %} – a la fecha{% endif %}
+  </td>
+  <td class="py-2.5 text-right whitespace-nowrap">
+    <div class="flex justify-end gap-1">
+      <form method="post" action="/organizacion/consejo/{{ d._id }}/firmante">
+        <button class="btn-ghost text-xs" title="Usar como firmante de las constancias"><i class="fa-solid fa-signature"></i></button>
+      </form>
+      <form method="post" action="/organizacion/consejo/{{ d._id }}/terminar" data-confirm="¿Cerrar este cargo hoy? Pasará a gestiones anteriores y la plaza queda libre.">
+        <button class="btn-ghost text-xs" title="Terminar el cargo hoy"><i class="fa-solid fa-flag-checkered"></i></button>
+      </form>
+      <form method="post" action="/organizacion/consejo/{{ d._id }}/delete" data-confirm="¿Eliminar este registro? Si solo terminó su gestión, mejor ciérralo.">
+        <button class="btn-ghost text-xs text-red-600" title="Eliminar (fue un error)"><i class="fa-solid fa-trash"></i></button>
+      </form>
+    </div>
+  </td>
+</tr>
+{% endmacro %}
+
 {% block content %}
 {% include "_aviso_query.html" %}
 <div class="space-y-5 max-w-6xl">
@@ -13,34 +91,16 @@
         <i class="fa-solid fa-people-group text-slate-400 mr-1.5"></i> Consejo directivo vigente
       </h2>
       <button type="button" class="btn-primary text-sm" @click="nuevo = !nuevo">
-        <i class="fa-solid fa-plus mr-1"></i> Agregar directivo
+        <i class="fa-solid fa-plus mr-1"></i> Otro cargo
       </button>
     </div>
-    <p class="text-xs text-slate-500 mb-4">Cada directivo es un socio: nombre, título, contacto y estado de pago salen de su ficha del padrón, así que se mantienen al día solos.
-      {% if not cargos %}Carga los cargos en <a href="/configuracion" class="text-blue-600 hover:underline">Configuración → Cargos del consejo directivo</a> para elegirlos de una lista.{% endif %}</p>
+    <p class="text-xs text-slate-500 mb-4">Una fila por cargo: busca al socio que lo ocupa y pulsa «Asignar». Nombre, título, contacto, foto y estado de pago salen de su ficha del padrón.
+      Los cargos se editan en <a href="/configuracion" class="text-blue-600 hover:underline">Configuración → Cargos del consejo directivo</a>.</p>
 
-    {# Alta: buscar socio y elegir cargo #}
+    {# Otro cargo (fuera de la lista de cargos) #}
     <form method="post" action="/organizacion/consejo/nuevo" x-show="nuevo" x-cloak
-          class="mb-5 p-4 rounded-lg border border-slate-200 bg-slate-50 grid grid-cols-1 md:grid-cols-6 gap-3 items-end"
-          x-data="{ q: '', res: [], sel: '', nombre: '',
-                    async buscar() { if (this.q.length < 2) { this.res = []; return; }
-                      const r = await fetch('/api/members?search=' + encodeURIComponent(this.q));
-                      this.res = ((await r.json()).members || []).slice(0, 8); } }">
-      <div class="md:col-span-2 relative">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Socio</label>
-        <input type="text" class="input w-full text-sm" placeholder="Nombre, apellido o N.º de registro" x-model="q"
-               @input.debounce.350ms="buscar()" autocomplete="off">
-        <input type="hidden" name="member_id" :value="sel">
-        <div x-show="res.length" x-cloak class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-          <template x-for="m in res" :key="m.member_id">
-            <button type="button" class="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
-                    @click="sel = m.member_id; q = (m.apellidos || '') + ' ' + (m.nombres || '') + ' · ' + m.member_id; res = []">
-              <span x-text="(m.apellidos || '') + ' ' + (m.nombres || '')"></span>
-              <span class="text-xs text-slate-400" x-text="m.member_id"></span>
-            </button>
-          </template>
-        </div>
-      </div>
+          class="mb-5 p-4 rounded-lg border border-slate-200 bg-slate-50 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+      <div class="md:col-span-2"><label class="block text-xs font-medium text-slate-600 mb-1">Socio</label>{{ buscador() }}</div>
       <div>
         <label class="block text-xs font-medium text-slate-600 mb-1">Cargo</label>
         <input type="text" name="cargo" class="input w-full text-sm" list="lista-cargos" required>
@@ -49,22 +109,13 @@
         <label class="block text-xs font-medium text-slate-600 mb-1">Desde</label>
         <input type="date" name="desde" value="{{ hoy }}" class="input w-full text-sm">
       </div>
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">Hasta <span class="text-slate-400">(opcional)</span></label>
-        <input type="date" name="hasta" class="input w-full text-sm">
-      </div>
-      <div class="md:col-span-5">
-        <label class="block text-xs font-medium text-slate-600 mb-1">Foto para ipidet.org <span class="text-slate-400">(opcional: enlace https a la foto publicada)</span></label>
-        <input type="url" name="foto_url" class="input w-full text-sm" placeholder="https://ipidet.org/wp-content/uploads/…">
-      </div>
       <div class="flex gap-2">
-        <button type="submit" class="btn-primary text-sm" :disabled="!sel">Guardar</button>
+        <button type="submit" class="btn-primary text-sm">Guardar</button>
         <button type="button" class="btn-ghost text-sm" @click="nuevo = false">Cancelar</button>
       </div>
     </form>
-    <datalist id="lista-cargos">{% for c in cargos %}<option value="{{ c }}">{% endfor %}</datalist>
+    <datalist id="lista-cargos">{% for c in cargos | unique %}<option value="{{ c }}">{% endfor %}</datalist>
 
-    {% if consejo.vigente %}
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead><tr class="text-left text-xs text-slate-500 border-b border-slate-100">
@@ -76,64 +127,29 @@
           <th class="py-2 font-medium"></th>
         </tr></thead>
         <tbody>
-        {% for d in consejo.vigente %}
+        {% for pl in consejo.plazas %}
+          {% if pl.fila %}{{ fila_directivo(pl.fila) }}
+          {% else %}
           <tr class="border-b border-slate-50 align-top">
-            <td class="py-2.5 pr-4 font-medium text-slate-800 whitespace-nowrap">
-              {{ d.cargo }}
-              {% if org.firmante_nombre and d.nombre and org.firmante_nombre | lower == d.nombre | lower %}
-              <span class="badge badge-blue ml-1" title="Firma las constancias">Firmante</span>{% endif %}
-            </td>
-            <td class="py-2.5 pr-4">
-              <div class="flex items-start gap-2.5">
-              {% if d.foto_url %}<img src="{{ d.foto_url }}" alt="" class="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200">
-              {% else %}<span class="w-9 h-9 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0" title="Sin foto para la web"><i class="fa-solid fa-user text-xs"></i></span>{% endif %}
-              <div class="min-w-0">
-              <a href="/members/{{ d.member_id }}" class="text-blue-700 hover:underline font-medium">{{ d.nombre }}</a>
-              <div class="text-xs text-slate-500">{{ d.titulo }}{% if d.titulo and d.centro_trabajo %} · {% endif %}{{ d.centro_trabajo }}</div>
-              {% if not d.existe_socio %}<span class="badge badge-red">No está en el padrón</span>
-              {% elif d.estado_socio and d.estado_socio != 'activo' %}<span class="badge badge-amber">Socio {{ d.estado_socio }}</span>{% endif %}
-              <details class="mt-1">
-                <summary class="text-xs text-blue-600 cursor-pointer">{{ 'Cambiar foto de la web' if d.foto_url else 'Agregar foto para la web' }}</summary>
-                <form method="post" action="/organizacion/consejo/{{ d._id }}/foto" class="flex gap-1 mt-1">
-                  <input type="url" name="foto_url" value="{{ d.foto_url or '' }}" class="input text-xs flex-1 min-w-0" placeholder="https://…">
-                  <button class="btn-ghost text-xs">Guardar</button>
-                </form>
-              </details>
-              </div></div>
-            </td>
-            <td class="py-2.5 pr-4 text-xs text-slate-600">
-              {% if d.email %}<div><i class="fa-regular fa-envelope text-slate-400 mr-1"></i>{{ d.email }}</div>{% endif %}
-              {% if d.celular %}<div><i class="fa-solid fa-phone text-slate-400 mr-1"></i>{{ d.celular }}</div>{% endif %}
-              {% if d.linkedin %}<a href="{{ d.linkedin }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline"><i class="fa-brands fa-linkedin mr-1"></i>LinkedIn</a>{% endif %}
-            </td>
-            <td class="py-2.5 pr-4">
-              {% set lbl = status_labels.get(d.pago_periodo) %}
-              {% if lbl %}<span class="badge badge-{{ lbl[1] }}">{{ lbl[0] }}</span>{% else %}<span class="text-xs text-slate-400">Sin registro</span>{% endif %}
-            </td>
-            <td class="py-2.5 pr-4 text-xs text-slate-600 whitespace-nowrap">
-              {{ d.desde | format_fecha }}{% if d.hasta %} – {{ d.hasta | format_fecha }}{% else %} – a la fecha{% endif %}
-            </td>
-            <td class="py-2.5 text-right whitespace-nowrap">
-              <div class="flex justify-end gap-1">
-                <form method="post" action="/organizacion/consejo/{{ d._id }}/firmante">
-                  <button class="btn-ghost text-xs" title="Usar como firmante de las constancias"><i class="fa-solid fa-signature"></i></button>
-                </form>
-                <form method="post" action="/organizacion/consejo/{{ d._id }}/terminar" data-confirm="¿Cerrar este cargo hoy? Pasará a gestiones anteriores.">
-                  <button class="btn-ghost text-xs" title="Terminar el cargo hoy"><i class="fa-solid fa-flag-checkered"></i></button>
-                </form>
-                <form method="post" action="/organizacion/consejo/{{ d._id }}/delete" data-confirm="¿Eliminar este registro? Si solo terminó su gestión, mejor ciérralo.">
-                  <button class="btn-ghost text-xs text-red-600" title="Eliminar (fue un error)"><i class="fa-solid fa-trash"></i></button>
-                </form>
-              </div>
+            <td class="py-2.5 pr-4 font-medium text-slate-800 whitespace-nowrap">{{ pl.cargo }}</td>
+            <td class="py-2.5" colspan="5">
+              <form method="post" action="/organizacion/consejo/nuevo" class="flex flex-wrap items-center gap-2">
+                <input type="hidden" name="cargo" value="{{ pl.cargo }}">
+                <span class="badge badge-amber">Sin asignar</span>
+                <div class="w-64 max-w-full">{{ buscador() }}</div>
+                <label class="text-xs text-slate-500">desde</label>
+                <input type="date" name="desde" value="{{ hoy }}" class="input text-sm">
+                <button class="btn-primary text-xs">Asignar</button>
+              </form>
             </td>
           </tr>
+          {% endif %}
         {% endfor %}
+        {% for d in consejo.otros %}{{ fila_directivo(d) }}{% endfor %}
         </tbody>
       </table>
     </div>
-    {% else %}
-    <p class="text-sm text-slate-400 text-center py-6">Todavía no hay directivos cargados.</p>
-    {% endif %}
+    {% if not cargos %}<p class="text-sm text-slate-400 text-center py-6">Carga los cargos en Configuración → Cargos del consejo directivo.</p>{% endif %}
 
     {% if consejo.anteriores %}
     <details class="mt-4">
@@ -158,6 +174,18 @@
       </div>
     </details>
     {% endif %}
+  </section>
+
+
+  <!-- ══ Cuentas de IPIDET ══ -->
+  <section class="bg-white rounded-xl border border-slate-200 p-5" id="cuentas">
+    <h2 class="text-sm font-semibold text-slate-700 mb-1">
+      <i class="fa-solid fa-building-columns text-slate-400 mr-1.5"></i> Cuentas de IPIDET
+    </h2>
+    <p class="text-xs text-slate-500 mb-4">Cuentas bancarias y billeteras donde se paga a IPIDET. Es una sola lista: la usa la web para cobrar
+      (eventos y cuotas), los correos con la variable <code>{{ '{{cuentas_pago}}' }}</code> y los borradores del agente de correos.
+      Al cambiar una cuenta, el equipo recibe un aviso por Telegram.</p>
+    {% with volver = "/organizacion" %}{% include "_cuentas_ipidet.html" %}{% endwith %}
   </section>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">

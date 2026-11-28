@@ -10,6 +10,7 @@
   <aside>
     <div class="credencial">
       <img src="{{ B }}/estatico/img/logo-blanco.png" alt="IPIDET">
+      {% if persona.socio and persona.socio.foto_at %}<img class="credencial__foto" src="{{ B }}/cuenta/foto?v={{ persona.socio.foto_at }}" alt="Tu foto">{% endif %}
       <div class="credencial__nombre">{{ persona.nombre_completo }}</div>
       <div class="credencial__tipo">{% if persona.socio %}{{ persona.socio.titulo or 'Asociado' }}{% else %}Cuenta registrada{% endif %}</div>
       <div class="credencial__fila">
@@ -111,6 +112,21 @@
           <div class="ancho"><button class="btn btn--primario" type="submit">Guardar</button></div>
         </div>
       </form>
+      {% if persona.socio %}
+      <form data-multipart="{{ B }}/api/foto" class="foto-perfil" novalidate>
+        <div class="foto-perfil__vista">{% if persona.socio.foto_at %}<img src="{{ B }}/cuenta/foto?v={{ persona.socio.foto_at }}" alt="Tu foto de perfil">{% else %}<span>{{ persona.nombre[:1] }}</span>{% endif %}</div>
+        <div>
+          <label for="d-foto"><strong>Foto de perfil</strong></label>
+          <p class="suave">JPG, PNG o WebP de hasta 8 MB. La recortamos cuadrada. La ve el equipo de IPIDET y, si integras el consejo directivo, aparece en la web.</p>
+          <input class="campo" id="d-foto" type="file" name="archivo" accept="image/jpeg,image/png,image/webp" required>
+          <p class="estado-form" role="status"></p>
+          <div class="acciones">
+            <button class="btn btn--primario" type="submit">Subir foto</button>
+            {% if persona.socio.foto_at %}<button class="btn btn--borde" type="button" data-post="{{ B }}/api/foto/quitar" data-confirmar="¿Seguro? Toca otra vez">Quitar foto</button>{% endif %}
+          </div>
+        </div>
+      </form>
+      {% endif %}
     </div>
   </div>
 </div></section>

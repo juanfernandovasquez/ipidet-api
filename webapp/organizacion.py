@@ -16,6 +16,7 @@ from urllib.parse import urlencode
 
 from config import catalogos
 from config.mongo_client import db
+from webapp.sitio import pagos
 
 router = APIRouter()
 consejo_col = db.consejo_directivo
@@ -45,7 +46,7 @@ def consejo(incluir_anteriores: bool = True) -> dict:
     socios = {m["member_id"]: m for m in db.members.find(
         {"member_id": {"$in": ids}},
         {"member_id": 1, "apellidos": 1, "nombres": 1, "titulo": 1, "centro_trabajo": 1, "celular": 1,
-         "emails": 1, "linkedin": 1, "estado": 1, "tipo_socio": 1, "fecha_ingreso": 1})}
+         "emails": 1, "linkedin": 1, "estado": 1, "tipo_socio": 1, "fecha_ingreso": 1, "foto_at": 1})}
     pagos = {p["member_id"]: p.get("estado") for p in db.payments.find(
         {"member_id": {"$in": ids}, "periodo": periodo}, {"member_id": 1, "estado": 1})}
     cargos = catalogos.get_catalogo("cargos_consejo")
@@ -60,12 +61,21 @@ def consejo(incluir_anteriores: bool = True) -> dict:
                 "nombre": f"{(m.get('nombres') or '').strip()} {(m.get('apellidos') or '').strip()}".strip() or f.get("member_id", ""),
                 "titulo": m.get("titulo") or "", "centro_trabajo": m.get("centro_trabajo") or "",
                 "email": email, "celular": m.get("celular") or "", "linkedin": m.get("linkedin") or "",
-                "estado_socio": m.get("estado") or "", "existe_socio": bool(m),
+                "estado_socio": m.get("estado") or "", "existe_socio": bool(m), "foto_at": m.get("foto_at"),
                 "pago_periodo": pagos.get(f.get("member_id"), "")}
         (vigente if es_vigente(f, hoy) else anteriores).append(fila)
-    vigente.sort(key=lambda x: (orden_cargo.get(x.get("cargo"), 99), x.get("orden") or 0, x["nombre"]))
+    # Mismo cargo (los vocales): en el orden en que se asignaron, para que cada uno conserve su plaza.
+    vigente.sort(key=lambda x: (orden_cargo.get(x.get("cargo"), 99), x.get("orden") or 0, str(x.get("created_at") or ""), x["nombre"]))
     anteriores.sort(key=lambda x: (x.get("hasta") or "", x.get("desde") or ""), reverse=True)
-    return {"vigente": vigente, "anteriores": anteriores if incluir_anteriores else [], "periodo": periodo}
+    # Una plaza por cargo del catálogo (Vocal ×3 = tres plazas); quien tiene otro cargo va a «otros».
+    libres, plazas = list(vigente), []
+    for cargo in cargos:
+        fila = next((x for x in libres if (x.get("cargo") or "").strip().lower() == cargo.strip().lower()), None)
+        if fila:
+            libres.remove(fila)
+        plazas.append({"cargo": cargo, "fila": fila})
+    return {"vigente": vigente, "anteriores": anteriores if incluir_anteriores else [], "periodo": periodo,
+            "plazas": plazas, "otros": libres}
 
 
 def cargos_de_socio(member_id: str) -> list[dict]:
@@ -95,6 +105,10 @@ async def organizacion_page(request: Request):
         consejo=consejo(),
         cargos=catalogos.get_catalogo("cargos_consejo"),
         hoy=_hoy(),
+        # Cuentas de IPIDET: la misma lista que usa la web para cobrar (webapp/sitio/pagos.py)
+        metodos=pagos.todos(), tipos=pagos.TIPOS, para=pagos.PARA, monedas=pagos.MONEDAS,
+        titular=catalogos.get_datos_fiscales().get("razon_social", ""),
+        es_admin=request.session.get("user_role") == "admin",
     ))
 
 

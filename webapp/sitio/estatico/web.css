@@ -33,6 +33,12 @@ a.evento, a.cartel { color: inherit; text-decoration: none; }
 .codigo { font-size: 1.6rem; letter-spacing: .35em; text-align: center; font-variant-numeric: lining-nums tabular-nums; }
 
 .credencial__tipo { color: var(--laton-claro); font-size: .9rem; }
+.credencial .credencial__foto { position: absolute; top: 22px; right: 22px; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(232, 211, 166, .7); }
+.foto-perfil { display: grid; grid-template-columns: 96px 1fr; gap: 20px; align-items: start; margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--linea, #e5e7eb); }
+.foto-perfil__vista { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; background: var(--verde-50); display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 2rem; color: var(--verde-800); }
+.foto-perfil__vista img { width: 100%; height: 100%; object-fit: cover; }
+.foto-perfil .acciones { margin-top: 10px; }
+@media (max-width: 560px) { .foto-perfil { grid-template-columns: 1fr; } }
 .portal > * { min-width: 0; }
 .portal .renglon { flex-wrap: wrap; }
 .portal .renglon__texto { min-width: 190px; }

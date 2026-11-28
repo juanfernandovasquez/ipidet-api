@@ -39,9 +39,39 @@
       {# ─ Header #}
       <div class="px-6 py-5 flex items-start gap-4">
 
-        {# Avatar con iniciales #}
-        <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center font-bold text-blue-700 text-lg shrink-0 select-none">
-          {{ member.apellidos[:1] if member.apellidos else '?' }}{{ member.nombres[:1] if member.nombres else '?' }}
+        {# Foto de perfil (o iniciales) y cómo cambiarla #}
+        <div class="shrink-0" x-data="{ foto: false }">
+          <button type="button" @click="foto = !foto" class="block relative group" title="Cambiar la foto de perfil">
+            {% if member.foto_at %}
+            <img src="/members/{{ member.member_id }}/foto?v={{ member.foto_at }}" alt="Foto de perfil" class="w-16 h-16 rounded-full object-cover border border-slate-200">
+            {% else %}
+            <span class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center font-bold text-blue-700 text-xl select-none">{{ member.apellidos[:1] if member.apellidos else '?' }}{{ member.nombres[:1] if member.nombres else '?' }}</span>
+            {% endif %}
+            <span class="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 flex items-center justify-center text-[10px] group-hover:text-slate-800"><i class="fa-solid fa-camera"></i></span>
+          </button>
+          <div x-show="foto" x-cloak @click.outside="foto = false"
+               class="absolute z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-xl shadow-xl p-4 space-y-3 text-sm">
+            <div class="font-semibold text-slate-700">Foto de perfil</div>
+            <form method="post" action="/members/{{ member.member_id }}/foto" enctype="multipart/form-data" class="space-y-2">
+              <label class="block text-xs text-slate-600">Subir una foto (JPG, PNG o WebP, hasta 8 MB)</label>
+              <input type="file" name="archivo" accept="image/jpeg,image/png,image/webp" class="text-xs w-full" required>
+              <button class="btn-primary text-xs">Subir</button>
+            </form>
+            <form method="post" action="/members/{{ member.member_id }}/foto" class="space-y-2 pt-3 border-t border-slate-100">
+              <label class="block text-xs text-slate-600">Traer de LinkedIn</label>
+              <p class="text-[11px] text-slate-500">Abre su perfil{% if member.linkedin %} (<a href="{{ member.linkedin }}" target="_blank" rel="noopener" class="text-blue-600 hover:underline">abrir</a>){% endif %},
+                haz clic derecho sobre la foto, elige «Copiar dirección de imagen» y pégala aquí.</p>
+              <input type="url" name="enlace" class="input text-xs w-full" placeholder="https://media.licdn.com/…" required>
+              <button class="btn-ghost text-xs"><i class="fa-brands fa-linkedin mr-1"></i>Traer foto</button>
+            </form>
+            {% if member.foto_at %}
+            <form method="post" action="/members/{{ member.member_id }}/foto" data-confirm="¿Quitar la foto de perfil?" class="pt-3 border-t border-slate-100">
+              <input type="hidden" name="quitar_foto" value="1">
+              <button class="btn-ghost text-xs text-red-600">Quitar foto</button>
+              <span class="text-[11px] text-slate-400 ml-1">Origen: {{ {'panel': 'subida por el equipo', 'web': 'subida por el socio en la web', 'linkedin': 'LinkedIn'}.get(member.foto_origen, member.foto_origen or '') }}</span>
+            </form>
+            {% endif %}
+          </div>
         </div>
 
         {# Nombre + metadata #}
